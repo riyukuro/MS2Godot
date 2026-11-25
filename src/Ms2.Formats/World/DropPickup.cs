@@ -32,8 +32,21 @@ public static class DropPickup
         return ownerAllowed;
     }
 
-    /// <summary>CDropItem::FUN_141190640: room in the bag, or a stack to add to, or the key was freshly pressed (bForce).</summary>
+    /// <summary>
+    /// CDropItem::FUN_141190640 (dropitem.cpp:906), the get key's test before the request: room in the bag, or a stack to add to, or
+    /// the key was freshly pressed (bForce). It has no item test: a currency or special id skips only FUN_141190900's bag-full
+    /// refusal (<see cref="BagFull"/>), not this.
+    /// </summary>
     public static bool BagAllows(bool hasEmptySlot, bool canStack, bool force) => hasEmptySlot || canStack || force;
+
+    /// <summary>
+    /// The range a resting drop has for the summoned pet's item pick (WorldService::FUN_141bd1a50, worldservice_1.cpp:6347, from
+    /// StateSummonItemPick, statesummon.cpp:902): state 0's FUN_141191a10 sets m_f27c to the distance from the drop's origin to where
+    /// it is now plus 10 (dropitem.cpp:1211), and FUN_141190120 tests against the larger of that and m_f21c (:811).
+    /// <paramref name="drift"/> is that distance and <paramref name="maxLength"/> m_f21c. The player's own pickup uses m_f21c alone
+    /// (FUN_141190320).
+    /// </summary>
+    public static float WidenedRange(float drift, float maxLength) => MathF.Max(drift + 10f, maxLength);
 
     /// <summary>OnFieldRemoveItem keeps a drop that is being picked up (FUN_1411900d0: a picker set and the state not resting).</summary>
     public static bool KeepsOnRemove(int pickerId, int state) => pickerId != 0 && state != DropMotion.Rest;
@@ -70,6 +83,8 @@ public static class DropPickup
     public static bool IsMesoId(int id) => id is 0x55d4a81 or 0x55d4a82 or 0x55d4a83;
     /// <summary>FUN_14053f900: the special ids (EP and SP balls and the like) that skip the bag test and the toast.</summary>
     public static bool IsSpecialId(int id) => id is 0x55d4a88 or 0x55d4a89 or 0x55d4a8a or 0x55d4a93;
+    /// <summary>The SP and EP orbs, the two special ids InitDrop gives the DropSPEPBall constants (dropitem.cpp:269-270).</summary>
+    public static bool IsSpepBallId(int id) => id is 0x55d4a89 or 0x55d4a8a;
     /// <summary>FUN_14053f940: the merat ids.</summary>
     public static bool IsMeratId(int id) => id is 0x55d4a84 or 0x55d4a8b or 0x55d4a8f or 0x55d4a90;
     /// <summary>FUN_14053f990 through FUN_1403ba790: the token ids (the currency kinds it maps to a non-zero type).</summary>
@@ -116,6 +131,8 @@ public struct PickupCandidate
     public bool FromSelf;
     /// <summary>The auto loot options take the item (<see cref="Ms2.Formats.Options.GameOption.AutoLoot.Takes"/>).</summary>
     public bool AutoTakes;
+    /// <summary>The drop's own item range, m_f21c (FUN_141190320): DropSPEPBallMaxLength for an SP or EP orb; 0 takes the frame's.</summary>
+    public float Range;
 }
 
 /// <summary>
@@ -156,7 +173,7 @@ public sealed class PickupPlanner
                     Mesos.Add(i);
             }
             else if (!c.Requested && !c.FromSelf && c.AutoTakes
-                     && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, itemRange, c.Owner))
+                     && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, c.Range > 0 ? c.Range : itemRange, c.Owner))
                 Auto.Add(i);
         }
         foreach (int i in Auto) { var c = Candidates[i]; c.LastRequest = nowMs; c.Requested = true; Candidates[i] = c; }   // SendRequestItemPickup
@@ -168,8 +185,9 @@ public sealed class PickupPlanner
         for (int i = 0; i < Candidates.Count; i++)
         {
             var c = Candidates[i];
-            if (c.Distance < best && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, itemRange, c.Owner)) { best = c.Distance; Nearest = i; }
-            if (c.Distance < bestHop && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, itemRange, true)) { bestHop = c.Distance; Hop = i; }
+            float range = c.Range > 0 ? c.Range : itemRange;
+            if (c.Distance < best && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, range, c.Owner)) { best = c.Distance; Nearest = i; }
+            if (c.Distance < bestHop && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, range, true)) { bestHop = c.Distance; Hop = i; }
         }
         if (Nearest >= 0) Hop = -1;
     }

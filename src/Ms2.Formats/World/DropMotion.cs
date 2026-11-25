@@ -18,14 +18,33 @@ public sealed class DropConstants
     /// <summary>PetTrapDropVisibleDelay: how long a pet trap's drop stays hidden and unpickable (ms).</summary>
     public uint PetTrapVisibleDelayMs;
 
-    public static DropConstants From(ClientConstants c) => new()
+    /// <summary>
+    /// The SP and EP orbs' set: CDropItem::LoadSpepBallConstants (dropitem.cpp:1093-1102), which InitDrop calls for those two ids
+    /// (:269-270), replaces the target height, the item range (m_f21c), the fly velocity and gravity and the hover's time and spin
+    /// with the DropSPEPBall constants. The money range, the refused hop and the pet-trap delay stay the item ones.
+    /// </summary>
+    public DropConstants SpepBall { get; private set; }
+
+    /// <summary>The set a drop of <paramref name="itemId"/> uses: <see cref="SpepBall"/> for an SP or EP orb, else this one.</summary>
+    public DropConstants ForItem(int itemId) => DropPickup.IsSpepBallId(itemId) && SpepBall != null ? SpepBall : this;
+
+    public static DropConstants From(ClientConstants c)
     {
-        TargetZ = c.Float("DropItemTargetZPos", 0f), MaxLength = c.Float("DropItemMaxLength", 0f), MoneyMaxLength = c.Float("DropMoneyMaxLength", 0f),
-        PickUpVel = c.Float("DropItemPickUpVel", 0f), PickUpGravity = c.Float("DropItemPickUpGravity", 0f),
-        RotateTime = c.Float("DropItemPickUpCompleteRotateTime", 0f), RotateVel = c.Float("DropItemPickUpCompleteRotateVel", 0f),
-        FailTime = c.Float("DropItemPickFailTime", 0f), FailHeight = c.Float("DropItemPickFailHeight", 0f),
-        PetTrapVisibleDelayMs = (uint)Math.Max(0f, c.Float("PetTrapDropVisibleDelay", 0f)),
-    };
+        var k = new DropConstants
+        {
+            TargetZ = c.Float("DropItemTargetZPos", 0f), MaxLength = c.Float("DropItemMaxLength", 0f), MoneyMaxLength = c.Float("DropMoneyMaxLength", 0f),
+            PickUpVel = c.Float("DropItemPickUpVel", 0f), PickUpGravity = c.Float("DropItemPickUpGravity", 0f),
+            RotateTime = c.Float("DropItemPickUpCompleteRotateTime", 0f), RotateVel = c.Float("DropItemPickUpCompleteRotateVel", 0f),
+            FailTime = c.Float("DropItemPickFailTime", 0f), FailHeight = c.Float("DropItemPickFailHeight", 0f),
+            PetTrapVisibleDelayMs = (uint)Math.Max(0f, c.Float("PetTrapDropVisibleDelay", 0f)),
+        };
+        var b = (DropConstants)k.MemberwiseClone();
+        b.TargetZ = c.Float("DropSPEPBallTargetZPos", 0f); b.MaxLength = c.Float("DropSPEPBallMaxLength", 0f);
+        b.PickUpVel = c.Float("DropSPEPBallPickUpVel", 0f); b.PickUpGravity = c.Float("DropSPEPBallPickUpGravity", 0f);
+        b.RotateTime = c.Float("DropSPEPBallPickUpCompleteRotateTime", 0f); b.RotateVel = c.Float("DropSPEPBallPickUpCompleteRotateVel", 0f);
+        k.SpepBall = b;
+        return k;
+    }
 }
 
 /// <summary>What the source of a drop says about the throw (the npc row's drop block, CNpcData::m_drop; the defaults of SetState).</summary>

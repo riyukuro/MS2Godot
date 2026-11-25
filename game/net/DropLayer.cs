@@ -34,6 +34,7 @@ public sealed partial class DropLayer : Node3D
         public List<GeometryInstance3D> Meshes;   // the drop's meshes the fade sets
         public bool Requested;       // m_n294 (FUN_141192840): set by each pickup request, cleared by a mode 1 refusal
         public int Type;             // the item's property type (CItemData::GetType), for the auto loot options
+        public DropConstants Set;    // m_f218..m_f230: the item constants, or the SP and EP orbs' (LoadSpepBallConstants)
     }
 
     readonly PackSet packs;
@@ -139,11 +140,12 @@ public sealed partial class DropLayer : Node3D
         var root = new Node3D { Name = $"Drop{d.ObjectId}" };
         root.AddChild(visual);
         AddChild(root);
-        var motion = new DropMotion(constants, look.Style, d.ObjectId, pet);
+        var k = d.IsMeso ? constants : constants.ForItem(d.ItemId);   // InitDrop: LoadSpepBallConstants for an SP or EP orb (dropitem.cpp:269-270)
+        var motion = new DropMotion(k, look.Style, d.ObjectId, pet);
         uint fade = DropPickup.FadeUntil(Clock(), d.DropKind, pet, d.PetTrap, constants.PetTrapVisibleDelayMs);
         var drop = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = fade, Held = fade != 0 && !pet, Hidden = fade != 0,
             Style = look.Style, Effects = new DropEffects(Effects(), PlaySound), Meso = d.Amount,
-            Type = d.IsMeso ? 0 : ItemType(d.ItemId) };
+            Type = d.IsMeso ? 0 : ItemType(d.ItemId), Set = k };
         root.Visible = !drop.Hidden;
         if (drop.Held) root.Position = G(DropMotion.Created70(d.Position));
         else LaunchDrop(drop);
@@ -187,6 +189,11 @@ public sealed partial class DropLayer : Node3D
 
     /// <summary>A drop the field shows: where it is (engine space), its CDropItem state and whether its grade effect (the rarity glow)
     /// and beEffect run; null when the field has no drop of the id.</summary>
+    /// <summary>The constants the drop of <paramref name="objectId"/> uses (<see cref="DropConstants.ForItem"/>), and whether they are
+    /// the SP and EP orbs' set; null without the drop.</summary>
+    public (DropConstants Set, bool SpepBall)? SetOf(int objectId) =>
+        drops.TryGetValue(objectId, out var d) ? (d.Set, ReferenceEquals(d.Set, constants.SpepBall)) : null;
+
     public (Vector3 At, int State, bool Glow, bool BeEffect)? Shown(int objectId) =>
         drops.TryGetValue(objectId, out var d) && IsInstanceValid(d.Root)
             ? (d.Root.GlobalPosition, d.Motion.State, d.Effects.EffectA != 0, d.Effects.EffectB != 0) : null;
@@ -353,7 +360,7 @@ public sealed partial class DropLayer : Node3D
                 ObjectId = p.ObjectId, State = d.Motion.State, LastRequest = d.LastRequest, FadeUntil = d.FadeUntil,
                 Distance = (me - d.Motion.Position).Length(), Meso = p.IsMeso, Owner = p.IsPickupAllowed(ownCharacterId),
                 Requested = d.Requested, FromSelf = self != 0 && p.SourceObjectId == self,
-                AutoTakes = auto != null && !p.IsMeso && auto.Takes(p.ItemId, d.Type, p.Rarity, p.DropKind == 0x3ed, level),
+                AutoTakes = auto != null && !p.IsMeso && auto.Takes(p.ItemId, d.Type, p.Rarity, p.DropKind == 0x3ed, level), Range = d.Set.MaxLength,
             });
             planned.Add(d);
         }
