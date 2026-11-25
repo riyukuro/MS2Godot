@@ -405,6 +405,28 @@ public partial class LiveSession
                 Shot($"interact_{id}.png");
                 continue;
             }
+            if (step.StartsWith("reactable:"))      // reactable:<interact id>[:<name prefix>]: the own pc put at the nearest field interact mesh of that id (and name) whose reactable model draws apart (no use); the server's state and the model drawn checked, with a shot
+            {
+                var rargs = step[10..].Split(':');
+                int id = int.Parse(rargs[0]);
+                string prefix = rargs.Length > 1 ? rargs[1] : "";
+                var io = live.InteractObjects;
+                Ms2.Ui.LiveInteractObject o = null;
+                await until(() => live.player != null && Field.Active?.Interacts is { } d && (o = io?.All.Where(x => x.RowId == id && x.Name.StartsWith(prefix, StringComparison.Ordinal) && d.ShownReactable(x.Entity) != null)
+                    .OrderBy(x => FieldBuilder.ToGodotPoint(x.Position).DistanceSquaredTo(live.player.GlobalPosition)).FirstOrDefault()) != null, 60 * 20);
+                Check($"{step}: an object of the row with a reactable model ({o?.Name}, state {o?.State})", o != null);
+                if (o == null) continue;
+                live.player.GlobalPosition = FieldBuilder.ToGodotPoint(o.Position) + new Vector3(0, 5, 0);
+                live.player.Velocity = Vector3.Zero;
+                await frames(120);
+                var draws = Field.Active?.Interacts;
+                LogInteract(step, o);
+                bool reactable = draws?.ShownReactable(o.Entity) == true;
+                Check($"{step}: state {o.State} draws the {(o.State == 1 ? "reactable" : "own")} model (reactable drawn {reactable}, asset B set {o.ShowsAssetB})",
+                      o.State == 2 ? draws?.Drawn(o) == false : reactable == (o.State == 1));
+                Shot($"reactable_{id}.png");
+                continue;
+            }
             if (step.StartsWith("telescope:"))      // telescope:<interact id>: the own pc put at the nearest telescope of that id, the action key; its view checked, then Esc skips it
             {
                 int id = int.Parse(step[10..]);
