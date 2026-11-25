@@ -146,4 +146,104 @@ public class AlignedQuadTests
         Assert.That(bad, Is.Empty);
         Assert.That(systems, Is.GreaterThan(100));
     }
+
+    [Test]
+    public void FireSheetIsRead()
+    {
+        // bg/common/eff_bg_fire_a.nif PArray02: an aligned system with Has Animated Textures, its generator a 4 x 2 sheet
+        // played once over the life (frames 0 to 8)
+        var (packs, spec) = NifEnv.Open();
+        var sc = EffectScene.Load(NifFile.Load(spec, packs.Read("Resource/Model/Effect", "bg/common/eff_bg_fire_a.nif")));
+        var d = sc.Systems.Single(s => s.Name == "PArray02");
+        Assert.That((d.Aligned, d.AnimatedTextures, d.FramesAcross, d.FramesDown, d.InitialFrame, d.NumFrames), Is.EqualTo((true, true, 4, 2, 0, 8)));
+        Assert.That((d.InitialTime, d.FinalTime, d.PingPong, d.UVScrolling), Is.EqualTo((0.0, 1.0, false, false)));
+        var t = new AlignedQuad.TexAnim(d);
+        Assert.That(t.On, Is.True);
+        t.Cell(0.5f, 1f, 0f, out var u, out var v);
+        Assert.That((u, v), Is.EqualTo((0f, 0.5f)), "half way: frame 4, the second row's first cell");
+    }
+
+    [Test]
+    public void TexAnimIsTheKernels()
+    {
+        // 4 x 2 frames, frames 1 to 1 + 6 over the life's 0.2 to 0.8, variance 0
+        var d = new ParticleSystemDef { Aligned = true, AnimatedTextures = true, FramesAcross = 4, FramesDown = 2, InitialFrame = 1, NumFrames = 6,
+                                        InitialTime = 0.2, FinalTime = 0.8 };
+        var t = new AlignedQuad.TexAnim(d);
+        void At(float age, float var, float l, float top, string what)
+        {
+            t.Cell(age, 10f, var, out var u, out var v);
+            Assert.That((u, v), Is.EqualTo((l, top)).Using<(float, float)>((a, b) => MathF.Abs(a.Item1 - b.Item1) < Eps && MathF.Abs(a.Item2 - b.Item2) < Eps), what);
+        }
+        At(0f, 0f, 0.25f, 0f, "before the initial time: the initial frame 1");
+        At(5f, 0f, 0f, 0.5f, "half way: frame 4, the second row");
+        At(7.9f, 0f, 0.5f, 0.5f, "frame 6.9: floored to 6");
+        At(9f, 0f, 0.75f, 0.5f, "after the final time: frame 7 (1 + 6), the kernel's own end");
+        At(0f, -0.5f, 0.25f, 0f, "variance -0.5 with no variation: frame 1");
+        // a variation moves both bounds by floor(variance x variation)
+        t = new AlignedQuad.TexAnim(new ParticleSystemDef { Aligned = true, AnimatedTextures = true, FramesAcross = 4, FramesDown = 2, InitialFrame = 1,
+                                                            InitialFrameVar = 3, NumFrames = 6, InitialTime = 0.2, FinalTime = 0.8 });
+        At(0f, 0.7f, 0.75f, 0f, "variance 0.7 x 3: frame 1 + 2 = 3");
+        // ping pong: back from the final time
+        t = new AlignedQuad.TexAnim(new ParticleSystemDef { Aligned = true, AnimatedTextures = true, FramesAcross = 4, FramesDown = 2, NumFrames = 4,
+                                                            InitialTime = 0, FinalTime = 0.5, PingPong = true });
+        At(2.5f, 0f, 0.5f, 0f, "first pass, half way: frame 2");
+        At(7.5f, 0f, 0.5f, 0f, "second pass (reversed), half way back: frame 2");
+        At(6f, 0f, 0.75f, 0f, "second pass at 1 s in: frame 3.2 floored to 3");
+        // UV scrolling: no floors
+        t = new AlignedQuad.TexAnim(new ParticleSystemDef { Aligned = true, AnimatedTextures = true, FramesAcross = 4, FramesDown = 1, NumFrames = 4,
+                                                            InitialTime = 0, FinalTime = 1, UVScrolling = true });
+        At(1.25f, 0f, 0.125f, 0f, "scrolling: frame 0.5 is half a cell along");
+        Assert.That(new AlignedQuad.TexAnim(new ParticleSystemDef { AnimatedTextures = true, NumFrames = 4 }).On, Is.False, "a facing system has no texture kernel");
+        Assert.That(new AlignedQuad.TexAnim(new ParticleSystemDef { Aligned = true, NumFrames = 4 }).On, Is.False, "nor a system without Has Animated Textures");
+    }
+
+    /// <summary>Every particle system of every effect and map nif, both data sets: the texture animation fields and what
+    /// the kernel does with them.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryAnimatedTextureSystem(string env)
+    {
+        var dir = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) Assert.Ignore($"{env} not set");
+        using var packs = new PackSet(dir);
+        var spec = new NifSpec(NifEnv.NifXml());
+        var marker = Encoding.ASCII.GetBytes("NiPSParticleSystem");
+        int nifs = 0, systems = 0, animated = 0, animatedFacing = 0, flipping = 0, pingPong = 0, scrolling = 0, varied = 0, zeroSpan = 0, badGrid = 0;
+        var examples = new List<string>(); var loadErrors = new List<string>();
+        foreach (var archive in new[] { "Resource/Model/Effect", "Resource/Model/Map" })
+            foreach (var entry in packs.List(archive).Where(e => e.EndsWith(".nif", StringComparison.Ordinal)).OrderBy(e => e, StringComparer.Ordinal))
+            {
+                var bytes = packs.Read(archive, entry);
+                if (bytes.AsSpan().IndexOf(marker) < 0) continue;
+                EffectScene sc;
+                try { sc = EffectScene.Load(NifFile.Load(spec, bytes)); }
+                catch (NotSupportedException) { continue; }
+                catch (ArgumentOutOfRangeException e) { loadErrors.Add($"{entry}: {e.TargetSite?.Name}"); continue; }
+                nifs++;
+                foreach (var d in sc.Systems)
+                {
+                    systems++;
+                    if (!d.AnimatedTextures) continue;
+                    if (!d.Aligned) { animatedFacing++; continue; }
+                    animated++;
+                    if (d.FramesAcross < 1 || d.FramesDown < 1) badGrid++;
+                    if (d.NumFrames != 0 || d.NumFramesVar != 0) flipping++;
+                    if (d.PingPong) pingPong++;
+                    if (d.UVScrolling) scrolling++;
+                    if (d.InitialFrameVar != 0 || d.NumFramesVar != 0) varied++;
+                    if (d.FinalTime == d.InitialTime) { zeroSpan++; if (examples.Count < 20) examples.Add($"zero span: {entry} {d.Name} pingpong {d.PingPong}"); }
+                    if (examples.Count < 20 && d.NumFrames > 1 && d.FramesAcross > 1)
+                        examples.Add($"{entry} {d.Name}: {d.FramesAcross}x{d.FramesDown} frames {d.InitialFrame}+{d.NumFrames} var {d.InitialFrameVar}/{d.NumFramesVar} "
+                                     + $"time {d.InitialTime}-{d.FinalTime}{(d.PingPong ? " pingpong" : "")}{(d.UVScrolling ? " scroll" : "")}");
+                }
+            }
+        TestContext.Out.WriteLine($"{env}: {nifs} nifs with particles, {systems} systems; {animated} aligned with animated textures ({flipping} with frames, "
+            + $"{pingPong} ping pong, {scrolling} uv scrolling, {varied} with a variation, {zeroSpan} with initial = final time, {badGrid} with a zero grid); "
+            + $"{animatedFacing} facing systems with the flag (no texture kernel)");
+        foreach (var x in examples) TestContext.Out.WriteLine("  " + x);
+        TestContext.Out.WriteLine($"  {loadErrors.Count} nifs the effect loader throws on: " + string.Join(", ", loadErrors.Take(10)));
+        Assert.That(badGrid, Is.Zero);
+        Assert.That(animated, Is.GreaterThan(10));
+    }
 }

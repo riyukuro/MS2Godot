@@ -328,7 +328,10 @@ public sealed class ParticleSystemDef
     /// keeps rotation angles (without them the kernels take no rotation).</summary>
     public int NormalMethod = AlignedQuad.Camera, UpMethod = AlignedQuad.Camera; public Vec3 NormalDirection, UpDirection;
     public bool HasRotations = true;
-    public int FramesAcross = 1, FramesDown = 1, NumFrames, InitialFrame, InitialFrameVar; public double InitialTime, FinalTime; public bool PingPong;
+    /// <summary>The aligned quads' texture animation (AlignedQuad.TexAnim): the generator's flipbook fields, used only when the
+    /// system has "Has Animated Textures" (NiPSAlignedQuadGenerator.cpp:325-337); without it every quad shows the whole texture.</summary>
+    public bool AnimatedTextures, UVScrolling, PingPong;
+    public int FramesAcross = 1, FramesDown = 1, NumFrames, InitialFrame; public double InitialFrameVar, NumFramesVar, InitialTime, FinalTime = 1;
     public string Texture;                       // base texture file (or the first shader map)
     public int AlphaFlags = -1;                  // NiAlphaProperty flags of the system
     public bool Additive => AlphaFlags >= 0 && ((AlphaFlags >> 5) & 15) == 0 && (AlphaFlags & 1) != 0;
@@ -627,6 +630,7 @@ public sealed class EffectScene
         var B = n.Blocks; var b = B[blk];
         var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
         d.HasRotations = b.IntOr("Has Rotations", 1) != 0;
+        d.AnimatedTextures = b.IntOr("Has Animated Textures", 0) != 0;
         d.NormalMethod = (int)b.IntOr("Normal Method", AlignedQuad.Camera); d.UpMethod = (int)b.IntOr("Up Method", AlignedQuad.Camera);
         if (b.Has("Normal Direction")) d.NormalDirection = V3(b.Struct("Normal Direction"));
         if (b.Has("Up Direction")) d.UpDirection = V3(b.Struct("Up Direction"));
@@ -722,6 +726,11 @@ public sealed class EffectScene
             d.ScaleAmountU = F("Scale Amount U", 0); d.ScaleLimitU = F("Scale Limit U", 10000); d.ScaleRestU = F("Scale Rest U", 1);
             d.ScaleAmountV = F("Scale Amount V", 0); d.ScaleLimitV = F("Scale Limit V", 10000); d.ScaleRestV = F("Scale Rest V", 1);
             d.CenterU = F("Center U", 0); d.CenterV = F("Center V", 0);
+            d.UVScrolling = g.IntOr("UV Scrolling", 0) != 0; d.PingPong = g.IntOr("Ping Pong", 0) != 0;
+            d.FramesAcross = (int)g.IntOr("Num Frames Across", 1); d.FramesDown = (int)g.IntOr("Num Frames Down", 1);
+            d.NumFrames = (int)g.IntOr("Num Frames", 0); d.InitialFrame = (int)g.IntOr("Initial Frame", 0);
+            d.InitialFrameVar = F("Initial Frame Variation", 0); d.NumFramesVar = F("Num Frames Variation", 0);
+            d.InitialTime = F("Initial Time", 0); d.FinalTime = F("Final Time", 1);
             break;
         }
 

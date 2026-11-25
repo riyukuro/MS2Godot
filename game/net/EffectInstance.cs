@@ -42,7 +42,7 @@ public sealed partial class EffectInstance : Node3D
     sealed class PSys
     {
         public ParticleSystemDef Def; public MultiMeshInstance3D Node; public MultiMesh MM; public ShaderMaterial Mat;
-        public Vector3[] Pos, Vel; public float[] Age, Life, Size, Rot, RotSpeed, Frame0; public int Count;
+        public Vector3[] Pos, Vel; public float[] Age, Life, Size, Rot, RotSpeed, Variance; public int Count; public AlignedQuad.TexAnim Tex;
         public double[] Accum; public float[] Buf;
         public int Cap, LastCount;                                // the MultiMesh's instance count (live particles fit) and last frame's live count
         public Aabb Box; public bool HasBox;                      // the MultiMesh's CustomAabb: every quad drawn so far, grown only (Step)
@@ -177,9 +177,9 @@ uniform bool vc_emi = false;
 uniform bool vc_dif = false;
 uniform bool vc_amb = false;
 uniform bool vc_opacity = false;
-varying float frame;
+varying vec2 cell;
 FOGDECL
-void vertex() { frame = INSTANCE_CUSTOM.x; FOGVERT }
+void vertex() { cell = INSTANCE_CUSTOM.xy; FOGVERT }
 vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
     vec2 o = vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0)));
     vec2 h = 0.5 / vec2(max(size, ivec2(1)));
@@ -188,12 +188,10 @@ vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
     return o;
 }
 void fragment() {
-    float fi = floor(frame + 0.5);
-    vec2 cell = vec2(mod(fi, frames.x), floor(fi / frames.x));
     // the quad's texture coordinate (the flipbook cell's), then each map's own transform and clamp mode as the mesh
     // shader's map_uv; the detail map multiplies the colour by twice its colour (NiStandardMaterial::HandleDetailMap,
     // NiStandardMaterial.cpp:4765-4774: RGB only, the opacity stays the base map's)
-    vec2 uv = (UV + cell) / frames;
+    vec2 uv = UV / frames + cell;
     vec4 t = has_tex ? texture(tex, map_uv(uv, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
     if (has_detail) t.rgb *= texture(detail_tex, map_uv(uv, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0))).rgb * 2.0;
     // the mesh shader's colour terms (MeshCode, EffectMesh.Shade): the particle's key colour is its vertex colour
@@ -380,14 +378,14 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (d.Emitters.Count == 0) continue;
             var ps = new PSys { Def = d };
             int n = d.MaxParticles;
-            ps.Pos = new Vector3[n]; ps.Vel = new Vector3[n]; ps.Age = new float[n]; ps.Life = new float[n]; ps.Size = new float[n]; ps.Rot = new float[n]; ps.RotSpeed = new float[n]; ps.Frame0 = new float[n];
+            ps.Pos = new Vector3[n]; ps.Vel = new Vector3[n]; ps.Age = new float[n]; ps.Life = new float[n]; ps.Size = new float[n]; ps.Rot = new float[n]; ps.RotSpeed = new float[n]; ps.Variance = new float[n]; ps.Tex = new AlignedQuad.TexAnim(d);
             ps.Accum = new double[d.Emitters.Count];
             var mat = new ShaderMaterial { Shader = d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
             var tex = d.Texture != null ? mb.Texture(d.Texture) : null;
             mat.SetShaderParameter(FxParam.HasTex, tex != null);
             if (DestOne(d.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
             if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
-            mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
+            if (ps.Tex.On) mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
             // the base and detail maps' transforms and clamp modes (ParticleSystemDef.Material's Maps; ReadSystem)
             var pm = d.Material.Mesh;
@@ -819,7 +817,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         // The system's constants are read once and the per-particle math is written out in floats: the game assembly is built
         // without the optimizer, so each Vector3/Basis operator would be a call. The operations and their order are Godot's
         // (Cross, Normalized, Length, vector * scalar), so the buffer holds the same floats as with the Godot types.
-        bool sizeKeys = d.SizeKeys.Length > 0, colorKeys = d.ColorKeys.Length > 0, aligned = d.Aligned, flips = d.NumFrames > 1;
+        bool sizeKeys = d.SizeKeys.Length > 0, colorKeys = d.ColorKeys.Length > 0, aligned = d.Aligned;
         bool grow = d.GrowTime > 0, shrink = d.ShrinkTime > 0;
         float growTime = (float)d.GrowTime, shrinkTime = (float)d.ShrinkTime;
         // Aligned quads (AlignedQuad): the system's fixed normal and up and the kernels' defaults, in this effect's space. The
@@ -859,11 +857,10 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             scaleSpeed = amtU != 0f || amtV != 0f;
             speedMul = d.WorldSpace ? worldScale : (psScale != 0 ? 1f / psScale : 0f);
         }
-        float initialTime = (float)d.InitialTime, flipSpan = Mathf.Max((float)(d.FinalTime - d.InitialTime), 1e-4f);
-        float flipFactor = d.PingPong ? 1 : 0.999f, numFrames = d.NumFrames, frameMod = Mathf.Max(d.FramesAcross * d.FramesDown, 1);
+        var tex = ps.Tex;
         float cx = camLocal.X, cy = camLocal.Y, cz = camLocal.Z;
         float rx = camRight.X, ry = camRight.Y, rz = camRight.Z, ux = camUp.X, uy = camUp.Y, uz = camUp.Z;
-        float[] age = ps.Age, life = ps.Life, psize = ps.Size, rot = ps.Rot, frame0 = ps.Frame0;
+        float[] age = ps.Age, life = ps.Life, psize = ps.Size, rot = ps.Rot, variance = ps.Variance;
         Vector3[] ppos = ps.Pos, pvel = ps.Vel;
         // the bounds of this frame's quads (a quad reaches |x axis| + |y axis| from its centre), for the culling box below
         float bx0 = float.MaxValue, by0 = float.MaxValue, bz0 = float.MaxValue, bx1 = float.MinValue, by1 = float.MinValue, bz1 = float.MinValue;
@@ -919,13 +916,10 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             buf[o + 4] = xy; buf[o + 5] = yy; buf[o + 6] = ty; buf[o + 7] = pos.Y - oy;
             buf[o + 8] = xz; buf[o + 9] = yz; buf[o + 10] = tz; buf[o + 11] = pos.Z - oz;
             buf[o + 12] = cr; buf[o + 13] = cg; buf[o + 14] = cb; buf[o + 15] = ca;
-            float frame = frame0[i];
-            if (flips)
-            {
-                float u = Mathf.Clamp((n - initialTime) / flipSpan, 0f, 1f);
-                frame = (frame0[i] + Mathf.Floor(u * numFrames * flipFactor)) % frameMod;
-            }
-            buf[o + 16] = frame; buf[o + 17] = 0; buf[o + 18] = 0; buf[o + 19] = 0;
+            // the texture cell's top left (AlignedQuad.TexAnim; the whole texture without texture animation)
+            float cellU = 0f, cellV = 0f;
+            if (tex.On) tex.Cell(age[i], life[i], variance[i], out cellU, out cellV);
+            buf[o + 16] = cellU; buf[o + 17] = cellV; buf[o + 18] = 0; buf[o + 19] = 0;
         }
         if (ProbeOn) seg[4] += System.Diagnostics.Stopwatch.GetTimestamp() - qd;
         long qb = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
@@ -956,7 +950,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (a == b) return;
         (p.Pos[a], p.Pos[b]) = (p.Pos[b], p.Pos[a]); (p.Vel[a], p.Vel[b]) = (p.Vel[b], p.Vel[a]); (p.Age[a], p.Age[b]) = (p.Age[b], p.Age[a]);
         (p.Life[a], p.Life[b]) = (p.Life[b], p.Life[a]); (p.Size[a], p.Size[b]) = (p.Size[b], p.Size[a]); (p.Rot[a], p.Rot[b]) = (p.Rot[b], p.Rot[a]);
-        (p.RotSpeed[a], p.RotSpeed[b]) = (p.RotSpeed[b], p.RotSpeed[a]); (p.Frame0[a], p.Frame0[b]) = (p.Frame0[b], p.Frame0[a]);
+        (p.RotSpeed[a], p.RotSpeed[b]) = (p.RotSpeed[b], p.RotSpeed[a]); (p.Variance[a], p.Variance[b]) = (p.Variance[b], p.Variance[a]);
     }
 
     static double Lerp((double t, double v)[] k, float n)
@@ -1042,6 +1036,6 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         float rs = (float)e.RotSpeed + Spread((float)e.RotSpeedVar);
         if (e.RandomRotSpeedSign && R() < 0.5f) rs = -rs;
         ps.RotSpeed[i] = rs;
-        ps.Frame0[i] = ps.Def.InitialFrame + (ps.Def.InitialFrameVar > 0 ? rng.Next(ps.Def.InitialFrameVar + 1) : 0);
+        ps.Variance[i] = Spread(1f);        // NiSymmetricRandom (NiPSParticleSystem.cpp:262-265)
     }
 }

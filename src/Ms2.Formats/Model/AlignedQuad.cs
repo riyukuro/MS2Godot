@@ -66,6 +66,55 @@ public static class AlignedQuad
         offset = (cv * s + cu * c) * right + (cv * c - cu * s) * upq;
     }
 
+    /// <summary>The texture animation of a system with "Has Animated Textures" (NiPSAlignedQuadTextureKernel.cpp:40-160, the
+    /// kernel the generator adds only for such a system, NiPSAlignedQuadGenerator.cpp:325-337; the others keep the whole
+    /// texture, :208-218). The generator's times are fractions of the particle's life; the frame runs linearly from the
+    /// initial frame to initial + Num Frames over that span (age clamped to it, or folded back and forth with Ping Pong),
+    /// each bound moved by floor(variance x its variation), variance the particle's NiSymmetricRandom from its spawn
+    /// (NiPSParticleSystem.cpp:262-265). The frame is laid out across then down from the texture's top left; with UV
+    /// Scrolling the floors are left out, so the cell slides. Floats, like the kernel.</summary>
+    public readonly struct TexAnim
+    {
+        public readonly bool On, PingPong, UVScrolling;
+        public readonly float Across, DeltaU, DeltaV, NormInitial, NormFinal, InitialFrame, InitialFrameVar, NumFrames, NumFramesVar;
+
+        public TexAnim(ParticleSystemDef d)
+        {
+            On = d.Aligned && d.AnimatedTextures; PingPong = d.PingPong; UVScrolling = d.UVScrolling;
+            Across = d.FramesAcross; DeltaU = 1f / d.FramesAcross; DeltaV = 1f / d.FramesDown;
+            NormInitial = (float)d.InitialTime; NormFinal = (float)d.FinalTime;
+            InitialFrame = d.InitialFrame; InitialFrameVar = (float)d.InitialFrameVar;
+            NumFrames = d.NumFrames; NumFramesVar = (float)d.NumFramesVar;
+        }
+
+        /// <summary>The quad's texture cell: its top left (left, top) in texture coordinates; it spans DeltaU x DeltaV.
+        /// Vertex 0 (the quad's top left) takes (left, top), vertex 2 (bottom right) (left + DeltaU, top + DeltaV).</summary>
+        public void Cell(float age, float life, float variance, out float left, out float top)
+        {
+            float initialTime = NormInitial * life, finalTime = NormFinal * life, scaledAge;
+            if (!PingPong) scaledAge = age < initialTime ? initialTime : age > finalTime ? finalTime : age;
+            else
+            {
+                float keyDiff = finalTime - initialTime;
+                if (keyDiff > 0.0001f)
+                {
+                    float whole = MathF.Floor(age / keyDiff);
+                    scaledAge = (uint)whole % 2 > 0 ? finalTime - (age - finalTime * whole) : age - finalTime * whole;
+                }
+                else scaledAge = age;
+            }
+            float normTime = (scaledAge - initialTime) / (finalTime - initialTime);
+            float init, fin;
+            if (!UVScrolling) { init = InitialFrame + MathF.Floor(variance * InitialFrameVar); fin = init + (NumFrames + MathF.Floor(variance * NumFramesVar)); }
+            else { init = InitialFrame + variance * InitialFrameVar; fin = init + (NumFrames + variance * NumFramesVar); }
+            float linear = (1f - normTime) * init + normTime * fin;
+            float row = MathF.Floor(linear * DeltaU);
+            float col = (linear * DeltaU - row) * Across;
+            if (!UVScrolling) col = MathF.Floor(col);
+            left = col * DeltaU; top = row * DeltaV;
+        }
+    }
+
     /// <summary>The normal and up a particle's quad is built from. fixedNormal and fixedUp are the system's vectors for the
     /// methods without ALIGN_PER_PARTICLE (already unitized as SubmitAlignMethods leaves them); rel is the particle's
     /// position from the system's origin and vel its velocity; unitX and unitZ the kernels' defaults in the same space.
