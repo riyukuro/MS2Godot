@@ -117,6 +117,16 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     /// <summary>FUN_140d73c60: show a message box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
+    /// <summary>The group type the guild's dungeon button sets (SetGroupType(6), uiguilddialog.cpp:1234-1241).</summary>
+    public const int DungeonRoomGroupType = 6;
+
+    /// <summary>
+    /// onOpenDungeonDialog (uiguilddialog.cpp:1230-1243): OpenDialog(0x4ebd) on the dungeon room window, then, when it exists,
+    /// SetGroupType(6). The host opens it with the group type given; it sets no portal id and no room.
+    /// STILL-OPEN: FUN_141924630, the guard of the refresh before SetGroupType (vfunc_68), is not recovered (treated as true).
+    /// </summary>
+    public Action<int> OpenDungeonRoomDialog;
+
     /// <summary>OnSearchGuildMasterPopupMenu: the popup 0x4e39 at (x, y) for the master's name (Unk_PopupMenuInfo(x, y, 3,
     /// 0x3f3fe), SetGuildInfo from FindSearchResultByName). STILL-OPEN.</summary>
     public event Action<float, float, string> PopupRequested;
@@ -1480,6 +1490,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 return true;
             case "onsearchguildmasterpopupmenu":
                 if (args.Length > 0) PopupRequested?.Invoke(Float(0), Float(1), Str(2));
+                return true;
+            case "onopendungeondialog":
+                OpenDungeonRoomDialog?.Invoke(DungeonRoomGroupType);
                 return true;
             case "onbreakguild":
                 ShowBox(MessageBoxQueue.Create(1, Common(0x3df), this, "breakGuild"));   // ShowMessageBox(BlockFormat(0x3df), 1, ...)

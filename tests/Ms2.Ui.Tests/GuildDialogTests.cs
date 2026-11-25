@@ -501,6 +501,18 @@ public class GuildDialogTests
     }
 
     [Test]
+    public void TheDungeonButtonOpensTheDungeonRoomWindowWithTheGuildGroupType()
+    {
+        // onOpenDungeonDialog (uiguilddialog.cpp:1230): the window opens with SetGroupType(6)
+        var c = new GuildDialogController(InGuild());
+        var seen = new List<int>();
+        c.OpenDungeonRoomDialog = seen.Add;
+        Assert.That(c.OnCallback("onOpenDungeonDialog", Array.Empty<object>()), Is.True);
+        Assert.That(seen, Is.EqualTo(new[] { GuildDialogController.DungeonRoomGroupType }));
+        Assert.That(GuildDialogController.DungeonRoomGroupType, Is.EqualTo(6));
+    }
+
+    [Test]
     public void TheRankButtonsOpenTheRankingDialogOrThePage()
     {
         // OnClickOpenMayview / OnOpenGuildRank / OnViewPvpRank: feature 0x3f the dialog's category, else 0x3b the page

@@ -121,6 +121,7 @@ public partial class HudScene
                 NameLengthMax = t.GuildNameLengthMax,
                 PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null,
                 FeatureEnabled = hudModel.IsFeatureEnabled,
+                OpenDungeonRoomDialog = type => OpenDungeonRoom(d => { d.SetGroupType(type); return true; }),   // uiguilddialog.cpp:1230
                 JobName = t.JobName,
                 MapName = id => t.MapName(id) ?? id.ToString(),
                 StringTableText = t.StringTableText,
