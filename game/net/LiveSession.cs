@@ -2431,6 +2431,13 @@ public partial class LiveSession : Node
                 }
                 if (LiveCheck) GD.Print($"live: npc notice mode {n.Mode}: {applied}{(n.Mode == NpcNotice.SidePopup ? $" kind {n.Kind} npc {n.NpcId} icon {n.Icon}" : "")}");
             }
+            else if (game.Is(p, Inbound.Insignia))
+            {
+                var n = Nametag.Read(p.Reader());           // CSceneStateGame::OnNametag (scenestategame.cpp:7314-7331)
+                bool ownTag = Me.Apply(n);
+                bool tagged = !ownTag && remote != null && remote.SetSymbol(n.ObjectId, n.Symbol, n.Shown);
+                if (LiveCheck) GD.Print($"live: name tag symbol {n.Symbol} shown {n.Shown} on {n.ObjectId}{(ownTag ? " (own)" : tagged ? $" (tag shows {remote.ShownSymbol(n.ObjectId)})" : " (not here)")}");
+            }
             else if (game.Is(p, Inbound.UserChat))
             {
                 var r = p.Reader();

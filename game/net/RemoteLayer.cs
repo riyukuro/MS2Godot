@@ -141,6 +141,14 @@ public sealed partial class RemoteLayer : Node3D
         return null;
     }
 
+    /// <summary>The Insignia packet on another player (CSceneStateGame::OnNametag, scenestategame.cpp:7314-7331: FindPCById, then
+    /// PC::FUN_141661dc0 and the name tag's refresh, <see cref="LiveNameTags.SetSymbol"/>); false when the player is not here.</summary>
+    public bool SetSymbol(int objectId, ushort symbol, bool shown)
+    {
+        CatchUp();
+        return users.TryGetValue(objectId, out var r) && tags.SetSymbol(r.Root, symbol, shown);
+    }
+
     /// <summary>NpcNotice mode 1 on an npc (<see cref="NpcLayer.SetOwnerEffect"/>); false when there is no npc of the id.</summary>
     public bool SetOwnerEffect(int objectId, string effect)
     {
@@ -163,6 +171,9 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>An npc for the own pc's StateTriggerFollowNpc (<see cref="NpcLayer.FollowPoseOf"/>); null when it is not here.</summary>
     public (System.Numerics.Vector3 Pos, float RotZ, short AnimKey)? FollowPoseOf(int objectId) => npcs.FollowPoseOf(objectId);
+
+    /// <summary>The symbol another player's name tag shows (<see cref="LiveNameTags.ShownSymbol"/>); 0 when none or not here.</summary>
+    public ushort ShownSymbol(int objectId) => users.TryGetValue(objectId, out var r) ? tags.ShownSymbol(r.Root) : (ushort)0;
 
     /// <summary>WorldService::FindPCById: a shown player as a damage number's target; null when it is not a player here.</summary>
     public Ui.DamageTarget DamageOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Damage : null;

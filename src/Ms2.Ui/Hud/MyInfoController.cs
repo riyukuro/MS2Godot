@@ -83,7 +83,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
     /// <summary>UIMyInfoDialog::vfunc_104 (@0x141a5ae90): CAchieveManager::GetTally()->Sum().</summary>
     public Func<uint> AchieveTally;
     /// <summary>The local PC's name tag symbol (PCBase::FUN_141661e00 = m_n10f8: the own FieldAddUser's, PC::FUN_141661d40).
-    /// STILL-OPEN: CSceneStateGame::OnNametag (scenestategame.cpp:7314), which changes it later, is not handled.</summary>
+    /// CSceneStateGame::OnNametag (scenestategame.cpp:7314-7331) changes it later and marks the dialog changed (MyCharacter.Apply).</summary>
     public Func<ushort> SymbolId = () => 0;
     /// <summary>The local player's GM grade (GetGmGrade), for the symbol's gm condition.</summary>
     public Func<int> GmGrade = () => 0;

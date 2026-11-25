@@ -2986,6 +2986,7 @@ public partial class HudScene : Node, IUiStageHost
                 foreach (var e in changed) Ms2.Ui.Hud.PartyOwnStatus.Apply(partyBook, live.CharacterId, model.Player, e);
             OwnMinimapPicture(live);
             if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(OwnTagName());
+            if (live.Me.User is { } me) playerNameTag?.SetSymbol(live.Me.Insignia, live.Me.InsigniaShown, me.Level, me.PrestigeLevel);
             if (changed.Contains(Ms2.Ui.StatusEvent.Hp))
             {
                 damageEffect?.Hp(model.Player.HpCur, model.Player.HpMax);

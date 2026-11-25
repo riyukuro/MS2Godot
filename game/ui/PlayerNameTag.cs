@@ -9,8 +9,8 @@ namespace Ms2Godot.Ui;
 /// NameTagColorFriendly; every frame PC::vfunc_53 sets the colour by relation, NameTagColorMyPC for the local player.
 /// <list type="bullet">
 /// <item>Data (UINameTag::Entity::FUN_141a5ff60, setData): the name, the guild as "&lt;guild&gt;" (none here), visibleSymbol
-/// and visibleName from the game options, no symbol (no field symbol, PvP team or name tag item), font size and colour, no
-/// skin.</item>
+/// and visibleName from the game options, the name tag item's symbol (<see cref="SetSymbol"/>; no field symbol or PvP team),
+/// font size and colour, no skin.</item>
 /// <item>Anchor (UIHudEntity::Entity::vfunc_10): the world point of the actor's "Eff_UI" node, the player's row of
 /// Table/pcEffectDummy.xml for its gender placed by DummyWorld (on Scene Root at (0, 0, 170) in the data, straight up the
 /// world); the actor's position when it has no such node.</item>
@@ -26,6 +26,8 @@ namespace Ms2Godot.Ui;
 public sealed partial class PlayerNameTag : CanvasLayer
 {
     readonly MovieClipNode node;
+    readonly UiMovie movie;
+    readonly NameTagSymbolLine symbol = new();
     readonly float offset;
     readonly Ms2.Formats.Pack.PackSet packs;
     IReadOnlyList<EffectDummy> dummies;  // the player's effect dummies (gender row of the pc table)
@@ -48,7 +50,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
         color = new Color(r, g, b);
         try
         {
-            var movie = new UiMovie(ui, "uinametag");
+            movie = new UiMovie(ui, "uinametag");
             u = UiScale.For(window);
             node = movie.BuildClass("NameTag", u) ?? movie.BuildClass("UINameTag", u);
         }
@@ -92,6 +94,17 @@ public sealed partial class PlayerNameTag : CanvasLayer
     {
         if (node?.FindClip("m_name") is { } nameClip) { NpcPresence.SetLabel(nameClip, name, null, color); Shown = name; }
     }
+
+    /// <summary>
+    /// The own PC's name tag symbol (the own FieldAddUser's insignia, then the Insignia packet: CSceneStateGame::OnNametag,
+    /// scenestategame.cpp:7314-7331, refreshes the MyPC's UINameTag entity too, FUN_141a60f00): setData's symbol line
+    /// (<see cref="NameTagSymbolLine"/>) with the PC's level and adventure level; the own tag has no guild line here.
+    /// </summary>
+    public void SetSymbol(ushort id, bool shown, int level, int adventureLevel) =>
+        symbol.Set(node, movie, u, Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).NametagSymbols, id, shown, level, adventureLevel, false);
+
+    /// <summary>The symbol the own tag shows; 0 when none.</summary>
+    public ushort ShownSymbol => symbol.Shown(node);
 
     /// <summary>The name the tag's m_name line shows.</summary>
     public string Shown { get; private set; }

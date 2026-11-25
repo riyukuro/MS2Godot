@@ -35,6 +35,9 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         public Color Color;
         public string Title = "", Name = "";           // players: the title prefix ("{title} ") and PC::vfunc_77's name
         public Movement.RideData Ride;                 // players: the mount's row while riding
+        public ushort Insignia; public bool InsigniaShown;   // players: PC m_n10f8 / m_n10fc (FUN_141661e00 / FUN_141661e20)
+        public int Level, PrestigeLevel; public bool GuildLine;
+        public readonly NameTagSymbolLine Symbol = new();   // players: m_symbol
     }
 
     readonly Dictionary<Node3D, Tag> tags = new();
@@ -129,45 +132,42 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         var color = self ? myColor : pcColor;
         var node = NpcPresence.BuildTag(movie, u, prefix + name, guild, color);
         if (node == null) return;
-        Symbol(node, add, guild.Length > 0);
         var dummies = EffectDummyTable.Load(packs).Pc(user.Gender);
-        Add(new Tag
+        var t = new Tag
         {
             Root = root, Node = node, Offset = pcOffset, CharacterId = user.CharacterId, Self = self, Color = color,
             Title = prefix, Name = name,
+            Insignia = (ushort)add.Insignia, InsigniaShown = add.InsigniaShown, Level = user.Level, PrestigeLevel = user.PrestigeLevel,
+            GuildLine = guild.Length > 0,
             Anchor = () => DummyAnchor.Point(dummies, "Eff_UI", model, rootName) ?? root.GlobalPosition,
-        });
+        };
+        Symbol(t);
+        Add(t);
     }
 
     /// <summary>
-    /// setSymbol for the name tag item (FUN_141a5ff60's last branch): with the insignia shown, the symbol table's icon
-    /// (GetIconRanked) as the class nametag_mark_&lt;icon&gt; in m_symbol.m_mark, its text the level for a level symbol
-    /// (condition 1: the PC's level; 0xb: the adventure level); m_symbol at y -88 under a guild line, else -66. An enchant
-    /// symbol (condition 2) needs the equipment's grade and is left out, as are the field-property and PvP team symbols.
+    /// The Insignia packet (CSceneStateGame::OnNametag, scenestategame.cpp:7314-7331): PC::FUN_141661dc0 sets the player's
+    /// symbol and shown flag, then FUN_141a60f00 has UINameTag refresh that actor's entity (UIHudEntity::FUN_140f49cb0 ->
+    /// Entity::FUN_140f48d80 -> FUN_141a5ff60, setData again), so the symbol line is built anew. False when the player has no tag.
     /// </summary>
-    void Symbol(MovieClipNode node, Ms2.Net.Packets.FieldAddUser add, bool guildLine)
+    public bool SetSymbol(Node3D root, ushort symbol, bool shown)
     {
-        var table = tables.NametagSymbols;
-        ushort id = (ushort)add.Insignia;
-        if (!add.InsigniaShown || table.Get(id) is not { } sym || sym.Condition == NametagSymbols.Condition.Enchant) return;
-        var player = new NametagSymbols.Player(add.User.Level, add.User.PrestigeLevel, 0, Array.Empty<uint>(), 0);
-        string icon = table.IconRanked(id, player);
-        var symbol = node.FindClip("m_symbol");
-        var mark = symbol?.FindClip("m_mark");
-        if (string.IsNullOrEmpty(icon) || mark == null) return;
-        var built = movie.BuildClass("nametag_mark_" + icon, u);
-        if (built == null) return;
-        string level = sym.Condition switch
-        {
-            NametagSymbols.Condition.Level => add.User.Level.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            NametagSymbols.Condition.AdventureLevel => add.User.PrestigeLevel.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            _ => "",
-        };
-        if (level.Length > 0) built.SetText(level);
-        mark.AddChild(built);
-        node.SetNamedVisible("m_symbol", GameOptions.Current?.StatusOption?.DisplayPlayerSymbol ?? true);
-        symbol.Position = new Vector2(symbol.Position.X, guildLine ? -88 : -66);
+        if (root == null || !tags.TryGetValue(root, out var t) || t.Row != null) return false;
+        t.Insignia = symbol; t.InsigniaShown = shown;
+        Symbol(t);
+        return true;
     }
+
+    /// <summary>The symbol the player's tag shows (the test's view); 0 when none or no tag.</summary>
+    public ushort ShownSymbol(Node3D root) => root != null && tags.TryGetValue(root, out var t) ? t.Symbol.Shown(t.Node) : (ushort)0;
+
+    /// <summary>The marks under the tag's m_symbol.m_mark (the test's view; setSymbol keeps one at most).</summary>
+    public int MarkCount(Node3D root) =>
+        root != null && tags.TryGetValue(root, out var t) && t.Node.FindClip("m_symbol")?.FindClip("m_mark") is { } mark ? mark.GetChildCount() : -1;
+
+    /// <summary>The tag's symbol line (<see cref="NameTagSymbolLine"/>).</summary>
+    void Symbol(Tag t) =>
+        t.Symbol.Set(t.Node, movie, u, tables.NametagSymbols, t.Insignia, t.InsigniaShown, t.Level, t.PrestigeLevel, t.GuildLine);
 
     void Add(Tag t)
     {

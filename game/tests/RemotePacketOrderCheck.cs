@@ -12,6 +12,7 @@ namespace Ms2Godot.Tests;
 /// the layer empties only on its next frame.
 /// - An npc added and then named by NpcNotice mode 1 (RemoteLayer.SetOwnerEffect) is found.
 /// - An npc added before FollowNpc is not in the layer until CatchUp, and is after it (the own pc's follow lookup).
+/// - Insignia on a player added just before (RemoteLayer.SetSymbol) applies the add first.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemotePacketOrderCheck : Node3D
@@ -39,6 +40,10 @@ public partial class RemotePacketOrderCheck : Node3D
         Check(layer.FollowPoseOf(42) == null, "the npc's add was applied before the layer's frame or a catch-up (the check sees no queue)");
         layer.CatchUp();
         Check(layer.FollowPoseOf(42) != null, "after CatchUp the npc added before FollowNpc is not found");
+
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, new FieldAddUser { ObjectId = 43, User = new UserBlock { Name = "r43", CharacterId = 143, Gender = 1 } }, false));
+        layer.SetSymbol(43, 2, true);
+        Check(layer.Tracker.Events.IsEmpty, "Insignia did not apply the player's add before it");
 
         GD.Print($"remote packet order: {(fails.Count == 0 ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
