@@ -68,7 +68,7 @@ public partial class LiveSession
     void OnAttendance(AttendanceMessage m)
     {
         if (m is AttendanceMessage.StartedEvents s) Attend.SetTimes(s.Events);
-        GD.Print($"live: Attendance {m}");
+        if (LiveCheck) GD.Print($"live: Attendance {m}");
         AttendDialog.OnAttendance(m);
         AttendanceReceived?.Invoke(m);
     }
