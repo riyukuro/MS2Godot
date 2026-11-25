@@ -52,11 +52,12 @@ public sealed class FieldProperties
         switch (m)
         {
             case FieldPropertyMessage.List l:
-                foreach (var p in l.Properties) { ApplyLight(p); byKind[p.Kind] = p; }   // vfunc_4, then SetAt (worldservice_1.cpp:5336-5337)
+                foreach (var p in l.Properties) { ApplyLight(p); byKind[p.Kind] = p; if (p.Kind == 5) UserTagSymbolApplied?.Invoke(); }   // vfunc_4, then SetAt (worldservice_1.cpp:5336-5337)
                 break;
             case FieldPropertyMessage.Add a:
                 ApplyLight(a.Property);
                 byKind[a.Property.Kind] = a.Property;
+                if (a.Property.Kind == 5) UserTagSymbolApplied?.Invoke();
                 break;
             case FieldPropertyMessage.Remove r:
                 byKind.Remove(r.Kind);
@@ -106,6 +107,13 @@ public sealed class FieldProperties
 
     /// <summary>The weather kind 7 set (0 without one).</summary>
     public byte Weather => Find(7) is FieldProperty.Weather w ? w.Value : (byte)0;
+
+    /// <summary>Kind 5 (FieldPropertyUserTagSymbolCli): the name tag symbols of team 1 and team 2; null without one.</summary>
+    public (string Team1, string Team2)? UserTagSymbol => Find(5) is FieldProperty.UserTagSymbol s ? (s.A, s.B) : null;
+
+    /// <summary>Kind 5's apply (FieldPropertyUserTagSymbolCli::vfunc_4, fieldpropertycli.cpp:193-194: WorldService::FUN_141bcabf0
+    /// refreshes every player's name tag entity). It has no remove, so a removed kind 5 refreshes nothing.</summary>
+    public event Action UserTagSymbolApplied;
 }
 
 /// <summary>

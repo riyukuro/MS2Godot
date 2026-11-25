@@ -3044,7 +3044,8 @@ public partial class HudScene : Node, IUiStageHost
                 foreach (var e in changed) Ms2.Ui.Hud.PartyOwnStatus.Apply(partyBook, live.CharacterId, model.Player, e);
             OwnMinimapPicture(live);
             if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(OwnTagName());
-            if (live.Me.User is { } me) playerNameTag?.SetSymbol(live.Me.Insignia, live.Me.InsigniaShown, me.Level, me.PrestigeLevel);
+            if (live.Me.User is { } me) playerNameTag?.SetSymbol(live.Me.Insignia, live.Me.InsigniaShown, me.Level, me.PrestigeLevel,
+                NameTagSymbolLine.FieldOrTeam(live.FieldProperties.UserTagSymbol, live.Me.Team, live.Me.PvpPoint, live.Me.PvpMode));
             if (changed.Contains(Ms2.Ui.StatusEvent.Hp))
             {
                 damageEffect?.Hp(model.Player.HpCur, model.Player.HpMax);
@@ -3054,6 +3055,8 @@ public partial class HudScene : Node, IUiStageHost
         Sync();
         live.Me.Changed += Sync;
         unwatchLivePlayer += () => live.Me.Changed -= Sync;
+        live.FieldProperties.UserTagSymbolApplied += Sync;   // field property 5 refreshes the own tag too (FUN_141bcabf0)
+        unwatchLivePlayer += () => live.FieldProperties.UserTagSymbolApplied -= Sync;
         if (model != hudModel) return;
         SetOwnRide(model, live.OwnRidee);               // the own pc's ride as the HUD loads (MyPC::IsRiding)
         live.OwnRideChanged += OnOwnRide;

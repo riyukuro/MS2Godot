@@ -244,6 +244,8 @@ public sealed class MyCharacter {
     public ushort Insignia;
     /// <summary>Whether the symbol is shown (PC m_n10fc, FUN_141661e20; the own FieldAddUser's flag after the insignia).</summary>
     public bool InsigniaShown;
+    /// <summary>The own FieldAddUser's PvP point and mode (CPvPInfo) and team byte (m_unk_af8), the name tag's team symbols' inputs.</summary>
+    public int PvpPoint; public byte PvpMode, Team;
     public long HomeCommendMonth; public int HomeCommendMonthly, HomeCommendPoint;
     public readonly long[] Stats0 = new long[PcInfo.StatCount], Stats1 = new long[PcInfo.StatCount], Stats2 = new long[PcInfo.StatCount];
     /// <summary>The proxies' trophy triples by proxy id (ProxyGameObj AddPlayer, scenestategame.cpp:11358; removed by mode 4),
@@ -287,6 +289,7 @@ public sealed class MyCharacter {
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
     public void Apply(FieldAddUser u) {
         ObjectId = u.ObjectId; User = u.User; Title = u.Title; Insignia = (ushort)u.Insignia; InsigniaShown = u.InsigniaShown;
+        PvpPoint = u.PvpPoint; PvpMode = u.PvpMode; Team = u.Team;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         PremiumTime = u.PremiumTime; WeddingState = u.WeddingState;

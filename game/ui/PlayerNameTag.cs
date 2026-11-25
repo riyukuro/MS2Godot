@@ -100,8 +100,11 @@ public sealed partial class PlayerNameTag : CanvasLayer
     /// scenestategame.cpp:7314-7331, refreshes the MyPC's UINameTag entity too, FUN_141a60f00): setData's symbol line
     /// (<see cref="NameTagSymbolLine"/>) with the PC's level and adventure level; the own tag has no guild line here.
     /// </summary>
-    public void SetSymbol(ushort id, bool shown, int level, int adventureLevel) =>
-        symbol.Set(node, movie, u, Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).NametagSymbols, id, shown, level, adventureLevel, false);
+    public void SetSymbol(ushort id, bool shown, int level, int adventureLevel, string special = null) =>
+        symbol.Set(node, movie, u, Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).NametagSymbols, id, shown, level, adventureLevel, false, special);
+
+    /// <summary>The mark class the own tag shows, null for none.</summary>
+    public string ShownMark => symbol.ShownMark(node);
 
     /// <summary>The symbol the own tag shows; 0 when none.</summary>
     public ushort ShownSymbol => symbol.Shown(node);

@@ -37,6 +37,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         public Movement.RideData Ride;                 // players: the mount's row while riding
         public ushort Insignia; public bool InsigniaShown;   // players: PC m_n10f8 / m_n10fc (FUN_141661e00 / FUN_141661e20)
         public int Level, PrestigeLevel; public bool GuildLine;
+        public byte Team, PvpMode; public int PvpPoint;      // players: m_unk_af8 and the PvP info (FieldAddUser)
         public readonly NameTagSymbolLine Symbol = new();   // players: m_symbol
     }
 
@@ -139,6 +140,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
             Title = prefix, Name = name,
             Insignia = (ushort)add.Insignia, InsigniaShown = add.InsigniaShown, Level = user.Level, PrestigeLevel = user.PrestigeLevel,
             GuildLine = guild.Length > 0,
+            Team = add.Team, PvpPoint = add.PvpPoint, PvpMode = add.PvpMode,
             Anchor = () => DummyAnchor.Point(dummies, "Eff_UI", model, rootName) ?? root.GlobalPosition,
         };
         Symbol(t);
@@ -170,6 +172,19 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         return true;
     }
 
+    /// <summary>The field's property 5 symbols (team 1, team 2), null without one: the field properties' view.</summary>
+    public Func<(string Team1, string Team2)?> FieldSymbol = () => null;
+
+    /// <summary>Field property 5 applied (WorldService::FUN_141bcabf0): every player's tag sets its symbol line again.</summary>
+    public void RefreshFieldSymbols()
+    {
+        foreach (var t in tags.Values)
+            if (t.Row == null) Symbol(t);
+    }
+
+    /// <summary>The mark class a player's symbol line shows (the test's view), null for none.</summary>
+    public string ShownMark(Node3D root) => root != null && tags.TryGetValue(root, out var t) ? t.Symbol.ShownMark(t.Node) : null;
+
     /// <summary>The players' symbol lines set again when the Display Player Symbol option changed since they were set.</summary>
     public void RefreshSymbols()
     {
@@ -190,7 +205,8 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
 
     /// <summary>The tag's symbol line (<see cref="NameTagSymbolLine"/>).</summary>
     void Symbol(Tag t) =>
-        t.Symbol.Set(t.Node, movie, u, tables.NametagSymbols, t.Insignia, t.InsigniaShown, t.Level, t.PrestigeLevel, t.GuildLine);
+        t.Symbol.Set(t.Node, movie, u, tables.NametagSymbols, t.Insignia, t.InsigniaShown, t.Level, t.PrestigeLevel, t.GuildLine,
+                     NameTagSymbolLine.FieldOrTeam(FieldSymbol(), t.Team, t.PvpPoint, t.PvpMode));
 
     void Add(Tag t)
     {

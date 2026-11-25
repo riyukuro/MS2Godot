@@ -335,6 +335,8 @@ public sealed class FieldAddUser {
     /// <summary>The revival end tick, revival count and revival flag after the buffs (scenestategame.cpp:11280-11281).</summary>
     public uint RevivalEndTick; public int RevivalCount; public bool RevivalFlag;
     public int Title; public short Insignia; public bool InsigniaShown;
+    public int PvpPoint; public byte PvpTeam, PvpMode;   // CPvPInfo::ReadPointTeamMode (pvpinfo.cpp:156-161): m_nPoint, m_nTeam, m_nMode
+    public byte Team;                                    // PCBase::FUN_141678340 (m_unk_af8): the team field property 5's symbol picks by
     /// <summary>The pet block was read (PC::ReadPetItem, scenestategame.cpp:11286).</summary>
     public bool HasPet;
     /// <summary>The premium club time i64 (PC::FUN_141662d60 = m_n1190, scenestategame.cpp:11287): IsVip (pc.cpp:2209) is true
@@ -397,12 +399,12 @@ public sealed class FieldAddUser {
         f.BuffCount = r.ReadShort();
         for (int i = 0; i < (ushort) f.BuffCount; i++) f.Buffs.Add(Buff.Read(r));
         f.RevivalEndTick = (uint)r.ReadInt(); f.RevivalCount = r.ReadInt(); f.RevivalFlag = r.ReadByte() != 0;   // PC::FUN_141661b20, FUN_141661ba0 (scenestategame.cpp:11280-11281)
-        r.ReadInt(); r.ReadByte(); r.ReadByte();
+        f.PvpPoint = r.ReadInt(); f.PvpTeam = r.ReadByte(); f.PvpMode = r.ReadByte();   // GetPvPInfo()->ReadPointTeamMode (:11282)
         f.Title = r.ReadInt(); f.Insignia = r.ReadShort(); f.InsigniaShown = r.ReadBool();
         r.ReadInt();
         f.HasPet = r.ReadBool();
         if (f.HasPet) f.Pet = ItemReader.ReadPetItem(r, profile);
-        f.PremiumTime = r.ReadLong(); r.ReadInt(); r.ReadByte();
+        f.PremiumTime = r.ReadLong(); r.ReadInt(); f.Team = r.ReadByte();   // FUN_141678300, FUN_141678340 (:11288-11289)
         if (gms) { r.ReadInt(); r.ReadInt(); }
         f.WeddingState = r.ReadShort();
         r.ExpectEnd("FieldAddUser");

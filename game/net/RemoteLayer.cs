@@ -190,6 +190,9 @@ public sealed partial class RemoteLayer : Node3D
     public (System.Numerics.Vector3 Pos, float RotZ, short AnimKey)? FollowPoseOf(int objectId) => npcs.FollowPoseOf(objectId);
 
     /// <summary>The symbol another player's name tag shows (<see cref="LiveNameTags.ShownSymbol"/>); 0 when none or not here.</summary>
+    /// <summary>WorldService::FUN_141bcabf0 as field property 5 applies: every pc's tag takes its symbol again.</summary>
+    public void RefreshFieldSymbols() => tags.RefreshFieldSymbols();
+
     public ushort ShownSymbol(int objectId) => users.TryGetValue(objectId, out var r) ? tags.ShownSymbol(r.Root) : (ushort)0;
 
     /// <summary>WorldService::FindPCById: a shown player as a damage number's target; null when it is not a player here.</summary>
@@ -381,6 +384,7 @@ public sealed partial class RemoteLayer : Node3D
         field.AddChild(tags = new LiveNameTags(packs)
         {
             InParty = id => LiveSession.Instance?.Party is { } p && p.PartyId != 0 && p.Find(id) != null,
+            FieldSymbol = () => LiveSession.Instance?.FieldProperties.UserTagSymbol,
         });
         npcs.Tags = tags;
         field.AddChild(bars = new LiveHpBars(packs)

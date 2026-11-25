@@ -161,4 +161,25 @@ public class FieldAddUserRecordedTests
                 0x4444_0000_0000_0001L, 0x4444_0000_0000_0002L, 0x4444_0000_0000_0003L, 0x4444_0000_0000_0004L,
                 0x4444_0000_0000_0005L, 0x4444_0000_0000_0006L, 0x4444_0000_0000_0007L,
             });
+
+    /// <summary>
+    /// The PvP info after the revival fields (GetPvPInfo()->ReadPointTeamMode: i32 point, u8 team, u8 mode, scenestategame.cpp:11282)
+    /// and the team byte after the premium time and an i32 (PCBase::FUN_141678340, :11289), the name tag's team symbols' inputs:
+    /// the recorded frames (no pet) with those bytes set, counted from the end (GMS2 has its two extra ints before the wedding state).
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void PvpInfoAndTeamByteReadIntoTheRecordAndMyCharacter(bool gms) {
+        var payload = (byte[]) (gms ? Gms2FieldAddUser : KmsFieldAddUser).Clone();
+        var profile = gms ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
+        int extra = gms ? 8 : 0, l = payload.Length;
+        Assert.That(FieldAddUser.Read(new ByteReader(payload), profile).HasPet, Is.False);
+        BitConverter.GetBytes(0xca).CopyTo(payload, l - 33 - extra);
+        payload[l - 29 - extra] = 2; payload[l - 28 - extra] = 3; payload[l - 3 - extra] = 1;
+        var decoded = FieldAddUser.Read(new ByteReader(payload), profile);
+        Assert.That((decoded.PvpPoint, decoded.PvpTeam, decoded.PvpMode, decoded.Team), Is.EqualTo((0xca, (byte) 2, (byte) 3, (byte) 1)));
+        var me = new MyCharacter();
+        me.Apply(decoded);
+        Assert.That((me.PvpPoint, me.PvpMode, me.Team), Is.EqualTo((0xca, (byte) 3, (byte) 1)));
+    }
 }

@@ -176,6 +176,7 @@ public partial class LiveSession : Node
         Movie = new Ms2.Ui.Hud.CutSceneMovie(Send) { SoundFade = Ms2Godot.FieldAudio.CutSceneSoundFade };
         fieldEntry.CubeServiceCleared += ResetCubeService;   // FUN_1410b76a0 at each field teardown (worldservice_1.cpp:10015)
         Party.BattleRecords = BattleRecords;
+        FieldProperties.UserTagSymbolApplied += () => remote?.RefreshFieldSymbols();   // FieldPropertyUserTagSymbolCli::vfunc_4
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
         BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
