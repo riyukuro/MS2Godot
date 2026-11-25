@@ -8,8 +8,9 @@ namespace Ms2Godot.Ui;
 /// UI layer 2, vfunc_52 :87). The usm's end (vfunc_31 "end", :279-284) and a load error (vfunc_30 "error", :271-275) stop
 /// the pane (vfunc_53) with nothing sent, so the server's trigger goes on at its own fallback unless the player skips (Esc asks box 0x88c,
 /// <see cref="Ms2.Ui.Hud.CutSceneMovie.AskExitOnEsc"/>; its OK runs Exit).
-/// STILL-OPEN: the movie's sound (the usm audio is not decoded), the exit button's widget, the start offset
-/// (Seek(m_68)). The swf movies are <see cref="HudScene.TickCutSceneSwf"/>.
+/// The movie's sound is the usm's ADX stream, played at <c>MuteAll ? 0 : GetMovieVolume()</c> (:397, <see cref="Ms2.Formats.Options.GameOption.Sound.EffectiveMovieVolume"/>),
+/// set before Play as the client does (see <see cref="VideoPlayerNode"/>).
+/// STILL-OPEN: the exit button's widget, the start offset (Seek(m_68), :402-404). The swf movies are <see cref="HudScene.TickCutSceneSwf"/>.
 /// </summary>
 public partial class HudScene
 {
@@ -34,6 +35,7 @@ public partial class HudScene
             if (Ms2.Ui.Hud.CutSceneMovie.IsUsm(path))
             {
                 EnsureCutSceneLayer();
+                cutSceneVideo.SoundVolume = GameOptions.Current.SoundOption.EffectiveMovieVolume;      // SetVolume before Play (:397)
                 if (cutSceneVideo.Play(assets.Packs, path, false)) { cutSceneLayer.Visible = true; GD.Print($"cut scene movie {movie.CutSceneId}: {path} plays"); }
                 else { GD.Print($"cut scene movie {movie.CutSceneId}: {path} cannot be read, stopped"); movie.Stop(); cutScenePath = null; return true; }   // vfunc_30
             }
@@ -55,6 +57,10 @@ public partial class HudScene
         AddChild(cutSceneLayer = new CanvasLayer { Layer = 11, Visible = false });   // under the message box layer (12): the exit box 0x88c shows over the movie
         cutSceneLayer.AddChild(cutSceneBack = new ColorRect { Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Stop });
         cutSceneLayer.AddChild(cutSceneVideo = new VideoPlayerNode());
+        cutSceneVideo.SoundStarted += note =>
+        {
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cut scene movie {Ms2Godot.Net.LiveSession.Instance?.Movie?.CutSceneId}: {cutScenePath} sound: {note}, player {(cutSceneVideo.SoundPlaying ? "playing" : "idle")} {cutSceneVideo.SoundVolumeDb?.ToString("F1") ?? "-"} dB");
+        };
         cutSceneVideo.Finished += () =>
         {
             var movie = Ms2Godot.Net.LiveSession.Instance?.Movie;
