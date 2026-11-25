@@ -3,6 +3,7 @@ using Ms2.Net.Packets;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
+using Ms2.Quest;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
 using Ms2.Ui.Items;
@@ -3256,5 +3257,20 @@ public class HudTests
         c.Refresh();
         Assert.That(c.ShownAction, Is.EqualTo(-1), "an empty caption hides it");
         Assert.That(new ActionTooltipController { HasPlayer = () => false }.Busy(), Is.True, "no player: busy");
+    }
+    /// <summary>TalkAction::vfunc_6: the npc's actionName (string table 0xe, keyed in 8 digits) or common 0x62d, then common 0x649
+    /// with the npc's name; "" without an npc. Table 0xf (mapNamePortalTooltip) finds a 7-digit map id by its padded key.</summary>
+    [Test]
+    public void TalkCaptionIsTheActionNameOrTheTalkTextWithTheNpcName()
+    {
+        var m = Model();
+        var t = m.Tables;
+        Assert.That(t.StringTableText(0xe, 11000004), Is.EqualTo("Trade"));
+        Assert.That(t.StringTableText(0xf, 3000002), Is.EqualTo("Twisted Pocket Realm"), "the padded key \"03000002\"");
+        string name = ClientFormat.Format(t.Common(0x649), "Mia");
+        Assert.That(name, Is.Not.Empty);
+        Assert.That(ActionCaption.Talk(t, 11000004, "Mia"), Is.EqualTo("Trade" + name));
+        Assert.That(ActionCaption.Talk(t, 11001898, "Mia"), Is.EqualTo(t.Common(0x62d) + name), "no action name: common 0x62d");
+        Assert.That(ActionCaption.Talk(t, 0, "Mia"), Is.EqualTo(""));
     }
 }

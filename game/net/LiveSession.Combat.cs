@@ -851,6 +851,50 @@ public partial class LiveSession
                 fld?.SetMouseControl(GameOptions.MouseControl.Value);
                 continue;
             }
+            if (step == "tooltip:talk")      // tooltip:talk: the own pc put in front of a talkable npc with an actionName entry and one without, until the talk (0x14) is the current action; the action tooltip shows TalkAction::vfunc_6's caption (a shot each); then the key opens the talk with the second and the tooltip hides while it is open
+            {
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                var talk = tfc?.Talk;
+                var tip = hud.ActionTooltip;
+                if (talk == null || tip == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the field's talk and the tooltip", false); continue; }
+                var tt = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
+                await until(() => live.TalkNpcs.Any(x => x.Root.Visible && Alive(x)), 60 * 30);
+                var cands = live.TalkNpcs.Where(x => x.Root.Visible && Alive(x)).ToList();
+                FieldNpcs.Placed last = null;
+                foreach (bool named in new[] { true, false })
+                {
+                    bool shown = false;
+                    foreach (var tn in cands.Where(x => (tt.StringTableText(0xe, x.Row.Id).Length > 0) == named).Take(6))
+                    {
+                        double yaw = tn.Root.Rotation.Y;
+                        var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                        live.player.GlobalPosition = tn.Position + front * 100 + new Vector3(0, 20, 0);
+                        live.player.Velocity = Vector3.Zero;
+                        live.player.Face(-front);
+                        await frames(30);
+                        await until(() => tfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Talk && talk.TalkActionNpcId == tn.Row.Id && tip.ShownAction == 0x14, 30);
+                        if (tfc.CurrentAction != Ms2.Ui.ActionKeyTarget.Talk || talk.TalkActionNpcId != tn.Row.Id) continue;
+                        string want = Ms2.Ui.ActionCaption.Talk(tt, tn.Row.Id, tn.Row.Name);
+                        GD.Print($"live: combat {step}: npc {tn.Row.Id} (action name \"{tt.StringTableText(0xe, tn.Row.Id)}\"): tooltip action {tip.ShownAction}, "
+                            + $"key \"{tip.ShownKeyText}\", caption \"{tip.ShownText}\", want \"{want}\"");
+                        Check($"{step}: an npc {(named ? "with" : "without")} an action name: the tooltip shows the talk caption (\"{want}\")",
+                            tip.ShownAction == 0x14 && want.Length > 0 && tip.ShownText == want);
+                        Shot($"tooltip_talk_{(named ? "named" : "plain")}.png");
+                        shown = true; last = tn;
+                        break;
+                    }
+                    if (!shown) Check($"{step}: an npc {(named ? "with" : "without")} an action name takes the talk", false);
+                }
+                if (last == null) continue;
+                tfc.ActivateCurrentAction();
+                await until(() => talk.Open, 60 * 5);
+                await until(() => tip.ShownAction < 0, 30);
+                Check($"{step}: the tooltip hides while the talk is open (talk {talk.Open}, tooltip action {tip.ShownAction})", talk.Open && tip.ShownAction < 0);
+                talk.End();
+                await until(() => !talk.Open, 60 * 5);
+                await frames(60);
+                continue;
+            }
             if (step.StartsWith("tooltip:gather:"))      // tooltip:gather:<interact id>: the own pc put at that gathering object (no walk) until the action key's current action is gathering (4); the action tooltip (UIActionTooltip 0x4e5c) shows the gathering caption with the key, a shot; then the key starts the gathering and the tooltip hides while it runs (StateInteraction 0x19) and is back after it
             {
                 int id = int.Parse(step[15..]);

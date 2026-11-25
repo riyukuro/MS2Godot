@@ -316,6 +316,18 @@ public sealed partial class NpcTalk : Node
     public int TalkActionNpcId { get; private set; }
     FieldNpcs.Placed talkActionNpc;    // m_nNpcId (the object) and m_strName
 
+    /// <summary>TalkAction::vfunc_6 for the action tooltip (<see cref="Ms2.Ui.ActionCaption.Talk"/>), kept while the kept npc
+    /// stays the same.</summary>
+    public string TalkActionCaption(Ms2.Ui.GameTables t)
+    {
+        if (TalkActionNpcId == 0 || t == null) return "";
+        if (talkCaptionNpc == TalkActionNpcId && talkCaption != null) return talkCaption;
+        talkCaptionNpc = TalkActionNpcId;
+        return talkCaption = Ms2.Ui.ActionCaption.Talk(t, TalkActionNpcId, talkActionNpc?.Row?.Name ?? "");
+    }
+    int talkCaptionNpc;
+    string talkCaption;
+
     /// <summary>
     /// TalkAction::vfunc_1 (@0x140957bb0, actionkeyobject.cpp:1366-1405) for the action key's poll: 0 in cube mode, while a
     /// guide event restricts talking (IsRestricted(2)), before the talk interval has passed, or in state 8 / 9 (ladder,

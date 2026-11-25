@@ -862,7 +862,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             HasPlayer = () => Ms2Godot.Net.LiveSession.Instance is { HasLocalPlayer: true },
             Current = Code,
-            Caption = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyCaption(Code()) : "",
+            Caption = ActionTooltipCaption,
             Target = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyTargetPoint(Code()) : null,
             Talking = () => GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Talk.Open: true },
             OwnState = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.OwnCurStateIdNow : 0,
@@ -874,6 +874,16 @@ public partial class HudScene : Node, IUiStageHost
         };
         actionTooltip = new MovieDialog(assets, ActionTooltip, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(actionTooltip);
+    }
+
+    /// <summary>The current action's vfunc_6: the talk's from the field's talk (TalkAction keeps its npc there), the rest from
+    /// the live session.</summary>
+    string ActionTooltipCaption()
+    {
+        if (GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is not World.FieldContents fc
+            || Ms2Godot.Net.LiveSession.Instance is not { } ls) return "";
+        int code = ls.ActionKeyCode(fc.CurrentAction);
+        return code == 0x14 ? fc.Talk?.TalkActionCaption(hudModel?.Tables) ?? "" : ls.ActionKeyCaption(code);
     }
 
     /// <summary>The tooltip's WorldToScreen: the camera's place of the field point at the movie's stage units, in whole
