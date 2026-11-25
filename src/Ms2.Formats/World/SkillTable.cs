@@ -67,6 +67,13 @@ public sealed class SkillMotion
     /// <summary>The motion's push cylinder (SkillMotionData::Load, skillleveldata.cpp:1197-1201), the force zone
     /// <see cref="ForceZone"/> reads; all 0 without the attributes.</summary>
     public PushCylinder PushCylinder;
+    /// <summary>SkillMotionData's "holdWeapon" and "faceTarget" (skillleveldata.cpp:1196, :1202; m_nHoldWeapon +0xc4,
+    /// m_nFaceTarget +0xec), both 1 without the attribute (the constructor @0x1408073a0, :1009, :1018). StateSkill::vfunc_15
+    /// @0x1417e92c0 (stateskill.cpp:1095-1102) answers HoldWeapon for the skill state (1 with no motion).</summary>
+    public int HoldWeapon = 1, FaceTarget = 1;
+    /// <summary>SkillMotionData::m_strWeaponSequenceName ("weaponSequenceName", skillleveldata.cpp:1178; "" without it): the
+    /// prefix PC::FUN_141658d20 (pc.cpp:1779-1797) returns while the PC is in a skill state (0x10) playing this motion.</summary>
+    public string WeaponSequenceName = "";
 }
 
 /// <summary>
@@ -162,8 +169,21 @@ public sealed class SkillTable
     /// <summary>An empty table, filled by <see cref="Add"/>.</summary>
     public SkillTable() { }
 
+    /// <summary>An empty table, filled by <see cref="Add"/>, whose level rows <paramref name="collect"/> picks (see
+    /// <see cref="levelRows"/>).</summary>
+    public SkillTable(Func<XElement, string, string, List<XElement>> collect) => levelRows = collect;
+
+    /// <summary>
+    /// SkillData::Load @0x1407e9130 (skilloverlapcompare.cpp:882) takes a skill's &lt;level&gt; rows through FUN_14028faa0
+    /// (pElem, "level", "value"): the available rows, one per value, the feature pick folding a value's rows (a GMS2 skill file
+    /// can list a level twice, one row under a feature; see FeatureElements.Collect). Null (a table not built over a data set)
+    /// keeps every row.
+    /// </summary>
+    readonly Func<XElement, string, string, List<XElement>> levelRows;
+
     public SkillTable(PackSet packs)
     {
+        levelRows = (parent, child, key) => Ms2.Ui.FeatureElements.Collect(packs, parent, child, key);
         var entries = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToList();
         // the recorded GMS2 client's data keeps one file per skill (skill/<nn>/<id>.xml): its root holds the rows, the id is the file name
         if (entries.Count == 0) entries = packs.List("Xml").Where(n => PerSkillId(n) != null).ToList();
@@ -196,7 +216,7 @@ public sealed class SkillTable
         if (stateAttr != null && Flag(stateAttr, "notKeepEffect")) notKeepEffect.Add(id);
         else notKeepEffect.Remove(id);
         var levels = new List<SkillLevelRow>();
-        foreach (var l in s.Elements("level"))
+        foreach (var l in levelRows != null ? levelRows(s, "level", "value") : s.Elements("level"))
         {
             var row = new SkillLevelRow { Level = int.TryParse((string)l.Attribute("value"), out int lv) ? lv : 1 };
             foreach (var m in l.Elements("motion"))
@@ -211,6 +231,9 @@ public sealed class SkillTable
                     LoopEndEffect = (string)m.Attribute("loopEndEffect"),
                 };
                 if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
+                if (int.TryParse((string)m.Attribute("holdWeapon"), out int hold)) mo.HoldWeapon = hold;
+                if (int.TryParse((string)m.Attribute("faceTarget"), out int face)) mo.FaceTarget = face;
+                if ((string)m.Attribute("weaponSequenceName") is { } weaponSeq) mo.WeaponSequenceName = weaponSeq;
                 mo.TagEffects = SkillMotion.ParseTagEffects((string)m.Attribute("strTagEffects"));
                 mo.MoveType = Int(m, "movetype");
                 mo.KeyMove = Float(m, "keyMove");

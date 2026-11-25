@@ -151,7 +151,7 @@ public sealed class GameTables
         var skillFiles = SkillFiles(packs);
         // the cast motions' table (Ms2.Formats SkillTable: motions, effects, moves) is filled from the same read, so the field
         // build's prefetch reads the files once for both and the first cast does not read them again on its frame
-        var motionRows = new Ms2.Formats.World.SkillTable();
+        var motionRows = new Ms2.Formats.World.SkillTable(collect);
         Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(SkillXml), collect,
             e => { if (int.TryParse((string)e.Attribute("id"), out int id)) motionRows.Add(id, e); },
             skillFiles.Count != 0 && Ms2.Ui.Skills.PerSkillFile.Id(skillFiles[0]) != null));
