@@ -4,6 +4,7 @@ using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
 using Ms2.Quest;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
@@ -59,15 +60,17 @@ public sealed class DungeonRoomHooks
 /// <summary>
 /// UIDungeonRoomInfo (client/ms2/uidungeonroomdialog.cpp:535-1827, ctor @0x1412a99a0): the panel on the movie's m_dungeonInfo that shows
 /// the selected room: banner, title, description, enter buttons, party status, limits, rewards and the rank panels. Its Refresh runs in
-/// the client's order. STILL-OPEN: RefreshRewardPreview (@0x1412b2250: RewardPreviewTable, ItemDropTable.GetUniqueBoxItems,
-/// RewardContentsTable, event boxes and m_slotBinder.BindItem on the 0x1c m_rewardItem slots are absent from the port); every
-/// <see cref="DungeonRoomHooks"/> member left null; the party member frame labels ("green", "blue", "red") and the sub panels' children of
-/// tabs 3 and 4 are read from the movie by their names and checked live.
+/// the client's order. STILL-OPEN: RefreshRewardPreview's event boxes (CGameRule::FUN_14047b300), its dev key fallback, the reward items of a
+/// round group (RewardContentsTable needs RewardContentItemTable and a random roll; <see cref="RefreshRewardPreview"/>) and the transfer
+/// count; every <see cref="DungeonRoomHooks"/> member left null; the party member frame labels ("green", "blue", "red") and the sub panels'
+/// children of tabs 3 and 4 are read from the movie by their names and checked live.
 /// </summary>
 public sealed class DungeonRoomInfoPanel
 {
     public const int SubCount = 5;
     public const int PartyMemberCount = 10;
+    /// <summary>nRewardItems (:578).</summary>
+    public const int RewardItemCount = 0x1c;
 
     readonly DungeonRoomDialogController owner;
     readonly object info;
@@ -75,6 +78,9 @@ public sealed class DungeonRoomInfoPanel
     readonly object[] subPanels = new object[SubCount];
     readonly object[] partyMembers = new object[PartyMemberCount];
     readonly object contents;
+    /// <summary>m_rewardItems: m_rewardItem0..0x1b of sub panel 2 (ctor :578-579); a name the movie lacks stays null.</summary>
+    readonly object[] rewardItems = new object[RewardItemCount];
+    ItemSlotBinder slotBinder;
     readonly object scroll;
     readonly object title, desc, limitText, requireCondition, cooldownIcon, favorite, enterStatus, reset, rewardText1, rewardText2,
         addExtra, rewardIcon1, rewardIcon2, enterSolo, enterParty, partySearch, clearCount, changeExpert, findHelperStatus, helpCoinInfo,
@@ -144,6 +150,8 @@ public sealed class DungeonRoomInfoPanel
             subTabs[i] = Need("m_subTabButton" + i, 337, contents);
             subPanels[i] = Need("m_subPanel" + i, 340, contents);
         }
+        if (subPanels[2] != null)
+            for (int i = 0; i < RewardItemCount; i++) rewardItems[i] = Host.Child("m_rewardItem" + i, subPanels[2]);
         desc = subPanels[0] == null ? null : Need("m_dungeonDesc", 342, subPanels[0]);
         limitText = subPanels[1] == null ? null : Need("m_limitText", 343, subPanels[1]);
         requireCondition = subPanels[1] == null ? null : Need("m_requireCondition", 344, subPanels[1]);
@@ -220,9 +228,10 @@ public sealed class DungeonRoomInfoPanel
         var room = Room;
         if (banner != null) Hooks.LoadBanner?.Invoke(banner, room.DungeonBanner);
         SetText(title, owner.GetRoomListText(room, false));
-        if (desc != null && Hooks.RoomDescription?.Invoke(room.Id) is { } text)
+        if (desc != null)
         {
-            SetHtml(desc, text);
+            // :631: m_dungeonDesc->SetTextHTMLW(CStringTable::FUN_141811980(0x15, room id)), then the height from the text
+            SetHtml(desc, Hooks.RoomDescription?.Invoke(room.Id) ?? Model.Tables.StringTableText(0x15, room.Id));
             Host.Set(desc, "height", Num(Field(desc), "textHeight") + 0x14);
         }
         Show(cooldownIcon, IsCooldown());
@@ -620,10 +629,74 @@ public sealed class DungeonRoomInfoPanel
     }
 
     /// <summary>
-    /// RefreshRewardPreview (@0x1412b2250, :1058). STILL-OPEN: the reward item slots (m_rewardItem0..0x1b of sub panel 2) need the reward
-    /// preview, drop box and reward contents tables and the slot binder, none of which exist in the port; the slots stay as the movie draws them.
+    /// UIDungeonRoomInfo::RefreshRewardPreview (@0x1412b2250, uidungeonroomdialog.cpp:966-1054): clears the binder; with a local player
+    /// and a room, takes the room's preview row (RewardPreview_dungeon.xml, <see cref="RewardPreviewTable.GetDungeon"/>) filtered by the
+    /// player's job group and level (GetValidVector), or, with no row, the unique items of each of the room's reward drop boxes
+    /// (<see cref="IndividualDropTable.GetUniqueBoxItems"/>, job group and gender 2 = any); sorts them with RewardPreviewItem::Compare
+    /// (<see cref="RewardPreviewItem.Less"/>) and fills the 0x1c slots: none leaves "" in the slot, an item that cannot be made leaves the
+    /// slot as it was, else the New or Event tag's badge, the slot shown and its binder name set.
+    /// STILL-OPEN: the event boxes (CGameRule::FUN_14047b300 with the room id and group type: no source here), the dev key fallback (keys
+    /// 0x2a and 0x1d held force the box path), the reward items of the room's round group (RewardContentsTable::GetReward per round: the
+    /// RewardContentItemTable and its random roll are not ported; the box path is what the rooms with boxes show), the transfer count of a
+    /// tradable item (SetTransferCount acts only on an item with a transfer record, which a port item has not).
     /// </summary>
-    void RefreshRewardPreview() { }
+    void RefreshRewardPreview()
+    {
+        slotBinder ??= new ItemSlotBinder(Model, "DungeonRoomDialog") { IconType = 0x403 };   // ctor :537-539
+        slotBinder.Clear();
+        if (owner.LocalPlayer() is not { } me || Room == null) return;
+        var tables = Model.Tables;
+        var items = PreviewItems(tables, Room, owner.LocalJobGroup(), me.Level);
+        for (int i = 0; i < rewardItems.Length; i++)
+        {
+            var slot = rewardItems[i];
+            if (slot == null) continue;
+            if (i >= items.Count) { Host.Invoke(slot, "setData", ""); continue; }
+            var item = Item.Create(tables.Items, items[i].ItemId, items[i].Rank);
+            if (item == null) continue;                         // FUN_14052b130 gave none: the slot stays as it was
+            if (items[i].Tag == RewardPreviewItemTag.New) item.IsNew = true;
+            else if (items[i].Tag == RewardPreviewItemTag.Event) item.IsEvent = true;
+            Host.SetVisible(slot, true);
+            Host.Invoke(slot, "setData", slotBinder.BindItem(item));
+        }
+    }
+
+    /// <summary>
+    /// The items RefreshRewardPreview lists for a room, sorted (:966-1054, see <see cref="RefreshRewardPreview"/>): the room's preview row
+    /// filtered by <paramref name="job"/> and <paramref name="level"/>, else the unique items of each of its reward drop boxes.
+    /// </summary>
+    public static List<RewardPreviewItem> PreviewItems(GameTables tables, DungeonRoomData room, int job, int level)
+    {
+        var items = new List<RewardPreviewItem>();
+        if (tables.RewardPreviews.GetDungeon((int) room.Id) is { } preview)
+        {
+            foreach (var i in preview) if (i.IsValid(job, level)) items.Add(i);
+        }
+        else
+        {
+            var drops = new List<ItemDropEntry>();
+            foreach (var box in room.RewardDropBoxIds)
+            {
+                drops.Clear();
+                if (tables.IndividualDrops.GetUniqueBoxItems(tables.Items, (int) box, job, 2, drops))
+                    foreach (var d in drops) items.Add(RewardPreviewItem.Of(d));
+            }
+        }
+        SortPreview(tables.Items, items);
+        return items;
+    }
+
+    /// <summary>The sort of :1020 (std::sort over RewardPreviewItem::Compare); an insertion sort, as the compare is false for an item without data.</summary>
+    static void SortPreview(ItemDataTable table, List<RewardPreviewItem> items)
+    {
+        for (int i = 1; i < items.Count; i++)
+        {
+            var x = items[i];
+            int j = i - 1;
+            while (j >= 0 && RewardPreviewItem.Less(table, x, items[j])) { items[j + 1] = items[j]; j--; }
+            items[j + 1] = x;
+        }
+    }
 
     // ---- mission rank ----
 

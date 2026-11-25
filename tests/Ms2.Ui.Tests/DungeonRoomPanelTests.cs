@@ -537,4 +537,56 @@ public class DungeonRoomPanelTests
         e.C.OnRoomPacket53(9);
         Assert.That(Rt.ToBoolean(e.Host.Get(search, "selected")), Is.True);
     }
+
+    // ---- reward preview and description ----
+
+    static List<Ms2.Ui.Items.ItemInfoSlot> RewardSlots(Env e) =>
+        e.Model.ItemSlots.Where(k => k.Key.StartsWith("DungeonRoomDialog_", StringComparison.Ordinal))
+            .OrderBy(k => int.Parse(k.Key.Substring("DungeonRoomDialog_".Length))).Select(k => k.Value).ToList();
+
+    [Test]
+    public void TheRewardGridListsTheRoomsItemsInTheClientsOrder()
+    {
+        var room = Room(r => r.GroupType > 0 && r.MaxUserCount > 0 && r.RewardDropBoxIds.Count > 0 &&
+                             DungeonRoomInfoPanel.PreviewItems(Tables(), r, 0, 60).Count > 1, "reward items");
+        var e = Make(room);
+        var expected = DungeonRoomInfoPanel.PreviewItems(Tables(), room, 0, 60).Take(DungeonRoomInfoPanel.RewardItemCount).ToList();
+        var slots = RewardSlots(e);
+        Assert.That(slots.Select(s => s.Item.ItemId), Is.EqualTo(expected.Select(x => x.ItemId)));
+        Assert.That(slots.All(s => s.IconType == 0x403), Is.True, "the binder's icon type (ctor :537)");
+        var panel2 = Sub(e, "m_subPanel2");
+        for (int i = 0; i < expected.Count; i++) Assert.That(Visible(e, Child(e, "m_rewardItem" + i, panel2)), Is.True, "slot " + i);
+        // a second refresh unbinds the first one's slots before binding its own
+        e.Panel.Refresh();
+        Assert.That(RewardSlots(e).Select(s => s.Item.ItemId), Is.EqualTo(expected.Select(x => x.ItemId)));
+    }
+
+    [Test]
+    public void TheRewardGridFollowsTheRoomItIsRefreshedFor()
+    {
+        var rooms = Rooms().RoomList.Where(r => r.GroupType > 0 && r.MaxUserCount > 0 && r.RewardDropBoxIds.Count > 0).Take(40).ToList();
+        if (rooms.Count < 2) Assert.Ignore("fewer than two rooms with reward boxes");
+        var e = Make(rooms[0]);
+        foreach (var r in rooms)
+        {
+            e.Panel.SetRoom(r);
+            e.Panel.Refresh();
+            var expected = DungeonRoomInfoPanel.PreviewItems(Tables(), r, 0, 60).Take(DungeonRoomInfoPanel.RewardItemCount).Select(x => x.ItemId);
+            Assert.That(RewardSlots(e).Select(s => s.Item.ItemId), Is.EqualTo(expected), $"room {r.Id}");
+        }
+    }
+
+    [Test]
+    public void TheDescriptionFieldHoldsTheFieldEntranceText()
+    {
+        var room = Room(r => r.GroupType > 0 && r.MaxUserCount > 0 && Tables().StringTableText(0x15, r.Id).Length > 0, "a description");
+        var e = Make(room);
+        var desc = Sub(e, "m_subPanel0") is { } sub ? Child(e, "m_dungeonDesc", sub) : null;
+        Assert.That(desc, Is.Not.Null);
+        // the field holds the table's text, not the movie's list index text: its first characters (tags and blanks dropped) lead the field
+        static string Bare(string t) => new string(System.Text.RegularExpressions.Regex.Replace(t, "<[^>]*>", "").Where(c => !char.IsWhiteSpace(c)).ToArray());
+        string table = Bare(Tables().StringTableText(0x15, room.Id)), shown = Bare(Text(e, desc));
+        Assert.That(shown, Does.StartWith(table.Substring(0, Math.Min(table.Length, 6))), "not the list index text of the movie");
+        Assert.That(Rt.ToNumber(e.Host.Get(desc, "height")), Is.GreaterThan(0x14));
+    }
 }

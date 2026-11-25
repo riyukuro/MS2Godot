@@ -100,6 +100,7 @@ public partial class HudScene
             NoticeText = SystemNoticeText,
             Notice = key => SystemNoticeText(tables.Common(key) ?? ""),
             LocalPlayer = () => hudModel.HasLocalPlayer ? ((ushort, uint)?)((ushort)hudModel.Player.Level, (uint)(live?.Me.User?.GearScore ?? 0)) : null,
+            LocalJobGroup = () => hudModel.Player.JobGroup,
         };
         c.Hooks.LocalName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : "";
         c.Hooks.SelfCharacterId = () => live?.CharacterId ?? PartyFixture.SelfCharacterId;

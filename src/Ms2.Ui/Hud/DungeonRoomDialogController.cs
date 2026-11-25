@@ -92,6 +92,8 @@ public sealed class DungeonRoomDialogController : UiController
     /// <summary>The local player's level and gear score (vfunc_78, FUN_14152ea50); null without a local player.
     /// STILL-OPEN: the gear score has no source in the model yet, so the default is level only.</summary>
     public Func<(ushort Level, uint GearScore)?> LocalPlayer = () => null;
+    /// <summary>PC::GetJobGroupId of the local player (1 Beginner, 10 Knight ...), which the reward preview filters by.</summary>
+    public Func<int> LocalJobGroup = () => 0;
     /// <summary>FUN_140d73ff0: the system notice of a common string key.</summary>
     public Action<string> Notice = _ => { };
 
