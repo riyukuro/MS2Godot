@@ -102,6 +102,8 @@ public sealed class QuestGuideController : UiController
     // ---- UIQuestEventListener: the quest manager's events (UIQuestEventDispatcher, questmanager_2.cpp:1004-1083) --------------
     // The dispatcher's vfunc_1 / 2 / 3 (@0x141aa88e0, @0x141aa8a30, @0x141aa8b70) send the quest types 3, 4, 5, 7 and 10 to slots
     // of their own (8-12; the tracker's slot 9 updates the dungeon mission, not here); the other types go to slots 1, 2 and 3.
+    // A start queued before the movie is up is listed by OnLoadComplete's BuildAll and added again on the next frame; the
+    // movie's createEntity takes an entity of the same id off first (hasEntity, removeEntity), so it is not listed twice.
 
     /// <summary>OnQuest mode 2 (a quest started), vfunc_o178_1 (@0x141aab3b0): a tracked quest is queued for adding; a main
     /// quest (type 0) marks the recommendation dirty.</summary>
@@ -147,8 +149,10 @@ public sealed class QuestGuideController : UiController
         else RemoveQuestEntity(id);
     }
 
-    /// <summary>OnQuest mode 5 (the answer to a give-up), vfunc_o178_7 (@0x141aab4d0): AddQuestEntity of the id (nothing when
-    /// the quest is gone).</summary>
+    /// <summary>OnQuest mode 5, vfunc_o178_7 (@0x141aab4d0): AddQuestEntity of the id. With result 0 the quest manager has
+    /// just dropped the quest (RemoveQuest(id, 1), questmanager_2.cpp:1050-1053), so AddQuestEntity finds nothing
+    /// (uiquesteventlistener.cpp:805) and an entity already listed stays, as in the client. A give-up is answered with
+    /// mode 6 (<see cref="OnQuestRemoved"/>).</summary>
     public void OnQuestResult(int id, int result) => AddQuestEntity(id);
 
     /// <summary>FUN_141aacf20: the whole list is built again on the next frame.</summary>

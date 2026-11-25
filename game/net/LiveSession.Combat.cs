@@ -290,6 +290,21 @@ public partial class LiveSession
                 await frames(60 * int.Parse(step[5..]));
                 continue;
             }
+            if (step.StartsWith("giveup:"))      // giveup:<quest id>: the quest log's give-up as its message box sends it (Quest 6, uiquestdialog.cpp:1813 and :1826), then until the server's answer
+            {
+                int id = int.Parse(step[7..]);
+                live.SendTalk(new Ms2.Net.Packets.QuestAbandonRequest(id));
+                await until(() => live.Quests.Get(id) is not { State: 1 }, 60 * 10); await frames(60);
+                Check($"quest {id} is given up (state {live.Quests.Get(id)?.State})", live.Quests.Get(id) is not { State: 1 });
+                continue;
+            }
+            if (step.StartsWith("portalstate:"))      // portalstate:<portal id>: the field's portal of that id as the masks left it (shown, glow)
+            {
+                int id = int.Parse(step[12..]);
+                var p = live.Portals?.All.FirstOrDefault(x => x.Id == id);
+                GD.Print($"live: combat portal {id} in map {live.Portals?.FieldId}: {(p == null ? "none" : $"shown {p.Shown} glow {p.Glow} target {p.TargetMap}")}");
+                continue;
+            }
             if (step.StartsWith("shot:"))      // shot:<name>: a shot of the frame as it is
             {
                 Shot(step[5..] + ".png");

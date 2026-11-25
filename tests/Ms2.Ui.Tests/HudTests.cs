@@ -1865,6 +1865,86 @@ public class HudTests
     }
 
     [Test]
+    public void QuestGuideListsAQuestStartedBeforeItsMovieOnceAndKeepsAForcedRemoval()
+    {
+        // a start before the movie is up: queued, listed by the load's BuildAll, then added again on the next frame; the movie's
+        // createEntity takes the entity of that id off first, so the quest is listed once
+        var m = Model();
+        var t = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
+        t.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest id=""1""><basic questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
+            <quest id=""2""><basic questType=""1"" standardLevel=""4"" /><condition type=""npc"" code=""7"" value=""2"" /></quest></ms2>"));
+        t.BuildIndexes();
+        t.AddDescriptions(System.Xml.Linq.XDocument.Parse(@"<ms2><quest questID=""1"" name=""First"" /><quest questID=""2"" name=""Second"" /></ms2>"));
+        static Ms2.Quest.QuestRecord Q(int id, int tracking) => new(id, 1, id * 10, 0, tracking, false, false, new long[] { 0 });
+        var state = new ChangingQuests();
+        state.Set(Q(1, 1));
+        state.Set(Q(2, 1));
+        var notices = new List<int>();
+        var c = new QuestGuideController { Table = t, State = state, Notice = notices.Add };
+        c.OnQuestStarted(2);
+        var h = Load(c, m);
+        var container = (AsContainer)h.Get(h.Entity, "m_dragContainer");
+        int Listed() => container.Children.Count(e => Rt.ToString(h.Get(e, "currentLabel")) != "hide");
+        int Named(string name) => AllTexts(container).Count(x => x.Contains(name));
+        Assert.That(Listed(), Is.EqualTo(2), "the load lists both tracked quests");
+        c.Tick();
+        Assert.That(Listed(), Is.EqualTo(2), "the start seen before the load is listed once");
+        Assert.That(Named("Second (Lv. 4)"), Is.EqualTo(1));
+        Assert.That(notices, Is.Empty);
+        // the movie drops one entity per removeEntity: with a second entity of the id, one would stay
+        state.List.RemoveAll(r => r.Id == 2);
+        c.OnQuestRemoved(2);
+        Assert.That(Listed(), Is.EqualTo(1), "no second entity of the quest");
+        state.Set(Q(2, 1));
+        c.OnQuestTracking(2);
+        Assert.That(Listed(), Is.EqualTo(2));
+
+        // OnQuest mode 5 result 0 (the epic restart's forced removal): RemoveQuest(id, 1) then slot 7's AddQuestEntity, which
+        // finds nothing; the client leaves the entity listed
+        state.List.RemoveAll(r => r.Id == 2);
+        c.OnQuestResult(2, 0);
+        c.Tick();
+        Assert.That(Listed(), Is.EqualTo(2), "mode 5 alone takes no entity off");
+        // a give-up is answered with mode 6: slot 5 takes it off at once
+        c.OnQuestRemoved(2);
+        Assert.That(Listed(), Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void QuestGuideTickAllocatesNothingWithEmptyQueues()
+    {
+        // vfunc_15 (uiquesteventlistener.cpp:424) runs every frame: with nothing queued it only checks the three queues
+        var m = Model();
+        var t = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
+        t.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest id=""1""><basic questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""3"" /></quest></ms2>"));
+        t.BuildIndexes();
+        t.AddDescriptions(System.Xml.Linq.XDocument.Parse(@"<ms2><quest questID=""1"" name=""First"" /></ms2>"));
+        var state = new ChangingQuests();
+        state.Set(new(1, 1, 10, 0, 1, false, false, new long[] { 0 }));
+        var c = new QuestGuideController { Table = t, State = state };
+        var h = Load(c, m);
+        c.Tick();
+        long used = Alloc.Least(() => { for (int i = 0; i < 400; i++) c.Tick(); });
+        Assert.That(used, Is.EqualTo(0), "bytes over 400 frames with empty queues");
+
+        // a mode 3 progress packet: one UpdateQuestEntity (the entity's data and updateEntity in the movie)
+        long n = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long refresh = Alloc.Least(() =>
+        {
+            for (int i = 0; i < 50; i++) { state.Set(new(1, 1, 10, 0, 1, false, false, new long[] { ++n % 3 })); c.OnQuestProgress(1); }
+        }) / 50;
+        sw.Stop();
+        TestContext.Out.WriteLine($"quest guide: empty tick {used} B / 400 frames; mode 3 refresh {refresh} B each, {sw.Elapsed.TotalMilliseconds / 250:F3} ms each (5 windows of 50)");
+        // measured 129992 B on both data sets: the entity data and the movie's updateEntity redraw
+        Assert.That(refresh, Is.LessThan(192 * 1024), "bytes for one progress refresh");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void QuestGuideSkipsMissionTypeQuests()
     {
         // CQuestManager::AddQuest (questmanager_2.cpp:843) keeps quest types 3, 4, 5, 7 and 10 (the missions, which includes the
