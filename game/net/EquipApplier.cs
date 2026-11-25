@@ -597,6 +597,7 @@ public sealed class EquipApplier
         var dummy = DummyOf(asset, gender, sheathedTarget);
         // the item's Point01 node (CEquipItem::FindPoint01Node, equipitem.cpp:604-613), where attach type 3 / 4 effect parts hang
         int pointBone = md.Bones.FindIndex(b => (b.FileName ?? b.Name) == Ms2.Formats.World.EffectAttachRule.WeaponPointNode);
+        bool selfNodesMade = false;
         foreach (var m in md.Meshes)
         {
             string meshName = $"eq{item.Id}_{m.Name}";
@@ -647,6 +648,11 @@ public sealed class EquipApplier
                 var baseLocal = rel is { } r ? r : (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 mi.Transform = targetLocal * dummy * baseLocal;
                 att.AddChild(mi);
+                if (!selfNodesMade && rel != null)
+                {
+                    selfNodesMade = true;
+                    SelfNodes(att, md, selfName, targetLocal * dummy);
+                }
                 Transform3D? point = pointBone >= 0
                     ? (parentWorld * ModelBuilder.ToGodot(m.Local)).AffineInverse() * ModelBuilder.ToGodot(md.Bones[pointBone].World) : null;
                 weaponHooks?.Add(new WeaponHook(att, mi, bone, targetLocal, baseLocal, point));
@@ -658,6 +664,22 @@ public sealed class EquipApplier
     }
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, WeaponRig> rigs = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Skeleton3D, Dictionary<EquipSlot, Skeleton3D>> kfmWeapons = new();
+
+    /// <summary>
+    /// The Point01 node of a kfm weapon (an orb: no rigid mesh, so not on the <see cref="WeaponRig"/>) worn in
+    /// <paramref name="slot"/> on the body skeleton <paramref name="body"/>: a bone of the weapon model's own skeleton
+    /// (CEquipItem::FindPoint01Node, equipitem.cpp:604-613, asks every model of the item). False when none is worn there.
+    /// </summary>
+    public static bool KfmWeaponPoint(Skeleton3D body, EquipSlot slot, out Skeleton3D weapon, out int bone)
+    {
+        weapon = null; bone = -1;
+        if (body == null || !kfmWeapons.TryGetValue(body, out var bySlot) || !bySlot.TryGetValue(slot, out var w)) return false;
+        if (!GodotObject.IsInstanceValid(w) || !w.IsInsideTree()) { bySlot.Remove(slot); return false; }
+        bone = w.FindBone(Ms2.Formats.World.EffectAttachRule.WeaponPointNode);
+        weapon = bone >= 0 ? w : null;
+        return bone >= 0;
+    }
     /// <summary>The weapon stance rig built for a character visual during <see cref="Apply"/>; null when it wears no weapon.</summary>
     public static WeaponRig RigOf(Node3D visual) => visual != null && rigs.TryGetValue(visual, out var r) ? r : null;
 
@@ -914,6 +936,8 @@ public sealed class EquipApplier
         root.Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero).AffineInverse();
         att.AddChild(root);
         var ps = root.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
+        if (!pony && item.Slot is EquipSlot.RH or EquipSlot.LH)
+            kfmWeapons.GetOrCreateValue(skel)[item.Slot] = ps;
         string selfName = (string)asset.Attribute("selfnode");
         // efd::Matrix3::FromEulerAnglesXYZ = MakeXRotation(x) * MakeYRotation(y) * MakeZRotation(z), and Gamebryo's
         // Make*Rotation turn clockwise (MakeXRotation puts +sin at [1][2]: Foundation/efd/Win32/Matrix3_Win32.cpp:76-107,
@@ -955,6 +979,29 @@ public sealed class EquipApplier
         var made = root.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
         foreach (var mi in made) mi.SetMeta("mesh", mi.Name.ToString());
         return made;
+    }
+
+    /// <summary>The marker a worn item's self node carries: the node's name in the item file (<see cref="SelfNodes"/>).</summary>
+    public static readonly StringName ItemNodeMeta = "item_node";
+
+    /// <summary>
+    /// The item's self nodes that are not meshes (CP of a cap whose meshes hang under it), each an empty node under the attach
+    /// node at its local transform there (<paramref name="onAttach"/> times the node's own, as its meshes are placed),
+    /// named in <see cref="ItemNodeMeta"/>: an attach type 2 effect part names such a node (FUN_14154d410 walks the
+    /// owner's nodes for the name) and hangs on its parent at it. Freed with the attach node.
+    /// </summary>
+    static void SelfNodes(BoneAttachment3D att, ModelData md, string selfName, Transform3D onAttach)
+    {
+        bool Self(int b) => md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal);
+        bool Under(int b) { for (int u = md.Bones[b].Parent; u >= 0; u = md.Bones[u].Parent) if (Self(u)) return true; return false; }
+        for (int b = 0; b < md.Bones.Count; b++)
+        {
+            if (!Self(b) || Under(b)) continue;
+            string name = md.Bones[b].FileName ?? md.Bones[b].Name;
+            var n = new Node3D { Name = $"{att.Name}_node_{name}".ValidateNodeName(), Transform = onAttach * ModelBuilder.ToGodot(md.Bones[b].Rest) };
+            n.SetMeta(ItemNodeMeta, name);
+            att.AddChild(n);
+        }
     }
 
     /// <summary>

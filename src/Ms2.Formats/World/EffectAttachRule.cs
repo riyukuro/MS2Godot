@@ -70,6 +70,7 @@ public static class EffectAttachRule
     public static bool Separate(EffectPart part) => !(part.UpdateTranslate && part.UpdateRotation && part.UpdateScale);
 
     /// <summary>FUN_14154c580 (:1166-1171): without applyNodeTransform the root's local transform becomes the inverse of the
-    /// target's world times its own, so it starts at its own transform in the world.</summary>
+    /// target's world times its own, so it starts at its own transform in the world. With a SeparateNode (<see cref="Separate"/>)
+    /// the root is that node, whose world ignores its local (separatenode.cpp:56-70), so the part stays at the node.</summary>
     public static bool Relative(EffectPart part) => !part.ApplyNodeTransform;
 }

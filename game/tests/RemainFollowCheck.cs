@@ -29,6 +29,7 @@ public partial class RemainFollowCheck : Node3D
     bool done;
     readonly List<string> fails = new();
     Node3D field, fx, fieldFx, worldFx, emptySeparate, movedRoot;
+    EffectDummyNode3D idleDummy;
     Vector3 fxOnRoot;
     static readonly NodePath EffectRoot = "Effect";
     const string WorldXml = "ch/weapon/staff/eff_staff_attack01_remain_01.xml";
@@ -138,16 +139,21 @@ public partial class RemainFollowCheck : Node3D
 
         Places();
         Weapons(packs, builder);
+        WornItems(packs, builder);
+        ScaledNpc(table);
     }
 
-    /// <summary>The starting weapons of the eleven jobs (KMS2 table/job.xml startItems), worn in the right hand here.</summary>
+    /// <summary>The starting weapons of the eleven jobs (KMS2 table/job.xml startItems), worn in the right hand here; the
+    /// orb (15600514) is a kfm model, the others rigid meshes.</summary>
     static readonly int[] StartWeapons = { 13100225, 13200220, 13300219, 13400218, 15000224, 15100216, 15200223, 15300199, 15400274, 15500514, 15600514 };
 
     /// <summary>
     /// Types 3 and 4 (AttachToEquipSlot, nifeffectparam.cpp:1142-1151) on a PC wearing each job's starting weapon in the
-    /// right hand (EquipApplier.Apply): a type 4 part hangs on that weapon's Point01 node (FindPoint01Node,
-    /// equipitem.cpp:604-613), within the bounds of that weapon's meshes; a type 3 part with no left hand weapon
-    /// makes none. At least one weapon has the node.
+    /// right hand (EquipApplier.Apply): every one has a Point01 node (FindPoint01Node, equipitem.cpp:604-613); a type 4
+    /// part hangs on it (one shared node under a rigid weapon's mesh, the bone of a kfm weapon's own skeleton), within the
+    /// bounds of that weapon's meshes; with update
+    /// bits not all set its SeparateNode is under that node, at it; without applyNodeTransform it starts at the world
+    /// origin (FUN_14154c580 :1166-1171); a type 3 part with no left hand weapon makes none.
     /// </summary>
     void Weapons(PackSet packs, ModelBuilder builder)
     {
@@ -163,36 +169,145 @@ public partial class RemainFollowCheck : Node3D
             actor.SetMeta(EffectAttach.PcMeta, true);
             new EquipApplier(packs, builder) { Palettes = palettes }.Apply(visual, md, 0, new[] { new EquipItem { Id = id, Slot = EquipSlot.RH } });
             var rig = EquipApplier.RigOf(visual);
-            if (rig != null) worn++;
-            if (rig != null && rig.WeaponPoint(EquipSlot.RH, out var mesh, out _))
+            var body = EffectAttach.SkeletonOf(visual);
+            MeshInstance3D mesh = null;
+            bool rigid = rig != null && rig.WeaponPoint(EquipSlot.RH, out mesh, out _);
+            Skeleton3D kfmSk = null;
+            bool kfm = !rigid && EquipApplier.KfmWeaponPoint(body, EquipSlot.RH, out kfmSk, out _);
+            if (rig != null || kfm) worn++; else GD.Print($"remain follow: starting weapon {id} is not worn");
+            if (rigid || kfm)
             {
                 withPoint++;
                 bool hung = EffectAttach.Hang(new EffectPart { AttachType = "WeaponR", ApplyNodeTransform = true }, actor, out var h);
-                Check(hung && h.On == EffectHang.WeaponPoint && h.Host == mesh, $"item {id}: a type 4 part hung on {h.On} {h.Host?.Name}, not {mesh.Name}");
+                Check(hung && h.On == EffectHang.WeaponPoint && (rigid ? h.Host.GetParent() == mesh : h.Host is BoneAttachment3D { BoneName: "Point01" } && h.Host.GetParent() == kfmSk),
+                    $"item {id}: a type 4 part hung on {h.On} {h.Host?.Name}, not on its weapon's Point01");
                 if (hung)
                 {
                     var at = (h.Host.GlobalTransform * h.Place).Origin;
                     var box = Bounds(visual, $"eq{id}_", null);
                     Check(box is { } b && b.Grow(10).HasPoint(at), $"item {id}: the type 4 part starts at {at}, outside its weapon {box}");
+                    Check(EffectAttach.Hang(new EffectPart { AttachType = "WeaponR", ApplyNodeTransform = true, UpdateRotation = false }, actor, out var hs)
+                        && hs.Host is Ui.SeparateNode3D && hs.Host.GetParent() == h.Host && (hs.Host.GlobalTransform * hs.Place).Origin.DistanceTo(at) < 1e-3f,
+                        $"item {id}: a type 4 part with rotation off did not hang on a SeparateNode at the Point01 node");
+                    Check(EffectAttach.Hang(new EffectPart { AttachType = "WeaponR" }, actor, out var hr) && Near(hr.Host.GlobalTransform * hr.Place, Transform3D.Identity),
+                        $"item {id}: a type 4 part without applyNodeTransform starts at {(hr.Host?.GlobalTransform ?? default) * hr.Place}, not the world origin");
                 }
             }
             Check(!EffectAttach.Hang(new EffectPart { AttachType = "WeaponL", ApplyNodeTransform = true }, actor, out _), $"item {id}: a type 3 part hung with no left hand weapon");
             actor.QueueFree();
         }
         GD.Print($"remain follow: {withPoint} of {worn} worn starting weapons have a Point01 node");
-        Check(withPoint > 0, "no starting weapon has a Point01 node");
+        Check(worn == StartWeapons.Length && withPoint == worn, $"{withPoint} of {worn} worn of {StartWeapons.Length} starting weapons have a Point01 node");
     }
 
-    /// <summary>The global bounds of the meshes under <paramref name="n"/> whose names start with <paramref name="prefix"/>.</summary>
-    static Aabb? Bounds(Node n, string prefix, Aabb? into)
+    /// <summary>
+    /// A real npc whose row scales its model (NpcLayer puts row.Scale on the visual): each of its dummies whose parent is the
+    /// model root or a bone takes the parent's scale only with applyLocalScale (DummyWorld.Resolve): its frame's scale is the
+    /// row's, times the parent's with applyLocalScale, and its offset from the parent the row's translate, likewise scaled;
+    /// a type 1 part on it hangs where a type 0 part reads it. The npc picked is the first scaled one with a dummy without
+    /// applyLocalScale under the model root or a bone, preferring an ordinary (not world) one.
+    /// </summary>
+    void ScaledNpc(NpcTable table)
     {
-        if (n is MeshInstance3D m && m.Name.ToString().StartsWith(prefix, System.StringComparison.Ordinal))
+        bool Free(EffectDummy d) => !d.ApplyLocalScale && !d.ParentNode.StartsWith("Eff_", System.StringComparison.Ordinal);
+        NpcRow pick = null;
+        int pickRank = -1;
+        foreach (var r in table.Rows)
+        {
+            if (System.Math.Abs(r.Scale - 1f) < 0.25f || string.IsNullOrEmpty(r.Kfm)) continue;
+            int rank = 0;
+            foreach (var d in r.EffectDummies) if (Free(d)) rank = System.Math.Max(rank, d.ApplyWorldTransform ? 1 : 2);
+            if (rank > pickRank || rank == pickRank && pick != null && r.Id < pick.Id) { pick = r; pickRank = rank; }
+        }
+        Check(pick != null && pickRank > 0, "no scaled npc row with a dummy without applyLocalScale");
+        if (pick == null) return;
+        npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 3, NpcId = pick.Id }));
+        var root = npcs.RootOf(3);
+        var sk = root != null ? EffectAttach.SkeletonOf(root) : null;
+        var model = sk?.GetParentOrNull<Node3D>();
+        Check(model != null, $"npc {pick.Id} built no model");
+        if (model == null) return;
+        root.GlobalTransform = new Transform3D(new Basis(Vector3.Up, 0.7f), new Vector3(-300, 0, 120));
+        int checkedRows = 0, free = 0;
+        foreach (var d in pick.EffectDummies)
+        {
+            Transform3D parentWorld;
+            if (d.ParentNode == "Scene Root") parentWorld = model.GlobalTransform;
+            else if (sk.FindBone(d.ParentNode) is int b and >= 0) parentWorld = sk.GlobalTransform * sk.GetBoneGlobalPose(b);
+            else continue;
+            var w = combat.WorldPlace(new EffectPart { ApplyNodeTransform = true, ParentNode = d.Name }, root);
+            w = field.GlobalTransform * w * EffectAttach.YUp.AffineInverse();    // back to the dummy's own frame
+            float ps = d.ApplyLocalScale ? parentWorld.Basis.Scale.X : 1f;
+            var t = new Vector3(d.Translate.X, d.Translate.Y, d.Translate.Z);
+            float want = d.ApplyWorldTransform ? new Vector3(t.X, t.Y, t.Z * ps).Length() : t.Length() * ps;
+            float off = w.Origin.DistanceTo(parentWorld.Origin);
+            Check(Mathf.Abs(w.Basis.Scale.X - d.Scale * ps) < 1e-3f, $"npc {pick.Id} (scale {pick.Scale}) dummy {d.Name}: scale {w.Basis.Scale.X}, not {d.Scale * ps}");
+            Check(Mathf.Abs(off - want) < 0.05f, $"npc {pick.Id} (scale {pick.Scale}) dummy {d.Name}: {off} from its parent, not {want}");
+            Check(EffectAttach.Hang(new EffectPart { AttachToNode = true, ParentNode = d.Name, ApplyNodeTransform = true }, root, out var h) && h.On == EffectHang.Dummy
+                && Near(h.Host.GlobalTransform * h.Place, field.GlobalTransform * combat.WorldPlace(new EffectPart { ApplyNodeTransform = true, ParentNode = d.Name }, root)),
+                $"npc {pick.Id} dummy {d.Name}: a type 1 part did not hang where a type 0 part reads it");
+            checkedRows++;
+            if (!d.ApplyLocalScale) free++;
+        }
+        GD.Print($"remain follow: scaled npc {pick.Id} (scale {pick.Scale}): {checkedRows} dummies checked, {free} without applyLocalScale");
+        Check(free > 0, $"npc {pick.Id}: no dummy without applyLocalScale was checked");
+        npcs.Remove(3, false);
+    }
+
+    /// <summary>
+    /// Type 2 (FUN_14154c260, nifeffectparam.cpp:1118-1137) on real worn items whose idle effects have type 2 parts, one
+    /// per way the name is found (EffectAttachSweepTests): the male glow star cap's CP is a mesh, the female one's CP its
+    /// self node (an empty node, its meshes under it), the glow star cape's MT_Point01 a node of its kfm model. Each part
+    /// hangs on the parent of that node, at it, without its own transform.
+    /// </summary>
+    void WornItems(PackSet packs, ModelBuilder builder)
+    {
+        var palettes = new Look.ColorPalettes(packs);
+        foreach (var (id, gender, slot, name) in new[] { (11300951, 0, EquipSlot.CP, "CP"), (11300952, 1, EquipSlot.CP, "CP"), (11820387, 0, EquipSlot.MT, "MT_Point01") })
+        {
+            var md = builder.LoadModel(gender == 0 ? "male/m_body.nif" : "female/f_body.nif");
+            var actor = new Node3D { Position = new Vector3(id % 1000, 0, 50) };
+            field.AddChild(actor);
+            var visual = builder.Build(md, gender == 0 ? "Male" : "Female");
+            actor.AddChild(visual);
+            actor.SetMeta(EffectAttach.PcMeta, true);
+            new EquipApplier(packs, builder) { Palettes = palettes }.Apply(visual, md, gender, new[] { new EquipItem { Id = id, Slot = slot } });
+            bool hung = EffectAttach.Hang(new EffectPart { AttachType = "Mesh", ParentNode = name, ApplyNodeTransform = true }, actor, out var h);
+            Check(hung && h.On == EffectHang.ItemMesh && !h.OwnTransform, $"item {id}: a type 2 part on [{name}] hung on {h.On}");
+            if (hung && slot == EquipSlot.CP)
+            {
+                var box = Bounds(visual, $"eq{id}_", null);
+                var at = (h.Host.GlobalTransform * h.Place).Origin;
+                Check(box is { } b && b.Grow(10).HasPoint(at), $"item {id}: the type 2 part on [{name}] starts at {at}, outside the item {box}");
+            }
+            else if (hung)
+            {
+                // the kfm cape is skinned (no posed bounds): the part is at its MT_Point01 bone, by the spine it hangs on
+                var body = EffectAttach.SkeletonOf(visual);
+                var itemSk = h.Host as Skeleton3D ?? h.Host.GetParentOrNull<Skeleton3D>();
+                int b = itemSk?.FindBone(name) ?? -1;
+                Check(b >= 0 && Near(h.Host.GlobalTransform * h.Place, itemSk.GlobalTransform * itemSk.GetBoneGlobalPose(b) * EffectAttach.YUp),
+                    $"item {id}: the type 2 part on [{name}] is not at the item's node");
+                var spine = body.GlobalTransform * body.GetBoneGlobalPose(body.FindBone("Bip01 Spine1"));
+                float d = (h.Host.GlobalTransform * h.Place).Origin.DistanceTo(spine.Origin);
+                Check(d < 40f, $"item {id}: the type 2 part on [{name}] is {d} from Bip01 Spine1");
+            }
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>The global bounds of the meshes under <paramref name="n"/> whose names, or an ancestor's (a kfm model's root),
+    /// start with <paramref name="prefix"/>.</summary>
+    static Aabb? Bounds(Node n, string prefix, Aabb? into, bool under = false)
+    {
+        under |= n.Name.ToString().StartsWith(prefix, System.StringComparison.Ordinal);
+        if (n is MeshInstance3D m && under)
         {
             var box = m.GlobalTransform * m.GetAabb();
             into = into is { } b ? b.Merge(box) : box;
         }
         int count = n.GetChildCount();
-        for (int i = 0; i < count; i++) into = Bounds(n.GetChild(i), prefix, into);
+        for (int i = 0; i < count; i++) into = Bounds(n.GetChild(i), prefix, into, under);
         return into;
     }
 
@@ -259,6 +374,8 @@ public partial class RemainFollowCheck : Node3D
             new EffectDummy { Name = "Eff_Body_World", ParentNode = "Bip01 Spine1", ApplyWorldTransform = true, ApplyLocalScale = false },
             new EffectDummy { Name = "Eff_UI", ParentNode = "Scene Root", ApplyWorldTransform = true, ApplyLocalScale = false, Translate = new System.Numerics.Vector3(0, 0, 170) },
             new EffectDummy { Name = "Eff_Head", ParentNode = "Bip01 Head", Translate = new System.Numerics.Vector3(80, 0, 0) },
+            new EffectDummy { Name = "Eff_Head_Free", ParentNode = "Bip01 Head", ApplyLocalScale = false, Translate = new System.Numerics.Vector3(80, 0, 0) },
+            new EffectDummy { Name = "Eff_Over_Head", ParentNode = "Eff_Head_Free", ApplyLocalScale = false, Translate = new System.Numerics.Vector3(0, 0, 10) },
         });
         Transform3D World(EffectPart p) => field.GlobalTransform * combat.WorldPlace(p, actor);
         Check(World(new EffectPart { ApplyNodeTransform = true }).IsEqualApprox(actor.GlobalTransform), "all bits: not the actor's world transform");
@@ -282,8 +399,24 @@ public partial class RemainFollowCheck : Node3D
         Check(headAt.IsEqualApprox(actor.GlobalTransform * new Transform3D(Basis.Identity, new Vector3(80, 70, -5))), $"the Eff_Head dummy gave {headAt}");
         Check(World(new EffectPart { ApplyNodeTransform = true, ParentNode = "Bip01 Head" }).IsEqualApprox(actor.GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 70, -5))),
             "the parentNode bone was not used");
+        // without applyLocalScale the actor's scale 2 does not reach the row's offset nor the part (DummyWorld.Resolve)
+        var unscaled = new Transform3D(actor.GlobalBasis.Orthonormalized(), actor.GlobalTransform * new Vector3(0, 70, -5) + actor.GlobalBasis.Orthonormalized() * new Vector3(80, 0, 0));
+        var freeAt = World(new EffectPart { ApplyNodeTransform = true, ParentNode = "Eff_Head_Free" });
+        Check(Near(freeAt, unscaled), $"the Eff_Head_Free dummy (no local scale) gave {freeAt}, not {unscaled}");
+        var overAt = World(new EffectPart { ApplyNodeTransform = true, ParentNode = "Eff_Over_Head" });
+        Check(Near(overAt, unscaled * new Transform3D(Basis.Identity, new Vector3(0, 10, 0))), $"the Eff_Over_Head dummy (under Eff_Head_Free) gave {overAt}");
         Check(World(new EffectPart { ApplyNodeTransform = true, ParentNode = "No Such Node" }).IsEqualApprox(actor.GlobalTransform),
             "a missing parentNode does not fall back to the model root");
+        Check(sk.GetChildCount() == 0, $"type 0 parts made {sk.GetChildCount()} nodes under the skeleton (bone or dummy nodes)");
+        // a type 1 part on each dummy hangs where a type 0 part reads the dummy's frame
+        foreach (var name in new[] { "Eff_Body_World", "Eff_UI", "Eff_Head", "Eff_Head_Free", "Eff_Over_Head" })
+        {
+            var p0 = World(new EffectPart { ApplyNodeTransform = true, ParentNode = name });
+            Check(EffectAttach.Hang(new EffectPart { AttachToNode = true, ParentNode = name, ApplyNodeTransform = true }, actor, out var hn) && hn.On == EffectHang.Dummy
+                && Near(hn.Host.GlobalTransform * hn.Place, p0), $"a type 1 part on {name} hung at {hn.Host?.GlobalTransform * hn.Place}, a type 0 part reads {p0}");
+        }
+        idleDummy = sk.GetNodeOrNull<EffectDummyNode3D>("fxd_Eff_UI");
+        Check(idleDummy != null && idleDummy.IsProcessing(), "the Eff_UI dummy a part was hung on is not following");
         Hangs(actor, model, sk);
 
         var parts = effects.Get(OriginXml);
@@ -332,6 +465,9 @@ public partial class RemainFollowCheck : Node3D
         else Check(false, "update rotation off made no SeparateNode");
         Check(EffectAttach.Hang(new EffectPart { AttachToNode = true, ParentNode = "Bip01 Head" }, actor, out var hr) && Near(At(hr), Transform3D.Identity),
             $"no applyNodeTransform starts at {At(hr)}");
+        // with a SeparateNode the relative start lands on it, whose world ignores its local: the part stays at the node
+        Check(EffectAttach.Hang(new EffectPart { AttachToNode = true, ParentNode = "Bip01 Head", UpdateRotation = false }, actor, out var hsr)
+            && hsr.Host is Ui.SeparateNode3D && At(hsr).Origin.IsEqualApprox(At(h1).Origin), $"no applyNodeTransform on a SeparateNode starts at {At(hsr)}, not the head");
         foreach (var kind in new[] { "Mesh", "WeaponL", "WeaponR" })
             Check(!EffectAttach.Hang(new EffectPart { AttachType = kind, ParentNode = "CP", ApplyNodeTransform = true }, actor, out _), $"a {kind} part hung on an owner that is not a PC");
         actor.SetMeta(EffectAttach.PcMeta, true);
@@ -343,12 +479,29 @@ public partial class RemainFollowCheck : Node3D
         att.AddChild(cp);
         Check(EffectAttach.Hang(new EffectPart { AttachType = "Mesh", ParentNode = "CP", ApplyNodeTransform = true }, actor, out var hc)
             && hc.Host == att && !hc.OwnTransform && At(hc).IsEqualApprox(cp.GlobalTransform * EffectAttach.YUp), "a type 2 part did not hang at the worn mesh");
+        Check(EffectAttach.Hang(new EffectPart { AttachType = "Mesh", ParentNode = "CP" }, actor, out var hc2) && !hc2.OwnTransform
+            && At(hc2).IsEqualApprox(cp.GlobalTransform * EffectAttach.YUp), "a type 2 part without applyNodeTransform did not take the worn mesh's transform");
+        Check(EffectAttach.Hang(new EffectPart { AttachType = "Mesh", ParentNode = "CP", ApplyNodeTransform = true, UpdateScale = false }, actor, out var hc3)
+            && hc3.Host is Ui.SeparateNode3D && hc3.Host.GetParent() == att && hc3.OwnTransform, "a type 2 part on a SeparateNode did not keep its own transform under it");
+        // a node of a worn kfm item (the item's own skeleton, as EquipApplier.AttachKfm builds it): on its parent bone, at it
+        var itemSk = new Skeleton3D { Name = "ItemSkeleton" };
+        att.AddChild(itemSk);
+        int mtRoot = itemSk.AddBone("MT_Root");
+        int mt = itemSk.AddBone("MT_Point01");
+        itemSk.SetBoneParent(mt, mtRoot);
+        itemSk.SetBoneRest(mtRoot, new Transform3D(Basis.Identity, new Vector3(0, 0, 4)));
+        itemSk.SetBoneRest(mt, new Transform3D(new Basis(Vector3.Back, 0.3f), new Vector3(0, -6, 0)));
+        itemSk.ResetBonePoses();
+        Check(EffectAttach.Hang(new EffectPart { AttachType = "Mesh", ParentNode = "MT_Point01", ApplyNodeTransform = true }, actor, out var hk)
+            && hk.On == EffectHang.ItemMesh && hk.Host is BoneAttachment3D ba && ba.GetParent() == itemSk && ba.BoneName == "MT_Root" && !hk.OwnTransform
+            && Near(At(hk), itemSk.GlobalTransform * itemSk.GetBoneGlobalPose(mt) * EffectAttach.YUp), $"a type 2 part on a kfm item's node hung on {hk.Host?.Name} at {At(hk)}");
         actor.RemoveMeta(EffectAttach.PcMeta);
     }
 
     void AfterRemove()
     {
         Check(emptySeparate == null || !GodotObject.IsInstanceValid(emptySeparate), "an empty SeparateNode stayed");
+        Check(idleDummy == null || !GodotObject.IsInstanceValid(idleDummy) || !idleDummy.IsProcessing(), "a dummy with no part on it still follows each frame");
         Check(fx == null || !GodotObject.IsInstanceValid(fx), "the effect outlived its removed target");
         Check(fieldFx != null && GodotObject.IsInstanceValid(fieldFx), "the second npc's effect went too early");
         Check(worldFx != null && GodotObject.IsInstanceValid(worldFx), "the type 0 effect went with its target");

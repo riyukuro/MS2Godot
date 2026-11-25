@@ -319,10 +319,10 @@ void fragment() {
 
     /// <summary>The world transform (Y up) of the node <paramref name="name"/> under <paramref name="actor"/>'s model
     /// (GetObjectByName on m_hNode, :1048-1051: a bone or an effect dummy such as Eff_Body_World), else the model root's
-    /// (:1052-1053); the actor's own when it has no model. Those nodes are in the nif's Z-up frame, so each takes
+    /// (:1052-1053), read without making a node; the actor's own when it has no model. Those frames are in the nif's Z-up frame, so each takes
     /// <see cref="EffectAttach.YUp"/>, as the holder under them does.</summary>
     static Transform3D NodeWorld(Node3D actor, string name) =>
-        EffectAttach.NodeOf(actor, name) is { } n ? n.GlobalTransform * EffectAttach.YUp : actor.GlobalTransform;
+        EffectAttach.FrameOf(actor, name) is { } w ? w * EffectAttach.YUp : actor.GlobalTransform;
 
     /// <summary>Plays an effect part through the scene runtime (particles and controllers) at <paramref name="place"/> under
     /// <paramref name="host"/>; false when the nif could not be read as a scene.</summary>
