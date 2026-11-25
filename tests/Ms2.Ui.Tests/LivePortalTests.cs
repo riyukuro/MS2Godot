@@ -239,9 +239,17 @@ public class LivePortalTests
         var draws = new PortalDraws((e, shown) => calls++);
         draws.Bind(portals);
         for (uint t = 0; t < 50; t++) portals.Tick(t);   // warm-up (the start tick portals close on the first)
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (uint t = 50; t < 2050; t++) portals.Tick(t);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        // two measured passes, the second asserted (as CouplePathTests): a Release run can take a one-time runtime allocation
+        // (24 B, tier-up) inside the first window; a per-frame allocation shows in both
+        long first = 0, bytes = 0;
+        for (int pass = 0; pass < 2; pass++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (uint t = 50; t < 2050; t++) portals.Tick(t);
+            if (pass == 0) first = GC.GetAllocatedBytesForCurrentThread() - before;
+            else bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        if (first > 0) TestContext.WriteLine($"first pass {first} B, second {bytes} B");
         Assert.That(bytes, Is.EqualTo(0), "bytes over 2000 ticks");
         int shownBefore = calls;
         portals.Tick(2_000_000);   // the start tick passes: the 10 start tick portals open once

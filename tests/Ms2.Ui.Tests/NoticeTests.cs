@@ -278,6 +278,8 @@ public class NoticeTests
                                                    ("GMS2", Environment.GetEnvironmentVariable("MS2_GMS2_DATA"), true) })
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+            // the GMS2 leg sets MS2_DATA to the GMS2 data too: that set is read once, as GMS2
+            if (!gms2 && SameDir(dir, Environment.GetEnvironmentVariable("MS2_GMS2_DATA"))) continue;
             sets++;
             labels.Add(label);
             using var packs = new PackSet(dir);
@@ -299,6 +301,10 @@ public class NoticeTests
         foreach (var b in bad) TestContext.WriteLine("gap " + b);
         Assert.That(bad, Is.EquivalentTo(DataGaps.Where(g => labels.Contains(g[..g.IndexOf(':')]))));
     }
+
+    static bool SameDir(string a, string b) =>
+        !string.IsNullOrEmpty(b) && Directory.Exists(b)
+        && string.Equals(Path.GetFullPath(a).TrimEnd('/', '\\'), Path.GetFullPath(b).TrimEnd('/', '\\'), StringComparison.Ordinal);
 
     /// <summary>
     /// The keys a server sends that its region's client cannot show (logged in server-gaps.md): the KMS client registers no
