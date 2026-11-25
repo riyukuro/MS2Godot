@@ -813,6 +813,16 @@ public partial class LiveSession
                 Check($"{step}: the hold is the current action on the npc with the hold caption (want \"{wantCap}\")",
                     current && live.Hold.NpcId == nid && capHold.Length > 0 && capHold == wantCap);
                 if (!current) continue;
+                // the move gate (Unk_PCMove::FUN_141683ef0): a held state flag (vfunc_63 0) closes it, and the poll drops the hold
+                live.player.AddStateFlags(Ms2.Ui.AutoFindTaxiStation.StateFlag);
+                await until(() => hfc.CurrentAction != Ms2.Ui.ActionKeyTarget.Hold, 30);
+                bool gateShut = !live.MoveGatePasses() && hfc.CurrentAction != Ms2.Ui.ActionKeyTarget.Hold;
+                live.player.RemoveStateFlags(Ms2.Ui.AutoFindTaxiStation.StateFlag);
+                await until(() => hfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Hold, 30);
+                bool gateOpen = live.MoveGatePasses() && hfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Hold;
+                GD.Print($"live: combat {step}: move gate with a state flag: shut {gateShut}; cleared: open {gateOpen}");
+                Check($"{step}: a state flag closes the move gate and the hold leaves the action key, and clearing it brings the hold back", gateShut && gateOpen);
+                if (!gateOpen) continue;
                 hfc.ActivateCurrentAction();
                 await until(() => live.player.State == Player.MoveState.Hold, 60 * 3);
                 await frames(60);
