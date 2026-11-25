@@ -184,6 +184,8 @@ public class StringKeysTests
                 files++;
                 GameStrings.FlashKeys(packs.Read("Xml", entry), locale, attr, expect);
             }
+            // a row left as the localisation marker takes the kr folder's text (FillUntranslated)
+            if (l != "kr") GameStrings.FillUntranslated(expect, GameStrings.FlashKeys(packs.Read("Xml", "string/kr/korflash.xml"), locale));
             Assert.That(table, Is.EqualTo(expect), l);
             Assert.That(table.Count, Is.GreaterThan(GameStrings.FlashKeys(packs.Read("Xml", $"string/{l}/korflash.xml"), locale).Count),
                 l + ": the other files add rows (" + files + " files)");
