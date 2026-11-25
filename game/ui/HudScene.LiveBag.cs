@@ -153,6 +153,42 @@ public partial class HudScene
     /// <summary>The message box on screen, null when none.</summary>
     public Ms2.Ui.Hud.MessageBoxData ShownBoxScripted() => MessageBoxLayer.Instance?.Controller?.CurrentBox;
 
+    /// <summary>The open select item box's rewards (the list's rows in order) with its picks and box from the item's function, or
+    /// null when the dialog is not open.</summary>
+    public (System.Collections.Generic.IReadOnlyList<Ms2.Ui.Items.ItemDropEntry> Rewards, int Picks, int Box)? SelectItemBoxScripted()
+    {
+        if (!SelectItemBoxOpen || selectItemBox.FindItem(selectItemBox.ItemUid)?.Data is not { } d) return null;
+        return (selectItemBox.State.Rewards, d.SelectItemBoxCount, d.SelectItemBoxDropBoxId);
+    }
+
+    /// <summary>A click on the select item box's list row <paramref name="row"/>: MultiSelectTileCacheList.onListItemClick selects
+    /// the row's renderer, then the dialog's itemClick handler (FUN_140f9a5f0) refreshes the picks.</summary>
+    public bool SelectItemBoxPickScripted(int row)
+    {
+        if (!SelectItemBoxOpen || selectItemBoxMovie?.Host is not { } host) return false;
+        var renderer = host.Invoke(host.Child("m_selectItemList"), "getRendererAt", row);
+        if (Ms2.Avm2.Rt.IsNullish(renderer)) return false;
+        host.Set(renderer, "selected", true);
+        selectItemBox.Refresh();
+        return true;
+    }
+
+    /// <summary>The select item box's OK button (its buttonClick handler, FUN_140f9a230).</summary>
+    public bool SelectItemBoxOkScripted()
+    {
+        if (!SelectItemBoxOpen) return false;
+        selectItemBox.OnOk();
+        return true;
+    }
+
+    /// <summary>The select item box's close button (BindCloseButton's handler).</summary>
+    public bool SelectItemBoxCloseScripted()
+    {
+        if (!SelectItemBoxOpen) return false;
+        selectItemBox.Close();
+        return true;
+    }
+
     /// <summary>A common string as the boxes show it.</summary>
     public string CommonText(int id) => hudModel.Tables.Common(id) ?? "";
 

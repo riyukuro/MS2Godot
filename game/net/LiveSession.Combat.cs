@@ -1464,7 +1464,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagyes, bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagselect:id[:row|open], bagyes, bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -1648,6 +1648,36 @@ public partial class LiveSession
                             Check($"item {id}: nothing used ({n0} -> {Count(id)})", Count(id) == n0);
                         }
                         await frames(30);
+                        break;
+                    }
+                    case "bagselect":   // bagselect:<item id>[:<row>|open]: the select box item given when missing and double clicked, its list checked; a row picked and OK: the box used and the row's reward in the bag; open: closed unpicked
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]); string what = parts.Length > 1 ? parts[1] : "0";
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        long n0 = Count(id);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        GD.Print($"live: combat bag select {id} ({slot}, {n0} held): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                        await until(() => hud.SelectItemBoxScripted() != null, 60 * 5); await frames(30);
+                        var open = hud.SelectItemBoxScripted();
+                        GD.Print($"live: combat bag select {id}: picks {open?.Picks} box {open?.Box}, rows [{string.Join(",", open?.Rewards.Select(e => e.ItemId) ?? Enumerable.Empty<int>())}]");
+                        Shot($"bag_select_{id}.png");
+                        Check($"item {id}: the select dialog lists box {open?.Box} ({open?.Rewards.Count} rows)", open is { Rewards.Count: > 0 });
+                        if (open is not { } o || o.Rewards.Count == 0) { hud.SelectItemBoxCloseScripted(); break; }
+                        if (what == "open")
+                        {
+                            hud.SelectItemBoxCloseScripted();
+                            await frames(60);
+                            Check($"item {id}: closed unpicked, nothing used ({n0} -> {Count(id)})", hud.SelectItemBoxScripted() == null && Count(id) == n0);
+                            break;
+                        }
+                        int row = Math.Min(int.Parse(what), o.Rewards.Count - 1);
+                        int reward = o.Rewards[row].ItemId; long r0 = Count(reward);
+                        GD.Print($"live: combat bag select {id} row {row} ({reward}): {(hud.SelectItemBoxPickScripted(row) ? "picked" : "no row")}, ok {hud.SelectItemBoxOkScripted()}");
+                        await until(() => Count(id) != n0 && Count(reward) > r0, 60 * 5); await frames(60);
+                        Check($"item {id} used by the server ({n0} -> {Count(id)}), row {row} item {reward} in the bag ({r0} -> {Count(reward)}), the dialog closed",
+                            Count(id) == n0 - 1 && Count(reward) > r0 && hud.SelectItemBoxScripted() == null);
+                        Shot($"bag_select_{id}_ok.png");
                         break;
                     }
                     case "bagnamecheck": // bagnamecheck:<item id>:<name>[:used]: the name change item used, the name sent, the answer's box checked and closed
