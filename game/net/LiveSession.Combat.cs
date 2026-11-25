@@ -100,7 +100,8 @@ public partial class LiveSession
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) { numbers++; hitCount[npc] = hitCount.GetValueOrDefault(npc) + 1; } };
         live.NpcExpShown += (npc, exp) => kills++;
         FieldNpcs.Placed lastNpc = null;
-        FieldNpcs.Placed holdClickNpc = null;     // mclick:hold's npc
+        FieldNpcs.Placed clickNpc = null;         // mclick:hold and mclick:npc's npc
+        FieldNpcs.Placed talkAgainNpc = null;     // talkagain's npc, mclick:npc's
         var serverNpcs = new System.Collections.Generic.List<FieldNpcs.Placed>();
         live.NpcAdded += npc => { npcs++; lastNpc = npc; serverNpcs.Add(npc); };
         var goneNpcs = new System.Collections.Generic.HashSet<int>();     // object ids removed by the server or counted dead by the kill step
@@ -591,13 +592,19 @@ public partial class LiveSession
                 await frames(120);
                 continue;
             }
-            if (step.StartsWith("mclick:"))    // mclick:<portal|taxi|object|banner|talkend|hold>[:<portal id>]: mouse control on, the own pc put 500 from the nearest such target (or the portal of that id) facing it, a left click at the target's middle on screen; checks the hover cursor and hint first (a shot), then that the pick is kept and (but for the banner, whose action is not ported) that it runs. talkend[:<npc id>|any|plain] opens the talk with that npc by the action key, then clicks the screen while the talk shows. hold: the nearest npc with hold nodes (hold:<npc id> spawns one); its hint is s_mouse_interact_hold and the run holds on to it
+            if (step.StartsWith("mclick:"))    // mclick:<portal|taxi|object|banner|talkend|hold|npc>[:<portal id>]: mouse control on, the own pc put 500 from the nearest such target (or the portal of that id) facing it, a left click at the target's middle on screen; checks the hover cursor and hint first (a shot), then that the pick is kept and (but for the banner, whose action is not ported) that it runs. talkend[:<npc id>|any|plain] opens the talk with that npc by the action key, then clicks the screen while the talk shows. hold: the nearest npc with hold nodes (hold:<npc id> spawns one); its hint is s_mouse_interact_hold and the run holds on to it. npc: talkagain's npc (or the nearest plain one); its hint is s_mouse_interact_talk and the run opens its talk
             {
                 var a = step.Split(':');
                 string kind = a[1];
                 var fld = live.player?.GetParent() as Field;
                 if (fld == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the own pc", false); continue; }
                 fld.SetMouseControl(true);
+                if (!Ms2.Ui.Hud.MessageBoxQueue.IsIdle)       // a box an earlier step left (a refused field entry) would cover the hover
+                {
+                    GD.Print($"live: combat {step}: a message box left open is closed (\"{Ms2.Ui.Hud.MessageBoxQueue.Current()?.Msg}\")");
+                    Ms2.Ui.Hud.MessageBoxQueue.Clear(0);
+                    await frames(10);
+                }
                 Movement.MouseMove.LastKept = Movement.MouseMove.LastRan = Ms2.Ui.MousePick.None;
                 Movement.MouseMove.LastHoverKind = -1;
                 var me = FieldPortals.ToMs2(live.player.GlobalPosition);
@@ -636,10 +643,19 @@ public partial class LiveSession
                     case "talkend":
                         want = Ms2.Ui.MousePick.TalkCancel;
                         break;
+                    case "npc":
+                        // talkagain's npc (one that talks), else the nearest plain shown npc; the pick takes it only once the
+                        // talk interval has passed (mouseinteract.cpp:316)
+                        var tnpc = talkAgainNpc != null && GodotObject.IsInstanceValid(talkAgainNpc.Root) ? talkAgainNpc
+                            : live.TalkNpcs.Where(x => x.Row.Kind == 0 && x.Root.Visible && Alive(x)).OrderBy(x => D2(FieldPortals.ToMs2(x.Position), me)).FirstOrDefault();
+                        if ((flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents)?.Talk is { } ntalk) await until(() => ntalk.TalkIntervalElapsed, 60 * 3);
+                        if (tnpc != null) { clickNpc = tnpc; target = FieldPortals.ToMs2(tnpc.Position); height = tnpc.Row.CapsuleHeight; GD.Print($"live: combat {step}: npc {tnpc.Row.Id} object {tnpc.ObjectId}"); }
+                        want = Ms2.Ui.MousePick.Npc;
+                        break;
                     case "hold":
-                        holdClickNpc = live.TalkNpcs.Where(x => x.Root.Visible && Alive(x) && live.NpcHoldable(x.ObjectId))
+                        clickNpc = live.TalkNpcs.Where(x => x.Root.Visible && Alive(x) && live.NpcHoldable(x.ObjectId))
                             .OrderBy(x => D2(FieldPortals.ToMs2(x.Position), me)).FirstOrDefault();
-                        if (holdClickNpc != null) { target = FieldPortals.ToMs2(holdClickNpc.Position); height = holdClickNpc.Row.CapsuleHeight; GD.Print($"live: combat {step}: npc {holdClickNpc.Row.Id} object {holdClickNpc.ObjectId}"); }
+                        if (clickNpc != null) { target = FieldPortals.ToMs2(clickNpc.Position); height = clickNpc.Row.CapsuleHeight; GD.Print($"live: combat {step}: npc {clickNpc.Row.Id} object {clickNpc.ObjectId}"); }
                         want = Ms2.Ui.MousePick.Npc;
                         break;
                 }
@@ -707,13 +723,14 @@ public partial class LiveSession
                 Check($"{step}: the hover cursor kind {Movement.MouseMove.LastHoverKind} (want {wantKind}{(overUi ? ", over the UI" : "")}), cursor type {cursorType}",
                     Movement.MouseMove.LastHoverKind == wantKind && cursorType == wantType);
                 Shot($"mhover_{kind}.png");
-                if (kind == "hold" && holdClickNpc != null)
+                if (kind is "hold" or "npc" && clickNpc != null)
                 {
-                    // CMouseInteractNpc::vfunc_1 (mouseinteract.cpp:252-254): s_mouse_interact_hold with the npc's name
+                    // CMouseInteractNpc::vfunc_1 (mouseinteract.cpp:252-259): s_mouse_interact_hold with the npc's name, or
+                    // s_mouse_interact_talk with its action name and name
                     var ht = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
-                    string wantHint = Ms2.Ui.MouseInteract.NpcHint(ht, holdClickNpc.Row.Id, true);
+                    string wantHint = Ms2.Ui.MouseInteract.NpcHint(ht, clickNpc.Row.Id, kind == "hold");
                     GD.Print($"live: combat {step}: hint \"{Movement.MouseMove.LastHint}\" (want \"{wantHint}\")");
-                    Check($"{step}: the hover hint is the hold hint", wantHint.Length > 0 && Movement.MouseMove.LastHint == wantHint);
+                    Check($"{step}: the hover hint is the {kind} hint", wantHint.Length > 0 && Movement.MouseMove.LastHint == wantHint);
                 }
                 GD.Print($"live: combat {step}: click at screen {screen}");
                 Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = screen, GlobalPosition = screen });
@@ -734,11 +751,22 @@ public partial class LiveSession
                             + $"action {afc?.CurrentAction}, object {live.InteractObjects?.Current?.Name ?? "none"}, state {live.OwnCurStateIdNow}");
                     }
                     Check($"{step}: the {want} pick ran", Movement.MouseMove.LastRan == want);
-                    if (kind == "hold" && holdClickNpc != null)
+                    if (kind == "npc" && clickNpc != null
+                        && (flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents)?.Talk is { } ctalk)
+                    {
+                        // the pick ran only with the talk the current action on that npc id (CMouseInteractNpc::vfunc_3)
+                        await until(() => ctalk.Open, 60 * 5);
+                        Check($"{step}: the run opens the talk with the npc (npc {ctalk.TalkActionNpcId})", ctalk.Open && ctalk.TalkActionNpcId == clickNpc.Row.Id);
+                        await frames(30);                    // the talk window draws in after the open
+                        Shot($"mclick_{kind}_talk.png");
+                        ctalk.End();
+                        await until(() => !ctalk.Open, 60 * 5);
+                    }
+                    if (kind == "hold" && clickNpc != null)
                     {
                         await until(() => live.player.State == Player.MoveState.Hold, 60 * 3);
                         Check($"{step}: the run holds on to the npc (state {live.player.State}, target {live.player.HoldTargetId})",
-                            live.player.State == Player.MoveState.Hold && live.player.HoldTargetId == holdClickNpc.ObjectId);
+                            live.player.State == Player.MoveState.Hold && live.player.HoldTargetId == clickNpc.ObjectId);
                     }
                 }
                 await frames(120);
@@ -796,7 +824,7 @@ public partial class LiveSession
                 Check($"{step}: the key again lets go (state {live.player.State})", live.player.State != Player.MoveState.Hold);
                 continue;
             }
-            if (step == "talkagain")   // talkagain: a talk with a plain npc (no function) by the action key, ended; at once the key and the mouse pick refuse a new talk (UITalkManager::IsTalkIntervalElapsed, TalkCooldown), and once it has passed the pick finds the npc and the key talks again
+            if (step == "talkagain")   // talkagain: a talk with a plain npc (no function) by the action key (the poll's current action is the talk with that npc, then ActivateCurrentAction), ended; at once the key and the mouse pick refuse a new talk (UITalkManager::IsTalkIntervalElapsed, TalkCooldown), and once it has passed the pick finds the npc and the key talks again
             {
                 var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
                 var talk = tfc?.Talk;
@@ -811,11 +839,15 @@ public partial class LiveSession
                     live.player.Velocity = Vector3.Zero;
                     live.player.Face(-front);
                     await frames(30);
-                    talk.ActionKey();
+                    await until(() => tfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Talk && talk.TalkActionNpcId == tn.Row.Id, 30);
+                    GD.Print($"live: combat {step}: npc {tn.Row.Id}: action {tfc.CurrentAction}, talk npc {talk.TalkActionNpcId}");
+                    if (tfc.CurrentAction != Ms2.Ui.ActionKeyTarget.Talk || talk.TalkActionNpcId != tn.Row.Id) continue;
+                    tfc.ActivateCurrentAction();
                     await until(() => talk.Open, 60 * 5);
                     if (talk.Open) { npc = tn; break; }
                 }
-                Check($"{step}: a talk opens (npc {npc?.Row.Id})", npc != null);
+                Check($"{step}: the talk is the current action and the key opens it (npc {npc?.Row.Id})", npc != null);
+                talkAgainNpc = npc;
                 if (npc == null) continue;
                 await frames(30);
                 talk.End();
@@ -825,20 +857,29 @@ public partial class LiveSession
                 var mid = npc.Position + new Vector3(0, npc.Row.CapsuleHeight * 0.5f, 0);
                 Godot.Vector3 rayDir = cam == null ? Vector3.Zero : (mid - cam.GlobalPosition).Normalized();
                 // at once: the interval has not passed
+                ulong endMs = Time.GetTicksMsec();
                 bool elapsedNow = talk.TalkIntervalElapsed;
                 bool pickNow = cam != null && talk.FindClickTarget(cam.GlobalPosition, rayDir) == npc;
-                bool keyNow = talk.ActionKey();
-                await frames(20);
+                // a poll (every 100 ms) after the end, timed by the clock: slow frames would let the interval pass
+                await until(() => Time.GetTicksMsec() - endMs >= 250, 60 * 2);
+                bool keyNow = tfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Talk;
+                ulong pressMs = Time.GetTicksMsec() - endMs;
+                tfc.ActivateCurrentAction();
+                await until(() => talk.Open || Time.GetTicksMsec() - endMs >= 600, 60 * 2);
                 bool openNow = talk.Open;
-                GD.Print($"live: combat {step}: right after the end: interval elapsed {elapsedNow}, pick finds the npc {pickNow}, key took it {keyNow}, open {openNow}");
-                Check($"{step}: right after the end the key and the pick refuse a talk", !elapsedNow && !pickNow && !keyNow && !openNow);
+                GD.Print($"live: combat {step}: right after the end: interval elapsed {elapsedNow}, pick finds the npc {pickNow}, key took it {keyNow} ({pressMs} ms after the end), open {openNow}");
+                Check($"{step}: right after the end the key and the pick refuse a talk", !elapsedNow && !pickNow && !keyNow && !openNow && pressMs < 1000);
+                if (openNow) { talk.End(); await until(() => !talk.Open, 60 * 5); }
                 await until(() => talk.TalkIntervalElapsed, 60 * 3);
                 await frames(10);
                 bool pickLater = cam != null && talk.FindClickTarget(cam.GlobalPosition, rayDir) == npc;
-                bool keyLater = talk.ActionKey();
+                await until(() => tfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Talk, 30);
+                bool keyLater = tfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Talk && talk.TalkActionNpcId == npc.Row.Id;
+                tfc.ActivateCurrentAction();
                 await until(() => talk.Open, 60 * 5);
                 GD.Print($"live: combat {step}: after the interval: pick finds the npc {pickLater}, key took it {keyLater}, open {talk.Open}");
                 Check($"{step}: after the interval the pick finds the npc and the key talks again", pickLater && keyLater && talk.Open);
+                await frames(30);                            // the talk window draws in after the open
                 Shot("talkagain.png");
                 talk.End();
                 await until(() => !talk.Open, 60 * 5);
