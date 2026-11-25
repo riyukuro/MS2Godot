@@ -895,7 +895,7 @@ public partial class LiveSession
                 await frames(60);
                 continue;
             }
-            if (step == "tooltip:object" || step == "tooltip:board" || step == "tooltip:npc")      // tooltip:object|board|npc: the own pc put at the nearest usable interact object (InteractAction 0x12), billboard (0x18) or interact npc (0x11) in turn until that is the current action; the action tooltip shows its vfunc_6 caption at its vfunc_12 point lifted 75 (a shot); none in the field is logged as not run
+            if (step == "tooltip:object" || step == "tooltip:board" || step == "tooltip:npc")      // tooltip:object|board|npc: the own pc put at the nearest usable interact object (InteractAction 0x12), billboard (0x18) or talkable interact npc with an interact function (0x11, the pc turned to it) in turn until that is the current action; the action tooltip shows its vfunc_6 caption at its vfunc_12 point lifted 75 (a shot); none in the field is logged as not run
             {
                 var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
                 var tip = hud.ActionTooltip;
@@ -906,7 +906,7 @@ public partial class LiveSession
                 int code = step == "tooltip:npc" ? 0x11 : step == "tooltip:board" ? 0x18 : 0x12;
                 var spots = new List<(string Name, Ms2.Formats.Model.Vec3 At, Func<string> Want)>();
                 if (code == 0x11)
-                    foreach (var n in (live.InteractNpcs?.All ?? new List<Ms2.Ui.InteractNpcEntry>()).Where(x => !x.Dead).OrderBy(x => Dt2(x.Position, me)).Take(6))
+                    foreach (var n in (live.InteractNpcs?.All ?? new List<Ms2.Ui.InteractNpcEntry>()).Where(x => !x.Dead && x.Talkable && x.Row != null && !string.IsNullOrEmpty(x.Row.InteractFunction)).OrderBy(x => Dt2(x.Position, me)).Take(6))
                         spots.Add(($"npc {n.ObjectId} ({n.Row?.Id})", n.Position, () => Ms2.Ui.ActionCaption.Interact(tt.Common(0x634) ?? "", n.Row?.Name ?? "")));
                 else
                     foreach (var o in (live.InteractObjects?.All ?? new List<Ms2.Ui.LiveInteractObject>()).Where(x => x.Row != null && live.InteractObjects.CanUse(x)
@@ -917,12 +917,20 @@ public partial class LiveSession
                         spots.Add(($"object {o.Name} row {o.RowId} kind {o.Kind}", o.Position,
                             () => code == 0x18 ? Ms2.Ui.ActionCaption.BillBoard(an, o.BoardText) : Ms2.Ui.ActionCaption.Interact(tt.Common(0x634) ?? "", an)));
                     }
-                if (spots.Count == 0) { GD.Print($"live: combat {step}: not run; none in the field"); continue; }
+                if (spots.Count == 0)
+                {
+                    var all = live.InteractNpcs?.All ?? new List<Ms2.Ui.InteractNpcEntry>();
+                    string npcNote = code != 0x11 ? "" : $" ({all.Count} npcs, {all.Count(x => x.Row != null && !string.IsNullOrEmpty(x.Row.InteractFunction))} with an interact function, "
+                        + $"{all.Count(x => x.Row != null && !string.IsNullOrEmpty(x.Row.InteractFunction) && x.Talkable)} of them talkable)";
+                    GD.Print($"live: combat {step}: not run; none in the field{npcNote}");
+                    continue;
+                }
                 bool shown = false;
                 foreach (var sp in spots)
                 {
                     live.player.GlobalPosition = FieldBuilder.ToGodotPoint(sp.At) + new Vector3(30, 5, 0);
                     live.player.Velocity = Vector3.Zero;
+                    live.player.Face(new Vector3(-1, 0, 0));      // FindNearestNpc's useFront: the npc ahead of the own pc
                     await frames(20);
                     await until(() => live.ActionKeyCode(tfc.CurrentAction) == code && tip.ShownAction == code, 60);
                     GD.Print($"live: combat {step}: {sp.Name}: action {tfc.CurrentAction} (key {live.ActionKeyCode(tfc.CurrentAction)}), tooltip action {tip.ShownAction}, "
