@@ -1336,7 +1336,7 @@ public partial class LiveSession
                 int loopFx = RideLoopScripted(live, "rideraw " + rideId, true, 0);
                 var setOn = hud.SkillSetScripted();
                 Check($"rideraw {rideId}: skillSetID {live.OwnPlayer?.Mount?.Data.SkillSetId}: {setOn.Text}", setOn.Ok);
-                var avOn = hud.RideeAvatarScripted();
+                var avOn = hud.RideeAvatarScripted(string.IsNullOrEmpty(shots) ? null : System.IO.Path.Combine(shots, $"ride_{rideId}_portrait.png"));
                 Check($"rideraw {rideId}: {avOn.Text}", avOn.Ok);
                 hud.DriveTowardScripted(live.OwnPlayer.GlobalPosition + new Vector3(400, 0, 0), false);
                 await frames(60);

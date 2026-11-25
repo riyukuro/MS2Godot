@@ -73,7 +73,7 @@ public partial class HudScene
     /// <summary>Harness: the main player info's mount portrait. Riding a useRidingUI mount, the controller's UIAvatarRidee is the
     /// ridden row and the movie's load built its view (the row, the size, the eye and target, and how many of its pixels the
     /// model covers); otherwise there is neither.</summary>
-    public (bool Ok, string Text) RideeAvatarScripted()
+    public (bool Ok, string Text) RideeAvatarScripted(string savePng = null)
     {
         var p = hudModel?.Player;
         bool expected = p?.Riding == true && p.Ridee is { UseRidingUI: true };
@@ -83,6 +83,7 @@ public partial class HudScene
         {
             w = img.GetWidth(); h = img.GetHeight();
             if (img.GetFormat() != Godot.Image.Format.Rgba8) img.Convert(Godot.Image.Format.Rgba8);
+            if (!string.IsNullOrEmpty(savePng)) img.SavePng(savePng);
             var bytes = img.GetData();
             for (int i = 3; i < bytes.Length; i += 4)
                 if (bytes[i] > 25) covered++;
