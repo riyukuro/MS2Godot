@@ -6,7 +6,7 @@ using NUnit.Framework;
 
 namespace Ms2.Net.Tests;
 
-/// <summary>SkillDamage: GMS2 mode 4 is returned as Raw and the KMS 18-byte mode 3 throws on the unconditional i64; the
+/// <summary>SkillDamage: GMS2 mode 4 is returned as Raw and the KMS 18-byte mode 3 (build 2495's i32) is read at the width it carries; the
 /// recorded mode-3 forms are covered by SkillDamageMode3Tests. Layouts: the GMS2 packet layout notes §B2 and §B3.</summary>
 public class RcSkillDamageLayoutTests {
     // gms2 recording: packet 6507, 26 bytes
@@ -18,7 +18,7 @@ public class RcSkillDamageLayoutTests {
     // gms2 recording: packet 7213, 26 bytes
     static readonly byte[] Gms2Mode4c = RcPkt.Hex(
         "04E2893700E28937008552350014000000000000000000000001");
-    // kms2 recording: packet 1456, 18 bytes
+    // kms2 recording (build 2495): packet 1456, 18 bytes
     static readonly byte[] KmsMode3I32 = RcPkt.Hex(
         "03585322020D5622021C335509000EA0FDFF");
 
@@ -45,7 +45,6 @@ public class RcSkillDamageLayoutTests {
         Assert.That((k.TargetId, k.BuffId, k.Value1), Is.EqualTo((3639778, 3494349, 600L)));
     }
 
-    [Ignore("KMS 18-byte mode 3 not read yet")]
     [Test] public void KmsMode3ReadsAnI32DamageWhenOnlyFourBytesRemain() {
         var r = new ByteReader(KmsMode3I32);
         var d = SkillDamage.Read(r);

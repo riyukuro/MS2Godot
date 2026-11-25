@@ -81,6 +81,9 @@ public sealed class SkillDamage {
     /// Mode 3 on GMS2 reads the damage at the width the packet carries (the client reads an i64, scenestategame.cpp:5663): 8 bytes left
     /// after the flag -> i64, otherwise i32 widened to long (any other size keeps the leftover warning). Recorded GMS2 servers send i32;
     /// some servers send i64, so a tick above 2^31 shows exactly.
+    /// On KMS the restored client (build 2525) reads ReadInt64 (OnDotDamage @0x14171d610), as the 22-byte KMS recordings carry it, but a
+    /// recording of an older build (2495, the fire dragon dungeon's 18-byte mode 3) ends in an i32: there 4 bytes left after the flag ->
+    /// i32, widened to long; anything else stays i64 as the client reads it.
     /// Mode 4 (the heal, OnHeal scenestategame.cpp:5685) has the KMS layout on GMS2: 26 bytes in every recording.
     /// STILL-OPEN: the GMS2 layouts of modes 7 and 8 are not known (no recording); they stay Raw there, so a different layout cannot throw.</summary>
     public static SkillDamage Read(ByteReader r, ProtocolProfile profile) {
@@ -113,7 +116,7 @@ public sealed class SkillDamage {
                 break;
             }
             case 3:
-                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), !gms || r.Available == 8 ? r.ReadLong() : r.ReadInt());
+                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), (gms ? r.Available != 8 : r.Available == 4) ? r.ReadInt() : r.ReadLong());
                 d.Targets.Add(new HitTarget(d.TargetId, new[] { d.DotHit }, default, default));
                 break;
             case 4:
