@@ -3124,7 +3124,7 @@ public partial class HudScene : Node, IUiStageHost
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
         foreach (var n in gameMenuMovie.GetChildren())
             if (n is As3View v) v.ImageLookup = url => url.StartsWith(face, StringComparison.OrdinalIgnoreCase) ? portrait?.Image : null;
-        GD.Print($"game menu: opened, jobchange {(c.Listed.Contains(54) ? "listed" : "not listed")}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"game menu: opened, jobchange {(c.Listed.Contains(54) ? "listed" : "not listed")}");
     }
 
     /// <summary>CUIService::ToggleDialog for a game menu entry, for the dialogs this HUD has: the system menu (0x4e21, as

@@ -35,7 +35,7 @@ public partial class HudScene
         };
         itemGetOption = c;
         itemGetOptionMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        GD.Print($"item get option: mode {mode} load={itemGetOptionMovie.Loaded}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"item get option: mode {mode} load={itemGetOptionMovie.Loaded}");
         uiRoot.AddChild(itemGetOptionMovie);
     }
 
