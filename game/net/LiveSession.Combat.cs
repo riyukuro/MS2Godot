@@ -1336,6 +1336,8 @@ public partial class LiveSession
                 int loopFx = RideLoopScripted(live, "rideraw " + rideId, true, 0);
                 var setOn = hud.SkillSetScripted();
                 Check($"rideraw {rideId}: skillSetID {live.OwnPlayer?.Mount?.Data.SkillSetId}: {setOn.Text}", setOn.Ok);
+                var avOn = hud.RideeAvatarScripted();
+                Check($"rideraw {rideId}: {avOn.Text}", avOn.Ok);
                 hud.DriveTowardScripted(live.OwnPlayer.GlobalPosition + new Vector3(400, 0, 0), false);
                 await frames(60);
                 Shot($"ride_{rideId}_run.png");
@@ -1348,6 +1350,8 @@ public partial class LiveSession
                 RideLoopScripted(live, "rideraw " + rideId, false, loopFx);
                 var setOff = hud.SkillSetScripted();
                 Check($"rideraw {rideId}: after the ride off: {setOff.Text}", setOff.Ok);
+                var avOff = hud.RideeAvatarScripted();
+                Check($"rideraw {rideId}: after the ride off: {avOff.Text}", avOff.Ok);
                 Shot($"ride_{rideId}_off.png");
                 continue;
             }

@@ -70,6 +70,31 @@ public partial class HudScene
             + $" main info {Shown(playerInfo?.Host)} exp bar {Shown(expBarMovie?.Host)} game menu {Shown(gameMenu?.Host)} tag '{playerNameTag?.Shown}'";
     }
 
+    /// <summary>Harness: the main player info's mount portrait. Riding a useRidingUI mount, the controller's UIAvatarRidee is the
+    /// ridden row and the movie's load built its view (the row, the size, the eye and target, and how many of its pixels the
+    /// model covers); otherwise there is neither.</summary>
+    public (bool Ok, string Text) RideeAvatarScripted()
+    {
+        var p = hudModel?.Player;
+        bool expected = p?.Riding == true && p.Ridee is { UseRidingUI: true };
+        var row = playerInfo?.AvatarRidee;
+        int covered = 0, w = 0, h = 0;
+        if (rideeAvatar?.Image?.GetImage() is { } img)
+        {
+            w = img.GetWidth(); h = img.GetHeight();
+            if (img.GetFormat() != Godot.Image.Format.Rgba8) img.Convert(Godot.Image.Format.Rgba8);
+            var bytes = img.GetData();
+            for (int i = 3; i < bytes.Length; i += 4)
+                if (bytes[i] > 25) covered++;
+        }
+        string view = rideeAvatar == null ? "no view"
+            : $"view {rideeAvatar.Row.Id} {w}x{h} eye {rideeAvatar.CameraAt.Eye} at {rideeAvatar.CameraAt.Target}, {covered} pixels covered";
+        bool ok = expected
+            ? row != null && row.Id == p.Ridee.Id && rideeAvatar != null && rideeAvatar.Row.Id == row.Id && w == 100 && h == 100 && covered > 0
+            : row == null && rideeAvatar == null;
+        return (ok, $"portrait {(expected ? "expected" : "not expected")}: ridee {row?.Id.ToString() ?? "none"}, {view}");
+    }
+
     /// <summary>Harness: the quick slots against the own skill set. Riding a mount whose set has a row, the key table is locked
     /// and the slots 4..7, 0..3, 8.. show the set's skills in order (CKeyTable::ApplySkillSetToQuickSlots); without a set the
     /// table is unlocked. The text has the set, the lock, the mode 7 sends and the first shown slots.</summary>
