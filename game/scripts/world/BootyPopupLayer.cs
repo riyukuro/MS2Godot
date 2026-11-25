@@ -56,7 +56,8 @@ public sealed partial class BootyPopupLayer : CanvasLayer
     {
         if (popups == null) return;
         popups.Dispose();
-        foreach (var p in movies.Keys.ToList()) Drop(p);
+        foreach (var kv in movies) kv.Value.Movie.QueueFree();
+        movies.Clear();
         popups = null;
         cubes = null;
     }
