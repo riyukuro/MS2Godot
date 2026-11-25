@@ -140,6 +140,47 @@ public class TalkCinematicTests
         Assert.That(closed, Is.True, "the hide timeline ends with onCloseComplete (onHideScript, frame 56)");
     }
 
+    /// <summary>
+    /// Every screen effect the data's script pages name (screenEffectMovie / Action / Value, scriptcontent.cpp:268-270), shown
+    /// on a page: vfunc_5 passes "screenEffect" { movie, action, value } (cinematiccomponent.cpp:323-328) and the movie's
+    /// TalkCinematicScreenEffect.setData adds UITalkCinematic_screeneffect_&lt;movie&gt; to m_container.m_screenEffect,
+    /// hides the buttons (onScreenEffectAdd) and tweens its alpha over the value in ms, then shows them again
+    /// (onScreenEffectAddComplete).
+    /// </summary>
+    [Test]
+    public void EveryScreenEffectOfTheScriptsPlaysOnThePage()
+    {
+        var pk = Packs();
+        var effects = new SortedSet<(string Movie, string Action, int Value)>();
+        foreach (var f in pk.List("Xml").Where(e => e.StartsWith("script/", StringComparison.OrdinalIgnoreCase) && e.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
+            foreach (var x in Ms2.Formats.World.GameStrings.Parse(pk.Read("Xml", f)).Descendants("content"))
+            {
+                var ct = Ms2.Formats.World.NpcScriptTable.Content.Parse(x);
+                if (!string.IsNullOrEmpty(ct.ScreenEffectMovie)) effects.Add((ct.ScreenEffectMovie, ct.ScreenEffectAction ?? "", ct.ScreenEffectValue));
+            }
+        TestContext.WriteLine($"{effects.Count} screen effects: {string.Join(", ", effects)}");
+        Assert.That(effects, Is.Not.Empty, "the data's scripts have screen effects");
+        foreach (var (movie, action, value) in effects)
+        {
+            var (h, c, p, rt) = Load(new() { Script = "Page one.", ScreenEffectMovie = movie, ScreenEffectAction = action, ScreenEffectValue = value }, 4);
+            var layer = h.Get(h.Get(h.Entity, "m_container"), "m_screenEffect");
+            var buttons = h.Get(Script(h), "m_buttons");
+            Assert.That(Rt.ToNumber(h.Get(layer, "numChildren")), Is.EqualTo(1), $"{movie} {action} {value}: the effect is added");
+            Assert.That(Rt.ToBoolean(h.Get(buttons, "visible")), Is.False, $"{movie}: onScreenEffectAdd hides the buttons");
+            for (int i = 0; i < 2000 && !Rt.ToBoolean(h.Get(buttons, "visible")); i++) p.Tick();
+            Assert.That(Rt.ToBoolean(h.Get(buttons, "visible")), Is.True, $"{movie}: the tween ends and shows the buttons");
+            Assert.That(rt.Errors, Is.Empty, $"{movie}: no script errors");
+        }
+    }
+
+    [Test]
+    public void APageWithoutAScreenEffectPassesNone()
+    {
+        var (h, _, _, _) = Load(new() { Script = "Page one." }, 4);
+        Assert.That(Rt.ToNumber(h.Get(h.Get(h.Get(h.Entity, "m_container"), "m_screenEffect"), "numChildren")), Is.EqualTo(0));
+        Assert.That(Rt.ToBoolean(h.Get(h.Get(Script(h), "m_buttons"), "visible")), Is.True);
+    }
+
     const int Quest = 90000000;     // "A New Path": exp 450, meso 1000, item 20000028 x10 (questdata.xml)
 
     static TalkCinematicController.QuestReward NewPathReward() => new() { Exp = 450, Meso = 1000, ChoiceRewards = { (20000028, 1, 10) } };

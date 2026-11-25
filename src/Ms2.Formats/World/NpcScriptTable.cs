@@ -26,6 +26,13 @@ public sealed class NpcScriptTable
         public bool OpenTalkReward;
         public int FunctionId, OtherNpcTalk, SpeakerNpc, Redirect;
         public string LeftIllust, RightIllust, SpeakerIllust, ImagePlate, Movie;
+        /// <summary>
+        /// m_screenEffectMovie / m_screenEffectAction / m_screenEffectValue ("screenEffectMovie", "screenEffectAction",
+        /// "screenEffectValue", scriptcontent.cpp:268-270): a screen effect the page plays, such as "mask_black" "fadeout" 2000.
+        /// CCinematicComponent::vfunc_5 (cinematiccomponent.cpp:323) hands it to the page as "screenEffect" when the movie is set.
+        /// </summary>
+        public string ScreenEffectMovie, ScreenEffectAction;
+        public int ScreenEffectValue;
         /// <summary>m_questId: the quest of a quest script's page (FUN_140859160, talkscript.cpp:595), 0 for npc scripts.</summary>
         public int QuestId;
 
@@ -39,6 +46,8 @@ public sealed class NpcScriptTable
                 RightIllust = (string)c.Attribute("rightIllust"), SpeakerIllust = (string)c.Attribute("speakerIllust"),
                 SpeakerNpc = Int(c, "speakerNpc"), ImagePlate = (string)c.Attribute("imagePlate"), Movie = (string)c.Attribute("movie"),
                 Redirect = Int(c, "redirect"), QuestId = questId,
+                ScreenEffectMovie = (string)c.Attribute("screenEffectMovie"), ScreenEffectAction = (string)c.Attribute("screenEffectAction"),
+                ScreenEffectValue = Int(c, "screenEffectValue"),
             };
             foreach (var d in c.Elements("distractor")) ct.Distractors.Add(((string)d.Attribute("text"), Ints(d, "goto")));
             return ct;

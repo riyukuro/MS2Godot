@@ -450,6 +450,9 @@ public sealed partial class NpcTalk : Node
             QuestId = c.QuestId,
             Redirect = c.Redirect,
             OpenTalkReward = c.OpenTalkReward,
+            ScreenEffectMovie = c.ScreenEffectMovie ?? "",
+            ScreenEffectAction = c.ScreenEffectAction ?? "",
+            ScreenEffectValue = c.ScreenEffectValue,
         };
         foreach (var (text, go) in c.Distractors) t.Distractors.Add((st.Resolve(text, PlayerName, player?.Gender), go.Length > 0));
         return t;

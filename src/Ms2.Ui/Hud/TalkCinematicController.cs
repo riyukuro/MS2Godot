@@ -34,6 +34,9 @@ public sealed class TalkCinematicController : UiController
         /// <summary>m_questId (the page of a quest script, talkscript.cpp:595), m_redirect and m_openTalkReward (scriptcontent.cpp:255).</summary>
         public int QuestId, Redirect;
         public bool OpenTalkReward;
+        /// <summary>The page's screen effect (scriptcontent.cpp:268-270): the movie ("" for none), its action and value.</summary>
+        public string ScreenEffectMovie = "", ScreenEffectAction = "";
+        public int ScreenEffectValue;
     }
 
     // ---- UITalkManager's state (uitalkcinematic.cpp:1500-1700) --------------------------------------------------------
@@ -648,7 +651,8 @@ public sealed class TalkCinematicController : UiController
 
         /// <summary>
         /// vfunc_5. CCinematicComponent's (:297): "npc" (no speaker npc, myTalk or otherNpcTalk: FUN_1401aa6a0 of the talk
-        /// npc; an npc spawned offline has no owner, vfunc_128), "script" and "movie". Then CNext (:453) button 0x5d5,
+        /// npc; an npc spawned offline has no owner, vfunc_128), "script", "movie" and, when the page has a screen effect movie,
+        /// "screenEffect" { movie, action, value } (:323-328). Then CNext (:453) button 0x5d5,
         /// CClose (:484) 0x5d6, CSelectableDistractor (:731) the "distractor" list (CDistractor::vfunc_6 :512, icon
         /// talk_icon_distractor) and 0x5d5 when a choice has a goto, else 0x5d6. 0x5d5 / 0x5d6 are s_quest_talk_progress /
         /// s_quest_talk_end (commonstringtable.cpp:3106). The talk rewards (FillTalkReward) need the server's reward packets.
@@ -663,6 +667,8 @@ public sealed class TalkCinematicController : UiController
             h.Set(page, "npc", npc);
             h.Set(page, "script", c.Script);
             h.Set(page, "movie", c.MovieFile);
+            if (!string.IsNullOrEmpty(c.ScreenEffectMovie))
+                h.Set(page, "screenEffect", h.Obj(("movie", c.ScreenEffectMovie), ("action", c.ScreenEffectAction ?? ""), ("value", (uint)c.ScreenEffectValue)));
             switch (kind)
             {
                 case Kind.Next:                 // :453

@@ -177,12 +177,21 @@ public sealed partial class ReservedWords
                     () => { if (picked) ids.Add(FieldMissions.Long(id)); }))
                 foreach (var i in ids) itemIds.Add(i);
         }
+        // GMS2: no itemdata/, one item/<a>/<bb>/<id>.xml per item (PerItemFiles, the item table's own rule). The GMS2 exe's
+        // item table (@0x140765520) builds "./Data/Xml/item/" + id + ".xml" and reads one item at a time.
+        // STILL-OPEN: whether its find also tests the file's environments; every item file counts here.
+        foreach (var i in Ms2.Formats.World.PerItemFiles.Index(entries).Keys) itemIds.Add(i);
 
-        // npcdata.cpp:1449: friendly of the picked environment (FindNpcData), the last available one
+        // npcdata.cpp:1449: friendly of the picked environment (FindNpcData), the last available one. The GMS2 exe's npc
+        // reader (@0x1403fd8a0) takes the environment's <basic> (0x1403fddfa) and reads stringID, friendly (0x1403fde2c) and
+        // the rest from it, where KMS reads them on the environment itself.
         npcFriendly = new();
         if (!entries.Any(n => Under(n, "npcdata/")) && Ms2.Formats.World.PerFileTable.Rows(packs, "npc/", "npc") is { } perFile)     // GMS2: npc/<id>.xml
             foreach (var n in perFile.Root.Elements("npc"))
-                npcFriendly[FieldMissions.Long((string)n.Attribute("id"))] = FieldMissions.Int((string)n.Element("environment")?.Attribute("friendly"));
+            {
+                var env = n.Element("environment");
+                npcFriendly[FieldMissions.Long((string)n.Attribute("id"))] = FieldMissions.Int((string)(env?.Element("basic")?.Attribute("friendly") ?? env?.Attribute("friendly")));
+            }
         foreach (var entry in entries.Where(n => Under(n, "npcdata/")))
         {
             var rows = new List<(long Id, int Friendly)>();
