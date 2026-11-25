@@ -47,6 +47,43 @@ public class RcG26StarterLookTests
         Assert.That(asset?.Name, Is.EqualTo("Data/Resource/Model/Item/1/12/11200001_C_Sapphire.nif"));
     }
 
+    /// <summary>
+    /// The GMS2 data, both genders of every job: each starter item's colour is its colour head's (ItemFiles.ColourHead: the
+    /// preset's where it names a palette, else the item file's own), and most starter items are dyed by their own file, as
+    /// their presets name no palette.
+    /// </summary>
+    [Test]
+    public void TheGms2StarterColoursAreTheirColourHeads()
+    {
+        using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
+        var jobs = Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", "table/defaultitems.xml")).Root.Elements("key")
+            .Select(k => int.TryParse((string)k.Attribute("jobCode"), out int j) ? j : 0).Where(j => j != 0).Distinct().ToList();
+        var palettes = new ColorPalettes(packs);
+        var files = new Ms2.Ui.Items.ItemFiles(packs);
+        int items = 0, dyed = 0, byOwn = 0;
+        foreach (var job in jobs)
+            for (int gender = 0; gender < 2; gender++)
+                foreach (var it in StarterLook.Build(packs, palettes, gender, job).items)
+                {
+                    var data = files.Item(it.Id);
+                    Assert.That(data, Is.Not.Null, $"item {it.Id}");
+                    int preset = int.TryParse((string)data.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0 ? p : it.Id;
+                    var model = files.Model(preset)?.Element("customize");
+                    static bool Named(XElement x) => Ms2.Ui.Items.ItemData.Atoi((string)x?.Attribute("colorPalette") ?? "0") != 0;
+                    var c = Named(model) ? model : Named(data.Element("customize")) ? data.Element("customize") : model;
+                    int.TryParse((string)c?.Attribute("colorPalette"), out int pal);
+                    int.TryParse((string)c?.Attribute("defaultColorIndex"), out int idx);
+                    var expect = (string)c?.Attribute("color") == "1" && pal != 0 ? palettes.Equip(pal, idx) ?? default : default;
+                    Assert.That(it.Color, Is.EqualTo(expect), $"job {job} gender {gender} {it.Slot} {it.Id}");
+                    items++;
+                    if (expect.PaletteId != 0) dyed++;
+                    if (c != null && c != model) byOwn++;
+                }
+        TestContext.Out.WriteLine($"{jobs.Count} jobs: {items} starter items, {dyed} dyed, {byOwn} by their own file");
+        Assert.That(dyed, Is.GreaterThan(items / 2));
+        Assert.That(byOwn, Is.GreaterThan(items / 2));
+    }
+
     [Test]
     public void TheKmsLooksFitTheirGender() => LooksFitTheirGender(RcGap.Data("MS2_DATA"));
 

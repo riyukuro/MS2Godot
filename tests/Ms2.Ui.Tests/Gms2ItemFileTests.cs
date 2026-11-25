@@ -103,6 +103,44 @@ public class Gms2ItemFileTests
         Assert.That(t.ItemOptions.ConstantOptions(gem, gem.Rank)!.Value.Stat.Values, Is.EqualTo(new[] { 2 }));
     }
 
+    /// <summary>
+    /// On the GMS2 data, whole list: every item's model (ItemModelTable.ForItem) has the colour head of the rule: its
+    /// preset's where that names a palette, else its own &lt;customize&gt; where that does, else the preset's; the slots are
+    /// always the preset's. It also counts the items whose own head differs from a preset head that names a palette (the
+    /// rule keeps the preset's there).
+    /// </summary>
+    [Test]
+    public void EveryGms2ItemIsDyedByItsPresetElseItsOwnHead()
+    {
+        var t = Gms2();
+        var packs = gms2Packs;
+        int files = 0, dyeable = 0, byOwn = 0, presetKept = 0, ownDiffers = 0;
+        foreach (var (id, entry) in ItemDataTable.PerItemIndex(packs.List("Xml")))
+        {
+            var env = FeatureElements.SelectEnvironment(packs, GameStrings.Parse(packs.Read("Xml", entry)).Root);
+            var d = t.Items.Get(id);
+            if (env == null || d == null) continue;
+            files++;
+            var preset = d.ItemPreset == 0 ? null : t.ItemModels.Get(d.ItemPreset);
+            var m = t.ItemModels.ForItem(d);
+            if (preset == null) { Assert.That(m, Is.Null, $"item {id}"); continue; }
+            var own = ItemModelTable.HeadOf(env.Element("customize"), preset.SlotTypes);
+            var want = preset.Palette != 0 || own.Palette == 0 ? preset : own;
+            Assert.That((m.ColorEnabled, m.Palette, m.DefaultColors), Is.EqualTo((want.ColorEnabled, want.Palette, want.DefaultColors)), $"item {id}");
+            Assert.That(m.SlotTypes, Is.EqualTo(preset.SlotTypes), $"item {id}");
+            if (m.ColorEnabled) dyeable++;
+            if (!ReferenceEquals(want, preset)) byOwn++;
+            if (preset.Palette != 0)
+            {
+                presetKept++;
+                if (own.Palette != preset.Palette || !own.DefaultColors.SequenceEqual(preset.DefaultColors)) ownDiffers++;
+            }
+        }
+        TestContext.Out.WriteLine($"{files} item files: {dyeable} dyeable, {byOwn} by their own head; {presetKept} keep their preset's palette ({ownDiffers} whose own head differs)");
+        Assert.That(dyeable, Is.GreaterThan(10000));
+        Assert.That(byOwn, Is.GreaterThan(10000));
+    }
+
     [Test]
     public void TheSellPriceIsThePriceCustomAboveZeroElseThePrice()
     {
