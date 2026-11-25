@@ -55,7 +55,6 @@ public class RcItemEnchantLayoutTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 item-enchant mode not read yet")]
     [Test] public void Gms2Mode5ReadsTheStageItem() {
         var a = ReadStage(Mode5Ophelia, exp: 1, uid: 3149027236994130151L, ingredients: 2, rate: 100f, failStack: 1);
         Assert.That(a);
@@ -84,7 +83,6 @@ public class RcItemEnchantLayoutTests {
         return true;
     }
 
-    [Ignore("GMS2 item-enchant mode not read yet")]
     [Test] public void Gms2Mode10ReadsTheItemAndOptions() {
         var r = new ByteReader(Mode10);
         var m = (ItemEnchantMessage) RcPkt.CallAny("ItemEnchantMessage", new[] { "Read" }, new[] {
@@ -100,7 +98,6 @@ public class RcItemEnchantLayoutTests {
         Assert.That(r.Available, Is.EqualTo(0), "the GMS2 item body and its 10-byte options must be read");
     }
 
-    [Ignore("GMS2 item-enchant mode not read yet")]
     [Test] public void Gms2Mode11ReadsTheFailureTail() {
         var r = new ByteReader(Mode11);
         var m = (ItemEnchantMessage) RcPkt.CallAny("ItemEnchantMessage", new[] { "Read" }, new[] {

@@ -175,10 +175,8 @@ public class ReservedWordsReadTests
     public void EveryDictionaryFileMatches(string file)
     {
         var p = Packs();
-        var names = p.List("Xml").ToList();
-        string entry = names.FirstOrDefault(n => string.Equals(n, "table/kr/" + file, StringComparison.OrdinalIgnoreCase))
-                    ?? names.FirstOrDefault(n => string.Equals(n, "table/" + file, StringComparison.OrdinalIgnoreCase));
-        if (entry == null) Assert.Ignore(file + " is not in the data");
+        string entry = TablePath.Resolve(p, file);
+        Assert.That(entry, Is.Not.Null, file + " is not in the data");
         var bytes = p.Read("Xml", entry);
         var dom = XDocument.Parse(Text(bytes)).Root!.Elements("key").Where(k => FieldMissions.Int((string)k.Attribute("value")) != 0)
             .Select(k => FieldMissions.Long((string)k.Attribute("id"))).ToHashSet();

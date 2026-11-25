@@ -21,7 +21,6 @@ public class RcG18HousingTests
     }
 
     [Test]
-    [Ignore("G18: GMS2 has no housing.xml and HousingTable does not build rows from the per-item <housing> yet")]
     public void TheGms2ItemReadsItsOwnHousingRow()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
