@@ -180,12 +180,32 @@ public sealed class FieldBuilder
     /// </summary>
     public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> InteractMeshDraws = new();
 
+    /// <summary>
+    /// The instances (drawn and shadow-only) of each MS2InteractMesh entity's reactable model (asset B, which state 1 sets as
+    /// the entity's NifAsset: CInteractMeshObject::vfunc_1 and FUN_1413ff690, interactobject.cpp:752-777 and :909-921;
+    /// <see cref="Ms2.Ui.LiveInteractObjects.ReactableModel"/>), keyed by the entity. A twin of the entity with that NifAsset
+    /// draws them in the field's groups; world/FieldInteractDraws hides them at the load and shows them in place of the
+    /// entity's <see cref="InteractMeshDraws"/> while its NifAsset is asset B. They are in no other list (no fade, trigger,
+    /// breakable, vibrate or lift draw), and the twin has no collision, particles or effect.
+    /// STILL-OPEN: the swapped scene graph's PhysX props (the client's entity gets asset B's NIF collision); a reactable model
+    /// drawn elsewhere (world/FieldProps) or played as an effect has no twin.
+    /// </summary>
+    public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> InteractReactableDraws = new();
+    /// <summary>The reactable twins made by the build, with the entity each stands for.</summary>
+    readonly Dictionary<FieldEntity, FieldEntity> reactableOf = new();
+
     /// <summary>The field's collider root (in the field's z-up space), where world/FieldInteractDraws adds an interact object's
     /// box.</summary>
     public Node3D Colliders { get; private set; }
 
     void AddTriggerDraw(FieldEntity e, MultiMesh mm, int index)
     {
+        if (reactableOf.TryGetValue(e, out var of))
+        {
+            if (!InteractReactableDraws.TryGetValue(of, out var twin)) InteractReactableDraws[of] = twin = new List<(MultiMesh, int)>();
+            twin.Add((mm, index));
+            return;
+        }
         if (e.HasMixin("MS2InteractMesh"))
         {
             if (!InteractMeshDraws.TryGetValue(e, out var own)) InteractMeshDraws[e] = own = new List<(MultiMesh, int)>();
@@ -214,6 +234,7 @@ public sealed class FieldBuilder
     void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving, uint lightOff)
     {
         AddTriggerDraw(e, mm, index);
+        if (reactableOf.ContainsKey(e)) return;
         if (IsVibrate(e))
         {
             if (!VibrateFadeDraws.TryGetValue(e, out var own)) VibrateFadeDraws[e] = own = new List<FadeDraw>();
@@ -598,15 +619,7 @@ public sealed class FieldBuilder
                 }
                 else if (e.Bool("IsVisible", true))
                 {
-                    // copies reached by different field lights draw apart, each with its light mask (the client's instancing
-                    // batches split on their nearby-light list the same way, Unk_MeshInstancingConfig::Equals)
-                    uint off = LightOff(e, me);
-                    var key = BatchKey(llid, e) + (notReceiving.Contains(e) ? NotReceivingKey : "")
-                              + (off != 0 ? LightKey + off : "")
-                              + (me.AnimatesMaterial && IsStatic(e) ? FrozenKey : "");
-                    if (off != 0) groupLightOff[key] = off;
-                    if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
-                    list.Add(e);
+                    Group(groups, llid, e, me, notReceiving.Contains(e));
                     grouped = true;            // counted when its group is placed
                 }
 
@@ -698,6 +711,27 @@ public sealed class FieldBuilder
                 }
             }
             finally { if (!grouped) Load?.Add(); }      // nothing of it is left to place
+        }
+
+        // the interact meshes' reactable models (InteractReactableDraws): a twin of the entity with asset B as its NifAsset joins
+        // the groups as the entity would with that asset (same transform, colour, lights and shadow receipt)
+        var interactRows = InteractObjectTable.Shared(packs);
+        foreach (var e in map.Entities)
+        {
+            var llidB = Ms2.Ui.LiveInteractObjects.ReactableModel(e, interactRows);
+            if (llidB == null) continue;
+            yield return 0;
+            var me = Model(llidB);
+            if (me == null || me.Elsewhere) continue;
+            var raw = new XEntity { Id = e.Raw.Id, ModelName = e.Raw.ModelName, Name = e.Raw.Name, Sets = e.Raw.Sets,
+                                    Props = new Dictionary<string, string>(e.Raw.Props, StringComparer.Ordinal) };
+            raw.Props["NifAsset"] = llidB;
+            var twin = new FieldEntity { Raw = raw, Flat = e.Flat };
+            var (ba, be) = assets.Resolve(llidB);
+            if (ba != null && be != null && twin.PlaysAsEffect(ba, me.Data)) continue;
+            reactableOf[twin] = e;
+            Group(groups, llidB, twin, me, notReceiving.Contains(e));
+            ReactableTwins++;
         }
 
         foreach (var (key, ents) in groups)
@@ -809,11 +843,30 @@ public sealed class FieldBuilder
                 foreach (var b in ownBlended) box = box.Merge(b.GetAabb());
                 foreach (var b in ownBlended) b.CustomAabb = box;
             }
-            Load?.Add(ents.Count);                      // the group's entities are placed
+            int placed = ents.Count;                    // the group's entities are placed (a reactable twin is not one)
+            if (reactableOf.Count > 0) foreach (var x in ents) if (reactableOf.ContainsKey(x)) placed--;
+            Load?.Add(placed);
             yield return 0;
         }
         World = world;
         building = null;
+    }
+
+    /// <summary>The reactable twins the build drew (<see cref="InteractReactableDraws"/>).</summary>
+    public int ReactableTwins;
+
+    /// <summary>Puts a visible entity drawn with <paramref name="llid"/> in its group: copies reached by different field lights
+    /// draw apart, each with its light mask (the client's instancing batches split on their nearby-light list the same way,
+    /// Unk_MeshInstancingConfig::Equals).</summary>
+    void Group(Dictionary<string, List<FieldEntity>> groups, string llid, FieldEntity e, ModelEntry me, bool noRecv)
+    {
+        uint off = LightOff(e, me);
+        var key = BatchKey(llid, e) + (noRecv ? NotReceivingKey : "")
+                  + (off != 0 ? LightKey + off : "")
+                  + (me.AnimatesMaterial && IsStatic(e) ? FrozenKey : "");
+        if (off != 0) groupLightOff[key] = off;
+        if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
+        list.Add(e);
     }
 
     Node3D building;

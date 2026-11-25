@@ -21,6 +21,9 @@ namespace Ms2Godot.Tests;
 /// reactable collision; in state 2 the object is gone from view and keeps its box; a removed object is gone with its box.
 /// Then the watch towers of 99999906 (lookout tower actors, CInteractWatchTowerObject): a state change while the player is far
 /// leaves the tower's sequence; within 2000 it plays its state's sequence (on in state 0, off otherwise), and away it keeps it.
+/// The mesh swap on 02000284_bf (the buckets whose reactable model is another bucket, and the map whose entity has no model of
+/// its own): the reactable model is hidden at the load and in state 0, drawn in place of the entity's own in state 1, both are
+/// hidden in state 2, and state 0 brings the entity's own back.
 /// Events only: nothing runs per frame. Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
 /// </summary>
 public partial class InteractDrawsCheck : Node
@@ -52,7 +55,7 @@ public partial class InteractDrawsCheck : Node
         AddChild(people);
         fnpcs = new FieldNpcs(packs, AssetIndex.For(packs), builder);
         fnpcs.PlaceActors(people, map);
-        draws = new FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders);
+        draws = new FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders, fb.InteractReactableDraws);
         AddChild(draws.Fader);
         live = new LiveInteractObjects(new Host { Draws = draws }, InteractObjectTable.Shared(packs));
         live.Attach(map.Entities);
@@ -63,7 +66,7 @@ public partial class InteractDrawsCheck : Node
     {
         if (live == null || fails.Count > 0) { Done(); return; }
         if (++frame < 3) return;
-        try { Check(); CheckWatchTowers(); }
+        try { Check(); CheckMeshSwap(); CheckWatchTowers(); }
         catch (Exception e) { fails.Add(e.ToString()); }
         Done();
     }
@@ -81,7 +84,7 @@ public partial class InteractDrawsCheck : Node
     void Check()
     {
         var actors = live.All.Where(o => o.AssetType == 2 && o.Kind == InteractObjectMessage.KindMesh).ToList();
-        var meshes = live.All.Where(o => o.AssetType == 1 && o.Kind == InteractObjectMessage.KindMesh && draws.Shown(o.Entity) != null).ToList();
+        var meshes = live.All.Where(o => o.AssetType == 1 && o.Kind == InteractObjectMessage.KindMesh && draws.ShownOwn(o.Entity) != null).ToList();
         int drawn = actors.Count(o => fnpcs.InteractActors.ContainsKey(o.Entity));
         GD.Print($"interact draws check: {XBlock} {live.All.Count} objects, {actors.Count} actors ({drawn} drawn), {meshes.Count} meshes with instances, {draws.Boxes} boxes");
         if (actors.Count == 0 || meshes.Count == 0) { fails.Add("the field has no interact actor or mesh"); return; }
@@ -123,6 +126,38 @@ public partial class InteractDrawsCheck : Node
         live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeRemove, Name = swap.Name });
         if (sa.Root.Visible || draws.Box(swap) != null) fails.Add($"{swap.Name}: still drawn or boxed after the remove");
         GD.Print($"interact draws check: {swap.Name} ({swap.AssetA} / {swap.AssetB}, collision {swap.Row.NormalCollision} / {swap.Row.ReactableCollision}) and mesh {m.Name} through states 1, 2, 0 and the remove");
+    }
+
+    /// <summary>The MS2InteractMesh asset swap (CInteractMeshObject::vfunc_3 and FUN_1413ff690, interactobject.cpp:781-819 and
+    /// :909-921) on the field's instances: which model draws in each state.</summary>
+    void CheckMeshSwap()
+    {
+        var swaps = live.All.Where(o => o.AssetType == 1 && fb.InteractReactableDraws.ContainsKey(o.Entity)).ToList();
+        int ownless = swaps.Count(o => !fb.InteractMeshDraws.ContainsKey(o.Entity));
+        GD.Print($"interact draws check: {XBlock} {fb.ReactableTwins} reactable twins, {swaps.Count} objects with a reactable model ({ownless} with no model of their own)");
+        if (swaps.Count == 0 || ownless == 0 || ownless == swaps.Count) { fails.Add($"{XBlock}: {swaps.Count} swaps, {ownless} with no own model: both kinds wanted"); return; }
+        void Expect(LiveInteractObject o, string when, bool own, bool reactable)
+        {
+            // the instances' switch (TriggerFade.Switch): the headless renderer keeps no instance transforms to read back
+            var a = draws.ShownOwn(o.Entity);
+            var b = draws.ShownReactable(o.Entity);
+            if (a != null && a != own) fails.Add($"{o.Name}: {when}: its own model drawn {a}, wanted {own}");
+            if (b != reactable) fails.Add($"{o.Name}: {when}: its reactable model drawn {b?.ToString() ?? "none"}, wanted {reactable}");
+        }
+        foreach (var o in swaps)
+        {
+            if (o.State == 0) Expect(o, "the load", true, false);
+            State(o, 1);
+            Expect(o, "state 1", false, true);
+            State(o, 2);
+            Expect(o, "state 2", false, false);
+            State(o, 1);
+            Expect(o, "state 1 after 2", false, true);
+            State(o, 2);
+            State(o, 0);
+            Expect(o, "state 0 after 2", true, false);
+        }
+        GD.Print($"interact draws check: {string.Join(", ", swaps.Select(o => o.Name[..8]))} through the load and states 1, 2, 1, 2, 0");
     }
 
     /// <summary>The watch towers: CInteractWatchTowerObject::vfunc_3 and vfunc_11 (interactobject.cpp:1721-1773) through

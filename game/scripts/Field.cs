@@ -217,7 +217,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         AddChild(Breakables.Fader);
         Vibrates = new World.FieldVibrateDraws(Net.LiveSession.Instance?.Vibrates, fb.VibrateMeshDraws, fb.VibrateFadeDraws, fb.VibrateColliders);
         AddChild(Vibrates.Fader);
-        Interacts = new World.FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders);
+        Interacts = new World.FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders, fb.InteractReactableDraws);
         AddChild(Interacts.Fader);
         Liftables = new World.FieldLiftables(Net.LiveSession.Instance?.Liftables, fb.LiftableMeshDraws, fb.LiftableFadeDraws);
         AddChild(Liftables.Fader);

@@ -15,7 +15,9 @@ namespace Ms2Godot.World;
 /// <list type="bullet">
 /// <item>IsVisible (0xa0b6b179): an MS2InteractMesh's drawn instances (FieldBuilder.InteractMeshDraws) or an MS2InteractActor's
 /// actor (FieldNpcs.InteractActors) shown or hidden at once.</item>
-/// <item>The asset (FUN_1413ff690, :909-921): an MS2InteractActor plays the sequence (Unk_AnimSvc::PlayAnimation, 1.0f, false);
+/// <item>The asset (FUN_1413ff690, :909-921): an MS2InteractMesh's NifAsset is set to it (<see cref="LiveInteractObjects.ApplyMeshAsset"/>);
+/// where the row's reactable model differs, its instances (FieldBuilder.InteractReactableDraws, hidden from the load) draw in
+/// place of the entity's own while NifAsset is asset B, under the same IsVisible. An MS2InteractActor plays the sequence (Unk_AnimSvc::PlayAnimation, 1.0f, false);
 /// the same name again leaves it where it is, as the trigger actors' does. A watch tower (CInteractWatchTowerObject) applies it
 /// only while the player is near (<see cref="LiveInteractObjects.WatchTowerAsset"/>) and never sets IsVisible or the box.</item>
 /// <item>SetCollision (:925-931): MakeNxBoxController (:848-889) makes one static box of the row's ShapeDimension at the object's
@@ -26,13 +28,14 @@ namespace Ms2Godot.World;
 /// </list>
 /// The objects registered before the draws are bound (the field load's attach) are applied in <see cref="Bind"/>.
 /// Nothing runs per frame.
-/// STILL-OPEN: an MS2InteractMesh's asset swap (SetAssetIdProperty NifAsset): the field's batched model is not rebuilt, so a
-/// mesh in state 1 or 2 keeps drawing its NifAsset where the row's reactableAssetName differs; a spawned object (InteractObject
-/// mode 9) has no drawn entity here; EnableHighlight / DisableDynamicUpdate (the scene graph's update list) have no draw effect.
+/// STILL-OPEN: the swapped model's collision (asset B's NIF PhysX props) is not made; an entity hidden at the load, and a
+/// reactable model drawn elsewhere or played as an effect, have no reactable draw (FieldBuilder.InteractReactableDraws); a
+/// spawned object (InteractObject mode 9, its "urn:gamebryo-scenegraph:" assets) has no drawn entity here; EnableHighlight / DisableDynamicUpdate (the scene graph's update list) have no draw effect.
 /// </summary>
 public sealed class FieldInteractDraws
 {
     readonly Dictionary<FieldEntity, (int Id, TriggerFade.Target Target)> meshes = new();
+    readonly Dictionary<FieldEntity, (int Id, TriggerFade.Target Target)> reactables = new();   // asset B's instances
     readonly Dictionary<LiveInteractObject, StaticBody3D> boxes = new();
     readonly Dictionary<LiveInteractObject, int> effectHandles = new();   // m_nEffect, the state effect
     readonly Dictionary<LiveInteractObject, int> particles = new();       // m_nParticle, the success effect
@@ -45,9 +48,12 @@ public sealed class FieldInteractDraws
     public readonly TriggerFade Fader = new() { Name = "InteractFade" };
 
     public int Meshes => meshes.Count;
+    public int Reactables => reactables.Count;
     public int Boxes => boxes.Count;
 
-    public FieldInteractDraws(IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> meshDraws, Node3D colliders)
+    /// <param name="reactableDraws">FieldBuilder.InteractReactableDraws: hidden here until an object's NifAsset is asset B.</param>
+    public FieldInteractDraws(IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> meshDraws, Node3D colliders,
+                              IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> reactableDraws = null)
     {
         this.colliders = colliders;
         int id = 0;
@@ -57,6 +63,15 @@ public sealed class FieldInteractDraws
             var t = new TriggerFade.Target();
             foreach (var (mm, i) in draws) t.All.Add((mm, i, mm.GetInstanceTransform(i)));
             meshes[e] = (id++, t);
+        }
+        if (reactableDraws == null) return;
+        foreach (var (e, draws) in reactableDraws)
+        {
+            if (draws.Count == 0) continue;
+            var t = new TriggerFade.Target();
+            foreach (var (mm, i) in draws) t.All.Add((mm, i, mm.GetInstanceTransform(i)));
+            TriggerFade.Switch(t, false);
+            reactables[e] = (id++, t);
         }
     }
 
@@ -86,8 +101,20 @@ public sealed class FieldInteractDraws
         model = null;
     }
 
-    /// <summary>Whether the entity's instances are drawn (null: it has none here).</summary>
-    public bool? Shown(FieldEntity e) => e != null && meshes.TryGetValue(e, out var t) ? t.Target.Shown : null;
+    /// <summary>Whether the entity's instances are drawn, its own or its reactable model's (null: it has none here).</summary>
+    public bool? Shown(FieldEntity e)
+    {
+        if (e == null) return null;
+        bool? a = meshes.TryGetValue(e, out var t) ? t.Target.Shown : null;
+        bool? b = reactables.TryGetValue(e, out var r) ? r.Target.Shown : null;
+        return a == null && b == null ? null : a == true || b == true;
+    }
+
+    /// <summary>Whether the entity's own model is drawn (null: it has none here).</summary>
+    public bool? ShownOwn(FieldEntity e) => e != null && meshes.TryGetValue(e, out var t) ? t.Target.Shown : null;
+
+    /// <summary>Whether the entity's reactable model is drawn (null: it has none here).</summary>
+    public bool? ShownReactable(FieldEntity e) => e != null && reactables.TryGetValue(e, out var r) ? r.Target.Shown : null;
 
     /// <summary>Whether the object's entity is drawn: its mesh instances or its actor (null: neither is drawn here).</summary>
     public bool? Drawn(LiveInteractObject o) =>
@@ -102,6 +129,7 @@ public sealed class FieldInteractDraws
         if (model == null || o == null) return;
         if (LiveInteractObjects.MeshDraw(o, out bool visible, out string asset, out int collision))
         {
+            LiveInteractObjects.ApplyMeshAsset(o, asset);   // vfunc_3 sets IsVisible, then the asset: one draw switch here
             SetVisible(o, visible);
             if (asset != null && o.AssetType == 2 && o.Entity != null && actors.TryGetValue(o.Entity, out var actor))
                 actor.PlayAnimation(asset);
@@ -151,7 +179,10 @@ public sealed class FieldInteractDraws
     void SetVisible(LiveInteractObject o, bool visible)
     {
         if (o.Entity == null) return;
-        if (meshes.TryGetValue(o.Entity, out var t)) Fader.Stop(t.Id, t.Target, visible);
+        bool hasB = reactables.TryGetValue(o.Entity, out var b);
+        bool onB = hasB && o.ShowsAssetB;
+        if (meshes.TryGetValue(o.Entity, out var t)) Fader.Stop(t.Id, t.Target, visible && !onB);
+        if (hasB) Fader.Stop(b.Id, b.Target, visible && onB);
         if (actors.TryGetValue(o.Entity, out var a)) a.Visible = visible;
     }
 
