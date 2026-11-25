@@ -88,14 +88,32 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: volumes {SoundBuses.Describe()} music volume {Ms2.Formats.Options.SoundMix.Shared.MusicVolume:F2}");
     }
 
-    void ApplyMusicVolume()
+    void ApplyMusicVolume(bool log = true)
     {
         categoryMusicVolume = Ms2.Formats.Options.SoundMix.Shared.MusicVolume;
         MusicVolume = categoryMusicVolume;
         ApplyPlayerGain(0);
         ApplyPlayerGain(1);
-        GD.Print($"audio: music volume {MusicVolume:F2}");
+        if (log) GD.Print($"audio: music volume {MusicVolume:F2}");
     }
+
+    /// <summary>CSoundEventMgr's volume fades (m_mapFades), advanced each frame by <see cref="_Process"/> (CSoundEventMgr::Update
+    /// -> UpdateFades, soundeventmgr.cpp:1055-1057).</summary>
+    public static readonly Ms2.Formats.Options.SoundFades Fades = new(Ms2.Formats.Options.SoundMix.Shared, Ms2.Formats.Options.SoundFades.SystemClockMs);
+
+    /// <summary>UICutSceneMovie::SetSoundFade's body (@0x14190f270, uicutscenemovie.cpp:197-213): the sound options are applied
+    /// again (FUN_14125fe20 of the saved options), then categories 2 (bgm) and 1 (environment) fade out or in over 1000 ms.</summary>
+    public static void CutSceneSoundFade(bool fade)
+    {
+        const int nFadeTime = 1000;
+        var mix = Ms2.Formats.Options.SoundMix.Shared;
+        ApplyVolumes(Ms2.Formats.Options.SoundVolumes.From(GameOptions.Current.SoundOption, false, mix.AppActive));
+        if (fade) { Fades.StartFadeOut(2, nFadeTime); Fades.StartFadeOut(1, nFadeTime); }
+        else { Fades.StartFadeIn(2, nFadeTime); Fades.StartFadeIn(1, nFadeTime); }
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: cut scene sound fade {(fade ? "out" : "in")} started: {SoundBuses.Describe()}");
+    }
+
+    double fadeLogClock;
 
     public int BgmCue { get; private set; }
     public string BgmName => bgmName;
@@ -453,6 +471,19 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         audioClock += delta;
         if (voiceSlots.Pending > 0)
             for (int due; (due = voiceSlots.NextDue(audioClock)) >= 0;) StopVoice(due);
+        if (Fades.Running)
+        {
+            if (Fades.Update())
+            {
+                SoundBuses.Sync();
+                ApplyMusicVolume(false);
+            }
+            if (Ms2Godot.Net.LiveSession.LiveCheck && (!Fades.Running || audioClock - fadeLogClock >= 0.25))
+            {
+                fadeLogClock = audioClock;
+                GD.Print($"audio: sound fade {(Fades.Running ? "running" : "done")}: {SoundBuses.Describe()} music volume {Ms2.Formats.Options.SoundMix.Shared.MusicVolume:F2}");
+            }
+        }
         bool gainDirty = false;
         if (soundMusicFade.IsFading)
         {

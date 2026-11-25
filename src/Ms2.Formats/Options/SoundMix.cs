@@ -47,6 +47,15 @@ public sealed class SoundMix
         SetAllMute(v.AllMute);
     }
 
+    /// <summary>CSoundEventMgr::SetCategoryVolume (@0x14177da80, soundeventmgr.cpp:1667-1682): the category's volume (slot 2 is
+    /// also the music system's volume, <see cref="MusicVolume"/>). The sound fades (<see cref="SoundFades"/>) write through it.</summary>
+    public void SetCategoryVolume(int category, float v)
+    {
+        if ((uint)category >= CategoryCount) return;
+        volume[category] = v;
+        Version++;
+    }
+
     /// <summary>CSoundEventMgr::SetAllMute (soundeventmgr.cpp:1711-1723).</summary>
     public void SetAllMute(bool on)
     {

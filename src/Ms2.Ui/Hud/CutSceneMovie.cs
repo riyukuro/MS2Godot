@@ -48,22 +48,41 @@ public sealed class CutSceneMovie
     /// <summary>vfunc_52 (@0x14190ec00, :80): m_bIntroStory is the path "Common/MS2IntroStory.usm".</summary>
     public static bool IsIntroStory(string path) => path == "Common/MS2IntroStory.usm";
 
-    /// <summary>FUN_141863b70: a movie that plays is stopped first, then the id is stored and the path starts.</summary>
+    /// <summary>The sound fade the host runs (CSoundEventMgr's fade of the environment and bgm categories, 1000 ms): true fades
+    /// them out, false back in. Called only when the state changes (<see cref="SoundFaded"/>).</summary>
+    public Action<bool> SoundFade { get; set; }
+
+    /// <summary>m_bSoundFaded (uicutscenemovie.cpp:197-213): the pane has faded the sound out and not yet back in.</summary>
+    public bool SoundFaded { get; private set; }
+
+    /// <summary>UICutSceneMovie::SetSoundFade @0x14190f270 (uicutscenemovie.cpp:197-213): returns when m_bSoundFaded already
+    /// has the value; else the host reapplies the sound options and starts the 1000 ms fade of categories 2 and 1.</summary>
+    void SetSoundFade(bool fade)
+    {
+        if (SoundFaded == fade) return;
+        SoundFade?.Invoke(fade);
+        SoundFaded = fade;
+    }
+
+    /// <summary>FUN_141863b70: a movie that plays is stopped first, then the id is stored and the path starts. vfunc_52
+    /// (@0x14190ec00, :80-86) stores the path and returns at an empty one, else SetSoundFade(true).</summary>
     public void Start(string path, int cutSceneId)
     {
         if (IsPlaying) Stop();
         CutSceneId = cutSceneId;
         Path = path;
         ExitShown = !IsIntroStory(path);
+        if (!string.IsNullOrEmpty(path)) SetSoundFade(true);
     }
 
     /// <summary>UICutSceneMovie::Play (@0x14190fef0, uicutscenemovie.cpp:377-389): PathFindExtension ".usm" plays in the
     /// VideoPlayer (PlayUsm), ".swf" in the pane's movie (PlaySwf).</summary>
     public static bool IsUsm(string path) => path != null && path.EndsWith(".usm", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>vfunc_53 (@0x14190ed50): stops the movie and clears the cut scene id (m_nCutSceneId = 0, uicutscenemovie.cpp:124).</summary>
+    /// <summary>vfunc_53 (@0x14190ed50): stops the movie, SetSoundFade(false) (:113) and clears the cut scene id (m_nCutSceneId = 0, uicutscenemovie.cpp:124).</summary>
     public void Stop()
     {
+        SetSoundFade(false);
         Path = null;
         CutSceneId = 0;
         ExitShown = false;
