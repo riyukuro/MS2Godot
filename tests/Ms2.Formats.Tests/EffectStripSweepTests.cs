@@ -247,8 +247,70 @@ public class EffectStripSweepTests
             var slow = new EffectStripParam { Length = 0.1f, Quality = 2, Sampling = 6 };
             Assert.That(slow.SwooshShape(3, false, 1, 60, out seg, out curve, out iv), Is.True);
             Assert.That((seg, curve, iv), Is.EqualTo((1, 2, 1f / 5)));
+            // what the client would take as an unsigned count of billions makes no swoosh here
+            Assert.That(new EffectStripParam { Length = 0.3f, Quality = 0, Sampling = 60 }.SwooshShape(3, false, 1, 60, out _, out _, out _), Is.False);
+            Assert.That(new EffectStripParam { Length = 0.3f, Quality = -2, Sampling = 60 }.SwooshShape(3, false, 1, 60, out _, out _, out _), Is.False);
+            Assert.That(new EffectStripParam { Length = -1f, Quality = 4, Sampling = 60 }.SwooshShape(3, false, 1, 60, out _, out _, out _), Is.False);
+            Assert.That(new EffectStripParam { Length = float.NaN, Quality = 4, Sampling = 60 }.SwooshShape(3, false, 1, 60, out _, out _, out _), Is.False);
+            Assert.That(new EffectStripParam { Length = 1e9f, Quality = 4, Sampling = 60 }.SwooshShape(3, false, 1, 60, out _, out _, out _), Is.False);
+            Assert.That(new EffectStripParam { Length = 0f, Quality = 4, Sampling = 60 }.SwooshShape(3, false, 1, 60, out seg, out curve, out _), Is.True);
+            Assert.That((seg, curve), Is.EqualTo((1, 4)));
         });
     }
+
+    [Test]
+    public void TheFirstUpdateSamplesAtOnce()
+    {
+        // m_dLastSample is 0 from the constructor and the clock is the game time, so the first update samples
+        var t = new SwooshTrail(4, 16, 0.125f);
+        Assert.That(t.Due(812.5), Is.True);
+        Assert.That(t.Sample(812.5, default, default), Is.False);   // one point kept, nothing to lay yet
+        Assert.That(t.Points, Is.EqualTo(1));
+        Assert.That(t.Due(812.5 + 0.1), Is.False);
+        Assert.That(t.Due(812.5 + 0.125), Is.True);
+    }
+
+    /// <summary>The hit path plays a damage's effectHit at a transform (no actor: no swoosh, swoosheffectparam.cpp:293-295)
+    /// and its effectRemain on the target, both with no handle (magicdata.cpp:2770-2829), so a loop swoosh there would live
+    /// until the target goes, in the client as here. No effectRemain names an effect with a loop swoosh.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void NoLoopSwooshPlaysOnTheHitPath(string env)
+    {
+        var dir = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) Assert.Ignore($"{env} not set");
+        using var packs = new PackSet(dir);
+        var loops = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in packs.List("Xml"))
+        {
+            if (!entry.StartsWith("effect/", StringComparison.Ordinal) || !entry.EndsWith(".xml", StringComparison.Ordinal)) continue;
+            List<EffectPart> parts;
+            try { parts = EffectTable.Parse(PackXml.Parse(packs.Read("Xml", entry))); } catch { continue; }
+            if (parts.Any(p => p.TypeId == EffectSkipTable.TypeSwoosh && p.Loop)) loops.Add(entry["effect/".Length..]);
+        }
+        int damages = 0, hit = 0;
+        var remain = new List<string>();
+        foreach (var entry in packs.List("Xml"))
+        {
+            if (!(entry.StartsWith("skilldata/", StringComparison.Ordinal) || entry.StartsWith("skill/", StringComparison.Ordinal))) continue;
+            XDocument x;
+            try { x = PackXml.Parse(packs.Read("Xml", entry)); } catch { continue; }
+            foreach (var d in x.Descendants())
+            {
+                if (d.Name.LocalName is not ("damage" or "damageProperty")) continue;
+                damages++;
+                if (Named(d, "effectHit") is { } h && loops.Contains(h)) hit++;
+                if (Named(d, "effectRemain") is { } r && loops.Contains(r)) remain.Add($"{entry}: {r}");
+            }
+        }
+        TestContext.Out.WriteLine($"{env}: {loops.Count} effect xmls with a loop swoosh, {damages} damage elements, {hit} effectHit naming one, {remain.Count} effectRemain");
+        Assert.That(loops, Is.Not.Empty);
+        Assert.That(damages, Is.GreaterThan(1000));
+        Assert.That(remain, Is.Empty);
+    }
+
+    static string Named(XElement e, string attr) =>
+        (string)e.Attribute(attr) is { Length: > 0 } v ? v.Replace('\\', '/').Trim().ToLowerInvariant() : null;
 
     [Test]
     public void TheTrailKeepsSegmentsPlusThreePointsAndCurvesThroughThem()

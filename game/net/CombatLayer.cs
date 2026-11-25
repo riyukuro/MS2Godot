@@ -222,6 +222,10 @@ void fragment() {
     /// A swoosh part on <paramref name="actor"/> (CSwooshEffect; an effect at a place has no target node and makes none,
     /// swoosheffectparam.cpp:293-295). Once made, CreateEffect tests its place (vfunc_8: the actor's world point) on the
     /// swoosh row for the caster unless offSkip (effectservice.cpp:335-343). False when it was made.
+    /// - <paramref name="casterKind"/> is the effect's kind (the target's m_nKind, copied to the effect's m_unk_18), the
+    ///   kind both the view test and the frame-rate step drop read (vfunc_3, :303).
+    /// - A loop swoosh lives until its actor goes: the hit path plays effects with no handle (magicdata.cpp:2770-2829), in
+    ///   the client as here. The data puts none there (EffectStripSweepTests.NoLoopSwooshPlaysOnTheHitPath).
     /// </summary>
     internal bool Swoosh(IReadOnlyList<EffectPart> parts, EffectPart part, Node3D actor, int casterKind, System.Numerics.Vector3? eye)
     {

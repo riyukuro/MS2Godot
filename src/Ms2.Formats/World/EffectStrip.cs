@@ -104,6 +104,9 @@ public sealed class EffectStripParam
         return null;
     }
 
+    /// <summary>The most curve samples a swoosh makes here: the strip's vertex count is a 16-bit count (UpdateTrail).</summary>
+    public const int MaxCurveSamples = ushort.MaxValue - 1;
+
     /// <summary>
     /// The trail a swoosh makes at the effect step <paramref name="effectStep"/> (CEffectService m_unk_188, the graphic
     /// option's effectStep, 1..3), as CSwooshEffect::vfunc_3 @0x14181d760 (swoosheffectparam.cpp:290-326) sizes it:
@@ -127,7 +130,11 @@ public sealed class EffectStripParam
         if (level == 3) sampling = Math.Max(sampling >> 1, 5u);
         else if (level == 2) sampling = Math.Max(sampling >> 2, 5u);
         else return false;
-        segments = (int)Math.Max(1u, unchecked((uint)(long)(Length * sampling)));
+        // a quality below 1, a negative or huge length make no strip here: the client takes them as unsigned counts
+        // (m_nCurveSamples and the reserves) and would ask for billions of samples; the data has none
+        float span = Length * sampling;
+        if (Quality < 1 || !(span >= 0f) || span * Quality > MaxCurveSamples) return false;
+        segments = (int)Math.Max(1u, unchecked((uint)(long)span));
         curveSamples = segments * Quality;
         interval = 1f / sampling;
         return true;
@@ -247,6 +254,10 @@ public sealed class SwooshTrail
 
     /// <summary>One update at game time <paramref name="now"/> (s) with the nodes' world points: true when the strip was
     /// laid again.</summary>
+    /// <summary>Whether an update at <paramref name="now"/> samples (UpdateTrail's interval test, :554-556): read the nodes only
+    /// then.</summary>
+    public bool Due(double now) => now - lastSample >= interval;
+
     public bool Sample(double now, Vector3 a, Vector3 b)
     {
         double elapsed = now - lastSample;
