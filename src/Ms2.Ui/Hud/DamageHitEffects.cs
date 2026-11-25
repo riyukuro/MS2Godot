@@ -206,11 +206,13 @@ public static class DamageHitEffects
     /// An npc's vfunc_37 (PCBase's, pcbase.cpp:958, CNpc keeps it): CNpc::vfunc_51 (unit_14108e1e0_npcactorandvibrate.cpp:2215),
     /// with all three collision offsets 0 GameObject::vfunc_51's (0, 0, vfunc_43's height, 0 here), else (width, depth,
     /// height offset) turned by MakeZRotation(DirectionToNegYawRadians(forward) + pi), counter-clockwise by rotZ - 180 degrees;
-    /// then plus <paramref name="halfBox"/> (half the box's height) in z.
-    /// STILL-OPEN: the npc bound to an owner (m_nF20: the offset is the owner's position minus its own) and vfunc_43's height.
+    /// then plus <paramref name="halfBox"/> (half the box's height) in z. An npc bound to an owner whose actor is here
+    /// (m_nF20, :2217-2222) has <paramref name="bound"/>, the owner's position minus its own, as the offset, unturned.
+    /// STILL-OPEN: vfunc_43's height.
     /// </summary>
-    public static Vector3 NpcExtent(Vector3 offset, float rotZ, float halfBox)
+    public static Vector3 NpcExtent(Vector3 offset, float rotZ, float halfBox, Vector3? bound = null)
     {
+        if (bound is { } b) return new Vector3(b.X, b.Y, b.Z + halfBox);
         if (offset == Vector3.Zero) return new Vector3(0, 0, halfBox);
         float a = (rotZ - 180f) * 3.1415927f / 180f, s = MathF.Sin(a), c = MathF.Cos(a);
         return new Vector3(c * offset.X - s * offset.Y, s * offset.X + c * offset.Y, offset.Z + halfBox);

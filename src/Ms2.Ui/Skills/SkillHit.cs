@@ -461,6 +461,9 @@ public struct HitCandidate
     public bool Boss;
     /// <summary>An npc's collision widthOffset, depthOffset and heightOffset (CNpc::vfunc_51), unturned.</summary>
     public Vector3 CollisionOffset;
+    /// <summary>An npc bound to an owner (CNpc m_nF20, NpcRide mode 1): CNpc::vfunc_51's offset is then the owner's position
+    /// minus the npc's, unturned (unit_14108e1e0_npcactorandvibrate.cpp:2217-2222); null when not bound or the owner is not here.</summary>
+    public Vector3? BoundOffset;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>

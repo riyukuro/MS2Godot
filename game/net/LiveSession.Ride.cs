@@ -11,10 +11,8 @@ namespace Ms2Godot.Net;
 /// CSceneStateGame::OnResponseRide (0x79, @0x14172a8f0, scenestategame.cpp:12026) for the own pc: modes 0, 1 and 2
 /// (<see cref="OwnRide"/>), other players' in <see cref="Net.RemoteLayer.OnRide"/>; the own pc's passenger map and
 /// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>), mode 3's own StateHold on another player's mount
-/// (<see cref="Player.HoldOn"/>). STILL-OPEN: RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
-/// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50: u8 mode 0 an i64, 1 an i32 owner object id the npc turns
-/// toward and is offset from (FUN_141093eb0, vfunc_51), 2 clears it; the port has no npc bound to an owner) and the ridee's
-/// step on a skill use (Ridee::FUN_141706650, mypc.cpp:1219-1226). The ridee's skill set is <see cref="OwnSkillSets"/>.
+/// (<see cref="Player.HoldOn"/>). RecvOp NpcRide (CSceneStateGame::OnNpcRide) binds an npc to an owner actor
+/// (<see cref="Net.NpcLayer.Ride"/>). STILL-OPEN: the ridee's step on a skill use (Ridee::FUN_141706650, mypc.cpp:1219-1226). The ridee's skill set is <see cref="OwnSkillSets"/>.
 /// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
 public partial class LiveSession

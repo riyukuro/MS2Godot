@@ -190,6 +190,35 @@ public sealed partial class RemoteLayer
 
     static readonly NodePath NpcHoldSkeletonPath = "Model/" + ModelBuilder.SkeletonName;
 
+    const string RideNode = "Ride_A";
+
+    /// <summary>
+    /// <see cref="NpcLayer.RideNodeOf"/>: WorldService::FUN_141bd1200's actor of the id (an npc, another player or the own pc),
+    /// then PCBase::FUN_141675930, its model's Ride_A node, as a world point; null when the actor is not here, is a placeholder
+    /// or its skeleton has no such bone (every NiNode of a model is a bone here, <see cref="ModelBuilder.SkeletonName"/>).
+    /// </summary>
+    System.Numerics.Vector3? ActorPosOf(int id)
+    {
+        if (id == Tracker.SelfObjectId && LiveSession.Instance?.OwnPlayer is { } own && IsInstanceValid(own))
+        {
+            var g = own.GlobalPosition;
+            return new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+        }
+        return PoseOf(id)?.Pos;
+    }
+
+    internal Vector3? RideNodeOf(int id)
+    {
+        Node3D visual = null;
+        if (npcs.HoldInfo(id, out _, out _, out var nv)) visual = nv;
+        else if (users.TryGetValue(id, out var r)) visual = r.Visual;
+        else if (id == Tracker.SelfObjectId) visual = LiveSession.Instance?.OwnPlayer?.Visual;
+        if (visual == null || !IsInstanceValid(visual) || visual.GetNodeOrNull<Skeleton3D>(NpcHoldSkeletonPath) is not { } sk) return null;
+        var key = (sk.GetInstanceId(), RideNode);
+        if (!holdBones.TryGetValue(key, out int bone)) holdBones[key] = bone = sk.FindBone(RideNode);
+        return bone < 0 ? null : (sk.GlobalTransform * sk.GetBoneGlobalPose(bone)).Origin;
+    }
+
     /// <summary>WorldService::FindNpcById and PCBase::vfunc_117 (@0x1416752a0, pcbase.cpp:2747: m_unk_b88 not empty) for an
     /// npc of the field: its npc id, and whether its body has a Hold_PointNN node (CNpc keeps PCBase::vfunc_119). False when
     /// no such npc is here; a placeholder has no nodes. A dead npc keeps its nodes.</summary>

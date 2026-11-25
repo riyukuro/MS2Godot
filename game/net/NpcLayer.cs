@@ -33,6 +33,8 @@ public sealed class NpcLayer
         public Node3D OwnerNode;                  // the pc node the kept effect hangs on
         public Node3D ModelNode;                  // the body's Model node (the hp bar's Eff_UI anchor), null on a placeholder
         public string Kfm;                        // m_strED8: the kfm the actor loads (the row's, or NpcNotice mode 2's)
+        public int RideOwner;                     // m_nF20: the actor the npc rides on (NpcRide mode 1, a boss's FieldAddNpc), 0 for none
+        public long AccumDamage;                  // m_nEE0: the accumulated damage (NpcRide mode 0, FieldAddNpc's damaged hp bar tag)
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a dead body: eased toward the block position, no velocity
         public readonly Ms2.Net.Replay.NpcJumpArc Arc = new();   // m_unkDB0: the jump arc a -2/-3 block starts
@@ -260,6 +262,8 @@ public sealed class NpcLayer
             i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health);
         }
         i.HpCur = n.Stats[2].Health; i.HpMax = n.Stats[0].Health;
+        i.RideOwner = n.BossValue;                 // OnFieldAddNpc (scenestategame.cpp:3574): FUN_141095290, 0 for a non-boss npc
+        i.AccumDamage = n.AccumulatedDamage;       // :3577, FUN_141095240, 0 without the tag
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
         ActorAdded?.Invoke(n.ObjectId);            // WorldService::OnActorAdded: the field's effect nif of this id (m_848)
@@ -499,6 +503,7 @@ public sealed class NpcLayer
                 Kind = Ms2.Ui.Skills.HitKind.Npc, Team = row.Friendly, Hp = i.Dead ? 0 : i.HpCur, NpcClass = row.Class,
                 CorpseHit = i.Dead && row.CorpseHitAble, DefenceMaterial = row.DefenceMaterial, Boss = row.IsBoss,
                 CollisionOffset = new System.Numerics.Vector3(row.CollisionWidthOffset, row.CollisionDepthOffset, row.CollisionHeightOffset),
+                BoundOffset = i.RideOwner != 0 && ActorPosOf(i.RideOwner) is { } owner ? owner - p : null,
             });
         }
     }
@@ -848,6 +853,49 @@ public sealed class NpcLayer
         i.OwnerNode = null;
     }
 
+    /// <summary>
+    /// The world point of an actor's Ride_A node (PCBase::FUN_141675930, m_spBE8, which PCBase::vfunc_119 finds by name on the
+    /// actor's model root, pcbase.cpp:3039-3041/3065-3067) for the actor of an object id of any kind (WorldService::FUN_141bd1200);
+    /// null when no such actor is here or its model has no such node. Only npc models have one in the data (the vehicle npcs
+    /// and the mount models); a pc body has none.
+    /// </summary>
+    public Func<int, Godot.Vector3?> RideNodeOf = _ => null;
+    /// <summary>The position (vfunc_18, client space) of the actor of an object id of any kind (WorldService::FUN_141bd1200);
+    /// null when none is here. CNpc::vfunc_51 of a bound npc reads its owner's.</summary>
+    public Func<int, System.Numerics.Vector3?> ActorPosOf = _ => null;
+
+    /// <summary>
+    /// NpcRide after OnNpcRide's FindNpcById (scenestategame.cpp:4871-4877): CNpc::FUN_141092c50 (@0x141092c50,
+    /// unit_14108e1e0_npcactorandvibrate.cpp:1036-1046), mode 0 the accumulated damage (FUN_141095240, m_nEE0), mode 1 the
+    /// owner actor (m_nF20), mode 2 none; another mode changes nothing. False when there is no npc of the id.
+    /// </summary>
+    public bool Ride(Ms2.Net.Packets.NpcRide p)
+    {
+        if (!inst.TryGetValue(p.ObjectId, out var i)) return false;
+        switch (p.Mode)
+        {
+            case Ms2.Net.Packets.NpcRide.Damage: i.AccumDamage = p.AccumulatedDamage; break;
+            case Ms2.Net.Packets.NpcRide.Ride: i.RideOwner = p.Owner; break;      // placed by the next frame's update
+            case Ms2.Net.Packets.NpcRide.RideEnd: i.RideOwner = 0; break;
+        }
+        return true;
+    }
+
+    /// <summary>An npc's ride state (m_nF20, m_nEE0) and where its root is; null when there is no npc of the id.</summary>
+    public (int Owner, long AccumDamage, Godot.Vector3 At)? RideOf(int id) =>
+        inst.TryGetValue(id, out var i) ? (i.RideOwner, i.AccumDamage, i.Root.GlobalPosition) : null;
+
+    /// <summary>
+    /// CNpc::FUN_141093eb0 (@0x141093eb0, :1295-1307): with an owner, the npc's position (vfunc_19) is the world point of the
+    /// owner's Ride_A node; an owner that is not here or has no such node leaves the npc where it is. The next frame's move
+    /// starts from there, as the client's does.
+    /// </summary>
+    void RideStep(Inst i)
+    {
+        if (i.RideOwner == 0 || RideNodeOf(i.RideOwner) is not { } at) return;
+        i.Root.GlobalPosition = at;
+    }
+
     /// <summary>The npc a followed pc copies (StateTriggerFollowNpc::vfunc_3, stateemotionidle.cpp:521-562): <see cref="PoseOf"/>
     /// and its sync sequence key (CNpc::FUN_141093510, m_nDE8); null when there is no npc of the id.</summary>
     public (System.Numerics.Vector3 Pos, float RotZ, short AnimKey)? FollowPoseOf(int id) =>
@@ -1164,6 +1212,8 @@ public sealed class NpcLayer
                 var off = System.Numerics.Vector3.Zero;
                 i.Visual.Position = i.Vibrate.Update(Now, ref off, Rand) ? i.VisualBase + G(off) : i.VisualBase;
             }
+            // the CNpc update's ride (:2425): at the owner's Ride_A node each frame, after the shake
+            if (i.RideOwner != 0) RideStep(i);
             // PCBase::vfunc_53 (pcbase.cpp:3733): UpdateBoosts, which writes the scale only when it changed
             if (i.Boost.Count > 0 && i.Boost.Update(Now) && i.Visual != null)
             {

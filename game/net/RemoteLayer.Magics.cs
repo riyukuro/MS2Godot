@@ -290,7 +290,7 @@ public sealed partial class RemoteLayer
             bool self = id == Tracker.SelfObjectId;
             float rot = self ? magicPlayer.FacingRotZ : PoseOf(id)?.RotZ ?? 0f;
             float half = (c.Body.MaxZ - c.Body.MinZ) * 0.5f;
-            var extent = c.Kind == HitKind.Npc ? DamageHitEffects.NpcExtent(c.CollisionOffset, rot, half)
+            var extent = c.Kind == HitKind.Npc ? DamageHitEffects.NpcExtent(c.CollisionOffset, rot, half, c.BoundOffset)
                 : new System.Numerics.Vector3(0, 0, half);
             o = new DamageHitObject(c.Position, rot, extent, DamageHitEffects.KindOf(self, c.Kind, c.Boss));
             return true;

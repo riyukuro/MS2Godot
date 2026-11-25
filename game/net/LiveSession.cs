@@ -277,6 +277,17 @@ public partial class LiveSession : Node
         return Hex(b);
     }
 
+    /// <summary>The live run's raw NpcRide (the layout OnNpcRide and CNpc::FUN_141092c50 read): i32 npc object id, u8 mode, then
+    /// mode 0 an i64 accumulated damage, mode 1 the owner's i32 object id.</summary>
+    internal string NpcRideBytes(int npc, byte mode, long value = 0)
+    {
+        var b = new List<byte>();
+        Op(b, game.Profile.Number(Ms2.Net.Inbound.NpcRide)); I32(b, npc); b.Add(mode);
+        if (mode == 0) { I32(b, (int)value); I32(b, (int)(value >> 32)); }
+        else if (mode == 1) I32(b, (int)value);
+        return Hex(b);
+    }
+
     /// <summary>The live run's raw Insignia for the own pc (OnNametag: i32 object, u16 symbol, u8 shown).</summary>
     internal string OwnInsigniaBytes(ushort symbol, bool shown)
     {
@@ -2493,6 +2504,12 @@ public partial class LiveSession : Node
                     default: applied = "nothing"; break;
                 }
                 if (LiveCheck) GD.Print($"live: npc notice mode {n.Mode}: {applied}{(n.Mode == NpcNotice.SidePopup ? $" kind {n.Kind} npc {n.NpcId} icon {n.Icon}" : "")}");
+            }
+            else if (game.Is(p, Inbound.NpcRide))
+            {
+                var n = Ms2.Net.Packets.NpcRide.Read(p.Reader());   // CSceneStateGame::OnNpcRide (scenestategame.cpp:4871-4877)
+                bool found = remote != null && IsInstanceValid(remote) && remote.NpcRide(n);
+                if (LiveCheck) GD.Print($"live: npc ride {n.ObjectId} mode {n.Mode}{(n.Mode == 0 ? $" damage {n.AccumulatedDamage}" : n.Mode == 1 ? $" owner {n.Owner}" : "")}{(found ? "" : " (no npc)")}");
             }
             else if (game.Is(p, Inbound.Insignia))
             {

@@ -163,6 +163,16 @@ public sealed partial class RemoteLayer : Node3D
         return npcs.ChangeModel(objectId, kfm);
     }
 
+    /// <summary>NpcRide on an npc (<see cref="NpcLayer.Ride"/>); false when there is no npc of the id.</summary>
+    public bool NpcRide(Ms2.Net.Packets.NpcRide p)
+    {
+        CatchUp(p.ObjectId, npc: true);
+        return npcs.Ride(p);
+    }
+
+    /// <summary>An npc's ride state (<see cref="NpcLayer.RideOf"/>).</summary>
+    public (int Owner, long AccumDamage, Vector3 At)? NpcRideOf(int id) => npcs.RideOf(id);
+
     /// <summary>
     /// Applies the queued tracker events up to the last one that adds or removes the object a packet names, before that packet
     /// runs. The client handles each packet in order, so a packet that names an object an earlier packet made finds it even when
@@ -377,6 +387,8 @@ public sealed partial class RemoteLayer : Node3D
                 : users.TryGetValue(id, out var r) ? r.Visual : null,
             SpawnKept = (fx, pc, kind) => SpawnKeptEffect(fx, pc, kind),
             StopKept = StopKeptEffect,
+            RideNodeOf = RideNodeOf,
+            ActorPosOf = ActorPosOf,
         };
         npcTable = table;
         combat = new CombatLayer(packs, mb, new EffectTable(packs), this);

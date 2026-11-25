@@ -23,7 +23,10 @@ public sealed class FieldAddNpc {
     public bool Hidden;
     public List<Buff> Buffs = new();
     public long MaidUid; public bool Talkable; public int Level, Unknown;
-    public string BossEffect; public (int SkillId, short Level)[] BossSkills = Array.Empty<(int, short)>(); public int BossValue;
+    public string BossEffect; public (int SkillId, short Level)[] BossSkills = Array.Empty<(int, short)>();
+    /// <summary>The boss block's last i32: CNpc::FUN_141095290 (scenestategame.cpp:3574), m_nF20, the actor the npc rides on
+    /// (<see cref="NpcRide"/> mode 1), 0 for none.</summary>
+    public int BossValue;
     public long AccumulatedDamage; public bool Flag;
 
     public static FieldAddNpc Read(ByteReader r, Func<int, NpcLayout> layoutOf) {
@@ -210,6 +213,33 @@ public sealed class NpcNotice {
             default: return n;      // the client reads no more of another mode
         }
         r.ExpectEnd("NpcNotice");
+        return n;
+    }
+}
+
+/// <summary>
+/// Inbound NpcRide (KMS 0xE7, GMS2 0xE9 inferred): CSceneStateGame::OnNpcRide (@0x141738ad0, scenestategame.cpp:4871-4877) reads
+/// the npc's object id (i32); with no such npc the rest is left. CNpc::FUN_141092c50 (@0x141092c50,
+/// unit_14108e1e0_npcactorandvibrate.cpp:1036-1046) reads u8 mode: 0 the npc's accumulated damage (i64, m_nEE0, which
+/// FieldAddNpc's damaged hp bar tag carries too), 1 the owner actor the npc rides on (i32 object id, m_nF20, which a boss's
+/// FieldAddNpc carries too), 2 the ride's end (m_nF20 = 0). Another mode reads nothing more.
+/// </summary>
+public sealed class NpcRide {
+    public const byte Damage = 0, Ride = 1, RideEnd = 2;
+    public int ObjectId;
+    public byte Mode;
+    public long AccumulatedDamage;
+    public int Owner;
+
+    public static NpcRide Read(ByteReader r) {
+        var n = new NpcRide { ObjectId = r.ReadInt(), Mode = r.ReadByte() };
+        switch (n.Mode) {
+            case Damage: n.AccumulatedDamage = r.ReadLong(); break;
+            case Ride: n.Owner = r.ReadInt(); break;
+            case RideEnd: break;
+            default: return n;      // the client reads no more of another mode
+        }
+        r.ExpectEnd("NpcRide");
         return n;
     }
 }

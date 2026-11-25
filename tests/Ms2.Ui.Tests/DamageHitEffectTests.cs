@@ -89,6 +89,17 @@ public class DamageHitEffectTests
     }
 
     [Test]
+    public void ABoundNpcsExtentIsItsOwnersOffsetUnturned()
+    {
+        // CNpc::vfunc_51 with m_nF20 and the owner here (unit_14108e1e0_npcactorandvibrate.cpp:2217-2222): owner minus npc, no
+        // turn and no collision offsets; PCBase::vfunc_37 still adds half the box
+        var bound = new Vector3(30, -20, 50);
+        Assert.That(DamageHitEffects.NpcExtent(new Vector3(10, 0, 30), 90f, 40f, bound), Is.EqualTo(new Vector3(30, -20, 90)));
+        Assert.That(DamageHitEffects.NpcExtent(Vector3.Zero, 0f, 0f, Vector3.Zero), Is.EqualTo(Vector3.Zero), "bound on the owner's spot");
+        Assert.That(DamageHitEffects.NpcExtent(new Vector3(10, 0, 30), 0f, 40f, null).Z, Is.EqualTo(70f), "not bound: the collision offset");
+    }
+
+    [Test]
     public void AnNpcsExtentTurnsItsCollisionOffset()
     {
         Assert.That(DamageHitEffects.NpcExtent(Vector3.Zero, 90f, 40f), Is.EqualTo(new Vector3(0, 0, 40)), "no offset: GameObject's");

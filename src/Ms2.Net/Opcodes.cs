@@ -39,6 +39,7 @@ public enum Inbound : ushort {
     WorldShareInfo = 0xB0,        // RecvOp WorldShareInfo: CSceneStateGame::OnWorldShareInfo (scenestategame.cpp:9756, @0x141733b30)
     Insignia = 0xB1,              // RecvOp Insignia (commonfiles/opcodes.h:184): CSceneStateGame::OnNametag (scenestategame.cpp:1759, 7314, @0x141733e40)
     FollowNpc = 0x70,             // RecvOp FollowNpc (commonfiles/opcodes.h:120): CSceneStateGame::OnFollowNpc (scenestategame.cpp:1627, 5862, @0x141723330)
+    NpcRide = 0xE7,               // RecvOp NpcRide (commonfiles/opcodes.h:235): CSceneStateGame::OnNpcRide @0x141738ad0 (scenestategame.cpp:4871-4878)
     NpcNotice = 0xE8,             // RecvOp NpcNotice (commonfiles/opcodes.h:236): CSceneStateGame::OnNpcNotice (scenestategame.cpp:1851, 9145, @0x141738430)
     BannerList = 0xB3,            // RecvOp BannerList: CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31, @0x14096b3a0)
     Survival = 0x119,             // RecvOp Survival (commonfiles/opcodes.h:280): no named client handler; layouts from the recordings and the Maple2 server's SurvivalPacket
