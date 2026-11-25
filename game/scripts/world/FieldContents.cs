@@ -702,7 +702,7 @@ public partial class FieldContents : Node3D
         if (held || !actionKeys.InActiveMap(cubeMode)) return;
         if (target is Ms2.Ui.ActionKeyTarget.Lift or Ms2.Ui.ActionKeyTarget.BillBoard or Ms2.Ui.ActionKeyTarget.Reactor
                 or Ms2.Ui.ActionKeyTarget.HoldPc
-            && talk?.FindTalkable() != null)
+            && talk?.TalkActionNpc() != null)
             target = Ms2.Ui.ActionKeyTarget.Talk;                  // talk 0x14 comes before lift 0x15, billboard 0x18, reactor 0x1a, hold pc 0x1b
         switch (target)
         {

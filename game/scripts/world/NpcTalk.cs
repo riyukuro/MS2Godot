@@ -292,6 +292,21 @@ public sealed partial class NpcTalk : Node
     bool HasTalk(NpcRow r) => QuestMarks(packs).HasTalk(r.Id, r.Kind, Scripts(packs).Find(r.Id) != null, QuestContext, Rules,
         (quest, script) => QuestScripts(packs).Find(quest, script) != null);
 
+    /// <summary>UITalkManager's talk interval (<see cref="TalkInterval"/>): one for the run, as the manager is, so a talk ended
+    /// by a field move still counts in the next field.</summary>
+    static readonly TalkInterval interval = new();
+    int? cooldownMs;
+
+    static uint NowMs => unchecked((uint)Time.GetTicksMsec());
+
+    /// <summary>UITalkManager::IsTalkIntervalElapsed: TalkCooldown ms since the last talk ended.</summary>
+    public bool TalkIntervalElapsed =>
+        interval.Elapsed(NowMs, cooldownMs ??= FieldContents.Constants(packs).Int(TalkInterval.CooldownKey, TalkInterval.DefaultCooldownMs));
+
+    /// <summary>TalkAction::vfunc_1's npc (actionkeyobject.cpp:1366-1390): none before the talk interval has passed
+    /// (:1375), else the talkable npc (MyPC::FindTalkableNpc).</summary>
+    public FieldNpcs.Placed TalkActionNpc() => TalkIntervalElapsed ? FindTalkable() : null;
+
     /// <summary>
     /// MyPC::FindTalkableNpc (mypc.cpp:2825, @0x141529640): WorldService::FindNearestNpc friendly 2, else friendly 1; then
     /// TalkAction::vfunc_1 (actionkeyobject.cpp:1382-1405) talks to that npc only if it has something to say. The nearest npc
@@ -336,13 +351,14 @@ public sealed partial class NpcTalk : Node
     /// (the npc map), that is shown, not an enemy, passes <see cref="NpcMousePick.Picks"/> (its kind, npc talks or shown quest
     /// mark, while a guide event does not restrict talking) and whose sphere the ray passes through. No distance limit: the
     /// pick range (m_pickRange) is the hover cursor's only.
-    /// STILL-OPEN: the talk interval (UITalkManager::IsTalkIntervalElapsed) and holding (PCBase::vfunc_117, HoldAction) are not
-    /// ported, as for the talk key.
+    /// STILL-OPEN: holding (PCBase::vfunc_117, HoldAction) is not ported, as for the talk key.
     /// </summary>
     public FieldNpcs.Placed FindClickTarget(Vector3 origin, Vector3 dir)
     {
         if (player == null) return null;
-        bool talkAllowed = Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ActionTalk) != true;
+        // mouseinteract.cpp:314-317: no talk pick while a guide event restricts talking or before the talk interval has passed
+        bool talkAllowed = Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ActionTalk) != true
+            && TalkIntervalElapsed;
         foreach (var n in (live != null ? live.TalkNpcs : npcs).OrderBy(x => x.ObjectId))
         {
             if (!n.Root.Visible || n.Row.Friendly == 0) continue;
@@ -358,7 +374,7 @@ public sealed partial class NpcTalk : Node
     /// the clicked one, the talk starts (CMouseInteract::vfunc_4, ActivateCurrentAction) and true is returned.</summary>
     public bool TalkIfCurrent(FieldNpcs.Placed clicked)
     {
-        if (clicked == null || window != null || FindTalkable() != clicked) return false;
+        if (clicked == null || window != null || TalkActionNpc() != clicked) return false;
         Start(clicked);
         return true;
     }
@@ -414,7 +430,8 @@ public sealed partial class NpcTalk : Node
 
     public bool Start(FieldNpcs.Placed npc)
     {
-        if (window != null || npc == null) return false;
+        // UITalkManager::FUN_141b1fcf0 (uitalkcinematic.cpp:1403-1410): not while talking, nor before the talk interval
+        if (window != null || npc == null || !TalkIntervalElapsed) return false;
         if (live != null) return RequestLiveTalk(npc);
         var n = Scripts(packs).Find(npc.Row.Id);
         // Maple2's HandleTalk: the quests (flag 4), the talk script (flag 2), and with more than one of them and a select, flag 8
@@ -789,6 +806,7 @@ public sealed partial class NpcTalk : Node
     void Teardown()
     {
         if (window == null) return;
+        interval.TalkEnded(NowMs);                     // ResetTalk: m_nLastTick = GetTickCountMs2() (uitalkcinematic.cpp:1536)
         window.Host.Unload();
         layer?.QueueFree();
         layer = null; window = null; side = null; talking = null; script = null; liveTalking = null;
@@ -806,7 +824,7 @@ public sealed partial class NpcTalk : Node
             side.Key(TalkCinematicController.TalkKey.Next);
             return true;
         }
-        return Start(FindTalkable());
+        return Start(TalkActionNpc());
     }
 
     public override void _Input(InputEvent e)
