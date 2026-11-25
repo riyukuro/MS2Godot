@@ -3589,8 +3589,12 @@ public partial class LiveSession : Node
                 {
                     // "useitem:<item id>": that item double clicked in the bag; a box that comes up is shot and answered yes
                     long uid = 0;
-                    for (int i = 0; i < 300 && (uid = eh.UseItemScripted(itemId)) <= 0; i++) await Frames(uid < 0 ? 10 : 60);
-                    GD.Print($"live: emote useitem {n}: {itemId} {(uid > 0 ? $"double clicked ({uid})" : "not in the bag")}");
+                    for (int i = 0; i < 300 && (uid = eh.UseItemScripted(itemId)) <= 0; i++)
+                    {
+                        if (i % 30 == 0) GD.Print($"live: emote useitem {n}: try {i}: {eh.UseItemWhy}");
+                        await Frames(uid < 0 ? 10 : 60);
+                    }
+                    GD.Print($"live: emote useitem {n}: {itemId} {(uid > 0 ? $"double clicked ({uid})" : "not in the bag")}: {eh.UseItemWhy}");
                     await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * 3);
                     bool boxed = MessageBoxLayer.Instance?.Shown == true;
                     GD.Print($"live: emote useitem {n}: box {(boxed ? "shown" : "not shown")}");

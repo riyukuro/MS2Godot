@@ -78,9 +78,9 @@ public partial class HudScene
     public long UseItemScripted(int itemId)
     {
         var view = Ms2Godot.Net.LiveSession.Instance?.Inventory;
-        if (view == null) return 0;
+        if (view == null) { UseItemWhy = "no bag"; return 0; }
         if (inventory == null || inventory.IsClosed) OpenInventory();
-        if (inventory?.Host == null) return 0;
+        if (inventory?.Host == null) { UseItemWhy = "no inventory movie"; return 0; }
         for (int t = 0; t < inventory.Tabs.Count; t++)
         {
             var cells = view.Cells(inventory.Tabs[t].Tab);
@@ -89,13 +89,21 @@ public partial class HudScene
                 if (cells[i].Empty || cells[i].ItemId != itemId) continue;
                 inventory.Host.Set(inventory.Host.Child("m_tab"), "selectedIndex", t);
                 if (view.Tab != inventory.Tabs[t].Tab || !inventory.IsDragSlot(Ms2.Ui.Hud.InventoryController.SlotName(i)))
+                {
+                    UseItemWhy = $"tab {inventory.Tabs[t].Tab} (index {t}) cell {i}: shown tab {view.Tab}, drag slot {inventory.IsDragSlot(Ms2.Ui.Hud.InventoryController.SlotName(i))}";
                     return -1;                                          // the movie or the tab change is not there yet: ask again
+                }
                 inventory.OnCallback("notifySlotUse", new object[] { Ms2.Ui.Hud.InventoryController.SlotName(i), 0 });
+                UseItemWhy = $"tab {inventory.Tabs[t].Tab} cell {i}";
                 return cells[i].Uid;
             }
         }
+        UseItemWhy = $"not in tabs {string.Join(",", inventory.Tabs.Select(x => x.Tab))} (bag tabs {string.Join(",", Enumerable.Range(0, Ms2.Net.Packets.ItemBook.Tabs).Where(b => view.Cells(b).Any(c => !c.Empty && c.ItemId == itemId)))})";
         return 0;
     }
+
+    /// <summary>Why the last <see cref="UseItemScripted"/> did not use the item (or where it did), for the run's log.</summary>
+    public string UseItemWhy { get; private set; } = "";
 
     /// <summary>A right press on the named player's PC in the field (OnRightMouseDown at its body's screen point); the
     /// popup's items, or null when no menu opened.</summary>
