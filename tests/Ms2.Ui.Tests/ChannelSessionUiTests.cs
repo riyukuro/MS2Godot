@@ -61,7 +61,7 @@ public class ChannelSessionUiTests
         foreach (var (label, dir, lang) in roots)
         {
             using var packs = new PackSet(dir);
-            var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+            var src = TestData.Movies(packs);
             var tables = new GameTables(packs, lang);
 
             // UISystemMenuDialog::vfunc_79 (uisystemmenudialog.cpp:282) -> SelectCurrentChannel

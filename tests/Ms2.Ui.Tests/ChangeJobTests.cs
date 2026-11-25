@@ -114,7 +114,7 @@ public class ChangeJobTests
     public void TheWindowShowsTheRowAndItsChangeButtonClosesIt()
     {
         var packs = new PackSet(RcGap.Data("MS2_DATA"));
-        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var src = TestData.Movies(packs);
         var tables = new GameTables(packs, "en");
         var model = new UiModel(tables) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f), HasLocalPlayer = true };
         var t = ChangeJobTable.Load(packs, Features(packs), tables);
@@ -159,7 +159,7 @@ public class ChangeJobTests
     public void TheEffectShowsTheJobsTextAndHidesAtItsLastFrame()
     {
         var packs = new PackSet(RcGap.Data("MS2_DATA"));
-        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var src = TestData.Movies(packs);
         var tables = new GameTables(packs, "en");
         var model = new UiModel(tables) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f), HasLocalPlayer = true };
         var t = ChangeJobTable.Load(packs, Features(packs), tables);

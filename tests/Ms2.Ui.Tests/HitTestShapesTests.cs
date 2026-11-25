@@ -13,22 +13,20 @@ namespace Ms2.Ui.Tests;
 public class HitTestShapesTests
 {
     static PackSet packs;
-    static MovieSource src;
 
     static void Packs()
     {
         if (packs != null) return;
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        packs = new PackSet(d);
-        src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        packs = TestData.Packs(d);
     }
 
     static Player Open(string key)
     {
         try
         {
-            var (_, p) = src.Open(key, r => r.Budget = 20_000_000);
+            var (_, p) = TestData.SweepSource(packs, key).Open(key, r => r.Budget = 20_000_000);
             p.StageW = 1280; p.StageH = 720;
             if (!p.Start()) return null;
             for (int i = 0; i < 10; i++) p.Tick();

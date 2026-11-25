@@ -22,7 +22,7 @@ public class ItemNameTests
         {
             var d = Environment.GetEnvironmentVariable("MS2_DATA");
             if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-            packs = new PackSet(d);
+            packs = TestData.Packs(d);
             model = new UiModel(new GameTables(packs, "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f) };
         }
         return model;

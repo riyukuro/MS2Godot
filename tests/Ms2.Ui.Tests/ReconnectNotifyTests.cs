@@ -46,7 +46,7 @@ public class ReconnectNotifyTests
         foreach (var (label, dir, lang) in roots)
         {
             using var packs = new PackSet(dir);
-            var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+            var src = TestData.Movies(packs);
             var model = new UiModel(new GameTables(packs, lang));
             var c = new ReconnectTopLayerNotifyController();
             c.SetRetryCount(2, 5);

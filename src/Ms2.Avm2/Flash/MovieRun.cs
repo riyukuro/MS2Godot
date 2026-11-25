@@ -7,6 +7,9 @@ namespace Ms2.Avm2.Flash;
 /// <summary>
 /// Loads a UI movie for the AS3 runtime: its layout, the ABC of the movies it imports (the shared CLIK / scaleform.ms2
 /// library lives in commonresource), then its own ABC. Parsed movies and ABC blocks are cached across movies.
+/// One source may be shared by threads (the tests' fixtures run side by side on one source per data folder): each cache entry
+/// is built outside the lock and the first one stored is the one every caller gets; the builds are pure, so a second build
+/// of the same entry is only wasted work.
 /// </summary>
 public sealed class MovieSource
 {
@@ -25,21 +28,23 @@ public sealed class MovieSource
     /// </summary>
     public static MovieSource FromParsed(Func<string, SwfMovie> parsed) => new(parsed);
 
+    static T Cached<T>(Dictionary<string, T> cache, string key, Func<T> build)
+    {
+        lock (cache) if (cache.TryGetValue(key, out var v)) return v;
+        var b = build();
+        lock (cache) return cache.TryAdd(key, b) ? b : cache[key];
+    }
+
     public SwfMovie Movie(string key)
     {
         key = Path.GetFileNameWithoutExtension(key);
-        if (movies.TryGetValue(key, out var m)) return m;
-        movies[key] = m = parse(key);
-        return m;
+        return Cached(movies, key, () => parse(key));
     }
 
     public List<(string Name, AbcFile Abc)> Abc(string key)
     {
         key = Path.GetFileNameWithoutExtension(key);
-        if (abcs.TryGetValue(key, out var l)) return l;
-        var m = Movie(key);
-        abcs[key] = l = m == null ? new() : m.AbcBlocks.Select(b => (b.Name, AbcFile.Parse(b.Data))).ToList();
-        return l;
+        return Cached(abcs, key, () => Movie(key) is { } m ? m.AbcBlocks.Select(b => (b.Name, AbcFile.Parse(b.Data))).ToList() : new());
     }
 
     readonly Dictionary<string, JsonObject> layouts = new(StringComparer.OrdinalIgnoreCase);
@@ -55,24 +60,18 @@ public sealed class MovieSource
     public JsonObject Layout(string key)
     {
         key = Path.GetFileNameWithoutExtension(key);
-        if (layouts.TryGetValue(key, out var l)) return l;
-        var m = Movie(key);
         var k0 = key;
-        layouts[key] = l = m == null ? null
-            : Layouts != null ? Layouts(key, false, () => LayoutJson.Build(m, k0, k => Movie(k)), () => LayoutJson.Build(m, k0, null))
-            : LayoutJson.Build(m, key, null);
-        return l;
+        return Cached(layouts, key, () => Movie(k0) is not { } m ? null
+            : Layouts != null ? Layouts(k0, false, () => LayoutJson.Build(m, k0, k => Movie(k)), () => LayoutJson.Build(m, k0, null))
+            : LayoutJson.Build(m, k0, null));
     }
 
     readonly Dictionary<string, JsonObject> mains = new(StringComparer.OrdinalIgnoreCase);
 
     // a movie's own layout (its imports resolved), built once like the library layouts: the build is pure and the player
     // and views only read it
-    JsonObject MainLayout(string key, SwfMovie m)
-    {
-        if (mains.TryGetValue(key, out var l)) return l;
-        return mains[key] = Layouts != null ? Layouts(key, true, () => LayoutJson.Build(m, key, k => Movie(k)), null) : LayoutJson.Build(m, key, k => Movie(k));
-    }
+    JsonObject MainLayout(string key, SwfMovie m) => Cached(mains, key,
+        () => Layouts != null ? Layouts(key, true, () => LayoutJson.Build(m, key, k => Movie(k)), null) : LayoutJson.Build(m, key, k => Movie(k)));
 
     /// <summary>A runtime and player for one movie, its imports' code loaded first. The document class is not constructed yet (call Start).</summary>
     /// <param name="libraries">

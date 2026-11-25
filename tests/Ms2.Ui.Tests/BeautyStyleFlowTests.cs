@@ -35,8 +35,8 @@ public class BeautyStyleFlowTests
         {
             var d = Environment.GetEnvironmentVariable("MS2_DATA");
             if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-            packs = new PackSet(d);
-            src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+            packs = TestData.Packs(d);
+            src = TestData.Movies(packs);
         }
         var c = new BeautyStyleDialogController();
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);

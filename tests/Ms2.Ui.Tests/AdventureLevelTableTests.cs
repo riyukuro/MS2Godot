@@ -16,7 +16,7 @@ public class AdventureLevelTableTests
         {
             var d = Environment.GetEnvironmentVariable("MS2_DATA");
             if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-            packs = new PackSet(d);
+            packs = TestData.Packs(d);
         }
         return packs;
     }

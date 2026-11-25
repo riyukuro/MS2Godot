@@ -24,7 +24,7 @@ public class WeaponStanceTests
         if (packs != null) return;
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        packs = new PackSet(d);
+        packs = TestData.Packs(d);
         items = new ItemDataTable(packs);
         models = new ItemModelTable(packs);
         actions = WeaponActionTable.Load(packs);

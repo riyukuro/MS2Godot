@@ -22,8 +22,8 @@ public class ItemMergeRevertDialogTests
         if (packs != null) return;
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        packs = new PackSet(d);
-        src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        packs = TestData.Packs(d);
+        src = TestData.Movies(packs);
     }
 
     static string Hex(IOutPacket p) { var w = new ByteWriter(); p.Write(w); return Convert.ToHexString(w.Buffer.AsSpan(0, w.Length).ToArray()); }

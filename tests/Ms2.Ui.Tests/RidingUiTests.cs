@@ -24,8 +24,8 @@ public class RidingUiTests
     {
         if (packs == null)
         {
-            packs = new PackSet(RcGap.Data("MS2_DATA"));
-            src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+            packs = TestData.Packs(RcGap.Data("MS2_DATA"));
+            src = TestData.Movies(packs);
             tables = new GameTables(packs, "en");
             keys = new KeyTable(packs, "en");
         }

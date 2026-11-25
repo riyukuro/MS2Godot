@@ -29,7 +29,7 @@ public class CharacterCreateMoverTests
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
         using var packs = new PackSet(d);
-        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var src = TestData.Movies(packs);
         var c = new Quiet();
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;

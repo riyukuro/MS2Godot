@@ -16,15 +16,13 @@ namespace Ms2.Ui.Tests;
 public class SyncMarksTests
 {
     static PackSet packs;
-    static MovieSource src;
 
     static void Packs()
     {
         if (packs != null) return;
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        packs = new PackSet(d);
-        src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        packs = TestData.Packs(d);
     }
 
     static string S(object o) => o == null ? "null" : o is string str ? str : Rt.IsNullish(o) ? "nullish" : Rt.ToString(o);
@@ -63,6 +61,10 @@ public class SyncMarksTests
         readonly Dictionary<AsDisplayObject, string> last = new(ReferenceEqualityComparer.Instance);
         public int Objects, Changed, Frames;
         public readonly List<string> Missed = new();
+
+        /// <summary>A new movie: its objects never were in the last one, so the last movie's states are dropped (kept, they held every
+        /// movie's display list, runtime and player to the end of the sweep).</summary>
+        public void NextMovie() => last.Clear();
 
         /// <summary>One frame: every changed object must be reached by the marked walk; then the marks are cleared.</summary>
         public void Frame(Player p, string movie, int frame)
@@ -117,12 +119,13 @@ public class SyncMarksTests
             Player p;
             try
             {
-                (_, p) = src.Open(key, r => r.Budget = 20_000_000);
+                (_, p) = TestData.SweepSource(packs, key).Open(key, r => r.Budget = 20_000_000);
                 p.StageW = 1280; p.StageH = 720;
                 if (!p.Start()) { failed++; continue; }
             }
             catch (Exception) { failed++; continue; }
             movies++;
+            check.NextMovie();
             for (int f = 0; f < 40; f++)
             {
                 // the mouse sweeps the stage; a click every tenth frame

@@ -10,6 +10,11 @@
     <!-- fixtures run side by side: a workstation GC stops every thread for each collection, a server GC with one heap per few threads does not -->
     <RuntimeHostConfigurationOption Include="System.GC.Server" Value="true" />
     <RuntimeHostConfigurationOption Include="System.GC.HeapCount" Value="8" />
+    <!-- The server GC collects the old generation only when its budget runs out, so the suite's heap grew to 8+ GB with ~3 GB live
+         (the rest dead fixtures' data) and the process was OOM-killed at a 12 GB cap. A 7 GB hard limit makes it collect before
+         that: peak under 8 GB instead of ~9.6 GB, the same tests pass. Raise it if the tests need more than ~6 GB live at once
+         (it then fails with an OutOfMemoryException, not a kill). -->
+    <RuntimeHostConfigurationOption Include="System.GC.HeapHardLimit" Value="7516192768" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ExclusiveFixtures.cs" Link="ExclusiveFixtures.cs" />

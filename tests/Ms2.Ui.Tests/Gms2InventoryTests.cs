@@ -19,7 +19,7 @@ public class Gms2InventoryTests
         var d = Environment.GetEnvironmentVariable("MS2_GMS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_GMS2_DATA is not set");
         var packs = new PackSet(d);
-        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var src = TestData.Movies(packs);
         var model = new UiModel(new GameTables(packs, "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f), HasLocalPlayer = true };
         model.Player.Mesos = 1234567;
         var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
