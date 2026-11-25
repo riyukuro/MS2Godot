@@ -673,6 +673,17 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     }
 
     /// <summary>
+    /// UISkillBookTreeDialog::RegisterShortcut @0x140ec91c0 (uiskillbookautodistributedialog.cpp:708), a skill book slot's right
+    /// click: FUN_14092fac0 (<see cref="Skills.QuickSlotEdit.Append"/>) with the skill alone on the key table's page
+    /// (CKeyTable::FUN_140a700b0).
+    /// </summary>
+    public bool AddSkillFromBook(int skillId)
+    {
+        int page = Model.ServerKeys?.CurrentPage ?? 0;
+        return Skills.QuickSlotEdit.Append(World(), Model.IsFeatureEnabled, Send, Notice, QuickSlotsFull(), skillId, 0, 0, page);
+    }
+
+    /// <summary>
     /// The quick slot index of a name ("&lt;bag&gt;.&lt;i&gt;", i below 0x19), else -1: SkillSlotBag names its slots
     /// "SlotInfo.skill.0.&lt;i&gt;" (GetSlotName @0x1419f31f0, uimainplayerinfo.cpp:1424, with FUN_1417633f0(.., 0x19)) and
     /// SkillSlot::GetIndex is that i, which FUN_14092f690 sends as mode 3's slot (skillslot.cpp:522, :552). Slot i's key is the

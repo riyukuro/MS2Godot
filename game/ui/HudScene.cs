@@ -4056,6 +4056,7 @@ public partial class HudScene : Node, IUiStageHost
         };
         c.AutoTable = Ms2.Ui.Skills.AutoDistributeTable.Load(assets.Packs);
         c.OpenAutoDistribute = presets => OpenSkillAutoDistribute(c, presets);
+        c.RegisterShortcut = skill => playerInfo?.AddSkillFromBook(skill);      // RegisterShortcut: FUN_14092fac0 on the key table's page
         c.InBattle = () => live?.SelfInBattle ?? false;
         c.Sound += key => FieldAudio.Instance?.PlayUi(key);
         c.ChatLine += (text, kind) => ChatLog.AddSystemLine(text, kind);

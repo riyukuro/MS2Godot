@@ -493,6 +493,61 @@ public class SkillBookTreeTests
         Assert.That(sent, Has.Count.EqualTo(1));
     }
 
+    /// <summary>The SkillSlot (m_skillSlot) of a skill's tree slot (skillbooktree_dialog_skill), or null.</summary>
+    static object TreeSlot(UiHost h, uint id)
+    {
+        if (h.Child("m_treeSkills") is not { } tree) return null;
+        int n = (int)Rt.ToNumber(h.Get(tree, "numChildren"));
+        for (int i = 0; i < n; i++)
+            if (h.Invoke(tree, "getChildAt", i) is { } s && (uint)Rt.ToNumber(h.Get(s, "m_skillID")) == id) return h.Get(s, "m_skillSlot");
+        return null;
+    }
+
+    /// <summary>A right click on a display object: its "rightClick" mouse event (EventString.RIGHT_CLICK) dispatched.</summary>
+    static void RightClick(UiHost h, object target) =>
+        h.Player.Call(target, "dispatchEvent", new object[] { h.RT.GetClass("flash.events.MouseEvent").Construct("rightClick", true, false) });
+
+    [Test]
+    public void ARightClickedBookSkillGoesOnTheQuickSlotPage()
+    {
+        // SkillSlot's rightClick listener onRegisterShortcutkey (added in its configUI): a learnt, enabled, unchanged, non-passive slot
+        // calls OnRegisterShortcutkey (vfunc_28 :2192, no m_nWaitServer check), RegisterShortcut @0x140ec91c0 (:708):
+        // FUN_14092fac0(skill, 0, 0, CKeyTable::FUN_140a700b0), KeyTable mode 4 on the page
+        var (bh, book, _) = Load();
+        var m = bh.Model;
+        var (_, bar, sent, _) = QuickSlotBar(m);
+        var notices = new List<int>();
+        bar.Notice = notices.Add;
+        book.RegisterShortcut = s => bar.AddSkillFromBook(s);
+        Assert.That(book.OnCallback("OnRegisterShortcutkey", new object[] { 10500001.0 }), Is.False, "before the tab packet (m_n290)");
+        book.OnSkillBookTree(NoTabs());
+
+        RightClick(bh, TreeSlot(bh, 10500001));
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableAddQuickSlotRequest(0, new QuickSlotEntry(10500001, 0, 0)) }));
+        // not learnt (10500041 opens at level 10): the movie does not call
+        Assert.That(TreeSlot(bh, 10500041), Is.Not.Null);
+        RightClick(bh, TreeSlot(bh, 10500041));
+        Assert.That(sent, Has.Count.EqualTo(1));
+        // a passive skill reaching the C++ side: FUN_14092fac0's 0x9a7 notice and no send
+        var passive = m.Tables.Skills.Jobs.GetJobData(50).Skills.Select(r => r.SkillId)
+            .FirstOrDefault(id => m.Tables.Skills.GetSkillData(id) is { IsPassive: true });
+        if (passive != 0)
+        {
+            Assert.That(book.OnCallback("OnRegisterShortcutkey", new object[] { (double)passive }), Is.True);
+            Assert.That((notices.LastOrDefault(), sent.Count), Is.EqualTo((QuickSlotEdit.PassiveNotice, 1)));
+        }
+        // the window waiting for the server's answer to an apply still registers
+        var jobSent = new List<Ms2.Net.Wire.IOutPacket>();
+        book.Send = Sink(jobSent);
+        m.Player.Level = 20;
+        book.OnLevelChanged(20);
+        book.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        book.OnCallback("onApplySkill", Array.Empty<object>());
+        Assert.That(book.WaitServer, Is.True);
+        Assert.That(book.OnCallback("OnRegisterShortcutkey", new object[] { 10500001.0 }), Is.True);
+        Assert.That(sent, Has.Count.EqualTo(2));
+    }
+
     [Test]
     public void ABookSkillDroppedOnAQuickSlotIsSentAndKept()
     {

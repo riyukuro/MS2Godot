@@ -13,7 +13,7 @@ namespace Ms2.Ui.Hud;
 /// and the tooltips, through the client's own skill point preview (<see cref="SkillPointSimulator"/>).
 /// <para>The +/- buttons change only the preview, as in the client (SkillPointUp / SkillPointDown, :1355). Everything that
 /// sends a request (apply and reset are sent; auto distribute, a tab add / rename / switch to the used tab, the sub job switch, the
-/// lapenshard button, the shortcut key registration) is raised as <see cref="Button"/> and left unsent. The close-time
+/// lapenshard button) is raised as <see cref="Button"/> and left unsent; the shortcut key registration goes to <see cref="RegisterShortcut"/>. The close-time
 /// JobSystemCli::RequestReset (vfunc_67 :505) is not sent either.</para>
 /// </summary>
 public sealed class SkillBookTreeController : UiController, IDragSlotOwner
@@ -706,6 +706,11 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 PromptChangeTab();
                 return true;
             case "OnRegisterShortcutkey":
+                // :2192, no m_nWaitServer check: the movie's right click on a learnt, enabled, unchanged, non-passive slot
+                // (the tree slot's SkillSlot, its rightClick listener onRegisterShortcutkey) passes the skill id
+                if (args.Length == 0) return false;     // SetArgsIfAny
+                RegisterShortcut?.Invoke((int)(uint)Rt.ToNumber(args[0]));
+                return true;
             case "onRenameTab":
                 if (WaitServer) return false;
                 if (ulong.TryParse(Rt.ToString(args.ElementAtOrDefault(0)), out var renameId))     // ParseUInt64W
@@ -894,6 +899,10 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     /// <summary>The auto distribute dialog (UISkillBookAutoDistributeDialog, UI id 0x4f20) is opened with the presets the player's
     /// sub job can use; it answers with <see cref="ApplyDistribute"/>.</summary>
     public Action<IReadOnlyList<AutoDistributePreset>> OpenAutoDistribute;
+
+    /// <summary>RegisterShortcut @0x140ec91c0 (:708): FUN_14092fac0(skill, 0, 0, CKeyTable::FUN_140a700b0, the key table's
+    /// page), the skill put on the first free quick slot of the page (<see cref="MainPlayerInfoController.AddSkillFromBook"/>).</summary>
+    public Action<int> RegisterShortcut;
 
     /// <summary>ApplyAutoDistribute @0x140eca230 (:1318): CanApply (CheckApply, the platform state, is 0 here; STILL-OPEN: its notice
     /// box), the presets of the player's job group (none: nothing), then the dialog with the ones for the sub job. STILL-OPEN: the
