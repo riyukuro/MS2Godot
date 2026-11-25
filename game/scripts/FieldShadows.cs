@@ -53,6 +53,13 @@ public static class FieldShadows
     public static void Character(Node3D owner, Node3D model, string kind, float radius, float lift, CollisionObject3D exclude = null)
     {
         if (SimpleShadow(kind)) BlobShadow.Add(owner, radius, lift, exclude);
+        ModelCasters(model, kind);
+    }
+
+    /// <summary>The model part of <see cref="Character"/> alone: its meshes kept out of the sun's shadow below
+    /// <see cref="RealShadow"/>, for a body built again under an owner that has its simple shadow.</summary>
+    public static void ModelCasters(Node3D model, string kind)
+    {
         if (!RealShadow(kind)) NoCasters(model);
     }
 

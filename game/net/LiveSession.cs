@@ -2446,10 +2446,9 @@ public partial class LiveSession : Node
                         applied = remote != null && remote.SetOwnerEffect(n.ObjectId, n.Model) ? $"owner effect {n.Model} on npc {n.ObjectId}" : $"no npc {n.ObjectId}";
                         break;
                     case NpcNotice.NpcScript:
-                        // CNpc::FUN_1410951d0 (unit_14108e1e0_npcactorandvibrate.cpp:1609-1613): the npc's model changes to the named
-                        // kfm (ChangeModel); the boss model name is not ported, so nothing changes
-                        applied = $"npc {n.ObjectId} model {n.Script} not applied";
-                        NotApplied.Print($"npc notice: the npc model change to {n.Script} is not applied");
+                        // CNpc::FUN_1410951d0 (unit_14108e1e0_npcactorandvibrate.cpp:1608-1613): the npc's model changes to the named
+                        // kfm (ChangeModel)
+                        applied = remote != null && remote.ChangeNpcModel(n.ObjectId, n.Script) ? $"npc {n.ObjectId} model {n.Script}" : $"no npc {n.ObjectId}";
                         break;
                     case NpcNotice.Announce or NpcNotice.SidePopup:
                         applied = NpcNoticeReceived != null ? "shown" : "no HUD";

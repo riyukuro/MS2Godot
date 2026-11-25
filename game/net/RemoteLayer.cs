@@ -156,6 +156,13 @@ public sealed partial class RemoteLayer : Node3D
         return npcs.SetOwnerEffect(objectId, effect);
     }
 
+    /// <summary>NpcNotice mode 2 on an npc (<see cref="NpcLayer.ChangeModel"/>); false when there is no npc of the id.</summary>
+    public bool ChangeNpcModel(int objectId, string kfm)
+    {
+        CatchUp(objectId, npc: true);
+        return npcs.ChangeModel(objectId, kfm);
+    }
+
     /// <summary>
     /// Applies the queued tracker events up to the last one that adds or removes the object a packet names, before that packet
     /// runs. The client handles each packet in order, so a packet that names an object an earlier packet made finds it even when

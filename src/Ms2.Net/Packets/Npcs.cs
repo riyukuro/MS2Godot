@@ -184,8 +184,9 @@ public sealed record FollowNpc(int NpcId) {
 
 /// <summary>
 /// Inbound NpcNotice (KMS 0xE8, GMS2 0xEA): CSceneStateGame::OnNpcNotice (@0x141738430, scenestategame.cpp:9145-9215), u8 mode:
-/// 0 a notice (unicode text, i32 duration), 1 an npc's owner effect (i32 object id, unicode model), 2 an npc's script
-/// (i32 object id, unicode script), 3 the side popup talk (u8 kind, i32 npc id, narrow name, icon, sound and script, unicode
+/// 0 a notice (unicode text, i32 duration), 1 an npc's owner effect (i32 object id, unicode model), 2 an npc's model change
+/// (i32 object id, unicode kfm name: the client's local is strScript, which CNpc::FUN_1410951d0 loads as the actor's kfm), 3
+/// the side popup talk (u8 kind, i32 npc id, narrow name, icon, sound and script, unicode
 /// text). Another mode reads nothing more, as in the client.
 /// </summary>
 public sealed class NpcNotice {

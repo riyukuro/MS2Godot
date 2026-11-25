@@ -31,6 +31,8 @@ public sealed class NpcLayer
         public string OwnerEffect = "";           // m_strEC8: the owner effect (NpcNotice mode 1)
         public int OwnerActor, OwnerEffectId;     // m_nEC0: the pc the effect sits on (a boss block's owner actor); m_nEC4: the kept effect
         public Node3D OwnerNode;                  // the pc node the kept effect hangs on
+        public Node3D ModelNode;                  // the body's Model node (the hp bar's Eff_UI anchor), null on a placeholder
+        public string Kfm;                        // m_strED8: the kfm the actor loads (the row's, or NpcNotice mode 2's)
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a dead body: eased toward the block position, no velocity
         public readonly Ms2.Net.Replay.NpcJumpArc Arc = new();   // m_unkDB0: the jump arc a -2/-3 block starts
@@ -83,6 +85,7 @@ public sealed class NpcLayer
 
     readonly PackSet packs; readonly ModelBuilder mb; readonly NpcTable table; readonly Node3D parent;
     readonly Dictionary<int, Model> models = new();
+    readonly Dictionary<(int, string), Model> changedModels = new();   // NpcNotice mode 2's kfm models, by row id and kfm
     readonly Dictionary<int, Inst> inst = new();
     readonly Dictionary<int, int> lives = new();
     public int Spawned, NoRow, NoModel, SequencesPlayed, SequencesMissing;
@@ -146,10 +149,26 @@ public sealed class NpcLayer
     {
         if (row == null) return null;
         if (models.TryGetValue(row.Id, out var m)) return m;
-        m = null;
+        return models[row.Id] = LoadModel(row, row.Kfm);
+    }
+
+    /// <summary>The model of a kfm other than the row's (NpcNotice mode 2), with the row's dummies; null when the kfm is not in
+    /// the npc models.</summary>
+    Model ModelFor(NpcRow row, string kfm)
+    {
+        if (row == null) return null;
+        if (string.Equals(kfm, row.Kfm, StringComparison.OrdinalIgnoreCase)) return ModelFor(row);
+        var key = (row.Id, kfm.ToLowerInvariant());
+        if (changedModels.TryGetValue(key, out var m)) return m;
+        return changedModels[key] = LoadModel(row, kfm);
+    }
+
+    Model LoadModel(NpcRow row, string kfmName)
+    {
+        Model m = null;
         try
         {
-            string kfmEntry = row.Kfm != null && kfmEntries.TryGetValue(row.Kfm.ToLowerInvariant(), out var ke) ? ke : null;
+            string kfmEntry = kfmName != null && kfmEntries.TryGetValue(kfmName.ToLowerInvariant(), out var ke) ? ke : null;
             if (kfmEntry != null)
             {
                 string folder = kfmEntry[..kfmEntry.LastIndexOf('/')];
@@ -159,9 +178,9 @@ public sealed class NpcLayer
                     m = new Model { Data = mb.LoadModel(NpcArchive, $"{folder}/{nif}"), Kfm = kfm, Folder = folder, Row = row };
             }
         }
-        catch (Exception ex) { GD.PushWarning($"npc {row.Id} {row.Kfm}: {ex.Message}"); }
-        if (m == null) MissingModels.Add(row?.Kfm ?? "?");
-        return models[row.Id] = m;
+        catch (Exception ex) { GD.PushWarning($"npc {row.Id} {kfmName}: {ex.Message}"); }
+        if (m == null) MissingModels.Add(kfmName ?? "?");
+        return m;
     }
 
     Godot.Animation Anim(Model m, int seqId)
@@ -201,19 +220,11 @@ public sealed class NpcLayer
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };
-        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed * ScaleRate(1f, row.Scale), TurnCap = row.RotationSpeed };
+        var i = new Inst { Root = root, Model = model, Kfm = row.Kfm, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed * ScaleRate(1f, row.Scale), TurnCap = row.RotationSpeed };
         i.DeadAction = row.RandomDeadDefaultAction(crtRand);
         if (model != null)
         {
-            i.Visual = mb.Build(model.Data, row.Kfm);
-            EffectAttach.SetDummies(i.Visual, row.EffectDummies);
-            i.Visual.Scale = new Godot.Vector3(row.Scale, row.Scale, row.Scale);
-            i.Player = i.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
-            // the idle queued after a one-shot (Play) starts at speed 1, not the block's: the client's speed is per sequence, and
-            // PlayAnimationById passes m_f938 (pcbase.cpp:1533), 1.0 from the PCBase ctor (:787) and never set for a CNpc
-            var player = i.Player;
-            player.AnimationChanged += (_, _) => player.SpeedScale = 1f;
-            root.AddChild(i.Visual);
+            BuildBody(i, model, row);
             FieldShadows.Character(root, i.Visual, FieldShadows.NpcKind(row), row.ShadowScale, 1f);
             var idle = model.Kfm.ByName("Idle_A");
             if (idle != null) Play(i, idle.Id);
@@ -235,10 +246,10 @@ public sealed class NpcLayer
         if (Bars != null)
         {
             // the point is memoized per model while the npc stands still (DummyMemo, as the name tag's anchor)
-            var modelNode = i.Placeholder ? null : i.Visual?.GetNodeOrNull<Node3D>(ModelPath);
-            Func<Godot.Vector3> anchor = modelNode != null
-                ? () => World.DummyAnchor.Point(row.EffectDummies, "Eff_UI", modelNode, "Scene Root") ?? root.GlobalPosition
-                : () => World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition;
+            // the body's Model node is read at each call, so a body NpcNotice mode 2 changed anchors it too
+            Func<Godot.Vector3> anchor = () => i.ModelNode != null
+                ? World.DummyAnchor.Point(row.EffectDummies, "Eff_UI", i.ModelNode, "Scene Root") ?? root.GlobalPosition
+                : World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition;
             // CNpc::vfunc_80: the row's hpBar flag makes the entity (hidden until active and shown); CNpc::vfunc_12's
             // property tag 2 row is shown and filled from the spawn stat
             i.Bar = Bars.AddNpc(i.Talk, anchor, n.Stats[2].Health, n.Stats[0].Health);
@@ -258,6 +269,66 @@ public sealed class NpcLayer
     }
 
     static readonly NodePath ModelPath = "Model";
+
+    /// <summary>The npc's body of a model under its root: the row's dummies and scale, its animation player.</summary>
+    void BuildBody(Inst i, Model model, NpcRow row)
+    {
+        i.Visual = mb.Build(model.Data, i.Kfm);
+        EffectAttach.SetDummies(i.Visual, row.EffectDummies);
+        i.Visual.Scale = new Godot.Vector3(row.Scale, row.Scale, row.Scale);
+        i.Player = i.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
+        // the idle queued after a one-shot (Play) starts at speed 1, not the block's: the client's speed is per sequence, and
+        // PlayAnimationById passes m_f938 (pcbase.cpp:1533), 1.0 from the PCBase ctor (:787) and never set for a CNpc
+        var player = i.Player;
+        player.AnimationChanged += (_, _) => player.SpeedScale = 1f;
+        i.Root.AddChild(i.Visual);
+        i.ModelNode = i.Visual.GetNodeOrNull<Node3D>(ModelPath);
+    }
+
+    /// <summary>
+    /// NpcNotice mode 2 (CSceneStateGame::OnNpcNotice, scenestategame.cpp:9167-9172): FindNpcById, then CNpc::FUN_1410951d0
+    /// (@0x1410951d0, unit_14108e1e0_npcactorandvibrate.cpp:1608-1613): m_strED8 set to the kfm, then GameObject::ChangeModel
+    /// ("urn:gamebryo-animation:" + kfm, gameobject.cpp:331-345), which swaps the actor's asset; an empty name changes nothing
+    /// there (m_strED8 is still set). The body is built again from the kfm's model with the row's dummies and scale, in place of
+    /// the old one (a placeholder too), turned as it was; the name tag, the hp bar's anchor, the talk body, the Eff_UI effect
+    /// nif and the shadow casters follow it. False when there is no npc of the id.
+    /// STILL-OPEN: which sequence the new actor starts with (here the old one's name when the kfm has it, else Idle_A), and
+    /// what a kfm the packs lack shows (here the old body stays, the name counted in MissingModels).
+    /// </summary>
+    public bool ChangeModel(int id, string kfm)
+    {
+        if (!inst.TryGetValue(id, out var i)) return false;
+        i.Kfm = kfm ?? "";
+        if (i.Kfm.Length == 0) return true;
+        var row = i.Talk?.Row ?? i.Model?.Row;
+        var model = ModelFor(row, i.Kfm);
+        if (model == null) return true;
+        var old = i.Visual;
+        string playing = i.Model?.Kfm.ById(i.Sequence)?.Name;
+        var turn = i.Placeholder || old == null ? new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0) : old.Rotation;
+        bool shadow = i.Root.GetNodeOrNull(FieldShadows.ShadowNode) != null;
+        if (old != null) { i.Root.RemoveChild(old); old.QueueFree(); }
+        i.Model = model;
+        i.Placeholder = false;
+        i.AnchorBones = null; i.BoostMaterials = null;
+        i.Sequence = -1; i.Playing = "";
+        BuildBody(i, model, row);
+        i.Visual.Rotation = turn;
+        i.VisualBase = i.Visual.Position;
+        if (shadow) FieldShadows.ModelCasters(i.Visual, FieldShadows.NpcKind(row));
+        else FieldShadows.Character(i.Root, i.Visual, FieldShadows.NpcKind(row), row.ShadowScale, 1f);
+        if (i.Talk != null) i.Talk.Body = i.Visual;
+        if (i.EffectUi != null) { i.EffectUi.GetParent()?.RemoveChild(i.EffectUi); i.Visual.AddChild(i.EffectUi); i.EffectUiAt = default; }
+        if (Tags != null) { Tags.AddNpc(i.Root, i.Visual, row); if (i.Dead) Tags.Died(i.Root); }
+        var seq = (playing != null ? model.Kfm.ByName(playing) : null) ?? model.Kfm.ByName("Idle_A");
+        if (seq != null) Play(i, seq.Id);
+        return true;
+    }
+
+    /// <summary>The kfm an npc's actor loads (m_strED8), its body, and the folder of the model its sequences come from; null
+    /// when there is no npc of the id.</summary>
+    public (string Kfm, Node3D Body, bool Placeholder, string Folder)? ModelOf(int id) =>
+        inst.TryGetValue(id, out var i) ? (i.Kfm, i.Visual, i.Placeholder, i.Model?.Folder) : null;
 
     /// <summary>OnFieldRemoveNpc drops the npc; OnFieldDeadNpc (<paramref name="dead"/>, @0x1417197c0) is
     /// <see cref="Die"/>(1), the body stays until it is removed.</summary>

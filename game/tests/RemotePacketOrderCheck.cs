@@ -10,7 +10,8 @@ namespace Ms2Godot.Tests;
 /// Headless check (res://tests/remote_packet_order.tscn) that a packet naming an object an earlier packet of the same frame made
 /// finds it, as the client handles each packet in order (RemoteLayer.CatchUp): the add events wait in the tracker's queue, which
 /// the layer empties only on its next frame.
-/// - An npc added and then named by NpcNotice mode 1 (RemoteLayer.SetOwnerEffect) is found.
+/// - An npc added and then named by NpcNotice mode 1 (RemoteLayer.SetOwnerEffect) or mode 2 (RemoteLayer.ChangeNpcModel) is
+///   found.
 /// - An npc added before FollowNpc is not in the layer until CatchUp, and is after it (the own pc's follow lookup); in a field
 ///   entry's burst only the events up to that add run, the ones after it stay queued for the frames' budget.
 /// - A CatchUp for an object no queued event names runs nothing.
@@ -37,6 +38,8 @@ public partial class RemotePacketOrderCheck : Node3D
 
         AddNpc(41);
         Check(layer.SetOwnerEffect(41, "Eff_Test"), "NpcNotice mode 1 did not find the npc added before it in the same frame");
+        AddNpc(44);
+        Check(layer.ChangeNpcModel(44, ""), "NpcNotice mode 2 did not find the npc added before it in the same frame");
 
         // a field entry's burst: events before the follow npc's add, the add, then 300 more
         void Other(int i) => layer.Tracker.Events.Enqueue(new NpcRemovedEvent(0, 90000 + i, false));
