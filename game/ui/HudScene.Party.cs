@@ -93,6 +93,7 @@ public partial class HudScene
         Action<PartyMember, PartyMember> chief = (o, n) => { if (PartyWindowOpen) party.ChangeChief(o, n); };
         // CPartyManager's chat lines, notices, boxes and sounds (partymanager.cpp): the handlers' lines after the book's state
         var tables = (menuModel ??= NewModel()).Tables;
+        if (live != null) live.DungeonRecords.Rooms = tables.DungeonRooms;     // DungeonRoomTable::GetInstance, which the record manager resolves its rooms from
         var notices = new PartyNotices
         {
             Tables = tables,

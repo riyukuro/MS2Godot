@@ -267,7 +267,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors = null;
         CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
         GuideEvent?.Hide();                 // UIGuideEvent::vfunc_3 (:877): the tips are dropped with the scene
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null;
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null; liveSession.DungeonRecords.Rooms = null;
             liveSession.GuideKeysOf = null; liveSession.GuideKeyDownOf = null; if (liveSession.GuideHud == this) liveSession.GuideHud = null; }
         unwatchNotices?.Invoke();
         unwatchNotices = null;

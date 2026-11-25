@@ -13,37 +13,35 @@ namespace Ms2Godot.Net;
 /// </summary>
 public partial class LiveSession
 {
-    readonly Dictionary<uint, DungeonRoomRecord> dungeonRoomRecords = new();
-    readonly Dictionary<uint, DungeonRankRewardEntry> dungeonRankRewards = new();
-    long dungeonBoostA, dungeonBoostB;
+    /// <summary>The record manager (TSingleton&lt;DungeonRecordManagerCli&gt;): the tables the packets build and the client's questions over them.
+    /// The HUD gives it the room table.</summary>
+    public readonly DungeonRecordBook DungeonRecords = new();
+
+    void InitDungeonRecords()
+    {
+        DungeonRecords.ServerTime = () => ServerTime;
+        DungeonRecords.CharacterId = () => CharacterId;
+    }
 
     /// <summary>DungeonRecordManagerCli's record table: the record stored under a room id (null when no packet named it).</summary>
-    public DungeonRoomRecord DungeonRecordOf(uint roomId) => dungeonRoomRecords.TryGetValue(roomId, out var r) ? r : null;
+    public DungeonRoomRecord DungeonRecordOf(uint roomId) => DungeonRecords.Peek(roomId);
 
-    public int DungeonRecordCount => dungeonRoomRecords.Count;
-    public int DungeonRankRewardCount => dungeonRankRewards.Count;
+    public int DungeonRecordCount => DungeonRecords.RecordCount;
+    public int DungeonRankRewardCount => DungeonRecords.RankRewardCount;
+
+    /// <summary>Raised after a record or rank reward table changed (the dungeon room window refreshes its panel).</summary>
+    public event Action DungeonRecordsChanged;
 
     void OnRoomDungeon(RoomDungeonReply m)
     {
         switch (m.Kind)
         {
             case RoomDungeonKind.Records:
-                dungeonRoomRecords.Clear();   // OnRecords: RemoveAll, then the map
-                foreach (var rec in m.Records) dungeonRoomRecords[rec.Key] = rec;
-                break;
             case RoomDungeonKind.AddRecord:
-                dungeonRoomRecords[m.Record.RoomId] = m.Record;   // SetAt(record's own room id)
-                break;
             case RoomDungeonKind.Rewards:
-                dungeonRankRewards.Clear();
-                foreach (var rw in m.Rewards) dungeonRankRewards[rw.Key] = rw;
-                break;
             case RoomDungeonKind.AddReward:
-                dungeonRankRewards[m.Reward.Id] = m.Reward;   // SetAt(reward's own id)
-                break;
             case RoomDungeonKind.BoostState:
-                dungeonBoostA = m.BoostA;
-                dungeonBoostB = m.BoostB;
+                if (DungeonRecords.Apply(m)) DungeonRecordsChanged?.Invoke();
                 break;
             case RoomDungeonKind.RewardNotice:
             {
