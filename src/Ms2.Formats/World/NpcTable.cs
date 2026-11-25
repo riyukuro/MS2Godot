@@ -71,6 +71,21 @@ public sealed class NpcRow
     /// true when absent, the ctor's :650): StateTalk's enter plays the own PC's TALK_UP only with a talk npc that has it
     /// (statetalk.cpp:107).</summary>
     public bool TalkAni = true;
+    /// <summary>The environment's npcAttackGroup and npcDefenseGroup (CNpcData m_nAttackGroup +0x34 / m_nDefenseGroup +0x38,
+    /// CNpcData::LoadXml npcdata.cpp:1450-1451, 0 when absent; GetAttackGroup @0x1406ccfe0, GetDefenseGroup @0x1406cd000).
+    /// STILL-OPEN: no caller of either getter is in the restored client.</summary>
+    public int NpcAttackGroup, NpcDefenseGroup;
+    /// <summary>The environment's hitImmune (CNpcData m_nHitImmune +0x74, npcdata.cpp:1456, 0 when absent).
+    /// STILL-OPEN: no reader of the field is in the restored client.</summary>
+    public int HitImmune;
+    /// <summary>The environment's rotationDisabled (CNpcData m_bRotationDisabled +0x88, npcdata.cpp:1460, false when absent).
+    /// STILL-OPEN: no reader of the field is in the restored client.</summary>
+    public bool RotationDisabled;
+    /// <summary>The environment's &lt;distance&gt; (CNpcData m_distance +0x210, npcdata.cpp:1553-1563, each a float, 0 when the
+    /// element or the attribute is absent): avoid, sight, sightHeightUP, sightHeightDown and the custom last sight
+    /// (customLastSightRadius / HeightUp / HeightDown). STILL-OPEN: no reader of m_distance outside the loader and the row
+    /// compare (npcdata.cpp:736) is in the restored client; Unk_Vec7's own default is taken as 0.</summary>
+    public float Avoid, Sight, SightHeightUp, SightHeightDown, CustomLastSightRadius, CustomLastSightHeightUp, CustomLastSightHeightDown;
     /// <summary>
     /// &lt;dead defaultaction upaction&gt; (CNpcData::LoadXml, npcdata.cpp:1651-1659): XmlTokenList, the attribute split at ','
     /// by CString::Tokenize (achievedata.cpp:501), which skips empty tokens and trims nothing.
@@ -262,6 +277,20 @@ public sealed class NpcTable
             row.InteractShowCastingBar = EffectDummy.Bool(ia, "interactIsShowCastingBar", true);
         }
         row.TalkAni = EffectDummy.Bool(env, "talkAni", true);
+        row.NpcAttackGroup = Int(env, "npcAttackGroup");
+        row.NpcDefenseGroup = Int(env, "npcDefenseGroup");
+        row.HitImmune = Int(env, "hitImmune");
+        row.RotationDisabled = EffectDummy.Bool(env, "rotationDisabled", false);
+        if (env.Element("distance") is { } distance)                                   // CNpcData::LoadXml FirstChild("distance")
+        {
+            row.Avoid = Flt(distance, "avoid", 0);
+            row.Sight = Flt(distance, "sight", 0);
+            row.SightHeightUp = Flt(distance, "sightHeightUP", 0);
+            row.SightHeightDown = Flt(distance, "sightHeightDown", 0);
+            row.CustomLastSightRadius = Flt(distance, "customLastSightRadius", 0);
+            row.CustomLastSightHeightUp = Flt(distance, "customLastSightHeightUp", 0);
+            row.CustomLastSightHeightDown = Flt(distance, "customLastSightHeightDown", 0);
+        }
         row.DamagedVibrateDuration = Flt(env, "damagedVibrateDuration", 0);
         row.DamagedVibrateAmp = Flt(env, "damagedVibrateAmp", 0);
         row.DamagedColorScale = Flt(env, "damagedColorScale", 2f);
