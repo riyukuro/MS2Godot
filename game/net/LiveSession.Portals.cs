@@ -55,16 +55,14 @@ public partial class LiveSession
         GD.Print($"live: portals attached to xblock {xblock}{(same ? "" : $" (map {Portals.FieldId} is {want ?? "unknown"}: no entities)")}: {Portals.All.Count} registered");
     }
 
-    /// <summary>
-    /// A quest's standing for the masks: no record (or not taken) is absent, state 1 is taken, state 2 is rewarded.
-    /// STILL-OPEN: a taken quest whose conditions are met (the mask's "complete" stage) is not told apart from taken.
-    /// </summary>
-    QuestMaskTable.QuestStatus QuestStatusOf(int id) => Quests.Get(id)?.State switch
+    /// <summary>A quest's standing for the masks (portals and interact objects), from its record and the client's quest data:
+    /// <see cref="QuestMaskStatus.Of"/>.</summary>
+    QuestMaskTable.QuestStatus QuestStatusOf(int id)
     {
-        1 => QuestMaskTable.QuestStatus.Active,
-        2 => QuestMaskTable.QuestStatus.Rewarded,
-        _ => QuestMaskTable.QuestStatus.Absent,
-    };
+        Ms2.Quest.QuestTable table = null;
+        try { table = NpcTalk.ClientQuests(PackSet.Shared(Settings.DataDir)); } catch { }
+        return QuestMaskStatus.Of(Quests.Get(id), table == null ? null : table.Quest);
+    }
 
     /// <summary>OnFieldPortal (0x48). Every message applies, as in the client; a mode 2 that leaves the portal's flags as they
     /// were is not logged (a field script can send the same flags every frame).</summary>

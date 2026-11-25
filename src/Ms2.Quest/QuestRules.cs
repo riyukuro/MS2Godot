@@ -147,13 +147,14 @@ public sealed class QuestRules
 
     public QuestRules(QuestTable table, IQuestContext ctx) { this.table = table; this.ctx = ctx; }
 
-    /// <summary>CQuest::IsComplete (questmanager_1.cpp @0x1416c63b0): in progress and every count at its condition's goal.</summary>
+    /// <summary>CQuest::IsComplete (questmanager_1.cpp @0x1416c63b0): in progress and every count at its condition's goal.
+    /// CQuest::Init gives m_progress one 0 per condition and SetProgress drops an index past them (:127-139), so a condition
+    /// the packet sent no count for counts 0, and a count past the conditions is not read.</summary>
     public static bool IsComplete(QuestData data, int state, long[] progress)
     {
         if (state != 1) return false;
-        if (progress == null) return true;
-        for (int i = 0; i < progress.Length && i < data.Conditions.Count; i++)
-            if (progress[i] < data.Conditions[i].Goal) return false;
+        for (int i = 0; i < data.Conditions.Count; i++)
+            if ((progress != null && i < progress.Length ? progress[i] : 0) < data.Conditions[i].Goal) return false;
         return true;
     }
 

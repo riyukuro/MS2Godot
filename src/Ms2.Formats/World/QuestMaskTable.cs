@@ -48,6 +48,10 @@ public sealed class QuestMaskTable
 
     public int PortalMasks => portals.Count;
     public int NpcMasks => npcs.Count;
+    /// <summary>Every portal row the load kept, by (field, portal key).</summary>
+    public IEnumerable<KeyValuePair<(int Field, int Key), Mask>> PortalRows => portals;
+    /// <summary>Every npc row the load kept, by (field, npc id).</summary>
+    public IEnumerable<KeyValuePair<(int Field, int Key), Mask>> NpcRows => npcs;
 
     static void Load(PackSet packs, string entry, Dictionary<(int, int), Mask> into, Func<XElement, bool> available)
     {
