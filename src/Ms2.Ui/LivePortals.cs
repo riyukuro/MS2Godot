@@ -154,9 +154,9 @@ public sealed class LivePortals
 
     public int FieldId => fieldId;
     public IReadOnlyList<LivePortal> All => order;
-    /// <summary>A registered portal's shown flag changed: CPortal set its entity's IsVisible (0xa0b6b179) to the new value
-    /// (SetShown, SetShownAndGlow, FUN_14169ce50; portal.cpp:420-464), on its register, a quest mask run (FUN_14169d0e0), a
-    /// FieldPortal mode 2 or the start tick. The field's draw of the entity follows it (<see cref="PortalDraws"/>).</summary>
+    /// <summary>CPortal set a registered portal's entity IsVisible (0xa0b6b179; SetShown, SetShownAndGlow, FUN_14169ce50,
+    /// portal.cpp:420-464): raised on every register, and on a quest mask run (FUN_14169d0e0), a FieldPortal mode 2 or the
+    /// start tick that changes the shown flag. The field's draw of the entity follows it (<see cref="PortalDraws"/>).</summary>
     public event Action<LivePortal> ShownChanged;
     public LivePortal ById(int id) => byId.GetValueOrDefault(id);
     /// <summary>The field's entities are attached (the portal messages before it are held, as the client's field is built
@@ -179,7 +179,14 @@ public sealed class LivePortals
         {
             case 0: Register(m); break;
             case 1: Remove(m.Id); break;
-            case 2: if (byId.TryGetValue(m.Id, out var p)) Shows(p, () => SetFlags(p, m.Visible, m.Enabled, m.Minimap, m.Extra)); break;
+            case 2:
+                if (byId.TryGetValue(m.Id, out var p))
+                {
+                    bool was = p.Shown;
+                    SetFlags(p, m.Visible, m.Enabled, m.Minimap, m.Extra);
+                    Changed(p, was);
+                }
+                break;
             case 3: if (byId.TryGetValue(m.Id, out var q)) Move(q, ToVec(m.Position), ToVec(m.Rotation)); break;
         }
     }
@@ -236,19 +243,17 @@ public sealed class LivePortals
         p.Minimap = m.Minimap;
         p.BuildBox();
         byId[p.Id] = p; order.Add(p);
-        // the entity's own IsVisible before the register's setters (a spawned portal's entity is new: drawn from here)
-        bool loaded = p.Entity != null ? p.Entity.Bool("IsVisible", true) : !p.Shown;
         SetGlow(p, m.Enabled);
         SetShown(p, m.Visible);
         ApplyMask(p);
-        if (p.Shown != loaded) ShownChanged?.Invoke(p);
+        // the register sets the entity's IsVisible whatever it was: the entity may still be drawn from before a mode 1
+        // (RemoveFieldObject leaves a bound xblock entity's flags), so the draw always takes it
+        ShownChanged?.Invoke(p);
     }
 
-    /// <summary>Runs a flag setter on a registered portal and tells the draw when its shown flag changed.</summary>
-    void Shows(LivePortal p, Action set)
+    /// <summary>Tells the draw when a registered portal's shown flag changed from <paramref name="was"/>.</summary>
+    void Changed(LivePortal p, bool was)
     {
-        bool was = p.Shown;
-        set();
         if (p.Shown != was && byId.ContainsKey(p.Id)) ShownChanged?.Invoke(p);
     }
 
@@ -304,7 +309,12 @@ public sealed class LivePortals
     /// questmanager_2.cpp:1182 / 1417).</summary>
     public void RefreshMasks()
     {
-        foreach (var p in order) Shows(p, () => ApplyMask(p));
+        foreach (var p in order)
+        {
+            bool was = p.Shown;
+            ApplyMask(p);
+            Changed(p, was);
+        }
     }
 
     /// <summary>CPortal's frame update (portal.cpp:281): while the start tick is set, the portal is closed until the server
@@ -314,8 +324,10 @@ public sealed class LivePortals
         foreach (var p in order)
         {
             if (p.EventTime == 0) continue;
-            if (serverTick > (uint)p.EventTime) { p.EventTime = 0; Shows(p, () => SetShownAndGlow(p, true, true)); }
-            else Shows(p, () => SetShownAndGlow(p, false, false));
+            bool was = p.Shown;
+            if (serverTick > (uint)p.EventTime) { p.EventTime = 0; SetShownAndGlow(p, true, true); }
+            else SetShownAndGlow(p, false, false);
+            Changed(p, was);
         }
     }
 

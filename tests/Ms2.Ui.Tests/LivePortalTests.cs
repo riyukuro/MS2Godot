@@ -205,6 +205,49 @@ public class LivePortalTests
         Assert.That(drawn[late], Is.False);
     }
 
+    // mode 1 (RemoveFieldObject) leaves a bound xblock entity's flags, so it stays drawn; the next register sets IsVisible again
+    [Test]
+    public void PortalReRegisteredAfterARemoveIsDrawnByItsNewFlag()
+    {
+        var p8 = Xblock(8, visible: false, enabled: false);
+        var portals = new LivePortals(1000, null, null, null);
+        portals.Attach(new[] { p8 });
+        var drawn = new Dictionary<FieldEntity, bool> { [p8] = false };
+        var draws = new PortalDraws((e, shown) => drawn[e] = shown);
+        portals.Apply(Add(8, visible: false, enabled: false));
+        draws.Bind(portals);
+        portals.Apply(new FieldPortalMessage { Mode = 2, Id = 8, Visible = true, Enabled = true });
+        Assert.That(drawn[p8], Is.True, "mode 2 shows it");
+        portals.Apply(new FieldPortalMessage { Mode = 1, Id = 8 });
+        Assert.That(drawn[p8], Is.True, "the remove leaves the entity as it was");
+        portals.Apply(Add(8, visible: false, enabled: false));
+        Assert.That(drawn[p8], Is.False, "the register hides it again");
+        portals.Apply(new FieldPortalMessage { Mode = 1, Id = 8 });
+        portals.Apply(Add(8));
+        Assert.That(drawn[p8], Is.True, "a register with visible 1 shows it");
+    }
+
+    // LiveSession._Process runs Tick every frame: no allocation, start ticks or not, with the draw bound
+    [Test]
+    public void PortalTickAllocatesNothing()
+    {
+        var entities = Enumerable.Range(1, 40).Select(i => Xblock(i)).ToArray();
+        var portals = new LivePortals(1000, null, null, null);
+        portals.Attach(entities);
+        for (int i = 1; i <= 40; i++) portals.Apply(Add(i, startTick: i % 4 == 0 ? 1_000_000 : 0));
+        int calls = 0;
+        var draws = new PortalDraws((e, shown) => calls++);
+        draws.Bind(portals);
+        for (uint t = 0; t < 50; t++) portals.Tick(t);   // warm-up (the start tick portals close on the first)
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (uint t = 50; t < 2050; t++) portals.Tick(t);
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.That(bytes, Is.EqualTo(0), "bytes over 2000 ticks");
+        int shownBefore = calls;
+        portals.Tick(2_000_000);   // the start tick passes: the 10 start tick portals open once
+        Assert.That(calls - shownBefore, Is.EqualTo(10));
+    }
+
     [Test]
     public void FeatureGatedPortalSendsNothing()
     {
