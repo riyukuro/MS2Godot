@@ -13,7 +13,9 @@ namespace Ms2Godot.Tests;
 /// - the pc stands where the npc is and is turned as it is, frame after frame as the npc moves; the move keys do nothing;
 /// - an npc sequence key plays the pc body's sequence of that key (a jump key Jump_Down_A), once per new key, with the kf's own
 ///   cycle: a looping kf keeps playing past its length even when another caller loaded the clip clamped before;
-/// - on a mount the pc still goes where the npc is, and the rider keeps its riding pose (the ridee's sequence is not ported);
+/// - on a mount (riding 20910003, whose kfm has the pc names Stun_A and Damg_B) the pc still goes where the npc is, the mount
+///   plays the sequence of the npc's key by name, keeps its last one for a name its kfm lacks, and the rider keeps its riding
+///   pose;
 /// - its sync records carry state 0x46 with the npc id as the state data; the held item is let go on entry;
 /// - the same npc again keeps the state, the npc's leaving goes back to idle, an npc not here never holds it, a dead pc does
 ///   not enter it.
@@ -27,6 +29,8 @@ public partial class PlayerFollowNpcCheck : Node3D
     readonly List<Ms2.Ui.HeldItemState> held = new();
     Player pc;
     MethodInfo step;
+    PackSet packs;
+    ModelBuilder builder;
     int frames;
     const float Dt = 1f / 60;
     const int NpcId = 4711;
@@ -35,8 +39,8 @@ public partial class PlayerFollowNpcCheck : Node3D
 
     public override void _Ready()
     {
-        var packs = PackSet.Shared(Settings.DataDir);
-        var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
+        packs = PackSet.Shared(Settings.DataDir);
+        builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
         var sb = new StaticBody3D { Position = new Vector3(0, -50, 0) };
         sb.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(4000, 100, 4000) } });
@@ -167,28 +171,64 @@ public partial class PlayerFollowNpcCheck : Node3D
         GD.Print("player follow npc: idle when the npc left; an npc not here and a dead pc do not enter");
     }
 
+    /// <summary>The pc body's sequence key of a name (the rider's actor manager, NiActorManager::GetSequenceData), 0 for none.</summary>
+    short KeyOf(string name)
+    {
+        for (short k = 1; k < 4096; k++)
+            if (string.Equals(pc.Anims.SequenceName(k), name, System.StringComparison.OrdinalIgnoreCase)) return k;
+        return 0;
+    }
+
+    /// <summary>The loop mode a kf's own cycle gives (NiSequenceData Cycle Type: 0 loop, 1 reverse, 2 clamp), read from the
+    /// mount's kf apart from Mount's loader.</summary>
+    Animation.LoopModeEnum MountCycle(Mount m, string seq)
+    {
+        var (a, kfmEntry) = Mount.FindModel(packs, m.Data.KfmFor(1).ToLowerInvariant() + ".kfm");
+        var kfm = Ms2.Formats.Model.KfmFile.Load(packs.Read(a, kfmEntry));
+        string kf = kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(kfm.ByName(seq).KfPath.Replace('\\', '/')).ToLowerInvariant();
+        int c = Ms2.Formats.Model.KfAnimation.Load(Ms2.Formats.Nif.NifFile.Load(ModelBuilder.SharedSpec(Settings.NifXml), packs.Read(a, kf))).Cycle;
+        return c == 0 ? Animation.LoopModeEnum.Linear : c == 1 ? Animation.LoopModeEnum.Pingpong : Animation.LoopModeEnum.None;
+    }
+
     void Mounted()
     {
-        var (k1, n1, k2, n2) = TwoSequences();
-        pc.RideOn(new Mount { Data = new RideData { Id = 1, RunSpeed = 5 }, Visual = new Node3D() });
+        var (k1, n1, _, _) = TwoSequences();
+        short stun = KeyOf("Stun_A"), damg = KeyOf("Damg_B");
+        Expect(stun != 0 && damg != 0, $"mounted: the pc body has no Stun_A ({stun}) or Damg_B ({damg})");
+        var m = Mount.Load(packs, builder, 20910003);
+        string stunKey = m.SequenceKey("Stun_A", false), damgKey = m.SequenceKey("Damg_B", false);
+        Expect(stunKey != null && damgKey != null, "mounted: riding 20910003 has no Stun_A or Damg_B");
+        Expect(m.SequenceKey(n1, false) == null, $"mounted: riding 20910003 has {n1}, the name it should lack");
+        pc.RideOn(m);
         Steps(5);
-        npc = (new System.Numerics.Vector3(-200, 80, 30), 120f, k1);
+        string idle = m.Current;
+        npc = (new System.Numerics.Vector3(-200, 80, 30), 120f, stun);
         pc.EnterTriggerFollowNpc(NpcId);
         Expect(pc.State == Player.MoveState.TriggerFollowNpc, $"mounted: state {pc.State}");
         Steps(30);      // past the riding pose's blend in (0.1 s), so it runs
         Expect(pc.GlobalPosition.DistanceTo(Godot(npc.Value.Pos)) < 0.01f, $"mounted: pc at {pc.GlobalPosition}, npc at {Godot(npc.Value.Pos)}");
         Expect(Mathf.Abs(pc.FacingRotZ - 120f) < 0.5f, $"mounted: turned to {pc.FacingRotZ}, want 120");
-        Expect(pc.CurrentAnim != n1.ToLowerInvariant(), $"mounted: the rider plays the npc's {n1} in place of its riding pose");
-        // a new npc key leaves the riding pose running (not played over and started again)
+        Expect(m.Current == stunKey && m.Anim.CurrentAnimation == stunKey, $"mounted: the mount plays {m.Anim.CurrentAnimation} ({m.Current}), want Stun_A (was {idle})");
+        var stunMode = MountCycle(m, "Stun_A");
+        Expect(m.Anim.GetAnimation(stunKey).LoopMode == stunMode, $"mounted: Stun_A loop mode {m.Anim.GetAnimation(stunKey).LoopMode}, its kf's cycle gives {stunMode}");
+        Expect(pc.CurrentAnim != "stun_a", "mounted: the rider plays the npc's Stun_A in place of its riding pose");
+        // a new npc key: the mount plays it, the riding pose runs on (not played over and started again)
         string ride = pc.CurrentAnim;
         double at = pc.Anim.CurrentAnimationPosition;
-        npc = (npc.Value.Pos, npc.Value.RotZ, k2);
+        npc = (npc.Value.Pos, npc.Value.RotZ, damg);
         Steps(1);
+        Expect(m.Current == damgKey && m.Anim.CurrentAnimation == damgKey, $"mounted: key {damg} (Damg_B): the mount plays {m.Anim.CurrentAnimation}");
         Expect(pc.CurrentAnim == ride && pc.Anim.CurrentAnimationPosition > at,
-            $"mounted: key {k2} ({n2}) broke the riding pose {ride}: now {pc.CurrentAnim} at {pc.Anim.CurrentAnimationPosition:F3} s, was {at:F3} s");
+            $"mounted: key {damg} (Damg_B) broke the riding pose {ride}: now {pc.CurrentAnim} at {pc.Anim.CurrentAnimationPosition:F3} s, was {at:F3} s");
+        var damgMode = MountCycle(m, "Damg_B");
+        Expect(m.Anim.GetAnimation(damgKey).LoopMode == damgMode, $"mounted: Damg_B loop mode {m.Anim.GetAnimation(damgKey).LoopMode}, its kf's cycle gives {damgMode}");
+        // a key whose name the mount's kfm lacks plays nothing on it
+        npc = (npc.Value.Pos, npc.Value.RotZ, k1);
+        Steps(1);
+        Expect(m.Current == damgKey, $"mounted: key {k1} ({n1}), not in the mount's kfm, changed the mount to {m.Current}");
         npc = null;
         Steps(1);
         pc.RideOff();
-        GD.Print($"player follow npc: mounted, the pc went to the npc and kept its riding pose ({pc.CurrentAnim})");
+        GD.Print($"player follow npc: mounted, the pc went to the npc, the mount played Stun_A then Damg_B and kept it for {n1}, the rider kept its riding pose ({ride}); loop modes {stunMode} / {damgMode}");
     }
 }

@@ -131,6 +131,28 @@ public sealed class Mount
         Current = key;
     }
 
+    /// <summary>
+    /// PCBase::PlayAnimation(name, 1, false, false) on the ridee, as StateTriggerFollowNpc::vfunc_3 plays the npc's sequence
+    /// (stateemotionidle.cpp:551-559): the kfm sequence of that name with the kf's own cycle deciding whether it loops (as
+    /// <see cref="ActionAnims.SequenceOwnCycle"/> for the pc), not started again while it is the one playing. False when the
+    /// mount's kfm has no sequence of the name (nothing plays, as GetSequenceData finds none).
+    /// </summary>
+    public bool PlaySequenceOwnCycle(string seq)
+    {
+        var key = SequenceKey(seq, false);
+        if (key == null) return false;
+        int cycle = Cycles.TryGetValue(kfmEntry + "/" + key, out int c) ? c : 0;
+        Anim.GetAnimationLibrary("").GetAnimation(key).LoopMode = cycle == 0 ? Godot.Animation.LoopModeEnum.Linear
+            : cycle == 1 ? Godot.Animation.LoopModeEnum.Pingpong : Godot.Animation.LoopModeEnum.None;
+        if (key == Current) return true;
+        Anim.Play(key, 0.15);
+        Current = key;
+        return true;
+    }
+
+    /// <summary>The kf cycle type (KfAnimation.Cycle) of each loaded sequence, by "kfm entry/key".</summary>
+    static readonly Dictionary<string, int> Cycles = new(StringComparer.Ordinal);
+
     readonly Dictionary<string, string> typeKeys = new(StringComparer.Ordinal), seqKeys = new(StringComparer.Ordinal);
 
     /// <summary>The animation key of an action type's sequence, loaded on first use (with <paramref name="loop"/> as its loop
@@ -212,6 +234,7 @@ public sealed class Mount
         // the kf's keys, then the xml's, unsorted (NiTextKeyExtraData.cpp:69-72); the xml element is named like the kf file
         if (XmlKeys().TryGetValue(Path.GetFileNameWithoutExtension(kfName), out var extra)) keys.AddRange(extra);
         if (keys.Count > 0) KeyCache[kfmEntry + "/" + key] = keys;
+        Cycles[kfmEntry + "/" + key] = kf.Cycle;
         var a = ModelBuilder.BuildAnimation(kf, md);
         a.LoopMode = loop ? Godot.Animation.LoopModeEnum.Linear : Godot.Animation.LoopModeEnum.None;
         lib.AddAnimation(key, a);

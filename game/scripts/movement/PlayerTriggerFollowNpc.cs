@@ -5,10 +5,10 @@ namespace Ms2Godot;
 /// (CSceneStateGame::OnFollowNpc, scenestategame.cpp:5862-5869: vfunc_59(0x46, StateDataTriggerFollowNpc(npc), 0, 0)). The
 /// server sends it with a dummy npc it walks along a patrol path, so the pc rides along: each frame the pc stands where the npc
 /// is, turned as it is, and plays the sequence the npc's last sync named.
-/// On a mount the state's owner is the ridee and the sequence name comes from the rider's actor manager (FUN_141468360,
-/// :525-527): the owner moves and turns, which here is the pc's own node (a mount moves the same body, the Ridee being a
-/// PCBase), and the rider keeps the riding pose StateRide gives it.
-/// STILL-OPEN: the ridee's PlayAnimation of that name is not ported (the mount has no kf-cycle player); it is logged once.
+/// On a mount the state's owner is the ridee (FUN_141468360, :525-527: the Ridee class 0x6200045) and the sequence name
+/// comes from the rider's actor manager: the owner moves and turns, which here is the pc's own node (a mount moves the same
+/// body, the Ridee being a PCBase), the ridee plays the sequence of that name when its kfm has one
+/// (<see cref="Mount.PlaySequenceOwnCycle"/>), and the rider keeps the riding pose StateRide gives it.
 /// State::vfunc_4's and vfunc_3's base work (the speed setup, state.cpp:600-611) is not ported, as for the other trigger state.
 /// </summary>
 public partial class Player
@@ -47,7 +47,8 @@ public partial class Player
     /// (vfunc_19) and turned to its rotation at once (SetRotationAndTargetYaw), and when the npc's sequence key is set and
     /// differs from the last one, the pc plays Jump_Down_A for the jump keys (-2, -3) or its own sequence of that key
     /// (NiActorManager::GetSequenceData on the pc's body), at speed 1 without bForce (PCBase::PlayAnimation(name, 1, false,
-    /// false)): the kf's own cycle decides whether it loops (<see cref="ActionAnims.SequenceOwnCycle"/>).
+    /// false)): the kf's own cycle decides whether it loops (<see cref="ActionAnims.SequenceOwnCycle"/>); on a mount the ridee
+    /// plays it.
     /// </summary>
     void TriggerFollowNpcUpdate()
     {
@@ -60,14 +61,8 @@ public partial class Player
         followAnim = key;
         string name = key is -2 or -3 ? "Jump_Down_A" : Anims?.SequenceName(key);
         if (string.IsNullOrEmpty(name) || Anims == null || Anim == null) return;
-        if (Mount != null)
-        {
-            if (!mountedFollowLogged) { mountedFollowLogged = true; Godot.GD.Print($"follow npc: the ridee's sequence {name} is not played (not ported)"); }
-            return;
-        }
+        if (Mount != null) { Mount.PlaySequenceOwnCycle(name); return; }
         string seq = Anims.SequenceOwnCycle(name);
         if (seq != null) PlaySequence(seq, 1f, restart: false);
     }
-
-    static bool mountedFollowLogged;
 }

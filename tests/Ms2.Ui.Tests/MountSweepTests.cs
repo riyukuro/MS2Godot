@@ -17,6 +17,8 @@ namespace Ms2.Ui.Tests;
 /// (rideAniPC*, passengers' too) in both pc bodies. Rows with no kfm are the object mounts (the nif as a collide prop,
 /// type object), counted apart. Needs MS2_DATA and MS2_NIFXML; prints the counts per check. Fails on a model that is not
 /// found or does not load, and on a seat neither node nor dummy names unless the client has none either (the rows below).
+/// The kfms with a pc body sequence name (Stun_A, Damg_B, ...) are the mounts StateTriggerFollowNpc plays a followed npc's
+/// sequence on; they are listed under "missing" of that check.
 /// The sequences missing from the data (a mount kfm without Jump_*, a rideAniPC no body has) are only counted: the client
 /// plays nothing for them either.
 /// </summary>
@@ -67,6 +69,10 @@ public class MountSweepTests
             foreach (var v in ax.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == gid)?.Elements("v") ?? Enumerable.Empty<XElement>())
                 actions[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();
 
+        // the pc body's sequence names (male/male.kfm, ActionAnims): StateTriggerFollowNpc on a ridee names the sequence by the
+        // rider's actor manager and plays that name on the ridee (stateemotionidle.cpp:525-559)
+        var pcNames = KfmFile.Load(packs.Read("Resource/Model/Character", "male/male.kfm")).Sequences.Select(q => q.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var ids = packs.List("Xml").Where(e => e.StartsWith("riding/") && e.Count(c => c == '/') == 1 && e.EndsWith(".xml"))
             .Select(e => int.TryParse(e[7..^4], out var id) ? id : -1).Where(id => id > 0).OrderBy(id => id).ToList();
         foreach (var id in ids)
@@ -117,6 +123,8 @@ public class MountSweepTests
                     if (actions.TryGetValue(type, out var seq)) t.Add("mount " + type, Has(seq), $"{id}:{seq}");
                 if (!string.IsNullOrEmpty(d.IdleXMotion)) t.Add("mount idleXMotion", Has(d.IdleXMotion), $"{id}:{d.IdleXMotion}");
                 if (!string.IsNullOrEmpty(d.RunXMotion)) t.Add("mount runXMotion", Has(d.RunXMotion), $"{id}:{d.RunXMotion}");
+                var shared = kfm.Sequences.Where(q => pcNames.Contains(q.Name) && Has(q.Name)).Select(q => q.Name).ToList();
+                t.Add("follow npc: no pc sequence name in the mount kfm", shared.Count == 0, $"{id}:{string.Join("/", shared.Take(4))}");
             }
             if (!d.HideRider)
                 foreach (var (who, r) in d.Seats.Select(s => ($"{id}/{s.Key}", s.Value.Sequences)).Prepend(($"{id}", d.Rider)))
@@ -156,6 +164,7 @@ public class MountSweepTests
             Assert.That(t.Bad(check), Is.Zero, check);
         Assert.That(t.Checks["rider seat (node or dummy)"].bad.Select(b => b[..b.IndexOf(':')]), Is.SubsetOf(NoSeatInTheClient), "a seat the client finds");
         Assert.That(t.Checks["rider seat on a dummy"].ok, Is.GreaterThanOrEqualTo(31), "Eff_Head / Eff_UI seats");
+        Assert.That(t.Bad("follow npc: no pc sequence name in the mount kfm"), Is.GreaterThan(0), "mounts that play a followed npc's sequence");
     }
 
     /// <summary>The rows whose rideBone is neither a node of the model nor a dummy, so the client makes no RideeInterpolator:
