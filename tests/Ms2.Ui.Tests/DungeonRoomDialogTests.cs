@@ -85,6 +85,7 @@ public class DungeonRoomDialogTests
     [Test]
     public void TheGroupListHasTheFavouritesRecommendedAndTheUngatedGroups()
     {
+        if (!Rooms().RoomList.Any(r => r.GroupType > 0)) Assert.Ignore("this room table has no groups (GMS2)");
         var e = Make(c => c.SetGroupType(0));
         // Groups 0 (favourites) and 1 (recommended) have no type; types 1 and 2 (groups 2 and 3) need no feature.
         Assert.That(e.C.GroupIds.Take(4), Is.EqualTo(new[] { 0, 1, 2, 3 }));
@@ -97,6 +98,7 @@ public class DungeonRoomDialogTests
     [Test]
     public void AGatedGroupIsListedOnlyWithItsFeature()
     {
+        if (!Rooms().RoomList.Any(r => r.GroupType > 0)) Assert.Ignore("this room table has no groups (GMS2)");
         // Group 4 (type 3) needs feature 0x80.
         var off = Make();
         Assert.That(off.C.GroupIds, Does.Not.Contain(4));

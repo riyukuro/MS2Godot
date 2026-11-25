@@ -1,6 +1,7 @@
 using Ms2.Avm2;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
 using Ms2.Quest;
 
 namespace Ms2.Ui.Hud;
@@ -10,8 +11,8 @@ namespace Ms2.Ui.Hud;
 /// for its movie uidungeonroomdialog. A group drop-down (m_dungoenGroupCombo, the movie's spelling) picks the group of rooms, a tile list
 /// (m_dungeonList, 21 renderers m_dungeonListItem1..21) shows the rooms of the group, and the room's panel (UIDungeonRoomInfo, on
 /// m_dungeonInfo) shows the selected room. This class is the window itself: the group and room selection, the list texts, the season
-/// summary tooltip and the packet refreshes. The room panel is not ported yet (see the STILL-OPEN list), so the calls that reach it are not made.
-/// STILL-OPEN: UIDungeonRoomInfo (Refresh, SetRoom, RefreshPartySearchButton, RefreshSearchingIndicator, and the m_partyMembers banner tooltip);
+/// summary tooltip and the packet refreshes; the room panel is <see cref="DungeonRoomInfoPanel"/>.
+/// STILL-OPEN: the panel's own list (see its summary: the reward preview and the hooks of <see cref="DungeonRoomHooks"/>);
 /// the favourites group 0 (the character record's GetSeasonRooms); RefreshSeasonSummary's season values (every branch of the decompiled
 /// function ends with vfunc_4(false), so the summary is hidden; the real gauge and text are not recovered); the m_cooldownIcon tooltip (the
 /// record manager's expire date); the achievement tooltip of m_requireCondition (ShowAchieveTooltip); FUN_141924630 (the guard before the
@@ -33,6 +34,20 @@ public sealed class DungeonRoomDialogController : UiController
     readonly PartyBook book;
 
     public DungeonRoomDialogController(PartyBook book = null) { this.book = book; }
+
+    /// <summary>The party (TSingleton PartyManager); null without one.</summary>
+    internal PartyBook Party => book;
+    /// <summary>The data the room panel asks other managers for (see <see cref="DungeonRoomHooks"/>).</summary>
+    public DungeonRoomHooks Hooks { get; } = new();
+    /// <summary>The record manager (DungeonRecordManagerCli) the panel reads; the owner sets it to the session's book.</summary>
+    public DungeonRecordBook Records { get; set; } = new();
+    /// <summary>The room panel (UIDungeonRoomInfo, m_dungeonInfo); null before the load and after Close.</summary>
+    public DungeonRoomInfoPanel Panel { get; private set; }
+    /// <summary>The packets the room panel sends and the boxes it shows.</summary>
+    public Action<IOutPacket> Send = _ => { };
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+    /// <summary>ShowSystemNotice(text, 1, 1): a system notice of the text itself (<see cref="Notice"/> takes a common string key).</summary>
+    public Action<string> NoticeText = _ => { };
 
     // The client's fields.
     int portalId;                 // m_178
@@ -56,7 +71,7 @@ public sealed class DungeonRoomDialogController : UiController
     public int PortalId => portalId;
 
     /// <summary>The dungeon room tables (CDungeonRoomTable).</summary>
-    DungeonRoomTable Table => Model.Tables.DungeonRooms;
+    internal DungeonRoomTable Table => Model.Tables.DungeonRooms;
 
     /// <summary>The local player's level and gear score (vfunc_78, FUN_14152ea50); null without a local player.
     /// STILL-OPEN: the gear score has no source in the model yet, so the default is level only.</summary>
@@ -65,6 +80,7 @@ public sealed class DungeonRoomDialogController : UiController
     public Action<string> Notice = _ => { };
 
     string Common(string key) => Model.Tables.Common(key) ?? "";
+    internal string CommonText(string key) => Common(key);
 
     // ---- the open calls (the callers set these before the movie loads) ----
 
@@ -78,7 +94,7 @@ public sealed class DungeonRoomDialogController : UiController
     public void ResetGroup() => currentGroup = 0;
 
     /// <summary>SetRoom: m_spRoom, and the room panel's SetRoom when it exists.</summary>
-    public void SetRoom(DungeonRoomData room) => Room = room;
+    public void SetRoom(DungeonRoomData room) { Room = room; Panel?.SetRoom(room); }
 
     /// <summary>
     /// OpenDungeonOrRoom (@0x1412b8f00): an id over 100000 is a room id (OpenRoom); else it is a dungeon id and its first room opens
@@ -138,7 +154,7 @@ public sealed class DungeonRoomDialogController : UiController
     /// panel on m_dungeonInfo (the load ends without it), the combo, list, season summary, 21 items and gauge, the combo's and list's
     /// "listIndexChange" handlers, the items' data handlers, RefreshGroupList, then the group and room: the group of the room or of
     /// groupType, SelectGroup, falling back to group 1, group 2 or a close; Refresh at the end.
-    /// STILL-OPEN: the room panel is not constructed, and the packet registrations (0x53, the debug-mode and enter-state notifies) are
+    /// The panel is built before the group is selected, and gets the room set so far. STILL-OPEN: the packet registrations (0x53, the debug-mode and enter-state notifies) are
     /// made by the owner of the dialog (<see cref="OnPartyApplied"/>, <see cref="Refresh"/>).
     /// </summary>
     public override void OnLoadComplete()
@@ -149,6 +165,9 @@ public sealed class DungeonRoomDialogController : UiController
         var combo = Host.Child("m_dungoenGroupCombo");
         var list = Host.Child("m_dungeonList");
         if (combo == null || list == null) { Host.RT.NoteMissing("dungeon room dialog: combo or list"); return; }
+        Records.Rooms ??= Table;
+        Panel = new DungeonRoomInfoPanel(this, Host.Child("m_dungeonInfo")) { Send = p => Send(p), ShowBox = b => ShowBox(b) };
+        if (Room != null) Panel.SetRoom(Room);
         AddHandler(combo, OnGroupChanged);
         AddHandler(list, OnRoomSelected);
 
@@ -198,6 +217,7 @@ public sealed class DungeonRoomDialogController : UiController
     public override void Close()
     {
         base.Close();
+        Panel = null;
         portalId = 0;
         groupType = 0;
         Room = null;
@@ -222,15 +242,51 @@ public sealed class DungeonRoomDialogController : UiController
         else if (cmd == 7 && type == 5 && currentGroup == 0) ShowGroup(0, 0);
     }
 
+    /// <summary>OnRoomPacket53 (@0x1412b8e10, :2032): the commands 2, 7, 8, 9 and 30 of the Party packet refresh the search button and the
+    /// searching indicator. STILL-OPEN: FUN_141924630, the guard, is treated as true.</summary>
+    public void OnRoomPacket53(int cmd)
+    {
+        if (cmd is 2 or 7 or 8 or 9 or 30 && Panel != null)
+        {
+            Panel.RefreshPartySearchButton();
+            Panel.RefreshSearchingIndicator();
+        }
+    }
+
+    /// <summary>
+    /// ShowEnterLimitMessage (@0x1412b9870, :2226): the system notice of the reason an entry was refused (12 the level, 13 the achievement,
+    /// 14 VIP, 15 the gear score, 16 a dungeon to clear, 17 the additional effects, 18 the recommended weapon); no room, common string 0x99a.
+    /// STILL-OPEN: the achievement's name needs <see cref="DungeonRoomHooks.AchieveName"/>.
+    /// </summary>
+    public void ShowEnterLimitMessage(uint roomId, int reason)
+    {
+        var room = Table.GetRoom(roomId);
+        if (room == null) { NoticeText(Model.Tables.Common(0x99a) ?? ""); return; }
+        string text = reason switch
+        {
+            12 => ClientFormat.Format(Model.Tables.Common(0x99b) ?? "", (int)room.LimitPlayerLevel),
+            13 => ClientFormat.Format(Model.Tables.Common(0x99c) ?? "", Hooks.AchieveName?.Invoke(room.LimitAchieveId) ?? ""),
+            14 => Common("s_field_limit_disable_vip"),
+            15 => Common("s_field_limit_gearScore"),
+            16 => Common("s_field_limit_clear_dungeon"),
+            17 => ClientFormat.Format(Common("s_field_limit_additionalEffect"), string.Concat(room.LimitAdditionalEffects.Select(
+                id => "[" + (Model.Tables.StringTableText(0x4c, id) ?? "") + "] "))),
+            18 => Common("s_dungeon_enter_limit_recommend_weapon"),
+            _ => null,
+        };
+        if (text != null) NoticeText(text);
+    }
+
     // ---- refresh ----
 
     /// <summary>
     /// Refresh (@0x1412b9130): nothing without the layout, a local player and a room; then the room panel's Refresh, the sub title and
-    /// the season summary. STILL-OPEN: the room panel's Refresh.
+    /// the season summary.
     /// </summary>
     public void Refresh()
     {
         if (Host?.Entity == null || LocalPlayer() == null || Room == null) return;
+        Panel?.Refresh();
         RefreshSubTitle();
         RefreshSeasonSummary();
     }
@@ -450,7 +506,8 @@ public sealed class DungeonRoomDialogController : UiController
     /// <summary>
     /// vfunc_49 (the tooltips of the movie's names; they need a room): "m_seasonSummary" shows m_188 (text tooltip, align 7); "m_requireCondition"
     /// shows the VIP text when the room is limited to VIP (s_vip_tooltip_info).
-    /// STILL-OPEN: "m_partyMembers" (the room panel's banner), "m_cooldownIcon" (the record's expire date) and the achievement tooltip of
+    /// "m_partyMembers" shows the panel's banner (ASTooltip(1, 2), align 5), the panel's reward, find and sub tab bar texts are answered
+    /// by their names. STILL-OPEN: "m_cooldownIcon" (the record's expire date, FormatMonthDayWeekday) and the achievement tooltip of
     /// "m_requireCondition" (limitAchieveID != 0, ShowAchieveTooltip).
     /// </summary>
     public override IDictionary<string, object> GetTooltip(object[] args)
@@ -466,6 +523,13 @@ public sealed class DungeonRoomDialogController : UiController
                 t.SetTooltipAlign(7);
                 return t;
             }
+            case "m_partyMembers":
+            {
+                var t = new AsTooltip();
+                if (Panel == null || !t.ApplyTextTooltip(Panel.Banner)) return null;
+                t.SetTooltipAlign(5);
+                return t;
+            }
             case "m_requireCondition":
                 if (Room.LimitAchieveId == 0 && Room.LimitVip)
                 {
@@ -473,6 +537,11 @@ public sealed class DungeonRoomDialogController : UiController
                     return t.ApplyTextTooltip(Common("s_vip_tooltip_info")) ? t : null;
                 }
                 return null;
+        }
+        if (Panel?.TooltipText(name) is { } text)
+        {
+            var t = new AsTooltip();
+            return t.ApplyTextTooltip(text) ? t : null;
         }
         return null;
     }
