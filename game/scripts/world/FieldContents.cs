@@ -140,6 +140,9 @@ public partial class FieldContents : Node3D
             catch (Exception ex) { GD.PushWarning("live npc talk: " + ex.Message); }
             try { AddChild(new NpcEmoticons(Ui(packs), Constants(packs), talk, null) { Viewer = player }); }
             catch (Exception ex) { GD.PushWarning("live npc emoticons: " + ex.Message); }
+            // the booty popups over the player's function cubes (UIBootyPopup, CubeMapInformationService FUN_1410c8a90)
+            try { AddChild(new BootyPopupLayer(Ui(packs), Constants(packs)) { Viewer = player }); }
+            catch (Exception ex) { GD.PushWarning("live booty popups: " + ex.Message); }
         }
         if (offline && fnpcs.Spawned.Count > 0)
         {
