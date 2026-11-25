@@ -67,6 +67,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     string masterTarget = "";   // m_strName: the member the changeMaster box names
     string expelTarget = "";    // m_strDesc: the member the expelMember box names
 
+    /// <summary>The data is the GMS2 client's (its InitializeGuildDialog differs, see there).</summary>
+    public bool Gms2Client;
     /// <summary>GetStringCommon.</summary>
     public Func<int, string> Common = _ => "";
     /// <summary>GetStringCommonByKey.</summary>
@@ -277,7 +279,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     void InitializeGuildDialog()
     {
         // FUN_1419260d0("m_webGuideButton", 0) = UIDialog::BindWebGuideButton: STILL-OPEN (WebGuideTable)
-        Host.Invoke(Host.Entity, "setupCategory", false);                  // SetupCategory: IsGuildChampionshipOpen && IsInGuild
+        // SetupCategory: IsGuildChampionshipOpen && IsInGuild (the setupCategory call @0x14196b2b9). The GMS2 client has no such call
+        // (InitializeGuildDialog @0x140d65034 goes from the web guide button to showGuildDialog @0x140d65097, and its exe has no
+        // setupCategory string): its movie's configUI calls setupCategory() itself, with no argument.
+        if (!Gms2Client) Host.Invoke(Host.Entity, "setupCategory", false);
         Host.Invoke(Host.Entity, "showGuildDialog", Book.InGuild ? 1 : 0); // ShowGuildDialog
         SetMasterInfo();
         SetGradeInfo();

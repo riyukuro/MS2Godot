@@ -29,8 +29,9 @@ public class GuildRecordedTests
     // kms2: 0x8A type 0x02, 2 bytes (Disband, result 0)
     static readonly byte[] KmsDisbandOk = Convert.FromHexString("0200");
 
-    // gms2: 0x8C type 0x39, 21 bytes (HouseUpgrade: 5-char name masked with '*', level 3, theme 1)
-    static readonly byte[] Gms2HouseUpgrade = Convert.FromHexString(
+    // gms2: 0x8C type 0x39 (57), 21 bytes: the npc upgrade (GMS2 case 57 @0x140aa0810 pairs with KMS 0x3b FUN_1413c3ef0, see GuildModes):
+    // 5-char name masked with '*', npc kind 3, level 1
+    static readonly byte[] Gms2NpcUpgrade = Convert.FromHexString(
         "3905002A002A002A002A002A000300000001000000");
 
     // gms2: 0x8C type 0x0F, 1 byte (AttendComplete)
@@ -122,13 +123,13 @@ public class GuildRecordedTests
     }
 
     [Test]
-    public void Gms2HouseUpgradeAttendAndListModesMutateGuildBook()
+    public void Gms2NpcUpgradeAttendAndListModesMutateGuildBook()
     {
-        var upgrade = GuildMessage.Read(new ByteReader(Gms2HouseUpgrade), ProtocolProfile.Gms2);
-        Assert.That(upgrade.Type, Is.EqualTo(0x39));
+        var upgrade = GuildMessage.Read(new ByteReader(Gms2NpcUpgrade), ProtocolProfile.Gms2);
+        Assert.That(upgrade.Type, Is.EqualTo(0x3b));
         Assert.That(upgrade.Name, Is.EqualTo("*****"));
-        Assert.That(upgrade.HouseLevel, Is.EqualTo(3));
-        Assert.That(upgrade.HouseTheme, Is.EqualTo(1));
+        Assert.That(upgrade.NpcKind, Is.EqualTo(3));
+        Assert.That(upgrade.NpcLevel, Is.EqualTo(1));
 
         var book = InGuildBook("*****");
         var boxes = new List<string>();
@@ -145,9 +146,8 @@ public class GuildRecordedTests
         book.MyRequestsRefresh += () => myReqRefreshes++;
 
         book.Apply(upgrade);
-        Assert.That(book.Info.HouseLevel, Is.EqualTo(3));
-        Assert.That(book.Info.HouseTheme, Is.EqualTo(1));
-        Assert.That(houseRefreshes, Is.EqualTo(1));
+        Assert.That(book.Info.Npcs, Does.Contain((3, 1)));
+        Assert.That(houseRefreshes, Is.EqualTo(0));
         Assert.That(npcRefreshes, Is.EqualTo(1));
 
         var attend = GuildMessage.Read(new ByteReader(Gms2AttendComplete), ProtocolProfile.Gms2);

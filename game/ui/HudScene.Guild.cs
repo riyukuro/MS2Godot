@@ -114,6 +114,7 @@ public partial class HudScene
             var c = new GuildDialogController(book)
             {
                 Common = t.Common,
+                Gms2Client = Ms2.Ui.LobbyFeatures.LocaleOf(assets.Packs) == "NA",
                 CommonByKey = key => t.Common(key) ?? "",
                 LevelByExp = t.GuildLevelByExp,
                 CreatePrice = t.GuildCreatePrice,

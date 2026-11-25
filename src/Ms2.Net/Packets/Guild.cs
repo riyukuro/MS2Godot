@@ -264,14 +264,17 @@ public sealed record GuildMessage(byte Type) {
     }
 
     static GuildMessage ReadBody(ByteReader r, ProtocolProfile profile) {
-        byte t = r.ReadByte();
-        if (profile.IsGms2 && t is 83 or 84 or 85) {
-            // GMS2 lists: 83 the applications to the own guild, 84 the own applications, 85 the guild search; handed on as the KMS types 0x55, 0x56, 0x57
+        // The KMS type: a GMS2 session's type goes through GuildModes first, so every case below is the KMS number.
+        byte t = GuildModes.Receive(r.ReadByte(), profile);
+        if (profile.IsGms2 && t is 0x55 or 0x56 or 0x57 or 0x2d) {
+            // GMS2 lists (GMS2 83, 84, 85): the applications to the own guild, the own applications, the guild search; and
+            // GMS2 45, the one application that arrived. The same fields as the KMS entries in another order.
+            if (t == 0x2d) return new(t) { NewRequest = GuildGms2Lists.ReadApplication(r) };
             int n = r.ReadInt();
             switch (t) {
-                case 83: { var list = new List<GuildJoinRequestForGuild>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadApplication(r)); return new(0x55) { GuildRequests = list }; }
-                case 84: { var list = new List<GuildJoinRequest>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadApplied(r)); return new(0x56) { Requests = list }; }
-                default: { var list = new List<GuildSearchEntry>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadGuild(r)); return new(0x57) { Results = list, SearchCount = n }; }
+                case 0x55: { var list = new List<GuildJoinRequestForGuild>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadApplication(r)); return new(t) { GuildRequests = list }; }
+                case 0x56: { var list = new List<GuildJoinRequest>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadApplied(r)); return new(t) { Requests = list }; }
+                default: { var list = new List<GuildSearchEntry>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadGuild(r)); return new(t) { Results = list, SearchCount = n }; }
             }
         }
         switch (t) {

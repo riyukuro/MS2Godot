@@ -48,6 +48,38 @@ public class GuildDialogTests
         return c;
     }
 
+    /// <summary>InitializeGuildDialog outside a guild on each data set: the KMS client calls setupCategory(false) (@0x14196b2b9), the
+    /// GMS2 client does not (its movie's configUI calls setupCategory() itself); the open leaves no runtime error and the category bar
+    /// holds its tabs. On the GMS2 movie the KMS call is the "setupCategory is not a function" error.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void OpeningOutsideAGuildRunsTheCategorySetupOfItsOwnClient(string variable)
+    {
+        var p = TestData.Packs(RcGap.Data(variable));
+        var movies = TestData.Movies(p);
+        var t = new GameTables(p, "en");
+        var c = new GuildDialogController(new GuildBook { Common = id => $"c{id:x}", CommonByKey = k => k, PlayerName = () => "Ma" })
+        {
+            Gms2Client = LobbyFeatures.LocaleOf(p) == "NA",
+            Common = t.Common,
+            CommonByKey = key => t.Common(key) ?? "",
+            LevelByExp = t.GuildLevelByExp,
+            PlayerName = () => "Ma",
+            FeatureEnabled = _ => false,
+            JobName = t.JobName,
+            MapName = id => t.MapName(id) ?? id.ToString(),
+            ImagePath = (_, _) => "x.png",
+        };
+        Assert.That(c.Gms2Client, Is.EqualTo(variable == "MS2_GMS2_DATA"));
+        var (rt, pl) = movies.Open(c.Movie, r => r.Budget = 20_000_000, c.Libraries);
+        pl.StageW = 1920; pl.StageH = 1080;
+        var h = new UiHost(pl, c, new UiModel(t));
+        Assert.That(h.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) pl.Tick();
+        Assert.That(rt.Errors, Is.Empty);
+        Assert.That(h.Child("m_category") is { } bar ? h.Get(h.Get(bar, "dataProvider"), "length") : null, Is.GreaterThan(0));
+    }
+
     /// <summary>A book in a two-member guild whose grades give the master every right.</summary>
     internal static GuildBook InGuild()
     {
