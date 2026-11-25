@@ -279,6 +279,12 @@ public partial class LiveSession
                 if (runTo != null) hud.DriveEnd();
                 continue;
             }
+            if (step.StartsWith("timescale:"))      // timescale:<x>: Engine.TimeScale for the steps after it, so a short effect's first frames fall on the shots; timescale:1 restores it
+            {
+                Engine.TimeScale = double.Parse(step[10..], System.Globalization.CultureInfo.InvariantCulture);
+                GD.Print($"live: combat {step}: time scale {Engine.TimeScale}");
+                continue;
+            }
             if (step.StartsWith("wait:"))      // wait:N: N seconds of frames (a trigger's timed states)
             {
                 await frames(60 * int.Parse(step[5..]));

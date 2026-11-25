@@ -10,14 +10,15 @@ static class FxParam
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
         BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
         HasDetail = "has_detail", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
-        Ambient = "mat_ambient", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity";
+        Ambient = "mat_ambient", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity", MorphW = "morph_w";
 }
 
 /// <summary>
 /// A playing effect NIF: its node tree with the transform controllers, its static meshes with the alpha, uv-scroll and flipbook controllers, and its
 /// particle systems simulated on the CPU (emitters, gravity, drag and bomb forces, size / color keys over the particle's age, grow and shrink ramps)
 /// and drawn as camera-facing or velocity-aligned quads in one MultiMesh per system. All of it lives in MS2 file space (Z up) under one rotated node.
-/// Not simulated: the other forces, colliders, spawners (death spawns), emitter-radius / color / morph controllers, mesh particles (drawn as quads).
+/// A mesh's morph controller moves its vertices (EffectMorph). Not simulated: the other forces, colliders, spawners (death
+/// spawns), emitter-radius / color controllers, mesh particles (drawn as quads).
 /// </summary>
 public sealed partial class EffectInstance : Node3D
 {
@@ -30,6 +31,8 @@ public sealed partial class EffectInstance : Node3D
         public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
         public readonly double[] Lit = new double[3], Amb = new double[3];   // EffectMesh.Shade's output, reused every frame
         public bool Static, Placed;                               // no node from it to the root animates or faces the camera: placed once
+        public EffectMorph Morph; public int MorphTargets;        // the drawn morph and its offset targets (CUSTOM0-3), 0 for none
+        public Vector4 LastW;                                     // the morph weights last set (morph_w)
         // the last value set on each per-frame shader parameter: a parameter is set again only when its value changes
         public Vector4 LastTint = Vector4.One; public Vector3 LastAmb; public float LastAlpha; public Texture2D LastTex;
         // base r0 r1, glow r0 r1, detail r0 r1 (the shader defaults)
@@ -101,7 +104,8 @@ uniform bool vc_dif = false;
 uniform bool vc_amb = false;
 uniform bool vc_opacity = false;
 FOGDECL
-void vertex() { FOGVERT }
+MORPHDECL
+void vertex() { MORPHVERT FOGVERT }
 // a map's uv: its texture transform's rows, then the clamp mode (bit 0 S, bit 1 T) as CLAMP addressing: the samplers
 // have no mipmaps, so holding the coordinate half a texel inside the edge is what clamped addressing reads
 vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
@@ -260,13 +264,23 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         return m.ZTest ? $"{cull}, {depth}" : $"{cull}, {depth}, depth_test_disabled";
     }
 
-    static Shader MeshShader(ModelMesh m, bool add, bool mirrored = false)
+    /// <param name="morphTargets">The offset targets of the mesh's morph (EffectMorph), 0 for none: the vertex adds each
+    /// one (CUSTOM0-3) times its weight (morph_w), before the fog reads the vertex.</param>
+    static Shader MeshShader(ModelMesh m, bool add, bool mirrored = false, int morphTargets = 0)
     {
-        string state = RenderModes(m, mirrored), key = state + (add ? " add" : " mix");
+        string state = RenderModes(m, mirrored), key = state + (add ? " add" : " mix") + (morphTargets > 0 ? " morph" + morphTargets : "");
         if (!meshShaders.TryGetValue(key, out var sh))
-            meshShaders[key] = sh = new Shader { Code = WithFog(MeshCode).Replace("MESHSTATE", state).Replace("BLEND", add ? "blend_add" : "blend_mix") };
+            meshShaders[key] = sh = new Shader { Code = WithMorph(WithFog(MeshCode), morphTargets).Replace("MESHSTATE", state).Replace("BLEND", add ? "blend_add" : "blend_mix") };
         return sh;
     }
+
+    static readonly string[] MorphTerms = { "morph_w.x * CUSTOM0.xyz", "morph_w.y * CUSTOM1.xyz", "morph_w.z * CUSTOM2.xyz", "morph_w.w * CUSTOM3.xyz" };
+
+    // NiMorphingKernel (NiMorphingKernel.cpp:30-40) for relative targets: target 0 (VERTEX) plus each weighted offset
+    static string WithMorph(string code, int targets) => targets == 0
+        ? code.Replace("MORPHDECL", "").Replace("MORPHVERT", "")
+        : code.Replace("MORPHDECL", "uniform vec4 morph_w = vec4(0.0);")
+              .Replace("MORPHVERT", "VERTEX += " + string.Join(" + ", MorphTerms.Take(targets)) + ";");
 
     static float Rad(float x) => x;
 
@@ -296,7 +310,9 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             var ms = new MeshState { Def = em };
             var m = em.Mesh;
             bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
-            var mat = new ShaderMaterial { Shader = MeshShader(m, add) };
+            // a morph with more offset targets than custom arrays keeps the positions with its fixed weights baked
+            if (em.Morph is { } mo && mo.Anim.Deltas.Length <= ModelBuilder.EffectMorphTargets) { ms.Morph = mo; ms.MorphTargets = mo.Anim.Deltas.Length; }
+            var mat = new ShaderMaterial { Shader = MeshShader(m, add, false, ms.MorphTargets) };
             // SORTING_OFF meshes are drawn unsorted after the opaque buckets and before the depth-sorted alpha list
             // (MS2RenderListProcessor: RenderNoSortList then RenderAlphaList, ms2renderlistprocessor.cpp:264-266, :368-370): a
             // lower priority puts them ahead of the field's other transparent objects. STILL-OPEN: their order among
@@ -349,7 +365,9 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
             // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
             // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
-            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.VertexColors.Any)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            if (ms.Morph != null) SetMorphWeights(ms, 0, true);
+            var morph = ms.Morph?.Anim;
+            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.VertexColors.Any, effectMorph: morph)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
                 Visible = !scene.Nodes[em.Node].Culled };
             z.AddChild(ms.Node);
             meshes.Add(ms);
@@ -491,7 +509,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (m == mirrored) return;
         mirrored = m;
         foreach (var ms in meshes)
-            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = MeshShader(ms.Def.Mesh, ms.Add, mirrored);
+            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = MeshShader(ms.Def.Mesh, ms.Add, mirrored, ms.MorphTargets);
     }
     bool mirrored;
     public override void _ExitTree() => inTree = false;
@@ -609,6 +627,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (d.Colors.Count > 0) Shade(ms, t, false);
             if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
             if (d.Uv.Count > 0) AnimateUv(ms, t);
+            if (ms.Morph != null) SetMorphWeights(ms, t, false);
             if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
             {
                 double lt = d.Flip.Ctl.Local(t);
@@ -662,6 +681,16 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (baseOn) SetRows(ms, ms.BaseT, 0, false);
         if (glowOn) SetRows(ms, ms.GlowT, 1, false);
         if (detailOn) SetRows(ms, ms.DetailT, 2, false);
+    }
+
+    // the morph's weights at effect time t as morph_w, set only when they differ from the last ones set (always when force)
+    static void SetMorphWeights(MeshState ms, float t, bool force)
+    {
+        Span<float> w = stackalloc float[ModelBuilder.EffectMorphTargets];
+        w.Clear();
+        ms.Morph.WeightsAt(t, w[..ms.MorphTargets]);
+        var v = new Vector4(w[0], w[1], w[2], w[3]);
+        if (force || v != ms.LastW) ms.Mat.SetShaderParameter(FxParam.MorphW, ms.LastW = v);
     }
 
     // a map's texture transform as the shader's two rows (identity without one), map 0 base, 1 glow or 2 detail; a row is set only

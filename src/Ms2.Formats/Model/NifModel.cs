@@ -212,6 +212,10 @@ public sealed class ModelMesh
         return t;
     }
     public MorphAnim Morph;               // a keyed relative POSITION morph (Positions = its target 0), or null
+    /// <summary>A keyed morph whatever its target and key counts: <see cref="Morph"/> when the field shader takes it, else
+    /// one whose <see cref="MorphAnim.Base"/> holds target 0 (Positions then have the fixed weights baked). The effect
+    /// runtime weighs the targets on the CPU, so it takes every one of these.</summary>
+    public MorphAnim AnyMorph;
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
@@ -320,6 +324,7 @@ public sealed class MorphAnim
     public float Start, Stop, Frequency = 1f, Phase;
     public bool Clamp;
     public float[][] Deltas;     // per target 1..: xyz offset per vertex, the mesh's own space
+    public float[] Base;         // target 0 when the mesh's Positions are not it (ModelMesh.AnyMorph of a baked morph), else null
     public float[] Static;       // per target 1..: its weight where Weights has no keys
     public FloatAnim[] Weights;  // per target 1..: its keys (KeyType, Times, Values, tangents; time fields unused), or null
 }
@@ -824,9 +829,10 @@ public sealed class ModelData
     /// NiFloatInterpolator does not update (no data and the invalid value -FLT_MAX; NiMorphWeightsController::Update
     /// keeps the weight when Update fails); a target with no data and a valid value takes that value. Morph is set when
     /// a target has linear or Bezier keys; otherwise the fixed weights are baked into Positions.
-    /// STILL-OPEN: absolute targets, morphed normals (FLAG_UPDATENORMALS), skinned morphs, TCB or other key types, more
-    /// than 4 targets or 32 keys a target: none in the field data. The first three keep the stored POSITION; the last
-    /// ones get the fixed weights baked.
+    /// More than 4 targets or 32 keys a target (none in the field data; some effect meshes, EffectMorphSweepTests) do not
+    /// fit the field shader: Positions get the fixed weights baked, and AnyMorph keeps the morph with target 0 in Base.
+    /// STILL-OPEN: absolute targets, morphed normals (FLAG_UPDATENORMALS), skinned morphs, TCB or other key types: none
+    /// in the field or effect data (EffectMorphSweepTests); they keep the stored POSITION.
     /// </summary>
     static void ReadMorph(NifFile nif, NifStruct mb, Dictionary<string, (double[] v, int n)> s, bool skinned, ModelMesh mesh)
     {
@@ -872,7 +878,8 @@ public sealed class ModelData
             }
             break;
         }
-        bool gpu = anim.Weights.Any(w => w != null) && nt <= 4 && anim.Weights.All(w => w == null || w.Times.Length <= 32);
+        bool keyed = anim.Weights.Any(w => w != null);
+        bool gpu = keyed && nt <= 4 && anim.Weights.All(w => w == null || w.Times.Length <= 32);
         var pos = new float[nv * 3];
         for (int q = 0; q < pos.Length; q++)
         {
@@ -883,9 +890,11 @@ public sealed class ModelData
             pos[q] = (float)v;
         }
         mesh.Positions = pos;
-        if (!gpu) return;
+        if (!keyed) return;
         for (int t = 1; t < nt; t++) anim.Deltas[t - 1] = targets[t].Select(x => (float)x).ToArray();
-        mesh.Morph = anim;
+        if (!gpu) anim.Base = targets[0].Select(x => (float)x).ToArray();
+        else mesh.Morph = anim;
+        mesh.AnyMorph = anim;
     }
 
     /// <summary>An NiFloatInterpolator's linear (1) or Bezier (2) keys as in ReadFloatAnim, or null.</summary>

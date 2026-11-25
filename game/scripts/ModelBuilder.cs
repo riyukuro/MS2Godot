@@ -231,13 +231,17 @@ public sealed class ModelBuilder
     /// <param name="instanceColor">field mesh: the MultiMesh instance colour is the material colour (field_lit shader)</param>
     /// <param name="uv2">the second uv set as UV2 without instanceColor (effect meshes: a map may read uv set 1)</param>
     /// <param name="vertexColor">the vertex colours as COLOR without instanceColor (effect meshes whose material takes them)</param>
-    public ArrayMesh BuildMesh(ModelMesh m, bool skin = true, bool instanceColor = false, bool uv2 = false, bool vertexColor = false)
+    /// <param name="effectMorph">An effect mesh's keyed morph (ModelMesh.AnyMorph, at most <see cref="EffectMorphTargets"/>
+    /// offset targets): its target 0 as the vertices, the offsets in CUSTOM0-3 (EffectInstance's morph shader), and a bound
+    /// that holds every weight the keys reach.</param>
+    public ArrayMesh BuildMesh(ModelMesh m, bool skin = true, bool instanceColor = false, bool uv2 = false, bool vertexColor = false, MorphAnim effectMorph = null)
     {
-        int nv = m.Positions.Length / 3;
+        var positions = effectMorph?.Base ?? m.Positions;
+        int nv = positions.Length / 3;
         var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         var pos = new Vector3[nv];
-        for (int i = 0; i < nv; i++) pos[i] = new Vector3(m.Positions[i * 3], m.Positions[i * 3 + 1], m.Positions[i * 3 + 2]);
+        for (int i = 0; i < nv; i++) pos[i] = new Vector3(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
         arrays[(int)Mesh.ArrayType.Vertex] = pos;
         if (m.Normals != null)
         {
@@ -309,6 +313,12 @@ public sealed class ModelBuilder
                 for (int t = 0; t < m.Morph.Deltas.Length; t++) arrays[(int)Mesh.ArrayType.Custom1 + t] = m.Morph.Deltas[t];
             format |= FieldCustomFormat(m);
         }
+        else if (effectMorph != null)
+            for (int t = 0; t < effectMorph.Deltas.Length && t < EffectMorphTargets; t++)
+            {
+                arrays[(int)Mesh.ArrayType.Custom0 + t] = effectMorph.Deltas[t];
+                format |= (ulong)Mesh.ArrayCustomFormat.RgbFloat << CustomShift[t];
+            }
         // file triangles are counter-clockwise (as in the glTF export); Godot's front faces are clockwise
         var idx = (int[])m.Indices.Clone();
         for (int i = 0; i + 2 < idx.Length; i += 3) (idx[i + 1], idx[i + 2]) = (idx[i + 2], idx[i + 1]);
@@ -319,8 +329,12 @@ public sealed class ModelBuilder
         mesh.SurfaceSetMaterial(0, BuildMaterial(m, instanceColor));
         if (instanceColor && m.Billboard >= 0) mesh.CustomAabb = BillboardAabb(m);
         else if (instanceColor && m.Morph != null) mesh.CustomAabb = MorphAabb(m);
+        else if (effectMorph != null) mesh.CustomAabb = MorphAabb(positions, effectMorph);
         return mesh;
     }
+
+    /// <summary>The offset targets an effect mesh's morph can carry: one per custom array (CUSTOM0-3).</summary>
+    public const int EffectMorphTargets = 4;
 
     static readonly int[] CustomShift =
     {
@@ -376,14 +390,17 @@ public sealed class ModelBuilder
     }
 
     /// <summary>A morphing mesh's bounds in its own space: each vertex moved by every target over its weight range.</summary>
-    static Aabb MorphAabb(ModelMesh m)
+    static Aabb MorphAabb(ModelMesh m) => MorphAabb(m.Positions, m.Morph);
+
+    /// <summary>The same for target 0 at <paramref name="positions"/> and the morph <paramref name="a"/>.</summary>
+    internal static Aabb MorphAabb(float[] positions, MorphAnim a)
     {
-        var w = MorphRanges(m.Morph);
+        var w = MorphRanges(a);
         var lo = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         var hi = -lo;
-        for (int i = 0; i + 2 < m.Positions.Length; i += 3)
+        for (int i = 0; i + 2 < positions.Length; i += 3)
         {
-            var (vl, vh) = MorphBox(m, w, i);
+            var (vl, vh) = MorphBox(positions, a, w, i);
             if (!float.IsFinite(vl.X + vl.Y + vl.Z + vh.X + vh.Y + vh.Z)) continue;   // a NaN target vertex draws nothing
             lo = lo.Min(vl);
             hi = hi.Max(vh);
@@ -400,12 +417,14 @@ public sealed class ModelBuilder
 
     /// <summary>The box one vertex (at Positions[i]) moves in: its rest position plus every target's offset over that
     /// target's weight range w.</summary>
-    static (Vector3 lo, Vector3 hi) MorphBox(ModelMesh m, (float lo, float hi)[] w, int i)
+    static (Vector3 lo, Vector3 hi) MorphBox(ModelMesh m, (float lo, float hi)[] w, int i) => MorphBox(m.Positions, m.Morph, w, i);
+
+    static (Vector3 lo, Vector3 hi) MorphBox(float[] positions, MorphAnim a, (float lo, float hi)[] w, int i)
     {
-        Vector3 vl = new(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2]), vh = vl;
+        Vector3 vl = new(positions[i], positions[i + 1], positions[i + 2]), vh = vl;
         for (int t = 0; t < w.Length; t++)
         {
-            var d = new Vector3(m.Morph.Deltas[t][i], m.Morph.Deltas[t][i + 1], m.Morph.Deltas[t][i + 2]);
+            var d = new Vector3(a.Deltas[t][i], a.Deltas[t][i + 1], a.Deltas[t][i + 2]);
             Vector3 p = d * w[t].lo, q = d * w[t].hi;
             vl += p.Min(q);
             vh += p.Max(q);

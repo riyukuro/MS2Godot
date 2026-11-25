@@ -56,6 +56,30 @@ public readonly record struct VertexColorUse(bool Emissive, bool Diffuse, bool A
     public bool Any => Emissive || Diffuse || Ambient || Opacity;
 }
 
+/// <summary>
+/// A mesh's NiMorphMeshModifier under its NiMorphWeightsController (ModelData.ReadMorph reads the targets): target 0 plus
+/// each offset target weighted at the controller's time, the weights under 0.001 left out (NiMorphingKernel.cpp:30-40). A
+/// target whose interpolator has keys follows them (NiMorphWeightsController::Update, the same curve as the effect's other
+/// float controllers); the others keep their fixed weight (MorphAnim.Static).
+/// </summary>
+public sealed class EffectMorph
+{
+    public MorphAnim Anim;                 // the targets (Deltas, Base) and the fixed weights
+    public Func<double, double>[] Weights; // per offset target: its keyed curve, or null for the fixed weight
+    public TimeCtl Ctl;
+
+    /// <summary>The offset targets' weights at effect time t into <paramref name="w"/> (its length at most the targets').</summary>
+    public void WeightsAt(double t, Span<float> w)
+    {
+        double lt = Ctl.Local(t);
+        for (int i = 0; i < w.Length; i++)
+        {
+            float v = Weights[i] != null ? (float)Weights[i](lt) : Anim.Static[i];
+            w[i] = Math.Abs(v) < 0.001f || !float.IsFinite(v) ? 0f : v;
+        }
+    }
+}
+
 public sealed class EffectMesh
 {
     public List<ColorAnim> Colors = new();
@@ -63,6 +87,7 @@ public sealed class EffectMesh
     public Func<double, double> Alpha; public TimeCtl AlphaCtl;
     public List<UvOp> Uv = new();
     public FlipAnim Flip;
+    public EffectMorph Morph;
 
     /// <summary>The material alpha at effect time t: an NiAlphaController's value replaces the NiMaterialProperty alpha (its
     /// m_fAlpha, the controller's target), else the static alpha read from the file (1 without a material: NiMaterialProperty's
@@ -550,6 +575,18 @@ public sealed class EffectScene
                 }
                 break;
             }
+            case "NiMorphWeightsController":
+                // ReadMorph read the first running controller of the mesh (ModelMesh.AnyMorph); a mesh without one keeps
+                // its stored or baked positions
+                if (meshOf.TryGetValue((int)target, out var mm) && mm.Morph == null && mm.Mesh.AnyMorph is { } ma && ctl.Active)
+                {
+                    var ips = c.Ints("Interpolators");
+                    var w = new Func<double, double>[ma.Deltas.Length];
+                    for (int t = 0; t < w.Length; t++)
+                        if (ma.Weights[t] != null && t + 1 < ips.Length) w[t] = Curve(n, ips[t + 1]);
+                    mm.Morph = new EffectMorph { Anim = ma, Weights = w, Ctl = ctl };
+                }
+                break;
             case "NiFlipController":
             {
                 var src = c.Ints("Sources").Select(s => s >= 0 ? n.StrField(B[(int)s], "File Name") : null).ToArray();
