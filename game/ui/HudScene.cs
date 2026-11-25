@@ -2404,6 +2404,7 @@ public partial class HudScene : Node, IUiStageHost
                 MissionRewards = fieldMissionTable ??= Ms2.Ui.WorldMap.FieldMissionTable.Load(assets.Packs),
             };
             WireTaxi(worldMapSide);
+            WireWorldMapDungeons(worldMapSide);
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }
         // DAT_143ab3078, the found-taxi list the taxi tiles read (FUN_141b5ee80)

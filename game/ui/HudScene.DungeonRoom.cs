@@ -64,6 +64,16 @@ public partial class HudScene
         };
     }
 
+    /// <summary>
+    /// The world map's openers (uiworldmapdialog.cpp:586-603, :659-664, :694-700): RequestCloseDialog(0x4ebd), then OpenDungeonOrRoom or
+    /// OpenRoom, then OpenDialog. They set no portal id and leave the group (m_180) alone, unlike the portal openers.
+    /// </summary>
+    void WireWorldMapDungeons(Ms2.Ui.Hud.WorldMapController c)
+    {
+        c.OpenDungeonOrRoomDialog = id => { bool ok = false; OpenDungeonRoom(d => ok = d.OpenDungeonOrRoom(id)); return ok; };
+        c.OpenRoomDialog = id => OpenDungeonRoom(d => { d.OpenRoom(id); return true; });
+    }
+
     /// <summary>ToggleDialog(0x4ebd): an open window closes (vfunc_67), a closed one opens as it is (no room: the first group that has rooms).</summary>
     void ToggleDungeonRoom()
     {

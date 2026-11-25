@@ -602,6 +602,20 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
     public Func<bool> PlayerVip = () => false;
     /// <summary>CFeatureManager::IsFeatureEnabled.</summary>
     public Func<int, bool> FeatureEnabled = _ => false;
+
+    /// <summary>
+    /// The dungeon room dialog (0x4ebd) the world map opens, as <c>Unk_GetUI&lt;UIDungeonRoomDialog&gt;(0x4ebd)</c> then RequestCloseDialog,
+    /// the call, OpenDialog. UIWorldMapDialog::vfunc_28 "OnDungeon" (uiworldmapdialog.cpp:586-603): <c>OpenDungeonOrRoom(id)</c>, and the dialog opens only
+    /// when that answers true. Null = no dialog (the client's pointer is 0), nothing happens.
+    /// </summary>
+    public Func<uint, bool> OpenDungeonOrRoomDialog;
+    /// <summary>The feature OnDungeon and OnBoss test (IsFeatureEnabled(0x1a), uiworldmapdialog.cpp:564, :588).</summary>
+    public const int DungeonRoomFeature = 0x1a;
+    /// <summary>
+    /// The same open with <c>OpenRoom(id)</c> (its answer is not read, the dialog opens either way): OnMouseClickTile's tile room
+    /// (:655-664) and onClickSearchInfoIcon's "dungeon" icon (:685-702).
+    /// </summary>
+    public Action<uint> OpenRoomDialog;
     /// <summary>CFeatureManager::IsRegionJP.</summary>
     public bool RegionJP;
     /// <summary>CGameRule::IsFreeAirTaxiActive (gamerule.cpp:975): a FreeAirTaxi game event runs.</summary>
@@ -1134,7 +1148,9 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
                 SetFieldSearchInfo(key, Bool(args, 1));
                 Select(key);
                 if (Host.Child("m_fieldSearch") is { } input) Host.Set(input, "text", "");
-                // the mission attack prompt, the dungeon room dialog (0x4ebd) and Ctrl's /MoveField are not here
+                // :659-664: a tile with a dungeon room (MapTile +0x70, the tile's "dungeon" attribute) opens the room dialog on it
+                if (Table.FindTile(key) is { Dungeon: not 0 } roomTile) OpenRoomDialog?.Invoke(roomTile.Dungeon);
+                // STILL-OPEN: the mission attack prompt (:652-657, CQuestManager::FUN_1416d0e60) and Ctrl's /MoveField chat command (:665-671)
                 return true;
             }
             case "onclicksearchinfo":
@@ -1161,17 +1177,22 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
                 return true;
             case "onclicksearchinfoicon":
             {
-                // :686-704: the kind, then the id. "dungeon" opens the dungeon room dialog (0x4ebd, not here); "cashTaxi" checks the
-                // air taxi (no m_214 test on this path)
-                if (args.Length < 2 || !HasPlayer()) return true;
+                // :686-704: the kind, then the id. "dungeon" opens the dungeon room dialog (0x4ebd) on the room, with no player test;
+                // "cashTaxi" checks the air taxi (no m_214 test on this path)
+                if (args.Length < 2) return true;
                 string kind = Str(args, 0);
-                if (kind.Contains("dungeon", StringComparison.Ordinal)) return true;
+                if (kind.Contains("dungeon", StringComparison.Ordinal)) { OpenRoomDialog?.Invoke(UInt(args, 1)); return true; }
+                if (!HasPlayer()) return true;
                 if (kind.Contains("cashTaxi", StringComparison.Ordinal)) CheckCashTaxi(UInt(args, 1));
                 return true;
             }
-            // a portal move, the boss / dungeon dialogs and the mission reward (SendQuest :1782, the Quest packet 0x1a once the
+            case "ondungeon":
+                // :586-603: behind feature 0x1a; the id is a dungeon or a room id (OpenDungeonOrRoom)
+                if (FeatureEnabled(DungeonRoomFeature) && args.Length > 0) OpenDungeonOrRoomDialog?.Invoke(UInt(args, 0));
+                return true;
+            // a portal move, the boss dialog and the mission reward (SendQuest :1782, the Quest packet 0x1a once the
             // round's target is reached) move the player or spend: not here
-            case "onportal": case "onboss": case "ondungeon":
+            case "onportal": case "onboss":
             case "onclickmissionreward":
                 return true;
         }

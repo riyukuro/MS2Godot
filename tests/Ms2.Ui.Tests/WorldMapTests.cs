@@ -109,6 +109,55 @@ public class WorldMapTests
         Assert.That(c.IsClosed, Is.True, "the close tween ended");
     }
 
+    static WorldMapTable.Tile DungeonTile() =>
+        table.Worlds.Values.SelectMany(l => l).FirstOrDefault(t => t.Dungeon != 0);
+
+    [Test]
+    public void OnDungeonOpensTheRoomDialogBehindFeature0x1a()
+    {
+        var (_, c, _) = Load();
+        var opened = new List<uint>();
+        c.OpenDungeonOrRoomDialog = id => { opened.Add(id); return true; };
+        c.FeatureEnabled = _ => false;
+        Assert.That(c.OnCallback("OnDungeon", new object[] { 27003001u }), Is.True);
+        Assert.That(opened, Is.Empty, "feature 0x1a off: nothing");
+        c.FeatureEnabled = f => f == WorldMapController.DungeonRoomFeature;
+        c.OnCallback("OnDungeon", new object[] { 27003001u });
+        c.OnCallback("OnDungeon", new object[] { 20u });
+        Assert.That(opened, Is.EqualTo(new[] { 27003001u, 20u }), "a room id or a dungeon id goes to OpenDungeonOrRoom as it is");
+        c.OnCallback("OnDungeon", System.Array.Empty<object>());
+        Assert.That(opened, Has.Count.EqualTo(2), "no argument, no open");
+    }
+
+    [Test]
+    public void ClickingATileWithADungeonRoomOpensTheRoom()
+    {
+        var (_, c, rt) = Load();
+        var tile = DungeonTile();
+        var plain = table.Worlds.Values.SelectMany(l => l).First(t => t.Dungeon == 0);
+        if (tile == null) Assert.Ignore("no tile of this data set has a dungeon room");
+        var opened = new List<uint>();
+        c.OpenRoomDialog = id => opened.Add(id);
+        c.OnCallback("OnMouseClickTile", new object[] { plain.FieldId, true });
+        Assert.That(opened, Is.Empty, "a tile without a dungeon room opens nothing");
+        c.OnCallback("OnMouseClickTile", new object[] { tile.FieldId, true });
+        Assert.That(opened, Is.EqualTo(new[] { tile.Dungeon }), "OpenRoom(MapTile m_70)");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void TheDungeonSearchIconOpensTheRoomWithoutAPlayer()
+    {
+        var (_, c, _) = Load();
+        var opened = new List<uint>();
+        c.OpenRoomDialog = id => opened.Add(id);
+        Assert.That(c.HasPlayer(), Is.False);
+        Assert.That(c.OnCallback("onClickSearchInfoIcon", new object[] { "icon_dungeon", 27003001u }), Is.True);
+        Assert.That(opened, Is.EqualTo(new[] { 27003001u }));
+        c.OnCallback("onClickSearchInfoIcon", new object[] { "icon_other", 5u });
+        Assert.That(opened, Has.Count.EqualTo(1), "another kind opens no room");
+    }
+
     static List<string> Texts(Dictionary<string, object> o, string key) =>
         ((IEnumerable<object>)o[key]).Cast<Dictionary<string, object>>().Select(d => (string)d["text"]).ToList();
 
