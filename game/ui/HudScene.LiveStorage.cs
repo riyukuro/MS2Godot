@@ -4,8 +4,8 @@ using Ms2.Ui.Hud;
 namespace Ms2Godot.Ui;
 
 /// <summary>The scripted live run's bank hooks (<see cref="Ms2Godot.Net.LiveSession.CombatRun"/>): each does what a click or an answered
-/// box does, through the same handler. The play path that opens the bank does not exist on the scratch server, so the open is the
-/// client's own Load request followed by the dialog's open (the answer, Reset, would raise the same open).</summary>
+/// box does, through the same handler. <see cref="StoreOpenScripted"/> opens the bank without an npc: the client's own Load request
+/// followed by the dialog's open (the answer, Reset, would raise the same open); the npc's open is the talk's (CNpc::OpenTalkUi).</summary>
 public partial class HudScene
 {
     /// <summary>The bank's Load request and the dialog open. True when the dialog is up.</summary>
@@ -46,6 +46,9 @@ public partial class HudScene
 
     /// <summary>The meso box's answer, the yes button with the typed amount.</summary>
     public bool StoreMesoScripted(bool deposit, long amount) => StoreOpen && store.OnMesoAnswer(0, (deposit ? "deposit," : "withdraw,") + amount);
+
+    /// <summary>The bank dialog is up.</summary>
+    public bool StoreIsOpen => StoreOpen;
 
     public long WalletMeso => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;
 

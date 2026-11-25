@@ -676,6 +676,9 @@ public sealed partial class NpcTalk : Node
         return null;
     }
 
+    /// <summary>CNpc::GetTalkUiId of the npc's kind (<see cref="Ms2.Ui.Hud.NpcTalkUi.UiIdOf"/>).</summary>
+    static int TalkUiOf(FieldNpcs.Placed npc) => Ms2.Ui.Hud.NpcTalkUi.UiIdOf(npc.Row.Kind, k => tables?.Fame.IsOfficerNpc(k) ?? false);
+
     /// <summary>UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971) for the window.</summary>
     void OnLiveTalk(NpcTalkMessage m)
     {
@@ -695,12 +698,13 @@ public sealed partial class NpcTalk : Node
                     if (script == null || page >= script.Contents.Count)
                     {
                         // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui
-                        // (CNpc::GetTalkUiId, unit_14108e1e0_npcactorandvibrate.cpp:1327: kind 1 -> 0x4e3b shop). Closing
-                        // the shop sends SendNpcTalkMode0 (uishopdialog.cpp:711).
-                        if (npc.Row.Kind == 1)
+                        // (CNpc::OpenTalkUi, NpcTalkUi.UiIdOf: kind 1 the shop 0x4e3b, kind 2 the bank 0x4e47). Closing
+                        // either sends SendNpcTalkMode0 (uishopdialog.cpp:711, UIStoreDialog::vfunc_67).
+                        int talkUi = TalkUiOf(npc);
+                        if (talkUi is Ms2.Ui.Shop.ShopController.UiId or Ms2.Ui.Hud.StoreDialogController.UiId)
                         {
-                            GD.Print($"talk: npc {npc.Row.Id} opens shop talk ui 0x4e3b");
-                            live.RaiseTalkUiOpen(Ms2.Ui.Shop.ShopController.UiId);
+                            GD.Print($"talk: npc {npc.Row.Id} opens talk ui 0x{talkUi:x}");
+                            live.RaiseTalkUiOpen(talkUi);
                             return;
                         }
                         GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported), NpcTalk 0 sent");
@@ -723,8 +727,12 @@ public sealed partial class NpcTalk : Node
                 LivePage(r.Flags, null, r.ScriptId, r.Page, r.ButtonSet);
                 return;
             case NpcTalkMessage.Close:
-                if (liveTalking?.Row.Kind == 1) live.RaiseTalkUiClose(Ms2.Ui.Shop.ShopController.UiId);
-                liveRequested = null; liveTalking = null; live.TalkNpcId = 0;
+                {
+                    // ResetTalk (uitalkcinematic.cpp:1507-1528): CNpc::CloseTalkUi after the talk is over (m_nTalking 0 first)
+                    int closeUi = liveTalking != null ? TalkUiOf(liveTalking) : 0;
+                    liveRequested = null; liveTalking = null; live.TalkNpcId = 0;
+                    if (closeUi != 0) live.RaiseTalkUiClose(closeUi);
+                }
                 side?.OnServerEnd();
                 return;
             case NpcTalkMessage.OpenDialog d:

@@ -1743,7 +1743,7 @@ public partial class LiveSession
                 Check($"the character is level {level}", live.Me.User.Level == level);
                 continue;
             }
-            if (step.StartsWith("store"))      // the bank steps: storeopen, storegive:N, storedeposit:N, storewithdraw:N, storemove, storemeso{deposit|withdraw}:N, storesort, storeclose
+            if (step.StartsWith("store"))      // the bank steps: storeopen, storenpc:<npc id>, storegive:N, storedeposit:N, storewithdraw:N, storemove, storemeso{deposit|withdraw}:N, storesort, storeclose
             {
                 int sid = storeItem;
                 long Bank() { long n = 0; foreach (var e in live.Storage.All) if (e.Id == sid) n += e.Amount; return n; }
@@ -1761,6 +1761,30 @@ public partial class LiveSession
                         await until(() => live.Storage.Ready, 60 * 10); await frames(60);
                         Check($"the bank is loaded ({live.Storage.Count} item(s), {live.Storage.Meso} meso)", live.Storage.Ready);
                         Shot("store_open.png");
+                        break;
+                    }
+                    case "storenpc":      // storenpc:<npc id>: the own pc put in front of the field's bank npc (no walk), the action key; the talk without a script opens the bank (CNpc::OpenTalkUi)
+                    {
+                        int id = int.Parse(arg);
+                        var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                        FieldNpcs.Placed n = null;
+                        await until(() => (n = live.TalkNpcs.FirstOrDefault(x => x.Row.Id == id && Alive(x))) != null, 60 * 30);
+                        Check($"{step}: the bank npc in the field (kind {n?.Row.Kind})", n != null);
+                        if (n == null || tfc?.Talk == null || live.player == null || !GodotObject.IsInstanceValid(live.player)) break;
+                        double yaw = n.Root.Rotation.Y;
+                        var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                        live.player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0);
+                        live.player.Velocity = Vector3.Zero;
+                        live.player.Face(-front);
+                        await frames(90);
+                        Shot("store_npc_before.png");
+                        bool ready0 = live.Storage.Ready;
+                        tfc.Talk.ActionKey();
+                        await until(() => hud.StoreIsOpen && live.Storage.Ready, 60 * 10); await frames(60);
+                        GD.Print($"live: combat store npc {id}: bank ready before {ready0}, talking {live.IsTalking()} (npc object {live.TalkNpcId}), talk window {tfc.Talk.Open}");
+                        Check($"the bank npc's talk opened the bank ({live.Storage.Count} item(s), {live.Storage.Meso} meso)", hud.StoreIsOpen && live.Storage.Ready);
+                        Check("no talk window over it", !tfc.Talk.Open);
+                        Shot("store_npc_open.png");
                         break;
                     }
                     case "storegive":
@@ -1824,9 +1848,13 @@ public partial class LiveSession
                         Check($"the bank still has {live.Storage.Count} item(s) (was {slots0})", live.Storage.Count == slots0);
                         break;
                     case "storeclose":
+                    {
+                        bool talking0 = live.IsTalking();
                         GD.Print($"live: combat store close: {(hud.StoreCloseScripted() ? "sent" : "not open")}");
                         await frames(120); Shot("store_close.png");
+                        GD.Print($"live: combat store close: talking {talking0} -> {live.IsTalking()}, bank open {hud.StoreIsOpen}");
                         break;
+                    }
                     default: GD.Print($"live: combat: unknown step {step}"); break;
                 }
                 continue;

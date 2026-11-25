@@ -9,7 +9,7 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The bank: CStore (the session's <see cref="StorageBook"/>, the StorageInventory packets 0x22) and its dialog
 /// UIStoreDialog (0x4e47, movie uistoredialog) with its C++ side as <see cref="StoreDialogController"/>. Live only: the
-/// server opens it (CStore::OnBegin / OnReset). STILL-OPEN: the sends (item 2) and the service error of code 0xf.
+/// server opens it (CStore::OnBegin / OnReset), and a bank npc's talk does (CNpc::OpenTalkUi, <see cref="NpcTalkUi.OpenStore"/>). STILL-OPEN: the sends (item 2) and the service error of code 0xf.
 /// </summary>
 public partial class HudScene
 {
@@ -29,6 +29,15 @@ public partial class HudScene
         book.MaxExtended = hudModel.Tables.StoreExpandMaxSlotCount;
         book.MaxStackOf = live.Items.MaxStackOf;
         book.OpenRequested += OpenStore;
+        // a bank npc's talk without a script (CNpc::OpenTalkUi / CloseTalkUi of 0x4e47)
+        live.TalkUiOpen += id =>
+        {
+            if (id == StoreDialogController.UiId) NpcTalkUi.OpenStore(book, () => storageSender.RequestLoad(), OpenStore);
+        };
+        live.TalkUiClose += id =>
+        {
+            if (id == StoreDialogController.UiId && StoreOpen) store.Close();
+        };
         book.ErrorReceived += code => ShowStorageText(StorageBook.ErrorText(code, book.CurrentCapacity ?? 0));
         storageSender = new StorageSender(book)
         {
