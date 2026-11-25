@@ -232,6 +232,18 @@ public partial class HudScene
         return self != null && partyBook.Find(id) is { Offline: false } m && m.User.MapId == self.MapId && m.User.Channel == self.Channel;
     }
 
+    /// <summary>FIXTURE: the field user block of an online party member in the field (FixtureUserInField), from its party record.</summary>
+    Ms2.Net.Packets.UserBlock FixtureFieldUser(long id)
+    {
+        if (!FixtureUserInField(id)) return null;
+        var u = partyBook.Find(id).User;
+        return new Ms2.Net.Packets.UserBlock
+        {
+            CharacterId = u.CharacterId, Name = u.Name, Level = (short)u.Level, Picture = u.Picture, JobCode = u.JobGroup, Job = u.Job,
+            AchievementCombat = u.Trophy.Item1, AchievementAdventure = u.Trophy.Item2, AchievementLifestyle = u.Trophy.Item3,
+        };
+    }
+
     /// <summary>A party slot's right click (UIPartyDialog::FUN_141a77760): the popup menu, its movie loaded on first use.</summary>
     void OpenPartySlotMenu(float x, float y, long characterId)
     {
@@ -254,6 +266,7 @@ public partial class HudScene
                 ProfileImagePath = (id, picture) => Ms2Godot.Net.ProfileImageService.Images.Path(id, picture, true),
                 // FUN_141bd1530: the field's users. FIXTURE (offline): an online fixture member on the own map and channel
                 PlayerInField = live != null ? live.UserInField : FixtureUserInField,
+                FieldUser = live != null ? live.OtherUserInField : FixtureFieldUser,
                 // PCBase::IsDead; read per open, the menu outlives a session. Offline (null): the fixture's health stands in
                 LocalPlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.Me.Dead,
             };

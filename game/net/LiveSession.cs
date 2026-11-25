@@ -973,6 +973,8 @@ public partial class LiveSession : Node
     /// the field's users (FieldAddUser, kept by the tracker) hold one. False before the field is built.
     /// </summary>
     public bool UserInField(long characterId) => remote?.Tracker.Snapshot().Any(a => a.Add?.User?.CharacterId == characterId) ?? false;
+    /// <summary>FindProxyObjectByOwner (worldservice): the field's other user with this character id (FieldAddUser); null = none.</summary>
+    public UserBlock OtherUserInField(long characterId) => remote?.Tracker.Snapshot().FirstOrDefault(a => a.Add?.User?.CharacterId == characterId)?.Add.User;
 
     /// <summary>
     /// CreateQuestByType (questmanager_2.cpp:803-830) makes a quest for the id: the client's quest data has it (FUN_14074bc90 gives
@@ -3569,7 +3571,8 @@ public partial class LiveSession : Node
             bool typedChat = pp[0] is "askchat" or "answerchat";               // the party chat run: typed party lines in both directions
             bool frames = pp[0] is "askframes" or "answerframes";       // the member frames run: levels, deaths and a quit seen in the window
             bool voteRun = pp[0] is "askvote" or "answervote";                   // the vote kick run: four clients
-            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote";
+            bool searchRun = pp[0] is "asksearch" or "answersearch";            // the party search run: two clients
+            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
             string partyShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_SHOTS");
@@ -3609,7 +3612,92 @@ public partial class LiveSession : Node
                 await Until(() => !pl.Movie.IsPlaying, 60 * 15);
                 await Frames(120);
             }
-            if (typedChat)
+            if (searchRun)
+            {
+                // MS2_LIVE_PARTY "asksearch" / "answersearch": A (alone) opens the search window, registers a listing, opens the register
+                // window on it (view and remove only) and removes the listing while B's list still shows it (B's join then gets the server's
+                // error and a refresh); then A lists again and B joins through the list. B opens the search window, refreshes until the
+                // listing shows, whispers and right clicks its chief. Each step is logged with the party book and shot.
+                const string title1 = "Search listing one", title2 = "Search listing two";
+                await Until(() => ph.PartySearchOpenScripted(), 60 * 10);
+                await Frames(60 * 2);
+                PShot("opened");
+                if (asker)
+                {
+                    // round one: the listing is removed while B's list still shows it (B's join then gets the server's error)
+                    GD.Print($"live: party A: register: {ph.PartySearchRegisterScripted(title1, true, false)}");
+                    await Frames(60 * 3);
+                    PShot("register_sent");
+                    await Until(() => !pl.Party.Recruitment.IsEmpty, 60 * 30);
+                    await Frames(60 * 2);
+                    GD.Print($"live: party A: listing {pl.Party.Recruitment.Title} party {pl.Party.IsInParty}");
+                    PShot("listed");
+                    await Frames(60 * 40);
+                    GD.Print($"live: party A: modify window: {ph.PartySearchRegisterScripted("", false, true)}: {ph.PartySearchRegisterText()}");
+                    await Frames(60 * 3);
+                    PShot("modify_window");
+                    GD.Print($"live: party A: remove: {ph.PartySearchRemoveScripted()}");
+                    await Frames(60);
+                    PShot("remove_box");
+                    MessageBoxLayer.Instance?.Click(0);
+                    await Until(() => pl.Party.Recruitment.IsEmpty, 60 * 20);
+                    await Frames(60 * 3);
+                    PShot("removed");
+                    GD.Print($"live: party A: listing {(pl.Party.Recruitment.IsEmpty ? "gone" : pl.Party.Recruitment.Title)}");
+                    // round two: a new listing, B joins through the list
+                    await Frames(60 * 30);
+                    GD.Print($"live: party A: register again: {ph.PartySearchRegisterScripted(title2, true, false)}");
+                    await Until(() => !pl.Party.Recruitment.IsEmpty, 60 * 30);
+                    await Frames(60 * 2);
+                    PShot("listed_again");
+                    await Until(() => pl.Party.IsInParty && pl.Party.Members.Count > 1, 60 * 240);
+                    await Frames(60 * 3);
+                    PShot("joined");
+                    await Frames(60 * 10);
+                    PShot("after");
+                }
+                else
+                {
+                    async Task<bool> Seen(string title)
+                    {
+                        bool seen = false;
+                        for (int i = 0; i < 80 && !seen; i++)
+                        {
+                            ph.PartySearchRefreshScripted();
+                            await Frames(60 * 3);
+                            seen = pl.Party.Results.Any(r => r.Title == title);
+                        }
+                        return seen;
+                    }
+                    GD.Print($"live: party B: listing seen {await Seen(title1)}");
+                    PShot("list");
+                    GD.Print($"live: party B: whisper {ph.PartySearchRowScripted(title1, "whisper")}");
+                    await Frames(60 * 2);
+                    PShot("whisper");
+                    GD.Print($"live: party B: chief menu {ph.PartySearchRowScripted(title1, "chief")}");
+                    await Frames(60 * 2);
+                    PShot("chief_menu");
+                    await Frames(60 * 45);
+                    // the listing is gone on the server, the row still shows: the join is answered with a party result message
+                    PShot("stale_list");
+                    GD.Print($"live: party B: stale join {ph.PartySearchRowScripted(title1, "join")}");
+                    await Frames(60 * 5);
+                    PShot("stale_join");
+                    GD.Print($"live: party B: after the stale join: {ph.PartySearchText()}");
+                    GD.Print($"live: party B: listing two seen {await Seen(title2)}");
+                    PShot("list_two");
+                    GD.Print($"live: party B: join {ph.PartySearchRowScripted(title2, "join")}");
+                    await Frames(60 * 4);
+                    PShot("join_sent");
+                    await Box("join", 5);
+                    bool joined = await Joined(true, 40);
+                    GD.Print($"live: party B: joined {joined}, window {ph.PartyWindowShown}");
+                    PShot("party");
+                    await Frames(60 * 10);
+                    PShot("after");
+                }
+            }
+            else if (typedChat)
             {
                 // MS2_LIVE_PARTY "askchat:<name>" / "answerchat": after the invite and the join the asker selects the party target with
                 // the party command and types a line, the answerer answers with one; the asker then leaves and types again: no party,

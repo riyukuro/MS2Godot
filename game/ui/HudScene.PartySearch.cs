@@ -121,6 +121,76 @@ public partial class HudScene
         partyBook.Apply(new PartySearchResults(page));
     }
 
+    /// <summary>Scripted live run: the open state, the list rows and the own listing, for the log.</summary>
+    public string PartySearchText()
+    {
+        var b = partyBook;
+        if (b == null) return "no party book";
+        var rows = string.Join(",", b.Results.Select(r => r.Title + "/" + r.LeaderName + "/" + r.MemberCount + "of" + r.MaxMembers));
+        return $"search open {PartySearchOpen}, register open {PartySearchRegisterOpen}, own listing {(b.Recruitment.IsEmpty ? "none" : b.Recruitment.Title + "/" + b.Recruitment.MaxMembers + "/" + b.Recruitment.AutoJoin)}, results [{rows}]";
+    }
+
+    /// <summary>Scripted live run: the game menu's "partysearch" entry.</summary>
+    public bool PartySearchOpenScripted()
+    {
+        if (!PartySearchOpen) OpenPartySearch();
+        return PartySearchOpen;
+    }
+
+    /// <summary>Scripted live run: the register button (onClickRegisterMemeberSearch), then the title typed into the register
+    /// window and its register button.</summary>
+    public bool PartySearchRegisterScripted(string title, bool autoJoin, bool modify)
+    {
+        if (!PartySearchOpen) return false;
+        partySearch.OnCallback(modify ? "onClickRegisterMemeberSearchModify" : "onClickRegisterMemeberSearch", Array.Empty<object>());
+        if (!PartySearchRegisterOpen || partySearchRegister.Host?.Entity == null) return false;
+        var h = partySearchRegister.Host;
+        if (modify) return true;                // with an own listing the register button is disabled: the window only shows it and removes
+        h.Set(h.Child("m_inputTitle"), "text", title);
+        h.Set(h.Child("m_checkAllowAutoJoin"), "selected", autoJoin);
+        partySearchRegister.OnRegisterClicked();
+        return true;
+    }
+
+    /// <summary>Scripted live run: the register window's fields (title, enabled flags of the title, register and remove buttons).</summary>
+    public string PartySearchRegisterText()
+    {
+        if (!PartySearchRegisterOpen || partySearchRegister.Host?.Entity == null) return "register window closed";
+        var h = partySearchRegister.Host;
+        string En(string n) => Ms2.Avm2.Rt.ToBoolean(h.Get(h.Child(n), "enabled")).ToString();
+        string Vis(string n) => Ms2.Avm2.Rt.ToBoolean(h.Get(h.Child(n), "visible")).ToString();      // vfunc_4 shows or hides
+        return $"title '{Ms2.Avm2.Rt.ToString(h.Get(h.Child("m_inputTitle"), "text"))}' enabled {En("m_inputTitle")}, register visible {Vis("m_btnRegister")}, remove visible {Vis("m_btnRemove")}";
+    }
+
+    /// <summary>Scripted live run: the register window's remove button and its box's yes.</summary>
+    public bool PartySearchRemoveScripted()
+    {
+        if (!PartySearchOpen) return false;
+        partySearch.OnCallback("onClickRegisterMemeberSearchModify", Array.Empty<object>());
+        if (!PartySearchRegisterOpen) return false;
+        partySearchRegister.OnRemoveClicked();
+        return true;
+    }
+
+    /// <summary>Scripted live run: a row's button of the listing whose title matches: join, whisper, invite or the chief name's right click.</summary>
+    public bool PartySearchRowScripted(string title, string action)
+    {
+        if (!PartySearchOpen || partyBook == null) return false;
+        var r = partyBook.Results.FirstOrDefault(x => x.Title == title);
+        if (r == null) return false;
+        switch (action)
+        {
+            case "join": return partySearch.OnCallback("onClickPartyJoin", new object[] { r.Id.ToString() });
+            case "whisper": return partySearch.OnCallback("onClickWhisper", new object[] { r.LeaderName });
+            case "invite": return partySearch.OnCallback("onClickPartyInvite", new object[] { r.LeaderName });
+            case "chief": partySearch.RightClickChiefShot(r.Id); return true;
+        }
+        return false;
+    }
+
+    /// <summary>Scripted live run: the refresh button.</summary>
+    public bool PartySearchRefreshScripted() => PartySearchOpen && partySearch.OnCallback("onClickRefresh", new object[] { "" });
+
     Ms2.Formats.Text.BanTextChecker PartyTextChecker() =>
         partyNameChecker ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language);
 

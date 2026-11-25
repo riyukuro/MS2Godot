@@ -885,14 +885,17 @@ public class HudTests
     {
         // UIPartySearchDialog::FUN_140f8e790 (flags 0x40da, "partySearchSlot"): the own character opens PopUpMenu (kind 1), a
         // character outside the field OpenFromCharName by name (view, whisper, group chat, friend by name, block by name, report;
-        // no party, trade or house items), a character in the field the proxy variant (not ported: nothing opens)
+        // no party, trade or house items), a character in the field FUN_141a7eb60 from its user: the same items by id, a header with
+        // the user's level, image, trophy sum and job, kind 2 and the buddy it finds in m_d0
         var m = Model();
         var buddies = new BuddyBook();
         buddies.Add(new BuddyInfo { Id = 1, CharacterId = 0, Name = "Chief" });
-        var inField = new HashSet<long>();
+        buddies.Add(new BuddyInfo { Id = 5, CharacterId = 78, Name = "Nearby" });
+        var inField = new Dictionary<long, UserBlock>();
         var c = new PopupMenuController
         {
-            Buddies = buddies, SelfCharacterId = 12, ProfileImagePath = (_, _) => "", PlayerInField = inField.Contains,
+            Buddies = buddies, SelfCharacterId = 12, ProfileImagePath = (id, pic) => $"img{id}:{pic}",
+            PlayerInField = inField.ContainsKey, FieldUser = id => inField.GetValueOrDefault(id),
         };
         var h = Load(c, m);
         Assert.That(h.RT.Errors, Is.Empty);
@@ -908,8 +911,22 @@ public class HudTests
         Assert.That(c.Items.Contains(PopupMenuController.ViewCharacter), Is.False);
         Assert.That(c.Items.Contains(PopupMenuController.AddFriend) != c.Items.Contains(PopupMenuController.Unfriend), Is.True);
         c.ClosePopup();
-        inField.Add(78);
-        c.OpenForPartySearch(100, 200, 2, 78, "Nearby", m.Player);                         // a proxy in the field: STILL-OPEN
+        inField[78] = new UserBlock
+        {
+            CharacterId = 78, Name = "Nearby", Level = 41, Picture = "pic", JobCode = 30, Job = 3010,
+            AchievementCombat = 5, AchievementAdventure = 6, AchievementLifestyle = 7,
+        };
+        c.OpenForPartySearch(100, 200, 2, 78, "Chief", m.Player);                          // a user in the field: its own name and data
+        Assert.That(c.IsClosed, Is.False);
+        Assert.That(c.Items, Is.EqualTo(new[] { 0x66, 0x65, 0x1f6, 300, 400, 0x1f5 }));   // id 78: the buddy by id gives unfriend
+        Assert.That((c.InfoString, c.Target.Name, c.Target.CharacterId, c.Target.ByName, c.Target.Online, c.Target.Alive),
+            Is.EqualTo(("partySearchSlot", "Nearby", 78L, false, true, true)));
+        Assert.That((c.Target.Level, c.Target.Image, c.Target.Trophy, c.Target.JobGroup, c.Target.JobCode),
+            Is.EqualTo(((ushort)41, "img78:pic", 18, 30, 3010)));
+        Assert.That(c.BuddyId, Is.EqualTo(5L));
+        c.ClosePopup();
+        inField[79] = new UserBlock { CharacterId = 79, Name = "" };
+        c.OpenForPartySearch(100, 200, 2, 79, "Nobody", m.Player);                         // a proxy with no name opens nothing
         Assert.That(c.IsClosed, Is.True);
         Assert.That(h.RT.Errors, Is.Empty);
     }
@@ -966,11 +983,11 @@ public class HudTests
         received.Add(new BuddyInfo { Id = 7, CharacterId = 5, Name = "FixtureWizard", Received = true });
         var asked = new List<string>();
         c.Buddies = received;
-        c.BuddyId = 99;
         c.BuddyQuery = (r, k, n, b, ch) => asked.Add($"{r} {k} {n} {b} {ch}");
         c.ShowBox = boxes.Add;
         c.ClosePopup();
         c.OpenForPartySlot(100, 200, 5, m.Player);
+        c.BuddyId = 99;                                                 // m_d0 is set after ApplyMenuInfo (which clears it) by the opener
         c.ItemClick(PopupMenuController.AddFriend);
         Assert.That(asked, Is.Empty);
         Assert.That((boxes[^1].Type, boxes[^1].Msg), Is.EqualTo((0, m.Tables.Common(0x623))));

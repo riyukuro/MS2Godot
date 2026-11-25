@@ -86,6 +86,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public FieldData Field;
     /// <summary>WorldService::FUN_141bd1530: the character's PC is in the field (the trade item's test).</summary>
     public Func<long, bool> PlayerInField = _ => false;
+    /// <summary>WorldService::FindProxyObjectByOwner (uipartysearchdialog.cpp:808): the field's user (FieldAddUser) with this
+    /// character id, whose proxy object FUN_141a7eb60 reads; null = none in the field.</summary>
+    public Func<long, UserBlock> FieldUser = _ => null;
     /// <summary>FUN_1418fd280 (uicommon.cpp:353): the current house is the own home (the furnishing rights item): the house
     /// owner (CubeMapInformationService FUN_1410c3180) is the own account (DAT_143ab2820). STILL-OPEN: the owner is set by
     /// CSceneStateGame::OnLoadUgcMap (RecvOp LoadUgcMap 0x7D, scenestategame.cpp:2252), which is not decoded, so false.</summary>
@@ -191,7 +194,7 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// UIPartySearchDialog::FUN_140f8e790 (@0x140f8e790, uipartysearchdialog.cpp:791), the right click on a listing's chief name at
     /// the movie position (x, y), the info (mode 3, <see cref="PartySearchFlags"/>, "partySearchSlot"). The chief is the local
     /// character: PopUpMenu on the own PC (kind 1, type 1). Another character: FindProxyObjectByOwner gives a proxy in the field
-    /// (FUN_141a7eb60, STILL-OPEN: the field's proxy objects are not in this HUD, so a character in the field opens nothing);
+    /// (<see cref="OpenForFieldPlayer"/>, FUN_141a7eb60, type 1, kind 2);
     /// none: FUN_141a7f090 (:2102), OpenFromCharName (:2537) with type 0 for the chief's name, the account and the character id
     /// (kind 2). No local player (the world's), nothing. <paramref name="accountId"/> is accepted and ignored: the client's m_a0
     /// only feeds CUserReportData, which this menu does not send.
@@ -200,10 +203,36 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     {
         if (self == null || SelfCharacterId == 0) return;
         if (characterId == SelfCharacterId) { OpenForSelf(x, y, self, PartySearchFlags, PartySearchInfo); return; }
-        if (PlayerInField(characterId)) return;                         // the proxy variant, FUN_141a7eb60: STILL-OPEN
+        if (FieldUser(characterId) is { } proxy) { OpenForFieldPlayer(x, y, proxy, PartySearchFlags, PartySearchInfo); return; }
         ClosePopup();
         ApplyMenuInfo(PartySlotMode, 0, PartySearchInfo);
         if (!OpenFromCharName(x, y, accountId, characterId, name, PartySearchFlags)) ResetState();
+    }
+
+    /// <summary>
+    /// UIPopUpMenu::FUN_141a7eb60 (@0x141a7eb60, uipartydialog.cpp:2065), the menu of a player in the field (a proxy that is
+    /// another player or the own PC), the info of mode 3, type 1, the given flags and string: ClosePopup; a proxy with no
+    /// name opens nothing; ApplyMenuInfo; the target from the proxy (its level, the profile image of its portrait, the name,
+    /// online, alive, the trophy tally's sum, the job group and the job code); the buddy it finds by FindBuddy(0, id, name) gives
+    /// m_d0; Open with the flags, kind 1 for the own PC and 2 for another. STILL-OPEN: the home block lookup (m_d8,
+    /// HomeBlockManager::FindByAccountId) is only read by handlers not ported; GetTally is RebuildTally over the achievements
+    /// (RecvOp Achieve 0x5E, not decoded), so the three achievement counts of the FieldAddUser block stand in for the trophy.
+    /// </summary>
+    void OpenForFieldPlayer(float x, float y, UserBlock proxy, int flags, string infoString)
+    {
+        ClosePopup();
+        if (string.IsNullOrEmpty(proxy.Name)) return;
+        ApplyMenuInfo(PartySlotMode, PartySlotType, infoString);
+        var t = new PopupMenuTarget
+        {
+            X = x, Y = y, Name = proxy.Name, CharacterId = proxy.CharacterId, Level = (ushort)proxy.Level,
+            Image = ProfileImagePath(proxy.CharacterId, proxy.Picture ?? ""), Alive = true, Online = true,
+            Trophy = proxy.AchievementCombat + proxy.AchievementAdventure + proxy.AchievementLifestyle,
+            JobGroup = proxy.JobCode, JobCode = proxy.Job,              // the user block's two job ints: the group, then the code
+        };
+        if (Buddies.FindBuddy(0, proxy.CharacterId, proxy.Name) is { } buddy) BuddyId = buddy.Id;
+        int kind = proxy.CharacterId == SelfCharacterId ? 1 : 2;
+        if (!Open(t, flags, kind)) ResetState();
     }
 
     /// <summary>OpenFromCharName (:2537) through FUN_141a834e0 (:2686) with nMode 2 and nDir 1: the header is the name only (no
@@ -277,6 +306,7 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         menuType = type;
         info = infoString;
         entityKey = 0;
+        BuddyId = 0;                                                    // m_d0 = 0
     }
 
     /// <summary>
