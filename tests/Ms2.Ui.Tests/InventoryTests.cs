@@ -2185,4 +2185,136 @@ public class InventoryTests
         }
         finally { d.GenderLimit = saved; }
     }
+
+    /// <summary>The first item of the data set with the function (the item files' order), or ignored when none has it.</summary>
+    static int FirstItemOf(string function)
+    {
+        var model = NewModel();
+        foreach (int id in ItemFunctionSweepTests.ItemIds(Packs()))
+            if (model.Tables.Items.Get(id)?.FunctionName == function) return id;
+        Assert.Ignore($"no {function} item in this data");
+        return 0;
+    }
+
+    [Test]
+    public void ADungeonBoxAsksUnlessItsRoomsRewardsAreUsedUp()
+    {
+        // OpenDungeonItemBox @0x140d24e70 (unit_140d1ae30_itemfunctiondispatch.cpp:1596)
+        int id = FirstItemOf("OpenDungeonItemBox");
+        var (c, model, item, sent, boxes, raised) = UseSetup("OpenDungeonItemBox", id);
+        Assert.That(c.UseItem(item, true), Is.True);
+        Assert.That((raised.Single(), boxes.Count, sent.Count), Is.EqualTo(("notifySlotUse", 0, 0)), "no record hook: raised");
+        raised.Clear();
+        uint asked = 0;
+        (int, int)? count = (0, 2);
+        c.DungeonRewardCount = r => { asked = r; return count; };
+        Assert.That(c.UseItem(item, true), Is.True);
+        Assert.That(asked, Is.EqualTo((uint)(item.Data.FunctionArgInt(0, 0) * 1000 + item.Data.FunctionArgInt(1, 0))), "MakeDungeonRoomId(arg 0, arg 1)");
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid, box.EnterAllowed, box.Msg), Is.EqualTo((0x11, InventoryController.UseFunctionItemTag, 50L, true,
+            model.Tables.Common(InventoryController.DungeonBoxKey))));
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)), "it asks first");
+        count = (2, 2);
+        Assert.That(c.UseItem(item, true), Is.False);
+        Assert.That((boxes.Count, boxes[1].Type, boxes[1].Msg), Is.EqualTo((2, 0, model.Tables.Common(InventoryController.DungeonCountKey))), "the count is used up");
+        count = null;
+        Assert.That(c.UseItem(item, true), Is.False);
+        Assert.That((boxes.Count, sent.Count, raised.Count), Is.EqualTo((2, 0, 0)), "no room: nothing");
+    }
+
+    [Test]
+    public void ACoupleEffectBoxAsksTheReceiversNameThenConfirmsItBeforeTheUse()
+    {
+        // OpenCoupleEffectBox @0x140d203f0, UIInventoryDialog::FUN_14199ac30 and OnCoupleEffectSendConfirm @0x14199b100
+        int id = FirstItemOf("OpenCoupleEffectBox");
+        var (c, model, item, sent, boxes, raised) = UseSetup("OpenCoupleEffectBox", id);
+        var errors = new List<string>(); c.UpdateBoxError = errors.Add;
+        var notices = new List<string>(); c.NoticeText += notices.Add;
+        c.CoupleNameError = n => n == "bad" ? "refused" : null;
+        Assert.That(c.UseItem(item, true), Is.True);
+        var ask = boxes.Single();
+        Assert.That((ask.Type, ask.Msg, ask.InputType, ask.InputMaxChars, ask.ArgLong(0, 0), ask.HasCallback),
+            Is.EqualTo((10, model.Tables.Common(InventoryController.CoupleEffectNameKey), 2, 12, 50L, true)));
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)));
+        ask.ClickedTag = "";
+        Assert.That(ask.InvokeCallback(1, null), Is.True, "not OK closes");
+        Assert.That(ask.InvokeCallback(0, null), Is.False, "no name: the box stays");
+        Assert.That(errors.Single(), Is.EqualTo(model.Tables.Common(0xd)));
+        ask.ClickedTag = "bad,";
+        Assert.That(ask.InvokeCallback(0, null), Is.False);
+        Assert.That(notices.Single(), Is.EqualTo("refused"), "the check's message");
+        ask.ClickedTag = ",Pal,";
+        Assert.That(ask.InvokeCallback(0, null), Is.True);
+        var confirm = boxes[1];
+        Assert.That((confirm.Type, confirm.Msg, confirm.ArgLong(0, 0), confirm.ArgString(1, "")),
+            Is.EqualTo((1, Ms2.Quest.ClientFormat.Format(model.Tables.Common(InventoryController.CoupleEffectConfirmKey) ?? "", "Pal"), 50L, "Pal")));
+        Assert.That(sent, Is.Empty, "nothing before the confirm");
+        Assert.That(confirm.InvokeCallback(1, null), Is.True);
+        Assert.That((boxes.Count, boxes[2].Type, sent.Count), Is.EqualTo((3, 10, 0)), "no: the name box again");
+        Assert.That(confirm.InvokeCallback(0, null), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (50L, "Pal") }), "yes: the use with the name");
+    }
+
+    /// <summary>The box item kinds: RegisterItemUseFuncs' box handlers (unit_140d1ae30_itemfunctiondispatch.cpp:373) and any
+    /// other function of the data named a box (those go to the plain use request).</summary>
+    static readonly string[] BoxFunctions =
+    {
+        "OpenItemBox", "OpenItemBoxWithKey", "OpenDungeonItemBox", "SelectItemBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple",
+        "OpenPetBox", "OpenCoupleEffectBox", "TreasureMap", "OpenItemBoxLimitedQuantity", "OpenGachaBox",
+    };
+
+    static bool IsBoxFunction(string name) => BoxFunctions.Contains(name)
+        || name.Contains("Box", StringComparison.OrdinalIgnoreCase) || name == "HongBao";
+
+    /// <summary>
+    /// Whole list: every box item of the data set (needs MS2_DATA) used from the bag (UseItem, unit_140d1ae30_itemfunctiondispatch.cpp:491),
+    /// counted by what it did: the use request, a box, a dialog, nothing (TreasureMap: RecallParty's handler @0x140d1df70), or
+    /// raised as an unported handler. No kind may be raised, and nothing is sent before the server answers for the kinds that ask
+    /// or open a dialog first.
+    /// </summary>
+    [Test]
+    public void EveryBoxItemOfTheDataIsUsedByItsHandler()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => 48 };
+        var (_, c, _) = Load(model, book);
+        var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        var raised = new List<string>(); c.Button += raised.Add;
+        var dialogs = new List<string>();
+        c.OpenMultiBox = (_, _, _, _) => dialogs.Add("multi");
+        c.OpenSelectBox = _ => dialogs.Add("select");
+        c.OpenGachaBox = _ => dialogs.Add("gacha");
+        c.OpenLulluBox = _ => dialogs.Add("lullu");
+        c.DungeonRewardCount = _ => (0, 1);
+        var kinds = new SortedDictionary<string, int[]>(StringComparer.Ordinal);   // items, sent, box, dialog, nothing, raised
+        var first = new Dictionary<string, int>();
+        foreach (int id in ItemFunctionSweepTests.ItemIds(packs))
+        {
+            if (model.Tables.Items.Get(id) is not { HasFunction: true } d || !IsBoxFunction(d.FunctionName)) continue;
+            long uid = 1000 + kinds.Values.Sum(v => v[0]);   // one uid per item
+            book.Apply(new ItemMessage.Reset(id / 10000000));   // the tab emptied first: a load does not drop the slot's old item
+            book.Apply(new ItemMessage.LoadTab(id / 10000000, new[] { new EquipItem { Id = id, Uid = uid, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+            var item = c.FindItem(uid);
+            Assert.That(item?.ItemId, Is.EqualTo(id));
+            int s0 = sent.Count, b0 = boxes.Count, d0 = dialogs.Count, r0 = raised.Count;
+            c.UseItem(item, true);
+            if (!kinds.TryGetValue(d.FunctionName, out var k)) { kinds[d.FunctionName] = k = new int[6]; first[d.FunctionName] = id; }
+            k[0]++;
+            if (raised.Count > r0) k[5]++;
+            else if (dialogs.Count > d0) k[3]++;
+            else if (boxes.Count > b0) k[2]++;
+            else if (sent.Count > s0) k[1]++;
+            else k[4]++;
+        }
+        foreach (var (name, k) in kinds)
+            TestContext.Out.WriteLine($"  {name}: {k[0]} (first {first[name]}): sent {k[1]}, box {k[2]}, dialog {k[3]}, nothing {k[4]}, raised {k[5]}");
+        Assert.That(kinds, Is.Not.Empty, "the data has box items");
+        Assert.That(kinds.Where(p => p.Value[5] > 0).Select(p => p.Key), Is.Empty, "a box kind whose handler is not ported");
+        foreach (var name in new[] { "OpenItemBox", "SelectItemBox", "OpenGachaBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple", "OpenCoupleEffectBox", "OpenDungeonItemBox", "OpenItemBoxWithKey" })
+            if (kinds.TryGetValue(name, out var k)) Assert.That(k[1], Is.Zero, $"{name} asks or opens its dialog first, nothing sent");
+        if (kinds.TryGetValue("TreasureMap", out var map)) Assert.That(map[4], Is.EqualTo(map[0]), "TreasureMap: 1, nothing done");
+    }
 }

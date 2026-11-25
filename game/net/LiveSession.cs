@@ -1936,6 +1936,9 @@ public partial class LiveSession : Node
     /// <summary>OnItemScript mode 4's cash coupon toast (UIRewardNotify::FUN_141ac1d10): the item id.</summary>
     public Action<int> CashCouponSink;
 
+    /// <summary>ItemScript modes 0 and 5, the Lullu box's and the gacha's result (their dialogs' vfunc_79); live only.</summary>
+    public event Action<ItemScriptBoxResult> ItemScriptBoxResulted;
+
     /// <summary>
     /// CDropItem::OnPickedUp with the local player as picker (dropitem.cpp:1007-1020), after the get sound: the reward toast for an
     /// item of rarity 1 or more that is not a meso, a token or a merat (<see cref="DropPickup.Toasts"/>), then guide trigger 0xc with
@@ -2245,6 +2248,12 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ItemScript))
             {
                 if (ItemScriptCoupon.TryRead(p.Reader(), out int coupon)) { CashCouponSink?.Invoke(coupon); if (LiveCheck) GD.Print($"live: item script cash coupon {coupon}"); }
+                // the open box dialogs read the same packet in their hook (vfunc_79): the gacha's mode 5, the Lullu box's mode 0
+                else if (ItemScriptBoxResult.TryRead(p.Reader()) is { } box)
+                {
+                    if (LiveCheck) GD.Print($"live: item script box mode {box.Mode}, {box.Items.Count} item(s){(box.Items.Count > 0 ? $", first {box.Items[0].ItemId} x{box.Items[0].Count} rank {box.Items[0].Rank}{(box.Items[0].Special ? " special" : "")}" : "")}");
+                    ItemScriptBoxResulted?.Invoke(box);
+                }
             }
             else if (game.Is(p, Inbound.ItemUse))
             {

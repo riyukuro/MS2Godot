@@ -26,7 +26,7 @@ public sealed record ItemDropEntry(int ItemId, int Count, int Rank, int Enchant,
 /// </summary>
 public sealed class IndividualDropTable
 {
-    sealed record Item(int ItemId, int ItemId2, int Rank, int Enchant, int Count, int Tooltip, bool Tradable);
+    sealed record Item(int ItemId, int ItemId2, int Rank, int Enchant, int Count, int Tooltip, bool Tradable, bool ShowIconOnGachaUI = true);
     sealed record Group(bool SmartGender, int SmartDropRate, List<Item> Items);
 
     readonly PackSet packs;
@@ -62,7 +62,8 @@ public sealed class IndividualDropTable
                         ItemData.Atoi((string)v.Attribute("enchantLevel") ?? "0"),
                         min,
                         ItemData.Atoi((string)v.Attribute("showTooltip") ?? "0"),
-                        Bool(v, "tradableCountDeduction")));
+                        Bool(v, "tradableCountDeduction"),
+                        GachaIcon(v)));
                 }
                 if (items.Count == 0) continue;
                 groups.Add(new Group(ItemData.Atoi((string)g.Attribute("isApplySmartGenderDrop") ?? "0") != 0,
@@ -96,7 +97,7 @@ public sealed class IndividualDropTable
                     at = list.Count - 1;
                 }
                 int min = e.Attribute("minCount") != null ? Int(e, "minCount") : 1;
-                list[at].Value.Items.Add(new Item(Int(e, "item"), Int(e, "item2"), 0, Int(e, "enchantLevel"), min, Int(e, "showTooltip"), Bool(e, "tradableCountDeduction")));
+                list[at].Value.Items.Add(new Item(Int(e, "item"), Int(e, "item2"), 0, Int(e, "enchantLevel"), min, Int(e, "showTooltip"), Bool(e, "tradableCountDeduction"), GachaIcon(e)));
             }
         foreach (var (box, list) in groupsOf) into[box] = list.Select(g => g.Value).ToList();
         return into;
@@ -106,6 +107,10 @@ public sealed class IndividualDropTable
         name.StartsWith(folder + "individualitemdrop", StringComparison.Ordinal) && name.IndexOf('/', folder.Length) < 0;
 
     static int Int(XElement e, string a) => ItemData.Atoi((string)e.Attribute(a) ?? "0");
+
+    /// <summary>XmlQuery(showIconOnGachaUI) (itemdroptable.cpp:224): true unless the attribute says otherwise (the
+    /// ItemDropDataIndividual ctor's m_showIconOnGachaUI(true), :939).</summary>
+    static bool GachaIcon(XElement e) => e.Attribute("showIconOnGachaUI") == null || Bool(e, "showIconOnGachaUI");
 
     static bool Bool(XElement e, string a) =>
         ((string)e.Attribute(a) ?? "") is var v && (v.Equals("true", StringComparison.OrdinalIgnoreCase) || ItemData.Atoi(v) != 0);
@@ -170,6 +175,23 @@ public sealed class IndividualDropTable
                     output.Add(new ItemDropEntry(i.ItemId2, i.Count, i.Rank, i.Enchant, i.Tooltip, i.Tradable));
                     seen.Add(i.ItemId2);
                 }
+            }
+        return true;
+    }
+
+    /// <summary>
+    /// GetBoxItems(nBoxId, out) (itemdroptable.cpp:1171), the overload the gacha dialog lists: false for a missing box; every
+    /// item of every group, no data, job, gender or tooltip filter, with its showIconOnGachaUI; an itemID2 adds a second
+    /// entry of the same count, rank and enchant whose flag is the ItemDropResult ctor's true (:951).
+    /// </summary>
+    public bool GetBoxItems(int boxId, List<(ItemDropEntry Entry, bool ShowIconOnGachaUI)> output)
+    {
+        if (!Boxes().TryGetValue(boxId, out var groups)) return false;
+        foreach (var g in groups)
+            foreach (var i in g.Items)
+            {
+                output.Add((new ItemDropEntry(i.ItemId, i.Count, i.Rank, i.Enchant, i.Tooltip, i.Tradable), i.ShowIconOnGachaUI));
+                if (i.ItemId2 != 0) output.Add((new ItemDropEntry(i.ItemId2, i.Count, i.Rank, i.Enchant, i.Tooltip, i.Tradable), true));
             }
         return true;
     }

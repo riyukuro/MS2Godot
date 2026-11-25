@@ -2058,6 +2058,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemEnchantKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
+        if (GachaBoxKeys(k)) return true;
         if (ItemPreviewKeys(k)) return true;
         if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
@@ -3854,6 +3855,22 @@ public partial class HudScene : Node, IUiStageHost
                 else GD.Print($"inventory: skill book learn sent: Job mode 7 job {req.Job} item uid {req.ItemUid} skill {req.SkillId} level {req.Level}");
             };
         c.OpenSelectBox = OpenSelectItemBox;
+        c.OpenGachaBox = OpenGachaBoxDialog;
+        // CUIService::IsDialogOpen of the ported item use dialogs
+        c.IsDialogOpen = id => id == ItemGachaBoxDialogController.UiId && GachaBoxOpen;
+        // OpenDungeonItemBox (@0x140d24e70): DungeonRoomTable::GetRoom, then the record of the room's reward room
+        c.DungeonRewardCount = roomId =>
+        {
+            if (live == null || hudModel.Tables.DungeonRooms?.GetRoom(roomId) is not { } room) return null;
+            var book = live.DungeonRecords;
+            book.Rooms ??= hudModel.Tables.DungeonRooms;
+            var record = book.GetRecord(room.RewardRoomId);
+            return (book.BonusRewardCountNow(record), book.MaxCount(record));
+        };
+        // OpenCoupleEffectBox's name check (FUN_140225210: CheckCharacterName, long form) and the box's error line
+        c.CoupleNameError = name =>
+            (partyNameChecker ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language)).CheckCharacterName(name, out var msg, false) == 0 ? null : msg;
+        c.UpdateBoxError = text => MessageBoxQueue.Layer?.UpdateErrorMessage(text);
         c.BlueprintOpenAnswer = (answer, uid) => liveHome?.Bill.OnBlueprintOpenBox(answer, uid) ?? true;   // FUN_140ee8000
         c.SelectBoxOpen = () => SelectItemBoxOpen;
         c.OpenMultiBox = OpenItemMultiOpen;

@@ -73,3 +73,27 @@ public static class ItemScriptCoupon {
         return true;
     }
 }
+
+/// <summary>One item of an <see cref="ItemScriptBoxResult"/>: id, count, rank (ItemEntity::SetRank) and whether it is special.</summary>
+public sealed record ItemScriptBoxItem(int ItemId, int Count, int Rank, bool Special);
+
+/// <summary>
+/// Inbound ItemScript (0xF5 on KMS) as the open box dialogs read it in their packet hook (vfunc_79, the dialog open and loaded):
+/// a mode byte; mode 5 (UIItemGachaBoxDialog @0x140c403e0, uiitemgachaboxdialog.cpp:186) and mode 0 (UIItemLulluBoxDialog
+/// @0x140e9b670, uiitemlulluboxdialog.cpp:206) read an int count, then per item id, count, rank (ints) and a special bool.
+/// Each dialog ignores the other modes (it does not read past the mode byte).
+/// </summary>
+public sealed record ItemScriptBoxResult(int Mode, IReadOnlyList<ItemScriptBoxItem> Items) {
+    public const int LulluMode = 0, GachaMode = 5;
+
+    /// <summary>The result of a mode 0 or 5 packet; null for any other mode.</summary>
+    public static ItemScriptBoxResult TryRead(ByteReader r) {
+        if (r.Available < 1) return null;
+        int mode = r.ReadByte();
+        if (mode is not (LulluMode or GachaMode)) return null;
+        int n = r.ReadInt();
+        var items = new List<ItemScriptBoxItem>(Math.Max(0, Math.Min(n, 64)));
+        for (int i = 0; i < n; i++) items.Add(new ItemScriptBoxItem(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadBool()));
+        return new ItemScriptBoxResult(mode, items);
+    }
+}

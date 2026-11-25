@@ -77,14 +77,134 @@ public sealed partial class InventoryController
                 return LevelPotion(item);
             case "OpenItemBoxLimitedQuantity":
                 return OpenItemBoxLimitedQuantity(item);
+            case "OpenDungeonItemBox":
+                return DungeonRewardCount == null ? null : OpenDungeonItemBox(item);
+            case "OpenCoupleEffectBox":
+                return OpenCoupleEffectBox(item);
+            case "OpenGachaBox":        // @0x140d25e10
+                return OpenGachaBox == null ? null : ItemUseDialog(item, GachaBoxDialogId, OpenGachaBox);
+            case "OpenItemBoxLullu":    // @0x140d22390; OpenItemBoxLulluSimple has the same handler
+            case "OpenItemBoxLulluSimple":
+                return OpenLulluBox == null ? null : ItemUseDialog(item, LulluBoxDialogId, OpenLulluBox);
             default:
                 return null;
         }
     }
 
+    /// <summary>UIItemGachaBoxDialog (0x4f8b) and UIItemLulluBoxDialog (0x4f2b), the dialogs OpenGachaBox and OpenItemBoxLullu open.</summary>
+    public const int GachaBoxDialogId = 0x4f8b, LulluBoxDialogId = 0x4f2b;
+    /// <summary>The couple effect box's common strings, by key.</summary>
+    public const string CoupleEffectNameKey = "s_coupleeffect_recevie_name", CoupleEffectConfirmKey = "s_coupleeffect_send_confirm",
+        DungeonCountKey = "s_msg_dungeon_item_open_dungeon_count", DungeonBoxKey = "s_msg_item_open_dungeon_item_box";
+
+    /// <summary>The gacha dialog's SetBoxItemId(item id) and open (FUN_141924680). Null: OpenGachaBox is raised as unported.</summary>
+    public Action<Item> OpenGachaBox;
+    /// <summary>The Lullu box dialog's SetBoxItemId(item id) and open. Null: the Lullu boxes are raised as unported.</summary>
+    public Action<Item> OpenLulluBox;
+    /// <summary>OpenDungeonItemBox's record of a room id (DungeonRoomTable::GetRoom, then the local player's
+    /// DungeonRecordCli of the room's GetRewardRoomID): its GetBonusRewardCountNow and GetMaxCount; null for no room. Null:
+    /// the dungeon box is raised as unported.</summary>
+    public Func<uint, (int Now, int Max)?> DungeonRewardCount;
+    /// <summary>The couple effect receiver's name check (CBanTextChecker::FUN_140225210(name, msg, 0)): its message, null when
+    /// the name passes.</summary>
+    public Func<string, string> CoupleNameError = _ => null;
+    /// <summary>GetMessageBoxLayer()->UpdateErrorMessage(text): the error line under the open box's input.</summary>
+    public Action<string> UpdateBoxError;
+
+    /// <summary>The dialog handlers (OpenGachaBox @0x140d25e10, OpenItemBoxLullu @0x140d22390, unit_140d1ae30_itemfunctiondispatch.cpp):
+    /// GetItemUseDialog(id); FUN_141924630 (the dialog is open): 1, nothing; else SetBoxItemId(item id) and FUN_141924680 (open); 1.</summary>
+    bool ItemUseDialog(Item item, int dialogId, Action<Item> open)
+    {
+        if (IsDialogOpen(dialogId)) return true;
+        open(item);
+        return true;
+    }
+
+    /// <summary>
+    /// OpenDungeonItemBox @0x140d24e70 (unit_140d1ae30_itemfunctiondispatch.cpp:1596): the room MakeDungeonRoomId(arg 0, arg 1)
+    /// = arg 0 * 1000 + arg 1; no room: 0. The record's bonus reward count now at or past its max count: box
+    /// s_msg_dungeon_item_open_dungeon_count, 0. Else the <see cref="UseFunctionBox"/> of s_msg_item_open_dungeon_item_box
+    /// (Enter answers it), 1; its yes is the plain use.
+    /// </summary>
+    bool OpenDungeonItemBox(Item item)
+    {
+        uint roomId = (uint)(item.Data.FunctionArgInt(0, 0) * 1000 + item.Data.FunctionArgInt(1, 0));
+        if (DungeonRewardCount(roomId) is not var (now, max)) return false;
+        if ((uint)now >= (uint)max)
+        {
+            ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(DungeonCountKey) ?? "", null, ""));
+            return false;
+        }
+        UseFunctionBox(item, Model.Tables.Common(DungeonBoxKey) ?? "", false);
+        return true;
+    }
+
+    /// <summary>
+    /// OpenCoupleEffectBox @0x140d203f0 (:1080): the receiver's name box, a type 10 box of s_coupleeffect_recevie_name with
+    /// SetInput(2, "", 12, 0, 0) and the item uid as argument 0, answered by <see cref="OnCoupleEffectName"/>; 1.
+    /// (The client finds the inventory dialog first, 0x4e2d: the use comes from it here.)
+    /// </summary>
+    bool OpenCoupleEffectBox(Item item)
+    {
+        ShowBox(CoupleEffectNameBox(item.Uid));
+        return true;
+    }
+
+    MessageBoxData CoupleEffectNameBox(long uid)
+    {
+        var box = MessageBoxQueue.Create(10, Model.Tables.Common(CoupleEffectNameKey) ?? "", null, "");
+        box.SetInput(2, "", 12, 0, 0);
+        box.Append(uid);
+        box.Callback = OnCoupleEffectName;
+        return box;
+    }
+
+    /// <summary>
+    /// UIInventoryDialog::FUN_14199ac30 (uiinventorydialog.cpp:1324): button 0 only (any other closes). The input (the
+    /// clicked tag) trimmed of ','; empty: common string 0xd as the box's error, the box stays. A name the check refuses: its
+    /// message as a system notice, the box stays. No item of the uid: the box stays. Else the confirm box (type 1,
+    /// s_coupleeffect_send_confirm with the name; the uid and the name as arguments), answered by
+    /// <see cref="OnCoupleEffectSendConfirm"/>.
+    /// </summary>
+    bool OnCoupleEffectName(int button, MessageBoxData box)
+    {
+        if (button != 0) return true;
+        long uid = box.ArgLong(0, 0);
+        string name = (box.ClickedTag ?? "").Trim(',');
+        if (name.Length == 0)
+        {
+            UpdateBoxError?.Invoke(Model.Tables.Common(0xd) ?? "");
+            return false;
+        }
+        if (CoupleNameError(name) is { } error)
+        {
+            NoticeText?.Invoke(error);
+            return false;
+        }
+        if (FindItem(uid) == null) return false;
+        var confirm = MessageBoxQueue.Create(1, ClientFormat.Format(Model.Tables.Common(CoupleEffectConfirmKey) ?? "", name), null, "");
+        confirm.Append(uid);
+        confirm.AddStringArg(name);
+        confirm.Callback = OnCoupleEffectSendConfirm;
+        ShowBox(confirm);
+        return true;
+    }
+
+    /// <summary>UIInventoryDialog::OnCoupleEffectSendConfirm @0x14199b100 (:1361): no item of the uid: 0. Button 0 uses the
+    /// item with the name (FUN_140a63880); any other asks for the name again (the box of <see cref="OpenCoupleEffectBox"/>); 1.</summary>
+    bool OnCoupleEffectSendConfirm(int button, MessageBoxData box)
+    {
+        long uid = box.ArgLong(0, 0);
+        string name = box.ArgString(1, "");
+        if (FindItem(uid) is not { } item) return false;
+        if (button == 0) FunctionUse(item, name);
+        else ShowBox(CoupleEffectNameBox(uid));
+        return true;
+    }
+
     /// <summary>Unk_Inventory::FUN_140a63880 (inventory.cpp:1403): an item with a function is used with the argument
     /// (<see cref="RequestUseItem"/>); else 0.</summary>
-    bool FunctionUse(Item item, string argument) => item.Data.HasFunction && RequestUseItem(item, argument ?? "");
+    public bool FunctionUse(Item item, string argument) => item.Data.HasFunction && RequestUseItem(item, argument ?? "");
 
     /// <summary>The remake, repacking and socket scroll handlers: their window already open shows the key's box; else the
     /// plain use (the server's answer opens the window).</summary>

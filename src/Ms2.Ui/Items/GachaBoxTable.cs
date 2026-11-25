@@ -9,7 +9,7 @@ namespace Ms2.Ui.Items;
 /// </summary>
 public sealed class GachaBoxTable
 {
-    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon, int IndividualDropBoxId, int CoinAmount);
+    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon, int IndividualDropBoxId, int CoinAmount, int Ui, int[] SaleEnd);
 
     readonly PackSet packs;
     SortedDictionary<int, Box> boxes;
@@ -35,10 +35,28 @@ public sealed class GachaBoxTable
             bool shows = onIcon.Equals("true", StringComparison.OrdinalIgnoreCase) || onIcon.Equals("yes", StringComparison.OrdinalIgnoreCase) || onIcon == "1";
             int dropBox = ItemData.Atoi((string)e.Attribute("individualDropBoxID") ?? "");   // m_nIndividualDropBoxID (:111)
             int amount = e.Attribute("coinItemAmount") is { } am ? ItemData.Atoi((string)am) : 1;   // m_nCoinItemAmount (:114), 1 by the ctor
-            boxes[id] = new Box(id, season, coin, shopId, shows, dropBox, amount);               // m_map[nKey] = spBox
+            int ui = ItemData.Atoi((string)e.Attribute("ui") ?? "");                                 // m_nUi (:110)
+            boxes[id] = new Box(id, season, coin, shopId, shows, dropBox, amount, ui, SaleEndOf((string)e.Attribute("saleEndDate")));               // m_map[nKey] = spBox
         }
         return boxes;
     }
+
+    /// <summary>saleEndDate (:109, a CMsTime written "year-month-day-hour-minute-second"): its six fields, null when the
+    /// attribute is missing or not six numbers (m_saleEndDate stays CMsTime(0), no end).</summary>
+    static int[] SaleEndOf(string v)
+    {
+        if (string.IsNullOrEmpty(v)) return null;
+        var f = v.Split('-');
+        if (f.Length != 6) return null;
+        var r = new int[6];
+        for (int i = 0; i < 6; i++) if (!int.TryParse(f[i], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out r[i])) return null;
+        return r;
+    }
+
+    /// <summary>GetBox(boxId)->m_nUi: the machine's look (the dialog's uiType), 0 for no box.</summary>
+    public int Ui(int boxId) => Boxes().TryGetValue(boxId, out var b) ? b.Ui : 0;
+    /// <summary>GetBox(boxId)->m_saleEndDate as year, month, day, hour, minute, second; null for no box or no end.</summary>
+    public int[] SaleEnd(int boxId) => Boxes().TryGetValue(boxId, out var b) ? b.SaleEnd : null;
 
     /// <summary>IsCoinItem (:285).</summary>
     public bool IsCoinItem(int itemId) => Boxes().Values.Any(b => b.CoinItemId == itemId);

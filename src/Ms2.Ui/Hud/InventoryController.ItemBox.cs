@@ -33,6 +33,14 @@ public sealed partial class InventoryController
     /// use (PC::CanUseItem) in that count.</summary>
     public int BagCountOf(int itemId) => BagCount(itemId);
 
+    /// <summary>Unk_Inventory::FUN_140a5e2e0(id): the bag's first item of the id, null when it holds none.</summary>
+    public Item FindFirstById(int itemId)
+    {
+        if (View == null) return null;
+        foreach (var c in View.Cells(View.TabOfItem(itemId))) if (!c.Empty && c.ItemId == itemId) return FindItem(c.Uid);
+        return null;
+    }
+
     int BagCount(int itemId)
     {
         int n = 0;
