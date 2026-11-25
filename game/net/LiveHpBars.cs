@@ -132,6 +132,10 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
         if (root != null && bars.TryGetValue(root, out var e)) e.Extra = offset;
     }
 
+    /// <summary>A scripted live run's line: the bar's emotion offset (m_f174) and the screen point of its last frame.</summary>
+    public string WatchLine(Node3D root) =>
+        root != null && bars.TryGetValue(root, out var e) ? $"extra {e.Extra} at {(e.Pc?.LastPoint is { } p ? p.ToString() : "-")}" : "none";
+
     /// <summary>The actor left the field (ReleaseEntity): its bar goes with it.</summary>
     public void Remove(Node3D root)
     {
@@ -251,7 +255,11 @@ public sealed class PcHpBar
         if (Hidden || far && !(InBattle || cur != max)) { clip.Hide(); return; }
         if (screen == null) { clip.Hide(); return; }
         clip.Draw(screen.Value, 1, true, cur, max, ref dirty);
+        LastPoint = screen.Value;
     }
+
+    /// <summary>The screen point of the last frame it was drawn (a scripted live run's watch line); null before.</summary>
+    public Vector2? LastPoint { get; private set; }
 
     /// <summary>The player left the world (ReleaseEntity).</summary>
     public void Release() => clip.Free();

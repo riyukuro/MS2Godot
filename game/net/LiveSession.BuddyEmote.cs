@@ -27,6 +27,8 @@ public partial class LiveSession
     public Ms2.Ui.Skills.CouplePeer CouplePeerByObject(int objectId) => remote?.CouplePeerByObject(objectId);
     /// <summary>The partner's feet, state, sub and animation index.</summary>
     public CouplePartnerView? CouplePartnerOf(int objectId) => remote?.CouplePartnerOf(objectId);
+    /// <summary>A scripted live run's line on another player (<see cref="RemoteLayer.WatchLine"/>).</summary>
+    public string RemoteWatchLine(int objectId) => remote?.WatchLine(objectId) ?? "-";
     /// <summary>The other player's gender, -1 when none.</summary>
     public int GenderOf(int objectId) => remote?.GenderOf(objectId) ?? -1;
 

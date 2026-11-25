@@ -197,6 +197,10 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         if (root != null && tags.TryGetValue(root, out var t)) t.Extra = offset;
     }
 
+    /// <summary>A scripted live run's line: the tag's emotion offset (m_f170) and its last screen point.</summary>
+    public string WatchLine(Node3D root) =>
+        root != null && tags.TryGetValue(root, out var t) ? $"extra {t.Extra} at {t.Node?.Position.ToString() ?? "-"} shown {t.Node?.Visible}" : "none";
+
     /// <summary>The actor left the field: its tag goes with it.</summary>
     public void Remove(Node3D root)
     {

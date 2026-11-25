@@ -3586,6 +3586,46 @@ public partial class LiveSession : Node
                         GD.Print($"live: couple box {n}: {(step.EndsWith(":no") ? "no" : "yes")} clicked, box {(MessageBoxLayer.Instance?.Shown == true ? "still shown" : "closed")}");
                     }
                 }
+                else if (step.StartsWith("partyask:") && Instance is { } pa)
+                {
+                    // "partyask:<name>": once that player is in the field, the chat link's party invite, then the join waited for
+                    string who = step[9..];
+                    await Until(() => pa.FieldPcs.Any(p => p.Name == who), 60 * 120);
+                    await Frames(120);
+                    eh.PartyLinkClick("inviteParty," + who);
+                    await Until(() => pa.Party.IsInParty && pa.Party.Members.Count > 1, 60 * 60);
+                    GD.Print($"live: emote party {n}: {who} invited, in a party {pa.Party.IsInParty} with {pa.Party.Members.Count}");
+                }
+                else if (step == "attack")
+                {
+                    // "attack": the attack key's skill cast once (the server puts the caster in battle and relays the stance)
+                    GD.Print($"live: emote attack {n}: {(eh.AttackScripted() ? "cast" : "no cast")}");
+                    await Frames(30);
+                }
+                else if (step == "partyanswer" && Instance is { } pb)
+                {
+                    // "partyanswer": the party invite box answered yes, then the join waited for
+                    await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * 180);
+                    bool shown = MessageBoxLayer.Instance?.Shown == true;
+                    if (shown) { await Frames(60); MessageBoxLayer.Instance?.Click(0); }
+                    await Until(() => pb.Party.IsInParty && pb.Party.Members.Count > 1, 60 * 60);
+                    GD.Print($"live: emote party {n}: invite box {(shown ? "answered yes" : "never shown")}, in a party {pb.Party.IsInParty} with {pb.Party.Members.Count}");
+                }
+                else if (step.StartsWith("watchpc:") && Instance is { } pw)
+                {
+                    // "watchpc:<name>:<s>": that player's state, emotion and head offsets each half second, a shot each 2 s
+                    var parts = step.Split(':');
+                    int secs = parts.Length > 2 && int.TryParse(parts[2], out var w) ? w : 10;
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    for (int half = 1; half <= secs * 2; half++)
+                    {
+                        while (clock.ElapsedMilliseconds < half * 500) await Frames(1);
+                        int obj = pw.FieldPcs.FirstOrDefault(p => p.Name == parts[1]).ObjectId;
+                        GD.Print($"live: watch {n} {half * 0.5:0.0}s: {parts[1]} {(obj != 0 ? pw.RemoteWatchLine(obj) : "not in the field")}");
+                        if (half % 4 == 0 && !string.IsNullOrEmpty(emoteShots))
+                            flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"watch_{n}_{half / 2:000}s.png"));
+                    }
+                }
                 else if (step.StartsWith("couplewatch:"))
                 {
                     // "couplewatch:<name>:<s>": both couple states each half second, a shot each 2 s

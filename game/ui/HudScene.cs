@@ -3653,7 +3653,11 @@ public partial class HudScene : Node, IUiStageHost
         c.JobGroup = () => EnsureSlotJobs().JobGroupId;
         c.SkillLearned = id => EnsureSlotJobs().IsLearnedGms2(id);   // the GMS2 vfunc_2 @0x14057cc50
         c.PlayerItemUse = () => itemUse;
-        c.SendSkillLearn = req => { if (live == null || !live.SendSkillBook(req)) GD.Print($"inventory: skill book learn of item {req.ItemUid} not sent (offline)"); };
+        c.SendSkillLearn = req =>
+            {
+                if (live == null || !live.SendSkillBook(req)) GD.Print($"inventory: skill book learn of item {req.ItemUid} not sent (offline)");
+                else GD.Print($"inventory: skill book learn sent: Job mode 7 job {req.Job} item uid {req.ItemUid} skill {req.SkillId} level {req.Level}");
+            };
         c.OpenSelectBox = OpenSelectItemBox;
         c.BlueprintOpenAnswer = (answer, uid) => liveHome?.Bill.OnBlueprintOpenBox(answer, uid) ?? true;   // FUN_140ee8000
         c.SelectBoxOpen = () => SelectItemBoxOpen;

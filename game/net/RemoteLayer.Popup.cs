@@ -55,6 +55,15 @@ public sealed partial class RemoteLayer
             ? new CouplePartnerView(r.Pc.Position, r.Pc.States.Cur, r.Pc.States.Sub, r.Pc.States.CoupleAni)
             : null;
 
+    /// <summary>A scripted live run's line on another player: its state, emotion, hp, stance, head bar and the name tag's and
+    /// bar's emotion offsets and screen heights (the run's remote offset check).</summary>
+    public string WatchLine(int objectId) =>
+        users.TryGetValue(objectId, out var r) && r.Pc != null
+            ? $"state {r.Pc.States.Cur:x} emotion {r.Pc.States.EmotionId} hp {r.HpCur}/{r.HpMax} battle {r.InBattle} " +
+              $"bar {(r.Bar is { } b ? $"active {b.Active} shown {b.Shown}" : "none")} hp bar extra {r.Pc.HpBarExtra}; " +
+              $"tag {tags.WatchLine(r.Root)}; bar {bars.WatchLine(r.Root)}"
+            : "-";
+
     /// <summary>The other player's gender (CoupleEmotionAnimInfo::Init's partner gender), -1 when none.</summary>
     public int GenderOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Gender : -1;
 
