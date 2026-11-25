@@ -27,6 +27,9 @@ public sealed class NpcLayer
         public Node3D Root, Visual; public AnimationPlayer Player; public Model Model;
         public int NpcId, Life, Moves;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
+        public short AnimKey;                     // m_nDE8: the last sync block's sequence key, 0 until one came (CNpc ctor, :509)
+        public string OwnerEffect = "";           // m_strEC8: the owner effect (NpcNotice mode 1)
+        public int OwnerActor, OwnerEffectId;     // m_nEC0: the pc the effect sits on (a boss block's owner actor); m_nEC4: the kept effect
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a dead body: eased toward the block position, no velocity
         public readonly Ms2.Net.Replay.NpcJumpArc Arc = new();   // m_unkDB0: the jump arc a -2/-3 block starts
@@ -191,7 +194,7 @@ public sealed class NpcLayer
         // OnFieldAddNpc for a present object id: WorldService::OnObjectCreated only SetAt's the id maps over the old
         // object (@0x141718cf0); here the old npc is freed, so its id is dropped first like OnFieldRemoveNpc's
         // NotifyRemoveNpc, or a marker keyed by it outlives the npc
-        if (inst.TryGetValue(n.ObjectId, out var old)) { inst.Remove(n.ObjectId); Removed?.Invoke(n.ObjectId); Tags?.Remove(old.Root); Bars?.Remove(old.Root); old.Root.QueueFree(); }
+        if (inst.TryGetValue(n.ObjectId, out var old)) { inst.Remove(n.ObjectId); ReleaseOwnerEffect(old); Removed?.Invoke(n.ObjectId); Tags?.Remove(old.Root); Bars?.Remove(old.Root); old.Root.QueueFree(); }
         var row = table.Find(n.NpcId);
         if (LiveSession.LiveCheck) Godot.GD.Print($"live: npc add object {n.ObjectId} npc {n.NpcId} row {(row == null ? "no" : "yes")}");
         if (row == null) { NoRow++; return; }
@@ -261,6 +264,7 @@ public sealed class NpcLayer
     {
         if (dead) { Die(id, true); return; }
         if (!inst.Remove(id, out var i)) return;
+        ReleaseOwnerEffect(i);                      // CNpc::~CNpc (:519-521)
         Removed?.Invoke(id);
         Tags?.Remove(i.Root);
         Bars?.Remove(i.Root);
@@ -711,6 +715,65 @@ public sealed class NpcLayer
         return (new System.Numerics.Vector3(g.X, -g.Z, g.Y), i.TargetYaw);
     }
 
+    /// <summary>The pc of an object id an owner effect is kept on (WorldService::FindPCById: the own pc or another player's
+    /// body); null when none is here.</summary>
+    public Func<int, Node3D> FindPc = _ => null;
+    /// <summary>CEffectService::FUN_1411a49c0 with an actor target: the kept effect's id, 0 when it did not spawn.</summary>
+    public Func<string, Node3D, int, int> SpawnKept = (_, _, _) => 0;
+    /// <summary>CEffectService::FUN_1411a6060: a kept effect stops at once.</summary>
+    public Action<int> StopKept = _ => { };
+    /// <summary>The NoticeMessage object kind AttachOwnerEffect passes (m_nObject = 6, the boss npc's kind).</summary>
+    public const int OwnerEffectKind = 6;
+
+    /// <summary>
+    /// NpcNotice mode 1 (CSceneStateGame::OnNpcNotice, scenestategame.cpp:9158-9166): FindNpcById, then CNpc::SetOwnerEffect
+    /// (@0x141094fa0, unit_14108e1e0_npcactorandvibrate.cpp:1559-1564): the name kept, the old effect released and the new one
+    /// attached. False when there is no npc of the id.
+    /// </summary>
+    public bool SetOwnerEffect(int id, string effect)
+    {
+        if (!inst.TryGetValue(id, out var i)) return false;
+        i.OwnerEffect = effect ?? "";
+        ReleaseOwnerEffect(i);
+        AttachOwnerEffect(i);
+        return true;
+    }
+
+    /// <summary>The owner effect an npc keeps (the name, the pc it sits on, the kept id); null when there is no npc of the id.</summary>
+    public (string Effect, int Actor, int Kept)? OwnerEffectOf(int id) =>
+        inst.TryGetValue(id, out var i) ? (i.OwnerEffect, i.OwnerActor, i.OwnerEffectId) : null;
+
+    /// <summary>CNpc::SetOwnerEffectActor (@0x141094ff0, :1567-1575): a new actor moves the effect to it.</summary>
+    void SetOwnerEffectActor(Inst i, int actor)
+    {
+        int old = i.OwnerActor;
+        i.OwnerActor = actor;
+        if (actor == old) return;
+        ReleaseOwnerEffect(i);
+        AttachOwnerEffect(i);
+    }
+
+    /// <summary>CNpc::AttachOwnerEffect (@0x141095050, :1579-1592): with the actor a pc here and a name set, the effect is kept
+    /// on that pc (SetActor, object kind 6, m_bFlag31).</summary>
+    void AttachOwnerEffect(Inst i)
+    {
+        if (FindPc(i.OwnerActor) is not { } pc || !GodotObject.IsInstanceValid(pc)) return;
+        if (i.OwnerEffect.Length < 1) return;
+        i.OwnerEffectId = SpawnKept(i.OwnerEffect, pc, OwnerEffectKind);
+    }
+
+    /// <summary>CNpc::ReleaseOwnerEffect (@0x141095140, :1595-1600): the kept effect stopped at once.</summary>
+    void ReleaseOwnerEffect(Inst i)
+    {
+        if (i.OwnerEffectId != 0) StopKept(i.OwnerEffectId);
+        i.OwnerEffectId = 0;
+    }
+
+    /// <summary>The npc a followed pc copies (StateTriggerFollowNpc::vfunc_3, stateemotionidle.cpp:521-562): <see cref="PoseOf"/>
+    /// and its sync sequence key (CNpc::FUN_141093510, m_nDE8); null when there is no npc of the id.</summary>
+    public (System.Numerics.Vector3 Pos, float RotZ, short AnimKey)? FollowPoseOf(int id) =>
+        PoseOf(id) is { } p && inst.TryGetValue(id, out var i) ? (p.Pos, p.RotZ, i.AnimKey) : null;
+
     /// <summary>
     /// CNpc::vfunc_125 (@0x141091210): the npc dies (m_unk_15c = 1) and enters StateDeadNPC (0xc), which plays its
     /// death sequence; <paramref name="show"/> (OnFieldDeadNpc passes 1, OnFieldAddNpc's dead flag 0,
@@ -789,6 +852,8 @@ public sealed class NpcLayer
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
         i.Target = Placed(b.Position.ToVector3());
         i.Moves++;
+        i.AnimKey = b.Sequence;                     // CNpc::ApplySyncBlock (:899): m_nDE8, read whatever the state
+        SetOwnerEffectActor(i, b.OwnerActor);       // :959, the block's owner actor (0 for a non-boss block)
         bool hitHeld = i.State == 0xd;              // GetCurStateId() before the block's own state is entered (:962)
         bool fresh = b.Serial != i.Serial;
         byte before = i.State;

@@ -7,7 +7,9 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The side popup talk (UISidePopupTalk, 0x4f57, uisidepopuptalk_1.cpp): the Trigger type 0x13 packet's popup
 /// (CTriggerService::OnSidePopupTalk, triggerservice.cpp:683-705: the text through CServerString's trigger group), whose movie
-/// loads with the first popup and stays for the HUD's life.
+/// loads with the first popup and stays for the HUD's life. The NpcNotice packet's mode 3 opens the same popup and its mode 0
+/// shows a timed system line (CSceneStateGame::OnNpcNotice, scenestategame.cpp:9145-9215), both with the text through
+/// CServerString's npc AI group (m_npcAi, stringNpcAi.xml).
 /// </summary>
 public partial class HudScene
 {
@@ -41,7 +43,31 @@ public partial class HudScene
             Action<Ms2.Net.Packets.TriggerSidePopup> on = p => sidePopup.ShowPopup(new SidePopupTalkParam(p.Kind, p.Name, p.Icon,
                 p.NpcOrDuration, p.Sound, p.Script, hudModel.Tables.TriggerStrings.GetString(p.Text)));
             live.SidePopupReceived += on;
-            unwatchSidePopup = () => live.SidePopupReceived -= on;
+            Action<Ms2.Net.Packets.NpcNotice> notice = NpcNotice;
+            live.NpcNoticeReceived += notice;
+            unwatchSidePopup = () => { live.SidePopupReceived -= on; live.NpcNoticeReceived -= notice; };
+        }
+    }
+
+    /// <summary>
+    /// The NpcNotice modes the HUD shows (OnNpcNotice, scenestategame.cpp:9145-9215). Mode 0 (:9148-9155): the text through
+    /// the npc AI group, shown by UISystemText::ShowTimedMessage as type 0xc for the packet's duration (FUN_141275360) and as a
+    /// chat line of kind 0x14 (FUN_1412751b0). Mode 3 (:9176-9213): UISidePopupTalk::ShowPopup with the kind, name, icon, npc
+    /// id, the text through the npc AI group, the sound and the script.
+    /// </summary>
+    void NpcNotice(Ms2.Net.Packets.NpcNotice n)
+    {
+        var strings = hudModel.Tables.NpcAiStrings;
+        if (n.Mode == Ms2.Net.Packets.NpcNotice.Announce)
+        {
+            string text = strings.GetString(n.Text);
+            SystemText?.ShowTimedMessage(text, SystemTextController.AiWarning, n.Duration);
+            ChatLog.AddSystemLine(text, TalkKind.SystemNotice);
+        }
+        else if (n.Mode == Ms2.Net.Packets.NpcNotice.SidePopup && sidePopup != null)
+        {
+            string text = strings.GetString(n.Text);
+            sidePopup.ShowPopup(new SidePopupTalkParam(n.Kind, n.Name, n.Icon, n.NpcId, n.Sound, n.Script, text));
         }
     }
 

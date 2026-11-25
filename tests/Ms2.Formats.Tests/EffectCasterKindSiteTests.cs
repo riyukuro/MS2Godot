@@ -66,6 +66,8 @@ public class EffectCasterKindSiteTests
             "the npc's, NpcLayer.CasterKind (CNpc::vfunc_58, 5 or 6): the motion effect of a level without a sequence, inserted on it (stateskill.cpp:1834)"),
         new("net/RemoteLayer.Casts.cs", "e.Ids.Motion = SpawnKeptEffect(fx.Motion, root,", "kind",
             "the npc's, NpcLayer.CasterKind: its motion effect kept on it (AnimActivated, stateskill.cpp:750-761)"),
+        new("net/RemoteLayer.cs", "SpawnKept = (fx, pc, kind) => SpawnKeptEffect(fx, pc, kind)", "kind",
+            "6: NpcLayer.OwnerEffectKind, an npc's owner effect (NpcNotice mode 1) kept on its owner pc with m_nObject 6 (CNpc::AttachOwnerEffect @0x141095050, unit_14108e1e0_npcactorandvibrate.cpp:1579-1592)"),
         new("net/RemoteLayer.Casts.cs", "SpawnKeptEffect(fx, insertNpcRoot,", "insertNpcKind",
             "the npc's, NpcLayer.CasterKind: its end effect inserted at the state's exit (stateskill.cpp:515-567)"),
         new("net/NpcLayer.cs", "Combat?.PlayEffect(effect, i.Root.GlobalPosition,", "CasterBoss : Ms2.Audio.SoundMusicEffectState.CasterNpc",

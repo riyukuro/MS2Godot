@@ -372,6 +372,10 @@ public sealed class GameTables
     /// <summary>CServerString m_trigger: string/&lt;language&gt;/stringtrigger.xml, read on first use.</summary>
     public Hud.ServerStringGroup TriggerStrings => triggerStrings ??= packs == null ? Hud.ServerStringGroup.Empty
         : Hud.ServerStringGroup.Load(packs, strings.Languages, "stringtrigger.xml", e => FeatureElements.IsAvailable(packs, e), ReservedWords.ReplaceObjectWords);
+    Hud.ServerStringGroup npcAiStrings;
+    /// <summary>CServerString m_npcAi: string/&lt;language&gt;/stringnpcai.xml, read on first use.</summary>
+    public Hud.ServerStringGroup NpcAiStrings => npcAiStrings ??= packs == null ? Hud.ServerStringGroup.Empty
+        : Hud.ServerStringGroup.Load(packs, strings.Languages, "stringnpcai.xml", e => FeatureElements.IsAvailable(packs, e), ReservedWords.ReplaceObjectWords);
     Hud.UserCommands userCommands;
     /// <summary>CUserCommandCli: Table/chatCommand.xml with string table 0x38 (string/&lt;language&gt;/stringchatcommand.xml
     /// "name"), read on first use.</summary>

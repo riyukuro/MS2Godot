@@ -879,6 +879,8 @@ public partial class LiveSession : Node
     public event Action<RoomTimerMessage> RoomTimerReceived;
     /// <summary>Trigger 0x13 (OnSidePopupTalk, triggerservice.cpp:683): a side popup talk for UISidePopupTalk (0x4f57).</summary>
     public event Action<TriggerSidePopup> SidePopupReceived;
+    /// <summary>The NpcNotice modes the HUD shows (0 the timed system line, 3 the side popup talk).</summary>
+    public event Action<NpcNotice> NpcNoticeReceived;
     public event Action<TriggerDuelHpBar> DuelHpBarReceived;      // Trigger type 0x15 (OnNpcDuelHpBar), the HUD's when it listens
     /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
     public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
@@ -2394,6 +2396,40 @@ public partial class LiveSession : Node
                 var n = NoticeMessage.Read(p.Reader());     // CSceneStateGame::OnNotice (scenestategame.cpp:9216); no ExpectEnd: the client ignores trailing bytes
                 Notice?.Invoke(n);
                 if (LiveCheck) GD.Print($"live: notice kind {n.Kind} flags 0x{n.Flags:x} text kind {n.Text.Kind}{(n.Text.Formatted ? $" id {n.Text.Id} args {n.Text.Args.Length}" : $" \"{n.Text.Text}\"")}");
+            }
+            else if (game.Is(p, Inbound.FollowNpc))
+            {
+                var f = FollowNpc.Read(p.Reader());         // CSceneStateGame::OnFollowNpc (scenestategame.cpp:5862-5869): no local player, nothing
+                if (remote != null && IsInstanceValid(remote)) remote.CatchUp();   // the dummy npc's FieldAddNpc came just before
+                if (player != null && IsInstanceValid(player))
+                {
+                    player.FindNpc = id => remote != null && IsInstanceValid(remote) ? remote.FollowPoseOf(id) : null;
+                    player.EnterTriggerFollowNpc(f.NpcId);
+                }
+                if (LiveCheck) GD.Print($"live: follow npc {f.NpcId}: state {player?.State}{(player?.FollowedNpc == f.NpcId ? " (following)" : "")}");
+            }
+            else if (game.Is(p, Inbound.NpcNotice))
+            {
+                var n = NpcNotice.Read(p.Reader());         // CSceneStateGame::OnNpcNotice (scenestategame.cpp:9145-9215)
+                string applied;
+                switch (n.Mode)
+                {
+                    case NpcNotice.OwnerEffect:
+                        applied = remote != null && remote.SetOwnerEffect(n.ObjectId, n.Model) ? $"owner effect {n.Model} on npc {n.ObjectId}" : $"no npc {n.ObjectId}";
+                        break;
+                    case NpcNotice.NpcScript:
+                        // CNpc::FUN_1410951d0 (unit_14108e1e0_npcactorandvibrate.cpp:1609-1613): the npc's model changes to the named
+                        // kfm (ChangeModel); the boss model name is not ported, so nothing changes
+                        applied = $"npc {n.ObjectId} model {n.Script} not applied";
+                        NotApplied.Print($"npc notice: the npc model change to {n.Script} is not applied");
+                        break;
+                    case NpcNotice.Announce or NpcNotice.SidePopup:
+                        applied = NpcNoticeReceived != null ? "shown" : "no HUD";
+                        NpcNoticeReceived?.Invoke(n);
+                        break;
+                    default: applied = "nothing"; break;
+                }
+                if (LiveCheck) GD.Print($"live: npc notice mode {n.Mode}: {applied}{(n.Mode == NpcNotice.SidePopup ? $" kind {n.Kind} npc {n.NpcId} icon {n.Icon}" : "")}");
             }
             else if (game.Is(p, Inbound.UserChat))
             {

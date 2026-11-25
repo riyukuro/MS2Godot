@@ -141,6 +141,29 @@ public sealed partial class RemoteLayer : Node3D
         return null;
     }
 
+    /// <summary>NpcNotice mode 1 on an npc (<see cref="NpcLayer.SetOwnerEffect"/>); false when there is no npc of the id.</summary>
+    public bool SetOwnerEffect(int objectId, string effect)
+    {
+        CatchUp();
+        return npcs.SetOwnerEffect(objectId, effect);
+    }
+
+    /// <summary>
+    /// Applies every queued tracker event now, past the per-frame budget of <see cref="Drain"/>. The client handles each packet
+    /// in order, so a packet that names an object an earlier packet made finds it even when both came in one frame: OnFollowNpc
+    /// (scenestategame.cpp:5862-5869, then StateTriggerFollowNpc::vfunc_4's FindNpcById, stateemotionidle.cpp:497-519),
+    /// OnNpcNotice mode 1 (FindNpcById, :9158-9166) and OnNametag (FindPCById, :7314-7331). Here the FieldAddNpc or
+    /// FieldAddUser before it went to the tracker's queue, which _Process empties only on the next frame. The Maple2 server
+    /// sends the follow npc's FieldAddNpc right before its FollowNpc.
+    /// </summary>
+    public void CatchUp()
+    {
+        for (int n = 0; n < 100 && !Tracker.Events.IsEmpty; n++) Drain();
+    }
+
+    /// <summary>An npc for the own pc's StateTriggerFollowNpc (<see cref="NpcLayer.FollowPoseOf"/>); null when it is not here.</summary>
+    public (System.Numerics.Vector3 Pos, float RotZ, short AnimKey)? FollowPoseOf(int objectId) => npcs.FollowPoseOf(objectId);
+
     /// <summary>WorldService::FindPCById: a shown player as a damage number's target; null when it is not a player here.</summary>
     public Ui.DamageTarget DamageOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Damage : null;
 
@@ -315,7 +338,15 @@ public sealed partial class RemoteLayer : Node3D
         equip = new EquipApplier(packs, mb) { Palettes = new Look.ColorPalettes(packs) };
         var table = Ms2.Formats.World.NpcTable.For(packs);
         Tracker.NpcLayoutOf = id => { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); };
-        npcs = new NpcLayer(packs, mb, table, this) { SpawnAnimation = id => field.SpawnPoints?.Find(id) };
+        npcs = new NpcLayer(packs, mb, table, this)
+        {
+            SpawnAnimation = id => field.SpawnPoints?.Find(id),
+            // CNpc::AttachOwnerEffect: FindPCById (the own pc's visual or another player's), kept in the region skill node
+            FindPc = id => id == 0 ? null : id == Tracker.SelfObjectId ? LiveSession.Instance?.OwnPlayer?.Visual
+                : users.TryGetValue(id, out var r) ? r.Visual : null,
+            SpawnKept = (fx, pc, kind) => SpawnKeptEffect(fx, pc, kind),
+            StopKept = StopKeptEffect,
+        };
         npcTable = table;
         combat = new CombatLayer(packs, mb, new EffectTable(packs), this);
         npcs.Combat = combat;
