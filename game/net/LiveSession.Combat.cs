@@ -1391,6 +1391,64 @@ public partial class LiveSession
                 Shot($"npcnotice_{step[10..]}.png");
                 continue;
             }
+            if (step.StartsWith("npcride:"))      // npcride:<owner npc>:<rider npc>: two spawned npcs and raw NpcRide packets (debug packet command; neither server sends one): the rider bound to the owner's Ride_A node, mode 0's damage, mode 2's end, then the own pc as the owner (no Ride_A: the rider is not moved)
+            {
+                var c = step[8..].Split(':');
+                int ownerNid = int.Parse(c[0]), riderNid = int.Parse(c[1]);
+                async System.Threading.Tasks.Task<FieldNpcs.Placed> SpawnNpc(int nid)
+                {
+                    int added = npcs;
+                    hud.SubmitChatLine("/npc " + nid);
+                    await until(() => npcs > added && lastNpc?.Row?.Id == nid, 60 * 5);
+                    await frames(30);
+                    return lastNpc?.Row?.Id == nid ? lastNpc : null;
+                }
+                var owner = await SpawnNpc(ownerNid);
+                var rider = await SpawnNpc(riderNid);
+                var r = live.remote;
+                if (owner == null || rider == null || r == null)
+                {
+                    Check($"npcride {ownerNid}:{riderNid}: spawned owner {owner?.ObjectId} rider {rider?.ObjectId}", false);
+                    continue;
+                }
+                int oid = owner.ObjectId, rid = rider.ObjectId;
+                var was = r.NpcRideOf(rid);
+                bool sent = hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(rid, 1, oid));
+                await until(() => r.NpcRideOf(rid)?.Owner == oid, 60 * 5);
+                await frames(30);
+                var on = r.NpcRideOf(rid);
+                var node = r.RideNodeOf(oid);
+                float off = on is { } o && node is { } n ? o.At.DistanceTo(n) : -1f;
+                Check($"npcride {ownerNid}:{riderNid}: rider {rid} owner {on?.Owner} (sent {sent}); owner {oid} Ride_A {(node is { } nn ? $"{nn.X:0},{nn.Y:0},{nn.Z:0}" : "none")}, " +
+                    $"rider at {(on is { } a ? $"{a.At.X:0},{a.At.Y:0},{a.At.Z:0}" : "-")} ({off:0.00} off), before {(was is { } w ? $"{w.At.X:0},{w.At.Y:0},{w.At.Z:0}" : "-")}",
+                    on?.Owner == oid && node != null && off >= 0 && off < 1f);
+                Shot("npcride_on.png");
+                const long damage = 123456789012;
+                hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(rid, 0, damage));
+                await until(() => r.NpcRideOf(rid)?.AccumDamage == damage, 60 * 5);
+                Check($"npcride {riderNid}: mode 0 accumulated damage {r.NpcRideOf(rid)?.AccumDamage}, owner kept {r.NpcRideOf(rid)?.Owner}",
+                    r.NpcRideOf(rid)?.AccumDamage == damage && r.NpcRideOf(rid)?.Owner == oid);
+                hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(rid, 2));
+                await until(() => r.NpcRideOf(rid)?.Owner == 0, 60 * 5);
+                await frames(30);
+                Check($"npcride {riderNid}: mode 2 owner {r.NpcRideOf(rid)?.Owner}", r.NpcRideOf(rid)?.Owner == 0);
+                Shot("npcride_off.png");
+                int self = r.Tracker.SelfObjectId;
+                var before = r.NpcRideOf(rid)?.At;
+                hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(rid, 1, self));
+                await until(() => r.NpcRideOf(rid)?.Owner == self, 60 * 5);
+                await frames(30);
+                var still = r.NpcRideOf(rid);
+                var pcPos = live.OwnPlayer?.GlobalPosition;
+                Check($"npcride {riderNid}: the own pc {self} as the owner: owner {still?.Owner}, pc Ride_A {(r.RideNodeOf(self) is { } pn ? $"{pn}" : "none")}, " +
+                    $"rider moved {(still is { } s2 && before is { } b0 ? s2.At.DistanceTo(b0) : -1):0.0}, {(still is { } s3 && pcPos is { } pp ? s3.At.DistanceTo(pp) : -1):0} from the pc",
+                    still?.Owner == self && r.RideNodeOf(self) == null);
+                hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(rid, 2));
+                await until(() => r.NpcRideOf(rid)?.Owner == 0, 60 * 5);
+                hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(987654321, 1, oid));     // no such npc: OnNpcRide's FindNpcById fails, nothing read
+                await frames(30);
+                continue;
+            }
             if (step.StartsWith("insignia:"))      // insignia:<symbol>: a raw Insignia for the own pc (debug packet command); the own record and name tag
             {
                 ushort sym = ushort.Parse(step[9..]);
