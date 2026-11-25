@@ -120,6 +120,10 @@ public partial class LiveSession
         return null;
     }
 
+    /// <summary>The current action's vfunc_10, the refresh ask (actionkeyobject.cpp:556-560): HoldAction's m_n18, set when
+    /// the held npc or the hold state changes. FunctionCube's and FittingDoll's are not ported (no tooltip action here).</summary>
+    public bool ActionKeyRefreshAsked(int code) => code == 6 && Hold.Refresh;
+
     /// <summary>The current action's vfunc_7 (the title the tooltip compares): InteractAction's object id
     /// (@0x140958c50, the billboard keeps it), ReactorAction's "reactor" (@0x14095faa0); "" for the rest.</summary>
     public string ActionKeyTitle(int code) => code switch

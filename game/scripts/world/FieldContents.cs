@@ -698,15 +698,17 @@ public partial class FieldContents : Node3D
 
     /// <summary>
     /// Unk_ActionKeyManager::Update's end (actionkeyobject.cpp:571-601): the tooltip (UIActionTooltip 0x4e5c) refreshes when
-    /// m_nCur changes, else when it shows another action, title or caption than the current one. STILL-OPEN: vfunc_4's
-    /// accept of a new action and vfunc_10's refresh ask (the hold's npc change; its caption change is caught by the text).
+    /// m_nCur changes or the current action asks with vfunc_10 (HoldAction's m_n18), else when it shows another action, title
+    /// or caption than the current one. vfunc_4 is PortalAction's accept in LiveSession.PollPortal.
     /// </summary>
     void RefreshActionTooltip()
     {
         if (GetTree().CurrentScene is not HudScene { ActionTooltip: { } tip } || Ms2Godot.Net.LiveSession.Instance is not { } ls) return;
         int code = ls.ActionKeyCode(actionKeys.Current);
-        if (code != tooltipCode) { tooltipCode = code; tip.Refresh(); }
-        else if (tip.NeedsRefresh()) tip.Refresh();
+        bool refresh = ls.ActionKeyRefreshAsked(code);
+        if (code != tooltipCode) { tooltipCode = code; refresh = true; }
+        else if (!refresh && tip.NeedsRefresh()) refresh = true;
+        if (refresh) tip.Refresh();
     }
 
     /// <summary>The action key's current action (m_nCur) as the last poll left it; None offline.</summary>
