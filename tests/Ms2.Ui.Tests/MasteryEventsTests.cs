@@ -116,6 +116,27 @@ public class MasteryEventsTests
     }
 
     [Test]
+    public void TheFirstUidOfAnIdSkipsWhatTheCharacterMayNotUseAndGivesNoneWithoutData()
+    {
+        var table = Table();
+        var items = new[]
+        {
+            new EquipItem { Id = Potion + 1, Uid = 10 },
+            new EquipItem { Id = Potion, Uid = 11, ExpiryTime = 50 },                                  // expired
+            new EquipItem { Id = Potion, Uid = 12, Transfer = { HasBinding = true, BindingId = 999 } },   // bound to another
+            new EquipItem { Id = Potion, Uid = 13 },
+            new EquipItem { Id = Potion, Uid = 14 },
+        };
+        Assert.That(InventoryCount.FirstUidById(items, table, Potion, 5, 100), Is.EqualTo(13), "the first usable one in bag order");
+        Assert.That(InventoryCount.FirstUidById(items, table, Potion, 999, 100), Is.EqualTo(12), "bound to this character: usable");
+        Assert.That(InventoryCount.FirstUidById(items, table, Potion, 5, 10), Is.EqualTo(11), "not yet expired");
+        Assert.That(InventoryCount.FirstUidById(items, table, 0, 5, 100), Is.Zero, "id 0");
+        Assert.That(InventoryCount.FirstUidById(items, table, 2, 5, 100), Is.Zero, "an id with no data");
+        Assert.That(InventoryCount.FirstUidById(items, table, Potion + 2, 5, 100), Is.Zero, "none of the id in the bag");
+        Assert.That(InventoryCount.FirstUidById(null, table, Potion, 5, 100), Is.Zero);
+    }
+
+    [Test]
     public void APetAndAMaidItemAreUsableAfterTheirExpiryWhereAnItemIsNot()
     {
         var table = Table();

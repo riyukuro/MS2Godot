@@ -380,6 +380,11 @@ public sealed class GameTables
     /// <summary>CServerString m_trigger: string/&lt;language&gt;/stringtrigger.xml, read on first use.</summary>
     public Hud.ServerStringGroup TriggerStrings => triggerStrings ??= packs == null ? Hud.ServerStringGroup.Empty
         : Hud.ServerStringGroup.Load(packs, strings.Languages, "stringtrigger.xml", e => FeatureElements.IsAvailable(packs, e), ReservedWords.ReplaceObjectWords);
+    Hud.ServerStringGroup gameEventStrings;
+    /// <summary>CServerString m_gameEvent (@0x14087f3b0): string/&lt;language&gt;/stringgameevent.xml, read on first use; GameEventAttendGiftCli's
+    /// vfunc_10 (@0x140ce3480) maps the event's name through it.</summary>
+    public Hud.ServerStringGroup GameEventStrings => gameEventStrings ??= packs == null ? Hud.ServerStringGroup.Empty
+        : Hud.ServerStringGroup.Load(packs, strings.Languages, "stringgameevent.xml", e => FeatureElements.IsAvailable(packs, e), ReservedWords.ReplaceObjectWords);
     Hud.ServerStringGroup npcAiStrings;
     /// <summary>CServerString m_npcAi: string/&lt;language&gt;/stringnpcai.xml, read on first use.</summary>
     public Hud.ServerStringGroup NpcAiStrings => npcAiStrings ??= packs == null ? Hud.ServerStringGroup.Empty

@@ -28,6 +28,19 @@ public static class InventoryCount
         return count;
     }
 
+    /// <summary>
+    /// Unk_Inventory::FUN_140a5e2e0 (@0x140a5e2e0, inventory.cpp:650): the first item of the id in its bag that the character can use
+    /// (PC::CanUseItem, <see cref="CanUse"/>), in bag order; none for id 0, an id without data or no local player. The uid, 0 for none.
+    /// STILL-OPEN: the category bound (FUN_14053fd90 outside 0..14 gives none) is not checked; a bag item of the id is in its one category.
+    /// </summary>
+    public static long FirstUidById(IEnumerable<EquipItem> items, ItemDataTable table, int itemId, long characterId, long now)
+    {
+        if (itemId == 0 || items == null || table?.Get(itemId) == null) return 0;
+        foreach (var e in items)
+            if (e != null && e.Id == itemId && CanUse(e, table, characterId, now)) return e.Uid;
+        return 0;
+    }
+
     /// <summary>Unk_Inventory::FindItemByTag (@0x140a5e040, inventory.cpp:630) found an item: <paramref name="tag"/> is not 0
     /// and a bag item's data has that string tag (CItem::HasStringTag, the data's stringTag through
     /// <see cref="ItemTags.ByName"/>) and passes <paramref name="canUse"/> (PC::CanUseItem). Which of them the sort

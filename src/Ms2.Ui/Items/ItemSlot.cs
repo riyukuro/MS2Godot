@@ -125,6 +125,43 @@ public static class ItemSlot
         return true;
     }
 
+    /// <summary>
+    /// ASSlot::SetItemById (@0x1409c4510, asitemslot.cpp:1431): the members of a slot for an item id at a rank with no item behind it
+    /// (a reward, a gift): the id and grade, the pet rank (feature 0x8c) or pet flag, the cash / skin / PC bang / VIP / wedding flags,
+    /// the icon path, the name (FUN_141811980(1, id)), the count (SetItemCountValue @0x1409c2190: only above 0, as text), the drag
+    /// disabled, the gemstone and lapenshard level, the season and the piece flag. False (the client's 0) when the id has no data.
+    /// </summary>
+    public static bool BuildById(List<(string, object)> slot, int itemId, int rank, uint count, UiModel model, Sources sources = null)
+    {
+        var data = model.Tables.Items.Get(itemId);
+        if (data == null) return false;
+        slot.Add(("itemID", (uint)itemId));                                        // SetItemID
+        slot.Add(("itemGrade", rank));                                             // SetItemGrade
+        if (model.IsFeatureEnabled(PetRankFeature))
+        {
+            if (data.IsPetItem)
+            {
+                slot.Add(("itemPetRank", rank));                                   // SetItemPetRankAndDisableShadow (:897)
+                slot.Add(("dropShadowDisable", 1));
+            }
+        }
+        else slot.Add(("itemPet", data.IsPetItem ? 1 : 0));                        // SetItemPet
+        slot.Add(("itemCash", data.IsCashItem ? 1 : 0));
+        slot.Add(("itemSkin", data.HasSkinType ? 1 : 0));
+        slot.Add(("itemPcBang", data.PCBang ? 1 : 0));
+        slot.Add(("itemVIP", data.Vip ? 1 : 0));
+        slot.Add(("itemWedding", data.Wedding ? 1 : 0));
+        slot.Add(("iconPath", data.IconPath));                                     // SetIconPathString
+        slot.Add(("itemName", model.Tables.ItemName(itemId)));                     // SetItemName(FUN_141811980(1, id))
+        if (count > 0) slot.Add(("itemCount", count.ToString(System.Globalization.CultureInfo.InvariantCulture)));   // SetItemCountValue
+        slot.Add(("disableDrag", 1));                                              // DisableDrag
+        if (data.IsGemstone && sources?.GemstoneLevel?.Invoke(itemId) is int gem && (ushort)gem != 0) slot.Add(("enchant", (ushort)gem));
+        if (data.IsLapenshard && sources?.LapenshardLevel?.Invoke(itemId) is int lapen && (ushort)lapen != 0) slot.Add(("enchant", (ushort)lapen));
+        Season(slot, data, model.Tables.GachaBoxes);                               // SetItemSeason
+        slot.Add(("itemPiece", data.IsPieceItem ? 1 : 0));                         // SetItemPiece
+        return true;
+    }
+
     /// <summary>FUN_1409c2af0 (:1032): only for an item with a skill (not a lapenshard) and a cooldown.</summary>
     static void SkillCooldown(List<(string, object)> slot, Item item, UiModel model, Sources sources)
     {

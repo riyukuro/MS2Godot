@@ -112,4 +112,23 @@ public class AttendEventsTests
         a.ClearTimes();
         Assert.That(a.TryGetTime(5, out _), Is.False);
     }
+
+    [Test]
+    public void TheDialogIsToldOfAStartedEventAndOfTheOneTheManagerHeldWhenItEnds()
+    {
+        var a = new AttendEvents();
+        var log = new List<string>();
+        a.Started += e => log.Add("start " + e.Id + e.Name);
+        a.Ended += e => log.Add("end " + e.Id + e.Name);
+        a.Apply(Events(0, Event(1, "a"), Event(2, "b")));
+        a.Apply(Events(1, Event(2, "again")));
+        a.Apply(Events(3, Event(2, "new")));
+        Assert.That(log, Is.EqualTo(new[] { "start 1a", "start 2b" }), "OnStart only for an event that was new; an update tells nobody");
+        log.Clear();
+        a.Apply(new GameEventMessage(2, Array.Empty<ShutdownInteractObjectEvent>(), new[] { 2, 99 }, false));
+        Assert.That(log, Is.EqualTo(new[] { "end 2new" }), "vfunc_6 runs on the record the manager held (the update), not the one OnStart saw");
+        log.Clear();
+        a.Clear();
+        Assert.That(log, Is.EqualTo(new[] { "end 1a" }), "Clear ends every event it drops");
+    }
 }

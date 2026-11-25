@@ -21,6 +21,13 @@ public sealed class AttendEvents
 
     public bool TryGetEvent(int id, out AttendGiftEvent e) => events.TryGetValue(id, out e);
 
+    /// <summary>GameEventManagerCli::Add (@0x140ceb730) ran OnStart on an event that was new (GameEventAttendGiftCli::OnStart
+    /// @0x140ce3300, gameeventcli.cpp:403).</summary>
+    public event Action<AttendGiftEvent> Started;
+    /// <summary>GameEventManagerCli::Remove (@0x140ceb880) and Clear (@0x140ceac00) ran vfunc_6 on an event (@0x140ce33c0, :417): the
+    /// event the manager held, which after an update is not the one a listener was given by <see cref="Started"/>.</summary>
+    public event Action<AttendGiftEvent> Ended;
+
     /// <summary>One GameEvent message (kinds 0 and 1 add: an id already held is not added again; 2 removes; 3 replaces).</summary>
     public void Apply(GameEventMessage m)
     {
@@ -29,11 +36,11 @@ public sealed class AttendEvents
             case 0:
             case 1:
                 foreach (var e in m.AttendGiftEvents)
-                    if (events.TryAdd(e.Id, e)) order.Add(e.Id);
+                    if (events.TryAdd(e.Id, e)) { order.Add(e.Id); Started?.Invoke(e); }
                 break;
             case 2:
                 foreach (int id in m.RemovedIds)
-                    if (events.Remove(id)) order.Remove(id);
+                    if (events.Remove(id, out var gone)) { order.Remove(id); Ended?.Invoke(gone); }
                 break;
             case 3:
                 foreach (var e in m.AttendGiftEvents)
@@ -45,9 +52,15 @@ public sealed class AttendEvents
         }
     }
 
-    /// <summary>GameEventManagerCli::Clear (@0x140ceac00, :98-107): the events of the old game scene go. The character's times stay
-    /// (ClearDungeonState runs on the dungeon's own reset).</summary>
-    public void Clear() { events.Clear(); order.Clear(); }
+    /// <summary>GameEventManagerCli::Clear (@0x140ceac00, :98-107): vfunc_6 on every event, then the events of the old game scene go.
+    /// The character's times stay (ClearDungeonState runs on the dungeon's own reset).</summary>
+    public void Clear()
+    {
+        var gone = new List<AttendGiftEvent>(Events);
+        events.Clear();
+        order.Clear();
+        foreach (var e in gone) Ended?.Invoke(e);
+    }
 
     /// <summary>Kind 6 of the Attendance packet: FUN_140d9fc80 sets each pair in the map (a repeated id replaces, ids not in the packet stay).</summary>
     public void SetTimes(IEnumerable<(int EventId, long EndTime)> pairs)
