@@ -1447,6 +1447,18 @@ public partial class LiveSession : Node
         catch (Exception e) { GD.Print($"live: item data unavailable ({e.Message})"); return null; }
     }
 
+    /// <summary>CreateCube's item checks (cubemapinformationservice_3.cpp:2614-2620): the item's subtype and its install
+    /// object's data (GetObjectData(install.objCode)); null without item data, install object or object file.</summary>
+    internal static (int Subtype, Ms2.Formats.World.ObjectData Object)? InstallObjectOf(int itemId) {
+        var d = ItemDataOf(itemId);
+        if (d == null || d.InstallObjCode == 0) return null;
+        try {
+            var o = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage).ObjectDataOf(d.InstallObjCode);
+            return o == null ? null : (d.Subtype, o);
+        }
+        catch (Exception e) { GD.Print($"live: object data unavailable ({e.Message})"); return null; }
+    }
+
     /// <summary>FUN_14053f870: the item's data; null when unknown or the item data is missing.</summary>
     internal static Ms2.Ui.Items.ItemData ItemDataOf(int itemId) {
         try { return (itemData ??= new Ms2.Ui.Items.ItemDataTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir))).Get(itemId); }
@@ -2795,7 +2807,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ResponsePet))
                 ReadNotApplied("ResponsePet", Ms2.Net.Packets.PetResponse.Read(p.Reader(), game.Profile).Mode);   // CPetManager::OnResponsePet (petmanager.cpp:722): the pet system (summon, pet window, counts) is not ported
             else if (game.Is(p, Inbound.FunctionCube))
-                ReadNotApplied("FunctionCube", Ms2.Net.Packets.FunctionCubeReply.Read(p.Reader(), game.Profile).Mode);   // OnFunctionCube (scenestategame.cpp:3660): the cube service (CFunctionCubeService: cube objects, state switch, owner checks) is not ported
+                OnFunctionCube(p);
             else if (game.Is(p, Inbound.FurnishingInventory))
                 ReadNotApplied("FurnishingInventory", Ms2.Net.Packets.FurnishingInventory.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingInventory (scenestategame.cpp:9373): the cube stock has no house editor here yet
             else if (game.Is(p, Inbound.FurnishingStorage))

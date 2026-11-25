@@ -36,6 +36,15 @@ public sealed class CubeCellMap : ICubeCells
     /// <summary>The plot tables LoadCubes modes 1-3 fill, kept with the field's cubes.</summary>
     public readonly CubePlots Plots = new();
 
+    /// <summary>The function cube objects of the placed cubes (CFunctionCubeService): a cube enters with its cell when its
+    /// item's install object has a function cube (CreateCube :2620-2653 and FUN_1410d0000 :3331-3358) and leaves with it
+    /// (FUN_1410c1910 :5236-5241).</summary>
+    public readonly FunctionCubes Functions = new();
+
+    /// <summary>The item's subtype and its install object's data (CItemData GetSubtype, GetObjectData(install.objCode)),
+    /// null when the item has no install object with data. Without it no function cube is made.</summary>
+    public Func<int, (int Subtype, Ms2.Formats.World.ObjectData Object)?> InstallObjectOf;
+
     public int Count => cubes.Count;
 
     /// <summary>The cubes with an entity position (the climb lookups' cubes).</summary>
@@ -185,7 +194,8 @@ public sealed class CubeCellMap : ICubeCells
     /// <summary>FUN_1410c1910 (@0x1410c1910, :5190-5216): the cube at the key leaves f98, with its entity.</summary>
     void Remove(int key)
     {
-        cubes.Remove(key);
+        if (cubes.Remove(key, out var item) && item.ItemId != 0 && InstallObjectOf?.Invoke(item.ItemId) is { Object.Cube.Enabled: true } o)
+            Functions.Remove(o.Subtype, key);
         if (entityCells.Remove(key, out var e)) (e.Map ? mapEntities : cubeEntities).Remove(e.Cell);
     }
 
@@ -197,8 +207,10 @@ public sealed class CubeCellMap : ICubeCells
         if (!itemExists(item.ItemId)) return false;
         cubes[key] = item;
         var cell = CubeCell.Unpack(key);
-        cubeEntities[cell] = new Vector3(cell.X * CubeCell.Size, cell.Y * CubeCell.Size, cell.Z * CubeCell.Size);
+        var at = new Vector3(cell.X * CubeCell.Size, cell.Y * CubeCell.Size, cell.Z * CubeCell.Size);
+        cubeEntities[cell] = at;
         entityCells[key] = (cell, false);
+        if (InstallObjectOf?.Invoke(item.ItemId) is { } o) Functions.Place(key, o.Subtype, o.Object, item.ItemId, 0, at);
         return true;
     }
 }

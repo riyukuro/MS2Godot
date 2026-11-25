@@ -255,6 +255,7 @@ public enum Outbound : ushort {
     ItemDismantle = 0x5A,   // SendOp::ItemDismantle (commonfiles/opcodes.h:395): CItemBreakManager::SendItemDismantleMode*
     SystemShop = 0x65,      // SendOp::SystemShop (commonfiles/opcodes.h:406): CNetworkService::SendSystemShop / coin shop open
     Quest = 0x29,
+    FunctionCube = 0x2E,        // SendOp::FunctionCube (commonfiles/opcodes.h:351): CFunctionCubeObject::vfunc_8, the cube use
     InteractObject = 0x31,  // SendOp::InteractObject (commonfiles/opcodes.h:354): CInteractObject::vfunc_8/vfunc_10, StateInteraction
     InteractNpc = 0x32,     // SendOp::InteractNpc (commonfiles/opcodes.h:355): CNpc::SendInteractNpc (@0x141094730), i32 object id
     ChatSticker = 0xB7,     // SendOp::ChatSticker (commonfiles/opcodes.h:485): the chat emoticon packs (CChatEmoticonCli, UIMessenger)

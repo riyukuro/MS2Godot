@@ -311,6 +311,47 @@ public partial class LiveSession
     }
 
     /// <summary>The built field's cube map (its player's CubeGrid), or null before the field is built.</summary>
+    /// <summary>
+    /// FunctionCube (CSceneStateGame::OnFunctionCube @0x1417212a0, scenestategame.cpp:3660 → CFunctionCubeService::FUN_14122f270
+    /// @0x14122f270, functioncubeobject.cpp:2411): the state records switch the field's function cubes
+    /// (<see cref="Ms2.Ui.FunctionCubes.Apply(Ms2.Net.Packets.FunctionCubeReply, long, bool, bool)"/>); a nurturing cube's record is
+    /// read with its pet fields by the cube's kind. A use reply asks for a dialog, the furniture or a web link.
+    /// STILL-OPEN: the dialogs of the sub-kinds (the object store is UIObjectStoreDialog; the trigger editor, cube sub scene,
+    /// home password and summon have no port), the furniture state 0x29 and the web browser; each is logged. The home-made
+    /// and nurturing modes (9, 10, 0x0b-0x0e) have no cube subclass here and are logged as read.
+    /// </summary>
+    void OnFunctionCube(Ms2.Net.Wire.RawPacket p)
+    {
+        var cubes = FieldCubeCells()?.Functions;
+        var m = Ms2.Net.Packets.FunctionCubeReply.Read(p.Reader(), game.Profile, cubes == null ? null : cubes.IsNurturing);
+        if (cubes == null) { ReadNotApplied("FunctionCube", m.Mode); return; }
+        var r = cubes.Apply(m, CharacterId, OwnPlayer != null);
+        switch (m.Kind)
+        {
+            case Ms2.Net.Packets.FunctionCubeKind.States:
+            case Ms2.Net.Packets.FunctionCubeKind.State:
+                if (LiveCheck)
+                    foreach (var s in m.States)
+                        GD.Print(cubes.Find(s.Id) is { } c
+                            ? $"live: function cube {s.Id} state {s.State}{(s.Flag ? " moving" : "")}: now {c.State}, kind {c.Kind}, sequence '{c.Sequence}', sound '{c.Sound}'"
+                            : $"live: function cube {s.Id} state {s.State}: {(cubes.FindPending(s.Id) != null ? "pending" : "no cube")}");
+                return;
+            case Ms2.Net.Packets.FunctionCubeKind.Use:
+                if (LiveCheck) GD.Print($"live: function cube use {m.CubeId} owner {m.Owner}{(m.Owner == CharacterId ? " (own)" : "")} flag {m.Flag}: {r.Action}{(r.Action == Ms2.Ui.FunctionCubes.UseAction.OpenDialog ? $" {r.Dialog}" : "")}{(r.Cube != null ? $", state {r.Cube.State}" : ", no cube")}");
+                if (r.Action != Ms2.Ui.FunctionCubes.UseAction.None) OnFunctionCubeUse(r);
+                return;
+            default:
+                ReadNotApplied("FunctionCube", m.Mode);
+                return;
+        }
+    }
+
+    /// <summary>The use reply's asks (FUN_14122f270 mode 6). STILL-OPEN: each one beyond the object store is logged only.</summary>
+    void OnFunctionCubeUse(Ms2.Ui.FunctionCubes.UseResult r)
+    {
+        GD.Print($"live: function cube {r.Cube.Id} asks {r.Action}{(r.Action == Ms2.Ui.FunctionCubes.UseAction.OpenDialog ? $" {r.Dialog}" : "")}, not applied");
+    }
+
     Ms2.Ui.CubeCellMap FieldCubeCells() => triggerField != null && IsInstanceValid(triggerField) ? triggerField.Cubes?.Cells : null;
 
     /// <summary>Cubes were made in the field (CubeMapInformationService FUN_1410cf5c0, cubemapinformationservice_3.cpp:5701-5705):

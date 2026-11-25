@@ -714,6 +714,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
             player.SetBattleStance(true);
         player.Climbs = Movement.Climbables.From(map);
         player.Cubes = Movement.CubeGrid.From(map);
+        player.Cubes.Cells.InstallObjectOf = Net.LiveSession.InstallObjectOf;
         Movement.MoveConfig.LoadConstants(packs);
         player.Gravity = Movement.MoveConfig.FieldGravity(map);
         var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC")

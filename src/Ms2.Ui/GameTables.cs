@@ -981,25 +981,28 @@ public sealed class GameTables
     /// read on first use; null without packs.</summary>
     public CubeInteriorTable CubeInteriors => cubeInteriors ??= packs == null ? null : new CubeInteriorTable(packs);
 
-    readonly Dictionary<int, (bool StateChange, bool TriggerControl)> objectCubeRights = new();
-    /// <summary>
-    /// GetObjectData(objCode) (@0x140704ec0, <see cref="Ms2.Formats.World.ObjectData"/>) as read by
-    /// HasStateChangePermission (objectdata.cpp:541: StateChangeActionPermissionType == 1) and IsTriggerControlEnabled
-    /// (:523: enableTriggerControl != 0); both false for id 0, with no file or no FunctionCube. Cached by id.
-    /// </summary>
-    public (bool StateChange, bool TriggerControl) ObjectCubeRights(int objCode)
+    readonly Dictionary<int, Ms2.Formats.World.ObjectData> objectData = new();
+    /// <summary>GetObjectData(objCode) (@0x140704ec0, <see cref="Ms2.Formats.World.ObjectData"/>): null for id 0, without
+    /// packs or without the file. Cached by id.</summary>
+    public Ms2.Formats.World.ObjectData ObjectDataOf(int objCode)
     {
-        if (objCode == 0 || packs == null) return default;
-        lock (objectCubeRights)
+        if (objCode == 0 || packs == null) return null;
+        lock (objectData)
         {
-            if (objectCubeRights.TryGetValue(objCode, out var known)) return known;
-            var r = default((bool, bool));
-            if (Ms2.Formats.World.ObjectData.Load(packs, (uint)objCode)?.Cube is { Enabled: true } cube)
-                r = (cube.StateChangePermission == 1, cube.EnableTriggerControl != 0);
-            objectCubeRights[objCode] = r;
-            return r;
+            if (!objectData.TryGetValue(objCode, out var d))
+                objectData[objCode] = d = Ms2.Formats.World.ObjectData.Load(packs, (uint)objCode);
+            return d;
         }
     }
+
+    /// <summary>
+    /// <see cref="ObjectDataOf"/> as read by HasStateChangePermission (objectdata.cpp:541: StateChangeActionPermissionType
+    /// == 1) and IsTriggerControlEnabled (:523: enableTriggerControl != 0); both false for id 0, with no file or no
+    /// FunctionCube.
+    /// </summary>
+    public (bool StateChange, bool TriggerControl) ObjectCubeRights(int objCode) =>
+        ObjectDataOf(objCode)?.Cube is { Enabled: true } cube ? (cube.StateChangePermission == 1, cube.EnableTriggerControl != 0) : default;
+
     Ms2.Ui.Items.UgcMapSetItemTable ugcMapSetItems;
     /// <summary>CUGCMapSetItemTable (GetXmlPath("Table", "UGCMapSetItem.xml"), the locale folder first), read on first use.</summary>
     public Ms2.Ui.Items.UgcMapSetItemTable UgcMapSetItems => ugcMapSetItems ??= packs == null ? Ms2.Ui.Items.UgcMapSetItemTable.Empty

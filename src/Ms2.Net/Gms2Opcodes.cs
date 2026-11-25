@@ -254,6 +254,7 @@ static class Gms2Opcodes {
         [Outbound.ItemDismantle] = 0x5B,
         [Outbound.SystemShop] = 0x66,
         [Outbound.Quest] = 0x29,
+        [Outbound.FunctionCube] = 0x2E,
         [Outbound.InteractObject] = 0x31,
         [Outbound.InteractNpc] = 0x32,
         [Outbound.Emote] = 0x13,
