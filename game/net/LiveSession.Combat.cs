@@ -100,6 +100,7 @@ public partial class LiveSession
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) { numbers++; hitCount[npc] = hitCount.GetValueOrDefault(npc) + 1; } };
         live.NpcExpShown += (npc, exp) => kills++;
         FieldNpcs.Placed lastNpc = null;
+        FieldNpcs.Placed holdClickNpc = null;     // mclick:hold's npc
         var serverNpcs = new System.Collections.Generic.List<FieldNpcs.Placed>();
         live.NpcAdded += npc => { npcs++; lastNpc = npc; serverNpcs.Add(npc); };
         var goneNpcs = new System.Collections.Generic.HashSet<int>();     // object ids removed by the server or counted dead by the kill step
@@ -590,7 +591,7 @@ public partial class LiveSession
                 await frames(120);
                 continue;
             }
-            if (step.StartsWith("mclick:"))    // mclick:<portal|taxi|object|banner|talkend>[:<portal id>]: mouse control on, the own pc put 500 from the nearest such target (or the portal of that id) facing it, a left click at the target's middle on screen; checks the hover cursor and hint first (a shot), then that the pick is kept and (but for the banner, whose action is not ported) that it runs. talkend[:<npc id>|any|plain] opens the talk with that npc by the action key, then clicks the screen while the talk shows
+            if (step.StartsWith("mclick:"))    // mclick:<portal|taxi|object|banner|talkend|hold>[:<portal id>]: mouse control on, the own pc put 500 from the nearest such target (or the portal of that id) facing it, a left click at the target's middle on screen; checks the hover cursor and hint first (a shot), then that the pick is kept and (but for the banner, whose action is not ported) that it runs. talkend[:<npc id>|any|plain] opens the talk with that npc by the action key, then clicks the screen while the talk shows. hold: the nearest npc with hold nodes (hold:<npc id> spawns one); its hint is s_mouse_interact_hold and the run holds on to it
             {
                 var a = step.Split(':');
                 string kind = a[1];
@@ -635,6 +636,12 @@ public partial class LiveSession
                     case "talkend":
                         want = Ms2.Ui.MousePick.TalkCancel;
                         break;
+                    case "hold":
+                        holdClickNpc = live.TalkNpcs.Where(x => x.Root.Visible && Alive(x) && live.NpcHoldable(x.ObjectId))
+                            .OrderBy(x => D2(FieldPortals.ToMs2(x.Position), me)).FirstOrDefault();
+                        if (holdClickNpc != null) { target = FieldPortals.ToMs2(holdClickNpc.Position); height = holdClickNpc.Row.CapsuleHeight; GD.Print($"live: combat {step}: npc {holdClickNpc.Row.Id} object {holdClickNpc.ObjectId}"); }
+                        want = Ms2.Ui.MousePick.Npc;
+                        break;
                 }
                 var cam = flow.GetViewport().GetCamera3D();
                 Vector2 screen;
@@ -675,10 +682,12 @@ public partial class LiveSession
                     Check($"{step}: a target in the field", target != null);
                     if (target == null || cam == null) { fld.SetMouseControl(GameOptions.MouseControl.Value); continue; }
                     var tg = FieldBuilder.ToGodotPoint(target.Value);
-                    var away = live.player.GlobalPosition - tg; away.Y = 0;
+                    // a held npc's pc comes from the camera's side, which sees the npc, so the walk to it is in view
+                    var away = (kind == "hold" ? cam.GlobalPosition : live.player.GlobalPosition) - tg; away.Y = 0;
                     away = away.LengthSquared() < 1 ? new Vector3(1, 0, 0) : away.Normalized();
-                    // a portal's pc goes nearer: from 500 off the straight line to it can be behind scenery in a town
-                    live.player.GlobalPosition = tg + away * (want == Ms2.Ui.MousePick.Portal ? 250 : 500) + new Vector3(0, 20, 0);
+                    // a portal's or a held npc's pc goes nearer: from 500 off the straight line to it can be behind scenery or in
+                    // water in a town (the cart spawns at the pc, next to the canal in Tria)
+                    live.player.GlobalPosition = tg + away * (want == Ms2.Ui.MousePick.Portal || kind == "hold" ? 250 : 500) + new Vector3(0, 20, 0);
                     live.player.Velocity = Vector3.Zero;
                     live.player.Face(-away);
                     await frames(90);
@@ -698,6 +707,14 @@ public partial class LiveSession
                 Check($"{step}: the hover cursor kind {Movement.MouseMove.LastHoverKind} (want {wantKind}{(overUi ? ", over the UI" : "")}), cursor type {cursorType}",
                     Movement.MouseMove.LastHoverKind == wantKind && cursorType == wantType);
                 Shot($"mhover_{kind}.png");
+                if (kind == "hold" && holdClickNpc != null)
+                {
+                    // CMouseInteractNpc::vfunc_1 (mouseinteract.cpp:252-254): s_mouse_interact_hold with the npc's name
+                    var ht = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
+                    string wantHint = Ms2.Ui.MouseInteract.NpcHint(ht, holdClickNpc.Row.Id, true);
+                    GD.Print($"live: combat {step}: hint \"{Movement.MouseMove.LastHint}\" (want \"{wantHint}\")");
+                    Check($"{step}: the hover hint is the hold hint", wantHint.Length > 0 && Movement.MouseMove.LastHint == wantHint);
+                }
                 GD.Print($"live: combat {step}: click at screen {screen}");
                 Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = screen, GlobalPosition = screen });
                 await frames(2);
@@ -717,11 +734,66 @@ public partial class LiveSession
                             + $"action {afc?.CurrentAction}, object {live.InteractObjects?.Current?.Name ?? "none"}, state {live.OwnCurStateIdNow}");
                     }
                     Check($"{step}: the {want} pick ran", Movement.MouseMove.LastRan == want);
+                    if (kind == "hold" && holdClickNpc != null)
+                    {
+                        await until(() => live.player.State == Player.MoveState.Hold, 60 * 3);
+                        Check($"{step}: the run holds on to the npc (state {live.player.State}, target {live.player.HoldTargetId})",
+                            live.player.State == Player.MoveState.Hold && live.player.HoldTargetId == holdClickNpc.ObjectId);
+                    }
                 }
                 await frames(120);
                 Shot($"mclick_{kind}.png");
                 fld = live.player?.GetParent() as Field;
                 fld?.SetMouseControl(GameOptions.MouseControl.Value);
+                continue;
+            }
+            if (step.StartsWith("hold:"))      // hold:<npc id>: spawns the npc, checks it has hold nodes (PCBase::vfunc_117), puts the own pc beside it until the action key's current action is the hold (6) with its caption, then the key holds on (StateHold 0x20 on that npc, the let-go caption) and the key again lets go
+            {
+                int nid = int.Parse(step[5..]);
+                var hfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                if (hfc == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the field", false); continue; }
+                int added = npcs;
+                hud.SubmitChatLine("/npc " + nid);
+                await until(() => npcs > added && lastNpc?.Row?.Id == nid, 60 * 5);
+                var hn = lastNpc;
+                bool spawned = hn?.Row?.Id == nid && hn.ObjectId != 0;
+                if (spawned) await until(() => live.NpcHoldable(hn.ObjectId), 60 * 10);
+                Check($"{step}: the npc spawned with hold nodes", spawned && live.NpcHoldable(hn.ObjectId));
+                if (!spawned) continue;
+                var ht = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
+                // beside it on each side in turn until the poll (every 100 ms) makes the hold current
+                bool current = false;
+                foreach (var side in new[] { new Vector3(1, 0, 0), new Vector3(-1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, 0, -1) })
+                {
+                    live.player.GlobalPosition = hn.Position + side * 120 + new Vector3(0, 20, 0);
+                    live.player.Velocity = Vector3.Zero;
+                    live.player.Face(-side);
+                    await frames(30);
+                    int found = live.FindHoldTarget(live.HoldRange, out string fnode);
+                    GD.Print($"live: combat {step}: side {side}: hold target {found} '{fnode}', action {hfc.CurrentAction}");
+                    if (current = hfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Hold) break;
+                }
+                string capHold = live.HoldCaption(ht);
+                GD.Print($"live: combat {step}: action {hfc.CurrentAction}, npc {live.Hold.NpcId}, caption \"{capHold}\"");
+                string wantCap = nid == Ms2.Ui.HoldAction.CartNpcId ? ht.Common(Ms2.Ui.HoldAction.CaptionCartKey) ?? "" : ht.Common(Ms2.Ui.HoldAction.CaptionHold);
+                Check($"{step}: the hold is the current action on the npc with the hold caption (want \"{wantCap}\")",
+                    current && live.Hold.NpcId == nid && capHold.Length > 0 && capHold == wantCap);
+                if (!current) continue;
+                hfc.ActivateCurrentAction();
+                await until(() => live.player.State == Player.MoveState.Hold, 60 * 3);
+                await frames(60);
+                Check($"{step}: the key holds on to the npc (state {live.player.State}, target {live.player.HoldTargetId}, {live.player.GlobalPosition.DistanceTo(hn.Position):0} from it)",
+                    live.player.State == Player.MoveState.Hold && live.player.HoldTargetId == hn.ObjectId);
+                Shot($"hold_{nid}.png");
+                await frames(10);
+                string capEnd = live.HoldCaption(ht);
+                GD.Print($"live: combat {step}: in the hold: action {hfc.CurrentAction}, caption \"{capEnd}\"");
+                Check($"{step}: in the hold the action is the hold with the let-go caption",
+                    hfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Hold && capEnd.Length > 0 && capEnd != capHold);
+                hfc.ActivateCurrentAction();
+                await until(() => live.player.State != Player.MoveState.Hold, 60 * 3);
+                await frames(60);
+                Check($"{step}: the key again lets go (state {live.player.State})", live.player.State != Player.MoveState.Hold);
                 continue;
             }
             if (step == "talkagain")   // talkagain: a talk with a plain npc (no function) by the action key, ended; at once the key and the mouse pick refuse a new talk (UITalkManager::IsTalkIntervalElapsed, TalkCooldown), and once it has passed the pick finds the npc and the key talks again
