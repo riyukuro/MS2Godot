@@ -44,39 +44,110 @@ public static class AdxDecoder
     /// <summary>All of the file's samples, interleaved; null if it is not a decodable ADX file. A truncated file gives the frames it has.</summary>
     public static Pcm16 Decode(ReadOnlySpan<byte> data)
     {
-        var h = ReadHeader(data);
-        if (h == null) return null;
-        var (c0, c1) = Coefficients(h.HighPass, h.Rate);
-        int ch = h.Channels, step = h.FrameSize * ch;
-        int frames = Math.Min((data.Length - h.DataOffset) / step, (h.TotalSamples + 31) / 32);
-        int samples = Math.Min(h.TotalSamples, frames * 32);
-        var pcm = new short[samples * ch];
-        var s1 = new int[ch];
-        var s2 = new int[ch];
-        for (int f = 0; f < frames; f++)
+        var stream = AdxStream.Open(data.ToArray());
+        if (stream == null) return null;
+        var pcm = new short[stream.Length * stream.Channels];
+        int frames = stream.Read(pcm);
+        if (frames * stream.Channels != pcm.Length) Array.Resize(ref pcm, frames * stream.Channels);
+        return new Pcm16 { Rate = stream.Rate, Channels = stream.Channels, Samples = pcm };
+    }
+}
+
+/// <summary>
+/// An ADX file decoded as it is read: a few hundred samples at a time, with the file itself (the compressed stream, 1/3.5 of the
+/// PCM) as the only thing held, so a 190 s movie never has its 32 MB of PCM in memory (the client's CRI player streams the same
+/// way). <see cref="AdxDecoder.Decode"/> reads one whole to the end.
+/// </summary>
+public sealed class AdxStream
+{
+    readonly byte[] data;
+    readonly AdxDecoder.Header h;
+    readonly int c0, c1, frames;
+    readonly int[] s1, s2;
+    readonly short[] block;      // one ADX frame's samples for all channels, interleaved
+    int frame, blockPos, blockLen, position;
+    bool ended;
+
+    AdxStream(byte[] data, AdxDecoder.Header h)
+    {
+        this.data = data;
+        this.h = h;
+        (c0, c1) = AdxDecoder.Coefficients(h.HighPass, h.Rate);
+        frames = Math.Min((data.Length - h.DataOffset) / (h.FrameSize * h.Channels), (h.TotalSamples + 31) / 32);
+        s1 = new int[h.Channels];
+        s2 = new int[h.Channels];
+        block = new short[32 * h.Channels];
+    }
+
+    /// <summary>The stream over a standard unencrypted ADX file, or null.</summary>
+    public static AdxStream Open(byte[] data)
+    {
+        var h = AdxDecoder.ReadHeader(data);
+        return h == null ? null : new AdxStream(data, h);
+    }
+
+    public int Rate => h.Rate;
+    public int Channels => h.Channels;
+    /// <summary>Samples per channel: the header's count, or less if the file is cut short (an end frame can still end it earlier).</summary>
+    public int Length => Math.Min(h.TotalSamples, frames * 32);
+    /// <summary>Samples per channel read so far.</summary>
+    public int Position => position;
+    public bool Finished => ended || position >= Length;
+    public double Seconds => (double)Length / h.Rate;
+
+    /// <summary>Back to the start (a looping movie).</summary>
+    public void Rewind()
+    {
+        frame = blockPos = blockLen = position = 0;
+        ended = false;
+        Array.Clear(s1);
+        Array.Clear(s2);
+    }
+
+    /// <summary>Fills <paramref name="dst"/> (whole sample frames, interleaved) with the next samples; returns the sample frames written
+    /// (fewer than asked at the end).</summary>
+    public int Read(Span<short> dst)
+    {
+        int ch = h.Channels, want = dst.Length / ch, done = 0;
+        while (done < want)
         {
-            int count = Math.Min(32, samples - f * 32);
-            for (int c = 0; c < ch; c++)
-            {
-                var frame = data.Slice(h.DataOffset + f * step + c * h.FrameSize, h.FrameSize);
-                int scale = BinaryPrimitives.ReadUInt16BigEndian(frame);
-                if (scale >= 0x8000) { count = 0; break; }      // the end frame (0x8001)
-                int a = s1[c], b = s2[c];
-                for (int i = 0; i < 32; i++)
-                {
-                    int nibble = i % 2 == 0 ? frame[2 + i / 2] >> 4 : frame[2 + i / 2] & 15;
-                    if (nibble >= 8) nibble -= 16;
-                    int s = (nibble * scale * 4096 + c0 * a + c1 * b) >> 12;
-                    s = Math.Clamp(s, short.MinValue, short.MaxValue);
-                    b = a;
-                    a = s;
-                    if (i < count) pcm[(f * 32 + i) * ch + c] = (short)s;
-                }
-                s1[c] = a;
-                s2[c] = b;
-            }
-            if (count == 0) { Array.Resize(ref pcm, f * 32 * ch); break; }
+            if (blockPos == blockLen && !NextFrame()) break;
+            int n = Math.Min(want - done, blockLen - blockPos);
+            block.AsSpan(blockPos * ch, n * ch).CopyTo(dst.Slice(done * ch));
+            blockPos += n;
+            done += n;
+            position += n;
         }
-        return new Pcm16 { Rate = h.Rate, Channels = ch, Samples = pcm };
+        return done;
+    }
+
+    bool NextFrame()
+    {
+        int ch = h.Channels, step = h.FrameSize * ch;
+        if (ended || frame >= frames) return false;
+        int count = Math.Min(32, Length - frame * 32);
+        if (count <= 0) return false;
+        for (int c = 0; c < ch; c++)
+        {
+            var f = data.AsSpan(h.DataOffset + frame * step + c * h.FrameSize, h.FrameSize);
+            int scale = BinaryPrimitives.ReadUInt16BigEndian(f);
+            if (scale >= 0x8000) { ended = true; return false; }      // the end frame (0x8001)
+            int a = s1[c], b = s2[c];
+            for (int i = 0; i < 32; i++)
+            {
+                int nibble = i % 2 == 0 ? f[2 + i / 2] >> 4 : f[2 + i / 2] & 15;
+                if (nibble >= 8) nibble -= 16;
+                int v = Math.Clamp((nibble * scale * 4096 + c0 * a + c1 * b) >> 12, short.MinValue, short.MaxValue);
+                b = a;
+                a = v;
+                block[i * ch + c] = (short)v;
+            }
+            s1[c] = a;
+            s2[c] = b;
+        }
+        frame++;
+        blockPos = 0;
+        blockLen = count;
+        return true;
     }
 }

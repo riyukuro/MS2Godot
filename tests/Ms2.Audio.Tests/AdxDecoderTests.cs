@@ -131,4 +131,55 @@ public class AdxDecoderTests
         Assert.That(pcm.Samples[1], Is.EqualTo(short.MaxValue));
         Assert.That(pcm.Samples[2], Is.EqualTo(short.MinValue));
     }
+
+    static byte[] Noise(int channels, int frames)
+    {
+        var rng = new Random(7);
+        var fr = new List<byte[]>();
+        for (int f = 0; f < frames; f++)
+            for (int c = 0; c < channels; c++)
+            {
+                var b = new byte[18];
+                rng.NextBytes(b);
+                b[0] = 0; b[1] = (byte)rng.Next(1, 200);      // a scale of 1..199
+                fr.Add(b);
+            }
+        fr.Add(EndFrame(channels));
+        return Adx(channels, 44100, frames * 32 - 7, 500, 0, fr.ToArray());
+    }
+
+    [Test]
+    public void AStreamReadInOddChunksGivesTheSamplesOfAWholeDecode()
+    {
+        var file = Noise(2, 40);
+        var whole = AdxDecoder.Decode(file);
+        var stream = AdxStream.Open(file);
+        Assert.That((stream.Rate, stream.Channels, stream.Length), Is.EqualTo((44100, 2, 40 * 32 - 7)));
+        var got = new List<short>();
+        var buf = new short[2 * 13];
+        for (int n; (n = stream.Read(buf)) > 0;) got.AddRange(buf.Take(n * 2));
+        Assert.That(got, Is.EqualTo(whole.Samples));
+        Assert.That(stream.Finished, Is.True);
+        Assert.That(stream.Position, Is.EqualTo(whole.Frames));
+    }
+
+    [Test]
+    public void RewindStartsTheSameSamplesAgain()
+    {
+        var stream = AdxStream.Open(Noise(2, 6));
+        var first = new short[2 * 100];
+        Assert.That(stream.Read(first), Is.EqualTo(100));
+        stream.Read(new short[2 * 50]);
+        stream.Rewind();
+        Assert.That(stream.Position, Is.EqualTo(0));
+        var again = new short[2 * 100];
+        Assert.That(stream.Read(again), Is.EqualTo(100));
+        Assert.That(again, Is.EqualTo(first));
+    }
+
+    [Test]
+    public void AStreamOfSomethingElseIsNull()
+    {
+        Assert.That(AdxStream.Open(new byte[40]), Is.Null);
+    }
 }

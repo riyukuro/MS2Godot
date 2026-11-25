@@ -9,11 +9,13 @@ namespace Ms2Godot;
 /// Y, Cb and Cr planes uploaded as three L8 textures each new frame and converted to RGB in yuv_video.gdshader. The
 /// picture is stretched to <see cref="Size"/> (local units, like a Flash Video's width and height); the clock is the
 /// movie's frame rate from its USM header.
-/// Sound: the usm's @SFA stream is a whole ADX file (<see cref="Ms2.Audio.AdxDecoder"/>). The client sets the player's volume
+/// Sound: the usm's @SFA stream is a whole ADX file (<see cref="Ms2.Audio.AdxStream"/>). The client sets the player's volume
 /// before it plays (ASVideoPlayer::SetVolume @0x1422e9490, asvideoplayer.cpp:64; UICutSceneMovie::PlayUsm @0x14190ffc0,
-/// uicutscenemovie.cpp:392-404) and the CRI library plays the stream; here <see cref="SoundVolume"/> is that volume (0 by default:
-/// the hud videos and job previews that set none stay silent), the stream decodes on a pool thread and plays in one player from
-/// where the picture clock is when it has decoded, looping with the picture.
+/// uicutscenemovie.cpp:392-404) and the CRI library streams the audio; here <see cref="SoundVolume"/> is that volume (0 by default:
+/// the hud videos and job previews that set none stay silent). The stream is decoded as it plays, into an AudioStreamGenerator
+/// that is topped up a tenth of a second at a time, so the 32 MB of PCM of a 190 s movie are never in memory
+/// (resident: the usm file's own ADX bytes, which the demuxed movie holds anyway, and the generator's one second); the player
+/// starts with the picture and loops with it.
 /// STILL-OPEN: the sound is not on <see cref="SoundBuses.Movie"/> (its gain is the volume alone); the movie's second audio
 /// track (VideoPlayer::SubAudio); pause and seek (the sound does not follow them).
 /// </summary>
@@ -33,8 +35,16 @@ public partial class VideoPlayerNode : Node2D
     Vector2 size = new(320, 240);
     int picW, picH;
     AudioStreamPlayer soundPlayer;
-    int soundGeneration;
+    AudioStreamGeneratorPlayback soundOut;
+    Ms2.Audio.AdxStream soundStream;
+    short[] soundPcm;
+    Vector2[] soundFrames;
     bool loopSound;
+    int soundPushes;
+    long soundPushBytes;
+    double soundPushMaxMs;
+    bool soundDone;
+    const float SoundBuffer = 1f;
 
     /// <summary>The movie's volume 0..1, read when <see cref="Play(UsmVideo, bool)"/> starts a movie (the client sets it once before Play).
     /// 0 plays no sound.</summary>
@@ -102,49 +112,79 @@ public partial class VideoPlayerNode : Node2D
         StartSound(video, loop);
     }
 
-    /// <summary>The usm's audio stream (ADX) decodes on a pool thread and starts at the picture clock when it is ready.</summary>
+    /// <summary>The usm's audio stream (ADX) starts with the picture: a generator player fed from the decoder.</summary>
     void StartSound(UsmVideo video, bool loop)
     {
-        float volume = SoundVolume;
         if (!video.HasAudio) return;
-        int generation = ++soundGeneration;
         loopSound = loop;
-        if (volume <= 0f) { SoundStarted?.Invoke("silent (volume 0)"); return; }
-        var data = video.File.Audio[0].Data;
-        Task.Run(() =>
+        if (SoundVolume <= 0f) { SoundStarted?.Invoke("silent (volume 0)"); return; }
+        Ms2.Audio.AdxStream stream;
+        try { stream = Ms2.Audio.AdxStream.Open(video.File.Audio[0].Data); }
+        catch (Exception e) { SoundStarted?.Invoke($"cannot be decoded ({e.GetType().Name}: {e.Message})"); return; }
+        if (stream == null || stream.Length == 0) { SoundStarted?.Invoke("the audio is not standard ADX"); return; }
+        soundStream = stream;
+        soundPcm = new short[stream.Rate / 10 * stream.Channels];
+        soundFrames = new Vector2[stream.Rate / 10];
+        soundDone = false;
+        soundPushes = 0; soundPushBytes = 0; soundPushMaxMs = 0;
+        soundPlayer = new AudioStreamPlayer
         {
-            Ms2.Audio.Pcm16 pcm = null;
-            string note;
-            try
-            {
-                pcm = Ms2.Audio.AdxDecoder.Decode(data);
-                note = pcm == null ? "the audio is not standard ADX" : $"ADX {pcm.Rate} Hz x{pcm.Channels} {pcm.Seconds:F2}s";
-            }
-            catch (Exception e) { note = $"cannot be decoded ({e.GetType().Name}: {e.Message})"; }
-            Callable.From(() => FinishSound(generation, pcm, note, volume)).CallDeferred();
-        });
+            Name = "MovieSound",
+            Stream = new AudioStreamGenerator { MixRate = stream.Rate, BufferLength = SoundBuffer },
+            VolumeDb = Mathf.LinearToDb(SoundVolume),
+        };
+        AddChild(soundPlayer);
+        soundPlayer.Play();
+        soundOut = (AudioStreamGeneratorPlayback)soundPlayer.GetStreamPlayback();
+        FeedSound();
+        SoundStarted?.Invoke($"ADX {stream.Rate} Hz x{stream.Channels} {stream.Seconds:F2}s streamed, volume {SoundVolume:F2}");
     }
 
-    void FinishSound(int generation, Ms2.Audio.Pcm16 pcm, string note, float volume)
+    /// <summary>Pushes the next decoded chunks (a tenth of a second each, one reused array) while the generator has room for one. Looping
+    /// movies start the stream again at its end; a one-shot movie ends its sound with a chunk of silence.</summary>
+    void FeedSound()
     {
-        if (generation != soundGeneration || playback == null) return;       // the movie stopped while it decoded
-        if (pcm == null || pcm.Frames == 0) { SoundStarted?.Invoke(note); return; }
-        var wav = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
-        if (loopSound) { wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward; wav.LoopBegin = 0; wav.LoopEnd = pcm.Frames; }
-        var player = new AudioStreamPlayer { Name = "MovieSound", Stream = wav, VolumeDb = Mathf.LinearToDb(volume) };
-        AddChild(player);
-        double offset = clock;
-        if (loopSound) offset %= pcm.Seconds;
-        if (offset < pcm.Seconds) player.Play((float)offset);
-        soundPlayer = player;
-        SoundStarted?.Invoke($"{note}, volume {volume:F2} (plays from {offset:F2}s)");
+        if (soundStream == null || soundOut == null || soundDone) return;
+        int ch = soundStream.Channels, chunk = soundFrames.Length;
+        while (soundOut.GetFramesAvailable() >= chunk)
+        {
+            long alloc0 = GC.GetAllocatedBytesForCurrentThread();
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            int got = 0;
+            while (got < chunk)
+            {
+                int n = soundStream.Read(soundPcm.AsSpan(got * ch, (chunk - got) * ch));
+                if (n == 0)
+                {
+                    if (!loopSound || soundStream.Position == 0) { soundDone = true; break; }
+                    soundStream.Rewind();
+                    continue;
+                }
+                got += n;
+            }
+            for (int i = 0; i < chunk; i++)
+                soundFrames[i] = i < got ? new Vector2(soundPcm[i * ch] / 32768f, soundPcm[i * ch + (ch > 1 ? 1 : 0)] / 32768f) : Vector2.Zero;
+            soundOut.PushBuffer(soundFrames);
+            soundPushes++;
+            soundPushBytes += GC.GetAllocatedBytesForCurrentThread() - alloc0;
+            soundPushMaxMs = Math.Max(soundPushMaxMs, (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+            if (soundDone) break;
+        }
     }
 
     void StopSound()
     {
-        soundGeneration++;
-        if (soundPlayer != null && GodotObject.IsInstanceValid(soundPlayer)) { soundPlayer.Stop(); soundPlayer.QueueFree(); }
+        if (soundPlayer != null && GodotObject.IsInstanceValid(soundPlayer))
+        {
+            soundPlayer.Stop();
+            soundPlayer.QueueFree();
+            SoundStarted?.Invoke($"stopped: {soundPushes} pushes, {soundPushBytes / 1024.0:F0} KB allocated in total, {soundPushMaxMs:F2} ms the longest, {(soundPcm.Length * 2 + soundFrames.Length * 8) / 1024} KB of PCM held");
+        }
         soundPlayer = null;
+        soundOut = null;
+        soundStream = null;
+        soundPcm = null;
+        soundFrames = null;
     }
 
     /// <summary>VideoPlayer.stop: ends playback and clears the picture.</summary>
@@ -169,6 +209,7 @@ public partial class VideoPlayerNode : Node2D
     {
         if (playback == null) return;
         clock += delta;
+        FeedSound();
         var f = playback.Update(clock);
         if (f != null) Upload(f);
         else if (playback.Finished && !finishedRaised)
