@@ -988,6 +988,30 @@ public sealed class LiveInteractObjects : ICastingEventListener
         }
         return gatherCaption = ActionCaption.Of(host.Common(0x634) ?? "", text.ToString());
     }
+    /// <summary>
+    /// The object InteractAction (key 0x12, <paramref name="billBoard"/> false) or BillBoardInteractAction (0x18) last picked,
+    /// while it is still in the field (WorldService::FindProp(m_strObjectId)); null otherwise.
+    /// </summary>
+    public LiveInteractObject ActionPick(bool billBoard)
+    {
+        var pick = billBoard ? boardPick : interactPick;
+        return pick != null && ByName(pick.Name) == pick ? pick : null;
+    }
+
+    /// <summary>InteractAction::vfunc_6 / BillBoardInteractAction::vfunc_6 for the picked object (<see cref="ActionCaption.Interact"/>,
+    /// <see cref="ActionCaption.BillBoard"/>), kept while the object, its row and its board text stay the same.</summary>
+    public string ActionPickCaption(bool billBoard)
+    {
+        var o = ActionPick(billBoard);
+        if (o == null) return "";
+        ref var c = ref billBoard ? ref boardCaption : ref interactCaption;
+        if (ReferenceEquals(c.Obj, o) && c.Row == o.RowId && ReferenceEquals(c.Board, o.BoardText) && c.Text != null) return c.Text;
+        string name = host.InteractActionName(o.RowId) ?? "";
+        c = (o, o.RowId, o.BoardText, billBoard ? ActionCaption.BillBoard(name, o.BoardText) : ActionCaption.Interact(host.Common(0x634) ?? "", name));
+        return c.Text;
+    }
+    (LiveInteractObject Obj, int Row, string Board, string Text) interactCaption, boardCaption;
+
     readonly List<int> gatherCaptionRows = new();
     string gatherCaption;
 

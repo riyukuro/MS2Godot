@@ -71,6 +71,8 @@ public sealed class ActionTooltipController : UiController
     /// <summary>The last show call's arguments, for the checks: the key text and the kind.</summary>
     public string ShownKeyText { get; private set; } = "";
     public string ShownKind { get; private set; } = "";
+    /// <summary>The shown action's target point (lifted <see cref="TargetLift"/>), null for none.</summary>
+    public Vec3? ShownTarget => shownAction >= 0 ? target : null;
     /// <summary>The entity's last place (SetPositionInt / SetPositionFloat).</summary>
     public (float X, float Y) Place { get; private set; }
 

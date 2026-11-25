@@ -895,6 +895,51 @@ public partial class LiveSession
                 await frames(60);
                 continue;
             }
+            if (step == "tooltip:object" || step == "tooltip:board" || step == "tooltip:npc")      // tooltip:object|board|npc: the own pc put at the nearest usable interact object (InteractAction 0x12), billboard (0x18) or interact npc (0x11) in turn until that is the current action; the action tooltip shows its vfunc_6 caption at its vfunc_12 point lifted 75 (a shot); none in the field is logged as not run
+            {
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                var tip = hud.ActionTooltip;
+                if (tfc == null || tip == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the field and the tooltip", false); continue; }
+                var tt = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
+                var me = FieldPortals.ToMs2(live.player.GlobalPosition);
+                static double Dt2(Ms2.Formats.Model.Vec3 a, Ms2.Formats.Model.Vec3 b) => (a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) + (a.Z - b.Z) * (a.Z - b.Z);
+                int code = step == "tooltip:npc" ? 0x11 : step == "tooltip:board" ? 0x18 : 0x12;
+                var spots = new List<(string Name, Ms2.Formats.Model.Vec3 At, Func<string> Want)>();
+                if (code == 0x11)
+                    foreach (var n in (live.InteractNpcs?.All ?? new List<Ms2.Ui.InteractNpcEntry>()).Where(x => !x.Dead).OrderBy(x => Dt2(x.Position, me)).Take(6))
+                        spots.Add(($"npc {n.ObjectId} ({n.Row?.Id})", n.Position, () => Ms2.Ui.ActionCaption.Interact(tt.Common(0x634) ?? "", n.Row?.Name ?? "")));
+                else
+                    foreach (var o in (live.InteractObjects?.All ?? new List<Ms2.Ui.LiveInteractObject>()).Where(x => x.Row != null && live.InteractObjects.CanUse(x)
+                                 && (code == 0x18 ? x.Kind == 8 : x.Kind != 8 && x.Kind != Ms2.Net.Packets.InteractObjectMessage.KindGathering))
+                             .OrderBy(x => Dt2(x.Position, me)).Take(6))
+                    {
+                        string an = tt.StringTableText(0xb, o.RowId);
+                        spots.Add(($"object {o.Name} row {o.RowId} kind {o.Kind}", o.Position,
+                            () => code == 0x18 ? Ms2.Ui.ActionCaption.BillBoard(an, o.BoardText) : Ms2.Ui.ActionCaption.Interact(tt.Common(0x634) ?? "", an)));
+                    }
+                if (spots.Count == 0) { GD.Print($"live: combat {step}: not run; none in the field"); continue; }
+                bool shown = false;
+                foreach (var sp in spots)
+                {
+                    live.player.GlobalPosition = FieldBuilder.ToGodotPoint(sp.At) + new Vector3(30, 5, 0);
+                    live.player.Velocity = Vector3.Zero;
+                    await frames(20);
+                    await until(() => live.ActionKeyCode(tfc.CurrentAction) == code && tip.ShownAction == code, 60);
+                    GD.Print($"live: combat {step}: {sp.Name}: action {tfc.CurrentAction} (key {live.ActionKeyCode(tfc.CurrentAction)}), tooltip action {tip.ShownAction}, "
+                        + $"caption \"{tip.ShownText}\", target {tip.ShownTarget}, at {tip.Place}");
+                    if (tip.ShownAction != code) continue;
+                    await frames(20);
+                    string want = sp.Want();
+                    var t = tip.ShownTarget;
+                    Check($"{step}: {sp.Name}: the tooltip shows the caption (\"{want}\") at the target lifted 75",
+                        want.Length > 0 && tip.ShownText == want && t is { } tv && Math.Abs(tv.X - sp.At.X) < 1 && Math.Abs(tv.Y - sp.At.Y) < 1 && Math.Abs(tv.Z - sp.At.Z - 75) < 1);
+                    Shot($"tooltip_{step[8..]}.png");
+                    shown = true;
+                    break;
+                }
+                if (!shown) Check($"{step}: one of {spots.Count} takes the action key with the tooltip", false);
+                continue;
+            }
             if (step.StartsWith("tooltip:gather:"))      // tooltip:gather:<interact id>: the own pc put at that gathering object (no walk) until the action key's current action is gathering (4); the action tooltip (UIActionTooltip 0x4e5c) shows the gathering caption with the key, a shot; then the key starts the gathering and the tooltip hides while it runs (StateInteraction 0x19) and is back after it
             {
                 int id = int.Parse(step[15..]);

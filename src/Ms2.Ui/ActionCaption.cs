@@ -31,4 +31,20 @@ public static class ActionCaption
         string name = ClientFormat.Format(t.Common(0x649) ?? "", npcName ?? "");
         return name.Length != 0 ? text + name : text;
     }
+    /// <summary>InteractAction::vfunc_6 (@0x140958a80, actionkeyobject.cpp:1605-1616): "" when the object's action name (string
+    /// table 0xb by its row) is empty, else GetActionCaption(0x634, name). InteractNpcAction::vfunc_6 (@0x140959240, :1684-1689)
+    /// is GetActionCaption(0x634, the npc's name).</summary>
+    public static string Interact(string format0x634, string name) =>
+        string.IsNullOrEmpty(name) ? "" : Of(format0x634, name);
+
+    /// <summary>BillBoardInteractAction::vfunc_6 (@0x14095d9a0, actionkeyobject.cpp:2568-2586): "" when the board's action name
+    /// (string table 0xb by its row) is empty; else "{name} - {text}", the board's text cut to its first 10 characters and
+    /// "..." when longer.</summary>
+    public static string BillBoard(string name, string boardText)
+    {
+        if (string.IsNullOrEmpty(name)) return "";
+        string text = boardText ?? "";
+        if (text.Length > 10) text = ClientFormat.Format("{0}...", text.Substring(0, 10));
+        return ClientFormat.Format("{0} - {1}", name, text);
+    }
 }

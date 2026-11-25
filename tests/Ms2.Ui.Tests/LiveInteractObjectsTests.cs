@@ -678,6 +678,34 @@ public class LiveInteractObjectsTests
         Assert.That(host.Sent[1], Is.InstanceOf<InteractObjectCompleteRequest>());
     }
 
+    /// <summary>InteractAction::vfunc_6 for the polled object: GetActionCaption(0x634, its action name); an object whose action
+    /// name is empty gives "", and one no longer in the field gives "" too. BillBoardInteractAction::vfunc_6: "{name} - {text}",
+    /// the text cut at 10 characters with "...".</summary>
+    [Test]
+    public void InteractAndBillBoardCaptionsFollowTheirVfunc6()
+    {
+        var host = new CaptionHost();
+        var tbl = MakeTable(
+            new InteractObjectRow { Id = 100, Type = InteractObjectMessage.KindMesh, InteractionDistance = 200 },
+            new InteractObjectRow { Id = 101, Type = InteractObjectMessage.KindMesh, InteractionDistance = 200 });
+        var live = new LiveInteractObjects(host, tbl);
+        live.Attach(new[] { XblockEntity("lever", 100, new Vec3(0, 0, 0)), XblockEntity("box", 101, new Vec3(1000, 0, 0)) });
+        live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeStates,
+            Entries = new List<InteractObjectMessage.StateEntry> { new("lever", 1, 1, 0), new("box", 1, 1, 0) } });
+        Assert.That(live.Poll(new Vec3(50, 0, 0)), Is.True);
+        Assert.That(live.ActionPick(billBoard: false)?.Name, Is.EqualTo("lever"));
+        Assert.That(live.ActionPickCaption(billBoard: false), Is.EqualTo("Gather action:100"));
+        Assert.That(live.ActionPickCaption(billBoard: false), Is.SameAs(live.ActionPickCaption(billBoard: false)), "kept");
+        Assert.That(live.Poll(new Vec3(1050, 0, 0)), Is.True);
+        Assert.That(live.ActionPickCaption(billBoard: false), Is.EqualTo("Gather action:101"));
+        Assert.That(live.ActionPickCaption(billBoard: true), Is.EqualTo(""), "no billboard picked");
+
+        Assert.That(ActionCaption.Interact("Use - {0}", ""), Is.EqualTo(""));
+        Assert.That(ActionCaption.BillBoard("Read", "short"), Is.EqualTo("Read - short"));
+        Assert.That(ActionCaption.BillBoard("Read", "0123456789ABC"), Is.EqualTo("Read - 0123456789..."));
+        Assert.That(ActionCaption.BillBoard("", "text"), Is.EqualTo(""));
+    }
+
     sealed class CaptionHost : Host, IInteractHost
     {
         string IInteractHost.Common(int id) => id == 0x634 ? "Gather {0}" : Common(id);

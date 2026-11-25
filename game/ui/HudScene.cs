@@ -863,6 +863,7 @@ public partial class HudScene : Node, IUiStageHost
             HasPlayer = () => Ms2Godot.Net.LiveSession.Instance is { HasLocalPlayer: true },
             Current = Code,
             Caption = ActionTooltipCaption,
+            Title = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyTitle(Code()) : "",
             Target = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyTargetPoint(Code()) : null,
             Talking = () => GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Talk.Open: true },
             OwnState = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.OwnCurStateIdNow : 0,
