@@ -185,7 +185,7 @@ public partial class LiveSession : Node
     {
         // the own put-on of the auto-equip's pending item and the own take-off's exclusion (OnItemPutOn :3125, MyPC::vfunc_128)
         Me.OwnItemPutOn += OwnPutOnAutoEquip;
-        Me.OwnItemTakenOff += AutoEquip.ExcludeFromAutoEquip;
+        Me.OwnItemTakenOff += ExcludeOwnTakenOff;
         // the server's state change (a death included) leaves the running interaction, react or ride summon state
         Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
         Me.StateEntered += LeaveRecallForServerState;
@@ -200,6 +200,13 @@ public partial class LiveSession : Node
         AutoEquip.OnLevelUp(level);
         if (LiveCheck)
             GD.Print($"live: auto-equip level {level}: on {AutoEquip.IsAutoEquipEnabled}, pending {AutoEquip.PendingItem}, queued {AutoEquip.QueuedCount}");
+    }
+
+    /// <summary>MyPC::vfunc_128 (mypc.cpp:4903): an item with a model preset the own PC took off is excluded from the auto-equip.</summary>
+    void ExcludeOwnTakenOff(long uid)
+    {
+        AutoEquip.ExcludeFromAutoEquip(uid);
+        if (LiveCheck) GD.Print($"live: auto-equip excluded uid {uid} (taken off), {AutoEquip.ExcludedUids.Count} excluded");
     }
 
     /// <summary>OnItemPutOn for the own PC (scenestategame.cpp:3125-3138): the pending item put on clears it, and the HUD shows

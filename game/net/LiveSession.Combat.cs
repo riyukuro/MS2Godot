@@ -1510,7 +1510,7 @@ public partial class LiveSession
                 continue;
             }
             switch (step.StartsWith("lift:") ? "lift" : step.StartsWith("mobloot:") || step.StartsWith("mobmeso:") ? "mobloot"
-                : step.StartsWith("bagfull:") ? "bagfull" : step.StartsWith("autoloot:") || step.StartsWith("autofull:") ? "autoloot" : step)
+                : step.StartsWith("bagfull:") ? "bagfull" : step.StartsWith("unequip:") ? "unequip" : step.StartsWith("autoloot:") || step.StartsWith("autofull:") ? "autoloot" : step)
             {
                 case "attack":
                 {
@@ -1796,7 +1796,8 @@ public partial class LiveSession
                 }
                 case "unequip":
                 {
-                    int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
+                    // unequip:<item id>, or MS2_LIVE_COMBAT_WEAPON without one
+                    int weapon = int.Parse(step.StartsWith("unequip:") ? step["unequip:".Length..] : Env("MS2_LIVE_COMBAT_WEAPON", "0"));
                     GD.Print($"live: combat unequip: {(hud.UnequipScripted(weapon) ? "sent" : "not worn")}");
                     await until(() => live.Me.Equips?.Any(e => e.Id == weapon) != true, 60 * 10); await frames(60);
                     Check("the weapon is off", live.Me.Equips?.Any(e => e.Id == weapon) != true);
