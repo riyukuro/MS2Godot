@@ -2427,7 +2427,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.FollowNpc))
             {
                 var f = FollowNpc.Read(p.Reader());         // CSceneStateGame::OnFollowNpc (scenestategame.cpp:5862-5869): no local player, nothing
-                if (remote != null && IsInstanceValid(remote)) remote.CatchUp();   // the dummy npc's FieldAddNpc came just before
+                if (remote != null && IsInstanceValid(remote)) remote.CatchUp(f.NpcId, npc: true);   // the dummy npc's FieldAddNpc came just before
                 if (player != null && IsInstanceValid(player))
                 {
                     player.FindNpc = id => remote != null && IsInstanceValid(remote) ? remote.FollowPoseOf(id) : null;

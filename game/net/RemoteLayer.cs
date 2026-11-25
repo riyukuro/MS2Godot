@@ -145,28 +145,38 @@ public sealed partial class RemoteLayer : Node3D
     /// PC::FUN_141661dc0 and the name tag's refresh, <see cref="LiveNameTags.SetSymbol"/>); false when the player is not here.</summary>
     public bool SetSymbol(int objectId, ushort symbol, bool shown)
     {
-        CatchUp();
+        CatchUp(objectId, npc: false);
         return users.TryGetValue(objectId, out var r) && tags.SetSymbol(r.Root, symbol, shown);
     }
 
     /// <summary>NpcNotice mode 1 on an npc (<see cref="NpcLayer.SetOwnerEffect"/>); false when there is no npc of the id.</summary>
     public bool SetOwnerEffect(int objectId, string effect)
     {
-        CatchUp();
+        CatchUp(objectId, npc: true);
         return npcs.SetOwnerEffect(objectId, effect);
     }
 
     /// <summary>
-    /// Applies every queued tracker event now, past the per-frame budget of <see cref="Drain"/>. The client handles each packet
-    /// in order, so a packet that names an object an earlier packet made finds it even when both came in one frame: OnFollowNpc
-    /// (scenestategame.cpp:5862-5869, then StateTriggerFollowNpc::vfunc_4's FindNpcById, stateemotionidle.cpp:497-519),
-    /// OnNpcNotice mode 1 (FindNpcById, :9158-9166) and OnNametag (FindPCById, :7314-7331). Here the FieldAddNpc or
-    /// FieldAddUser before it went to the tracker's queue, which _Process empties only on the next frame. The Maple2 server
-    /// sends the follow npc's FieldAddNpc right before its FollowNpc.
+    /// Applies the queued tracker events up to the last one that adds or removes the object a packet names, before that packet
+    /// runs. The client handles each packet in order, so a packet that names an object an earlier packet made finds it even when
+    /// both came in one frame: OnFollowNpc (scenestategame.cpp:5862-5869, then StateTriggerFollowNpc::vfunc_4's FindNpcById,
+    /// stateemotionidle.cpp:497-519), OnNpcNotice mode 1 (FindNpcById, :9158-9166) and OnNametag (FindPCById, :7314-7331).
+    /// Here the FieldAddNpc or FieldAddUser before it went to the tracker's queue, which _Process empties only on the next frame
+    /// (<see cref="Drain"/>'s budget of 200 a frame). The Maple2 server sends the follow npc's FieldAddNpc right before its
+    /// FollowNpc. Only the events before that add run now (they came first, so they apply first); the rest of a field entry's
+    /// burst stays for the frames' budget, and with no queued event naming the object nothing runs.
     /// </summary>
-    public void CatchUp()
+    public void CatchUp(int objectId, bool npc)
     {
-        for (int n = 0; n < 100 && !Tracker.Events.IsEmpty; n++) Drain();
+        int n = 0, upTo = 0;
+        foreach (var ev in Tracker.Events)
+        {
+            n++;
+            if (npc ? ev is NpcAddedEvent a && a.Npc.ObjectId == objectId || ev is NpcRemovedEvent r && r.ObjectId == objectId
+                    : ev is UserAddedEvent u && u.User.ObjectId == objectId || ev is UserRemovedEvent g && g.ObjectId == objectId)
+                upTo = n;
+        }
+        if (upTo > 0) Drain(upTo);
     }
 
     /// <summary>An npc for the own pc's StateTriggerFollowNpc (<see cref="NpcLayer.FollowPoseOf"/>); null when it is not here.</summary>
@@ -852,9 +862,8 @@ public sealed partial class RemoteLayer : Node3D
         return r.Bar;
     }
 
-    void Drain()
+    void Drain(int budget = 200)
     {
-        int budget = 200;
         while (budget-- > 0 && Tracker.Events.TryDequeue(out var ev))
         {
             switch (ev)
