@@ -38,6 +38,7 @@ public partial class HudScene
         {
             if (id == StoreDialogController.UiId && StoreOpen) store.Close();
         };
+        live.ObjectStoreRequested += OpenObjectStore;
         book.ErrorReceived += code => ShowStorageText(StorageBook.ErrorText(code, book.CurrentCapacity ?? 0));
         storageSender = new StorageSender(book)
         {
@@ -98,21 +99,38 @@ public partial class HudScene
     void OpenStore()
     {
         if (StoreOpen || Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        ShowStoreWindow(new StoreDialogController { Book = live.Storage }, live);
+    }
+
+    /// <summary>
+    /// CFunctionCubeObject::OpenObjectStore (@0x141228100) for a bank cube the server's use reply opened: the store reset
+    /// to the cube's bank and the object store window (0x4e78) over it. An open bank or object store window is closed first:
+    /// both show the one store.
+    /// </summary>
+    public void OpenObjectStore(FunctionCubes.Cube cube)
+    {
+        if (Ms2Godot.Net.LiveSession.Instance is not { } live || cube == null) return;
+        WatchStorage();
+        if (StoreOpen) store.Close();
+        var c = ObjectStoreDialogController.For(cube, live.Storage, hudModel.Tables);
+        c.SendClose = live.SendFunctionCube;
+        ShowStoreWindow(c, live);
+    }
+
+    /// <summary>The bank or object store window: its hooks and its movie, placed beside the inventory.</summary>
+    void ShowStoreWindow(StoreDialogController c, Ms2Godot.Net.LiveSession live)
+    {
         if (storeMovie != null) { storeMovie.Host.Unload(); storeMovie.QueueFree(); storeMovie = null; }
-        var c = new StoreDialogController
-        {
-            Book = live.Storage,
-            Sender = storageSender,
-            Now = () => live.GameSession?.ServerTime ?? 0,
-            ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
-            ExpandPrice = () => hudModel.Tables.StoreExpandPrice1Row,
-            OpenInventory = () => inventory != null && !inventory.IsClosed ? inventory : null,
-            IsTalking = () => live.IsTalking(),
-            EndTalk = live.EndTalk,
-            SelfId = () => live.CharacterId,
-            InventoryBag = () => live.Inventory,
-            TabName = tab => inventory?.Tabs.FirstOrDefault(t => t.Tab == tab).Name is { } n ? hudModel.Tables.Common("s_inventory_tab_" + n) ?? "" : "",
-        };
+        c.Sender = storageSender;
+        c.Now = () => live.GameSession?.ServerTime ?? 0;
+        c.ShiftHeld = () => Input.IsKeyPressed(Key.Shift);
+        c.ExpandPrice = () => hudModel.Tables.StoreExpandPrice1Row;
+        c.OpenInventory = () => inventory != null && !inventory.IsClosed ? inventory : null;
+        c.IsTalking = () => live.IsTalking();
+        c.EndTalk = live.EndTalk;
+        c.SelfId = () => live.CharacterId;
+        c.InventoryBag = () => live.Inventory;
+        c.TabName = tab => inventory?.Tabs.FirstOrDefault(t => t.Tab == tab).Name is { } n ? hudModel.Tables.Common("s_inventory_tab_" + n) ?? "" : "";
         c.InventoryWindowPos += _ =>
         {
             if (inventory == null || inventory.IsClosed) OpenInventory();
@@ -127,7 +145,7 @@ public partial class HudScene
         };
         store = c;
         storeMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        GD.Print($"storage: load={storeMovie.Loaded}");
+        GD.Print($"storage: {c.TypeName} load={storeMovie.Loaded}");
         uiRoot.AddChild(storeMovie);
         c.PlaceBesideInventory();
     }

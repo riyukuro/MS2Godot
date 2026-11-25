@@ -174,6 +174,17 @@ public sealed class StorageBook {
         Capacity = BaseCapacity; Clear();
     }
 
+    /// <summary>
+    /// CStore::ResetId (@0x140de2a30) as CFunctionCubeObject::OpenObjectStore (@0x141228100) calls it with the cube's owner
+    /// and its item: Clear, not ready, then SetId (@0x140de27e0): a nonzero <paramref name="id"/> takes
+    /// <paramref name="bankSlotCount"/> (GetBankSlotCount of the item) as the capacity, 0 takes 0x24; then Clear, which zeroes
+    /// the id and type again (so <see cref="Id"/> stays 0) and sizes the slots to the capacity.
+    /// </summary>
+    public void ResetId(long id, int bankSlotCount) {
+        Clear(); Ready = false;
+        Capacity = id != 0 ? bankSlotCount : BaseCapacity; Clear();
+    }
+
     /// <summary>CStore::Extend (@0x140de28a0): the slots only grow.</summary>
     public void Extend(int extended) {
         Extended = extended; Capacity = extended + BaseCapacity;

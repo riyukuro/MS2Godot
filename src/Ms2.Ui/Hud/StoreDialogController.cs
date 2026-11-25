@@ -21,7 +21,7 @@ namespace Ms2.Ui.Hud;
 /// <para>STILL-OPEN: vfunc_il13 (m_198 = 6) is mapped to the ready event; the platform dictionary check (vfunc_37) that
 /// gates the search is taken as 1; the open / close sounds; the search candidate list (UpdateSearchCandidates).</para>
 /// </summary>
-public sealed class StoreDialogController : UiController, IDragSlotOwner
+public class StoreDialogController : UiController, IDragSlotOwner
 {
     public override string Movie => "uistoredialog";
     protected override string EntityMethod => "initData";
@@ -74,18 +74,38 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
 
     public static string SlotName(int i) => Bag + "." + i.ToString(CultureInfo.InvariantCulture);
 
-    static bool ParseSlot(object name, out int index)
+    /// <summary>vfunc_48: the window's UI id (<see cref="UiId"/> for the bank).</summary>
+    protected virtual int DialogId => UiId;
+
+    /// <summary>The slot bag's id (the StoreSlotBag the window binds): <see cref="Bag"/> for the bank.</summary>
+    protected virtual string BagId => Bag;
+
+    /// <summary>The name of slot <paramref name="i"/> in this window's bag.</summary>
+    public string SlotOf(int i) => BagId + "." + i.ToString(CultureInfo.InvariantCulture);
+
+    bool ParseSlot(object name, out int index)
     {
         index = -1;
-        return name is string n && n.StartsWith(Bag + ".", StringComparison.Ordinal)
-            && int.TryParse(n.AsSpan(Bag.Length + 1), NumberStyles.None, CultureInfo.InvariantCulture, out index) && index >= 0;
+        string bag = BagId;
+        return name is string n && n.StartsWith(bag + ".", StringComparison.Ordinal)
+            && int.TryParse(n.AsSpan(bag.Length + 1), NumberStyles.None, CultureInfo.InvariantCulture, out index) && index >= 0;
     }
 
-    static string Group(long n) => NumberText.Group(n.ToString(CultureInfo.InvariantCulture));
+    protected static string Group(long n) => NumberText.Group(n.ToString(CultureInfo.InvariantCulture));
 
     // ---- load / events -----------------------------------------------------------------------------------------------
 
-    /// <summary>OnLoadComplete: m_198 = 6 and initData(m_188, the bank's meso); the status and item listeners register.</summary>
+    /// <summary>The bank's initData(m_188, the bank's meso).</summary>
+    protected virtual void InitData() => Host.Invoke("initData", new object[] { Bag, Group(Book.Meso) });
+
+    /// <summary>vfunc_67 :541 before the window goes: SendNpcTalkMode0 while a talk is open, then the sort request.</summary>
+    protected virtual void OnClosing()
+    {
+        if (IsTalking?.Invoke() == true) EndTalk?.Invoke();
+        Sender?.RequestSort();
+    }
+
+    /// <summary>OnLoadComplete: m_198 = 6 and initData (<see cref="InitData"/>); the status and item listeners register.</summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
@@ -99,7 +119,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         Book.BecameReady += OnList;
         Book.MesoChanged += OnMeso;
         Book.CloseReceived += OnExpandNotice;     // type 7 (OnClose) is the expand notice; type 0xd (OnExtend) raises no dialog event
-        Host.Invoke("initData", new object[] { Bag, Group(Book.Meso) });
+        InitData();
         if (!Book.Ready) Sender?.RequestLoad();     // OnLoadInit (@0x141b0f430): a store not ready is asked for
     }
 
@@ -119,7 +139,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     void OnItemChanged(EquipItem e)
     {
         pending |= PendingText;
-        PushSlot(SlotName(e.InventorySlot));
+        PushSlot(SlotOf(e.InventorySlot));
         // OnSwap and OnRemove empty a slot without an event for it: the slots whose item changed since they were last
         // drawn are pushed too. STILL-OPEN: the client's own refresh of those slots (its item events only set m_198 |= 2,
         // @0x141b10950) is not recovered.
@@ -128,7 +148,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
             long now = Book.Slot(slot)?.Uid ?? 0;
             if (now == shown[slot]) continue;
             shown[slot] = now;
-            PushSlot(SlotName(slot));
+            PushSlot(SlotOf(slot));
         }
         shown[e.InventorySlot] = Book.Slot(e.InventorySlot)?.Uid ?? 0;
     }
@@ -179,7 +199,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     /// vfunc_15, once per frame: while open and m_198 is set, bit 4 rebuilds the bag (FUN_141b110e0: Invoke("updateBag"))
     /// and bit 2 refreshes the "m_expand" text (UpdateExpandText). Nothing is allocated while no bit is set.
     /// </summary>
-    public void Process()
+    public virtual void Process()
     {
         if (pending == 0 || closing || Host?.Entity == null || Book == null) return;
         if ((pending & PendingBag) != 0)
@@ -206,7 +226,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         if (Host?.Entity == null) return;
         var place = OpenPosition();
         if (OpenInventory() is { } inv) PlaceSideBySide(this, place, inv);
-        else InventoryWindowPos?.Invoke(UiId);
+        else InventoryWindowPos?.Invoke(DialogId);
     }
 
     /// <summary>vfunc_67 (@0x141b0f0c0): the listeners dropped and UIDialog's close; m_198 = 0, the search text cleared.
@@ -216,8 +236,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         if (closing) return;
         closing = true;
         Unsubscribe();
-        if (IsTalking?.Invoke() == true) EndTalk?.Invoke();   // vfunc_67 :541: SendNpcTalkMode0 while a talk is open, before the sort
-        Sender?.RequestSort();
+        OnClosing();
         base.Close();
         pending = 0;
         searchText = "";
@@ -469,7 +488,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
             var e = Book.Slot(i);
             if (e == null || Normalize(Model.Tables.ItemName(e.Id) ?? "") != key) continue;
             if (best < 0) best = i;
-            Host.Push(SlotName(i));
+            Host.Push(SlotOf(i));
         }
         return best;
     }
@@ -478,8 +497,8 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
 
     public override IEnumerable<string> GetBagSlotBindings(string bag)
     {
-        if (bag != Bag || Book == null) return Array.Empty<string>();
-        return Enumerable.Range(0, Book.Capacity).Select(SlotName);
+        if (bag != BagId || Book == null) return Array.Empty<string>();
+        return Enumerable.Range(0, Book.Capacity).Select(SlotOf);
     }
 
     /// <summary>StoreSlot::vfunc_8 @0x14180ab10: none without an item; ASSlot(2) built with flags 0x1c01f and the bool

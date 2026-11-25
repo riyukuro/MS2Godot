@@ -1003,6 +1003,14 @@ public sealed class GameTables
     public (bool StateChange, bool TriggerControl) ObjectCubeRights(int objCode) =>
         ObjectDataOf(objCode)?.Cube is { Enabled: true } cube ? (cube.StateChangePermission == 1, cube.EnableTriggerControl != 0) : default;
 
+    Ms2.Ui.Items.BankTable banks;
+    /// <summary>CBankTable's bank rows (GetXmlPath("Table", "bankType.xml"), the locale folder first), read on first use.</summary>
+    public Ms2.Ui.Items.BankTable Banks => banks ??= packs == null ? Ms2.Ui.Items.BankTable.Empty
+        : new Ms2.Ui.Items.BankTable(Xml(TablePath.Resolve(packs, "banktype.xml") ?? "table/banktype.xml"));
+
+    /// <summary>GetBankSlotCount (@0x1408b6200) of an item id: 0 for 0 or an item without data.</summary>
+    public int BankSlotCount(int itemId) => itemId == 0 ? 0 : Banks.SlotCountOf(Items.Get(itemId));
+
     Ms2.Ui.Items.UgcMapSetItemTable ugcMapSetItems;
     /// <summary>CUGCMapSetItemTable (GetXmlPath("Table", "UGCMapSetItem.xml"), the locale folder first), read on first use.</summary>
     public Ms2.Ui.Items.UgcMapSetItemTable UgcMapSetItems => ugcMapSetItems ??= packs == null ? Ms2.Ui.Items.UgcMapSetItemTable.Empty

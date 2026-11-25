@@ -346,9 +346,25 @@ public partial class LiveSession
         }
     }
 
-    /// <summary>The use reply's asks (FUN_14122f270 mode 6). STILL-OPEN: each one beyond the object store is logged only.</summary>
+    /// <summary>A bank cube's use reply asked for its store (OpenSubKindDialog case 4, OpenObjectStore); the HUD opens it.</summary>
+    public event Action<Ms2.Ui.FunctionCubes.Cube> ObjectStoreRequested;
+
+    /// <summary>The FunctionCube sends of the object store window (its close, mode 7).</summary>
+    public void SendFunctionCube(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
+
+    /// <summary>The use reply's asks (FUN_14122f270 mode 6): the object store (sub-kind 4) opens through
+    /// <see cref="ObjectStoreRequested"/>. STILL-OPEN: each other one is logged only.</summary>
     void OnFunctionCubeUse(Ms2.Ui.FunctionCubes.UseResult r)
     {
+        if (r.Action == Ms2.Ui.FunctionCubes.UseAction.OpenDialog && r.Dialog == 4 && ObjectStoreRequested != null)
+        {
+            if (LiveCheck) GD.Print($"live: function cube {r.Cube.Id} opens the object store of item {r.Cube.ItemId}");
+            ObjectStoreRequested(r.Cube);
+            return;
+        }
         GD.Print($"live: function cube {r.Cube.Id} asks {r.Action}{(r.Action == Ms2.Ui.FunctionCubes.UseAction.OpenDialog ? $" {r.Dialog}" : "")}, not applied");
     }
 

@@ -114,6 +114,9 @@ public sealed class ItemData
     /// <summary>ItemInstallData attachable (itemdatastruct.cpp:1299, read as an int): ConfirmPlacement takes the attach
     /// path for a lifted cube when it is nonzero (cubecraft_2.cpp:971).</summary>
     public int InstallAttachable;
+    /// <summary>The GMS2 ItemInstallData bankType (GMS2 install reader @0x140352750 stores it at install +0x68, 0x1403528ac;
+    /// the install block is item data +0x270, 0x14034557c): the GMS2 client's bank id. The KMS data has no such attribute.</summary>
+    public int InstallBankType;
     /// <summary>ItemInstallData asset and preset (&lt;install asset preset&gt;): the install model's NIF path
     /// ("Data/Resource/Model/..."), and a KFM preset used instead of it when set (Unk_PCCubeCraft::FUN_1410a9630,
     /// cubecraft_2.cpp:480-499).</summary>
@@ -264,6 +267,7 @@ public sealed class ItemData
             Int(inst, "objCode", ref d.InstallObjCode);
             Int(inst, "space", ref d.InstallSpace);
             Int(inst, "attachable", ref d.InstallAttachable);
+            Int(inst, "bankType", ref d.InstallBankType);
             d.InstallAsset = (string)inst.Attribute("asset");
             d.InstallPreset = (string)inst.Attribute("preset");
             Guide.GuideXml.Float(inst, "staticAngle", ref d.InstallStaticAngle);

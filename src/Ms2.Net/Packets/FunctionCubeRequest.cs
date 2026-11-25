@@ -33,3 +33,22 @@ public sealed record FunctionCubeUseRequest(string CubeId) : IProfileOutPacket
         w.WriteByte(1);
     }
 }
+
+/// <summary>
+/// UIObjectStoreDialog::vfunc_67 (@0x141a72860, uiobjectstoredialog.cpp:122-136), the object store window closed:
+/// FunctionCube u8 7, then the store key (the cube id) as a unicode string (WriteUnicodeStringA).
+/// <para>GMS2: the same close is mode 6 (GMS2 UIObjectStoreDialog close @0x140e00380 writes 0x2E, then u8 6 at
+/// 0x140e003d0, then the key at +0x188), one lower as the use is. Neither server reads it.</para>
+/// </summary>
+public sealed record FunctionCubeStoreCloseRequest(string Key) : IProfileOutPacket
+{
+    public Outbound Op => Outbound.FunctionCube;
+
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+
+    public void Write(ByteWriter w, ProtocolProfile profile)
+    {
+        w.WriteByte((byte)(profile.IsGms2 ? 6 : 7));
+        w.WriteUnicodeString(Key ?? "");
+    }
+}
