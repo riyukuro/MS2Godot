@@ -1784,6 +1784,117 @@ public partial class LiveSession
                     }
                     break;
                 }
+                case "skillkey":     // a learnt active skill of the skill window right clicked (onRegisterShortcutkey): KeyTable mode 4, the server puts it on the page
+                {
+                    bool open = hud.SkillBookOpenScripted();
+                    await until(() => hud.SkillBookTreeShown, 60 * 10); await frames(30);
+                    if (hud.SkillBookPickScripted(false) == 0 && hud.SkillBookPickScripted(true) == 0)
+                    {
+                        // nothing learnt in the shown tree (a rank 2 window right after the awakening): the rank 1 button first
+                        hud.SkillBookCallbackScripted("onChangeSubJob", 0.0);
+                        await frames(30);
+                        GD.Print($"live: combat skill key: no learnt skill in the shown tree, rank 1 button: {hud.SkillBookRankScripted()}");
+                    }
+                    uint id = hud.SkillBookPickScripted(false);
+                    if (id == 0 && hud.SkillBookPickScripted(true) is var on and > 0)
+                    {
+                        // every learnt active skill is on the page: one taken off first by the quick slot's right click
+                        int was = hud.QuickSlotOfSkill(on);
+                        hud.QuickSlotRemoveScripted(was);
+                        await until(() => hud.QuickSlotOfSkill(on) < 0, 60 * 5); await frames(10);
+                        GD.Print($"live: combat skill key: {on} taken off quick slot {was}: {(hud.QuickSlotOfSkill(on) < 0 ? "gone" : "still there")}");
+                        id = hud.QuickSlotOfSkill(on) < 0 ? on : 0;
+                    }
+                    GD.Print($"live: combat skill key: window {(open ? "open" : "refused")}, skill {id}, quick slot before {hud.QuickSlotOfSkill(id)}");
+                    bool clicked = id != 0 && hud.SkillBookRightClickScripted(id);
+                    await until(() => hud.QuickSlotOfSkill(id) >= 0, 60 * 5); await frames(10);
+                    int slot = hud.QuickSlotOfSkill(id);
+                    GD.Print($"live: combat skill key: right click {(clicked ? "sent" : "not sent")}, quick slot after {slot}, the bar shows {hud.QuickSlotShownSkill(slot)}");
+                    Shot("skillkey.png");
+                    Check("a learnt active skill off the quick slots is in the tree", id != 0);
+                    Check($"the right click puts {id} on the quick slot page", clicked && slot >= 0);
+                    Check("the quick slot bar shows it", slot >= 0 && hud.QuickSlotShownSkill(slot) == (int)id);
+                    break;
+                }
+                case "skilldrag":     // a learnt active skill of the skill window dragged onto an empty quick slot: KeyTable mode 3, the server's page has it there
+                {
+                    bool open = hud.SkillBookOpenScripted();
+                    await until(() => hud.SkillBookTreeShown, 60 * 10); await frames(30);
+                    uint id = hud.SkillBookPickScripted(false);
+                    if (id == 0) id = hud.SkillBookPickScripted(true);
+                    int target = hud.QuickSlotEmptyScripted();
+                    GD.Print($"live: combat skill drag: window {(open ? "open" : "refused")}, skill {id} (on quick slot {hud.QuickSlotOfSkill(id)}), empty slot {target}");
+                    bool dragged = id != 0 && target >= 0 && hud.SkillBookDragScripted(id, target);
+                    await until(() => hud.QuickSlotOfSkill(id) == target, 60 * 5); await frames(10);
+                    GD.Print($"live: combat skill drag: {(dragged ? "dropped" : "not dropped")}, the server's page has it on {hud.QuickSlotOfSkill(id)}, the bar shows {hud.QuickSlotShownSkill(target)} there");
+                    Shot("skilldrag.png");
+                    Check("a learnt active skill and an empty quick slot", id != 0 && target >= 0);
+                    Check($"the dropped skill {id} is on quick slot {target} of the server's page", dragged && hud.QuickSlotOfSkill(id) == target);
+                    Check("the quick slot bar shows it", target >= 0 && hud.QuickSlotShownSkill(target) == (int)id);
+                    break;
+                }
+                case "skillreset":     // a point applied (Job mode 9), then the reset button, its box's OK (Job mode 10): the server's book has the point, then not
+                {
+                    bool open = hud.SkillBookOpenScripted();
+                    await until(() => hud.SkillBookTreeShown, 60 * 10); await frames(30);
+                    uint id = hud.SkillBookLevelableScripted();
+                    int before = hud.BookLevelScripted(id);
+                    GD.Print($"live: combat skill reset: window {(open ? "open" : "refused")}, level {live.Me.User.Level}, skill {id} at {before}, {hud.SkillBookSlotState(id)}");
+                    bool up = id != 0 && hud.SkillBookCallbackScripted("onSkillPointUp", (double)id);
+                    bool applied = up && hud.SkillBookCallbackScripted("onApplySkill");
+                    await until(() => !hud.SkillBookWaiting && hud.BookLevelScripted(id) == before + 1, 60 * 5); await frames(10);
+                    int after = hud.BookLevelScripted(id);
+                    GD.Print($"live: combat skill reset: apply {(applied ? "sent" : "not sent")}, the book has {id} at {after}, waiting {hud.SkillBookWaiting}");
+                    Shot("skillreset-applied.png");
+                    Check($"a skill takes a point at level {live.Me.User.Level}", id != 0 && up);
+                    Check($"the apply's answer has {id} at {before + 1}", applied && after == before + 1);
+                    bool reset = hud.SkillBookCallbackScripted("onResetSkill");
+                    await until(() => Ms2Godot.Ui.MessageBoxLayer.Instance?.Shown == true, 60 * 3); await frames(10);
+                    bool box = Ms2Godot.Ui.MessageBoxLayer.Instance?.Shown == true;
+                    Shot("skillreset-box.png");
+                    Ms2Godot.Ui.MessageBoxLayer.Instance?.Click(0);
+                    await until(() => !hud.SkillBookWaiting && hud.BookLevelScripted(id) == before, 60 * 5); await frames(10);
+                    int back = hud.BookLevelScripted(id);
+                    GD.Print($"live: combat skill reset: button {(reset ? "taken" : "refused")}, box {(box ? "shown" : "not shown")}, the book has {id} at {back}, waiting {hud.SkillBookWaiting}, {hud.SkillBookSlotState(id)}");
+                    Shot("skillreset-done.png");
+                    Check("the reset button asks first", reset && box);
+                    Check($"the reset's answer takes {id} back to {before}", back == before && !hud.SkillBookWaiting);
+                    break;
+                }
+                case "subjob":     // the skill window's rank buttons: below rank 2 the rank 2 one keeps the rank 1 tree; at rank 2 the rank 1 one, then the rank 2 one
+                {
+                    bool open = hud.SkillBookOpenScripted();
+                    await until(() => hud.SkillBookTreeShown, 60 * 10); await frames(30);
+                    int rank = hud.SkillBookJobRankScripted;
+                    string first = hud.SkillBookRankScripted();
+                    GD.Print($"live: combat sub job: window {(open ? "open" : "refused")}, job rank {rank}, opened on: {first}");
+                    if (rank < 2)
+                    {
+                        bool took = hud.SkillBookCallbackScripted("onChangeSubJob", 1.0);
+                        await frames(30);
+                        string after = hud.SkillBookRankScripted();
+                        GD.Print($"live: combat sub job: rank 2 button {(took ? "taken" : "refused")}: {after}");
+                        Shot($"subjob-{rank}.png");
+                        Check("below rank 2 the rank 2 button keeps the rank 1 tree", after?.StartsWith("rank 1", StringComparison.Ordinal) == true && after.EndsWith("ranks 1", StringComparison.Ordinal));
+                    }
+                    else
+                    {
+                        Check("at rank 2 the window opens on the rank 2 tree", first?.StartsWith("rank 2", StringComparison.Ordinal) == true && first.EndsWith("ranks 2", StringComparison.Ordinal));
+                        hud.SkillBookCallbackScripted("onChangeSubJob", 0.0);
+                        await frames(30);
+                        string one = hud.SkillBookRankScripted();
+                        GD.Print($"live: combat sub job: rank 1 button: {one}");
+                        Shot("subjob-rank1.png");
+                        Check("the rank 1 button shows the rank 1 tree", one?.StartsWith("rank 1", StringComparison.Ordinal) == true && one.EndsWith("ranks 1", StringComparison.Ordinal));
+                        hud.SkillBookCallbackScripted("onChangeSubJob", 1.0);
+                        await frames(30);
+                        string two = hud.SkillBookRankScripted();
+                        GD.Print($"live: combat sub job: rank 2 button: {two}");
+                        Shot("subjob-rank2.png");
+                        Check("the rank 2 button shows the rank 2 tree again", two == first);
+                    }
+                    break;
+                }
                 case "openchar":
                 {
                     GD.Print($"live: combat char window: {(hud.OpenCharScripted() ? "open" : "refused")}");
