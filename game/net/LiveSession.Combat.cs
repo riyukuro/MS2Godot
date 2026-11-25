@@ -973,6 +973,13 @@ public partial class LiveSession
                 Shows("after the movie");
                 continue;
             }
+            if (step == "appfocus:0" || step == "appfocus:1")      // the window loses (0) or gets (1) the focus (WM_ACTIVATEAPP, windowservice.cpp:801-831): the sound categories mute or come back, the hud video's mute stays after the focus is back
+            {
+                SoundBuses.AppFocus(step == "appfocus:1");
+                var mix = Ms2.Formats.Options.SoundMix.Shared;
+                GD.Print($"live: app focus {(mix.AppActive ? "back" : "lost")}: hud video muted {mix.MovieMuted}, movie bus {SoundBuses.BusGain(SoundBuses.Movie):F2}");
+                continue;
+            }
             if (step.StartsWith("movieframe:"))      // movieframe:<n>: a shot of the playing swf cut scene when its timeline reaches frame n (the same frame in two runs)
             {
                 int want = int.Parse(step[11..]);

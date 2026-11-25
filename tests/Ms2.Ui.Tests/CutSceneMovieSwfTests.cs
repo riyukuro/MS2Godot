@@ -173,4 +173,18 @@ public class CutSceneMovieSwfTests
         o.MuteAll = false; o.MovieSoundStep = 0;
         Assert.That(o.EffectiveMovieVolume, Is.EqualTo(0f));
     }
+
+    /// <summary>The cut scene movie sets its volume once at play (uicutscenemovie.cpp:397, :413) and never reads the hud video's mute
+    /// (UIVideoContents::SetVideoMuted, uiupperhuddialog.cpp:1144), which a lost window focus sets and a regained one leaves
+    /// (windowservice.cpp:801-831): a cut scene after an alt-tab keeps its volume.</summary>
+    [Test]
+    public void TheCutSceneVolumeIgnoresTheHudVideoMuteAnAltTabLeaves()
+    {
+        var o = new Ms2.Formats.Options.GameOption.Sound { MainSoundStep = 8, MovieSoundStep = 5 };
+        var mix = new Ms2.Formats.Options.SoundMix();
+        mix.AppDeactivated(o);
+        mix.AppActivated(o);
+        Assert.That(mix.MovieMuted, Is.True, "the hud video stays muted after the focus is back");
+        Assert.That(o.EffectiveMovieVolume, Is.EqualTo(0.4f).Within(1e-6));
+    }
 }

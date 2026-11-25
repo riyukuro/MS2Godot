@@ -15,6 +15,11 @@ namespace Ms2Godot.Ui;
 /// sound renderer, whose master volume PlaySwf sets first to <c>MuteAll ? 0 : GetMovieVolume()</c> (GFxManager::SetMasterVolume
 /// @0x1422afdd0, uicutscenemovie.cpp:411-413); here <see cref="Ms2.Formats.Options.GameOption.Sound.EffectiveMovieVolume"/> is that
 /// value and the stream plays in one player, from where the movie is when it has decoded, until the pane is unloaded.
+/// The player keeps its own gain and is not on <see cref="SoundBuses.Movie"/>: that bus is the hud video's (UIVideoContents::SetVideoMuted
+/// @0x14135afa0, uiupperhuddialog.cpp:1144-1158, which only CSoundEventMgr::SetAllMute reaches, soundeventmgr.cpp:1711-1723 through
+/// CUIService::FUN_141adbf70, uiservice.cpp:1241-1246), and the window's focus loss mutes it without the focus gain unmuting it
+/// (windowservice.cpp:801-831). The cut scene movie never reads that mute: its volume is set once, when it plays (:397, :413), so a
+/// cut scene after an alt-tab is audible in the client and here.
 /// STILL-OPEN: SetSoundFade (@0x14190f270: the music categories 2 and 1 fade out for the movie and back in after, :198-213), the
 /// start offset.
 /// </summary>
@@ -108,7 +113,7 @@ public partial class HudScene
         float offset = (Time.GetTicksMsec() - started) / 1000f;
         if (volume > 0f && offset < pcm.Seconds) player.Play(offset);
         cutSceneSwfSound = player;
-        if (live) GD.Print($"cut scene movie {cutSceneId}: {path} sound: {note}, volume {volume:F2} ({(volume > 0f ? $"plays from {offset:F2}s" : "silent")})");
+        if (live) GD.Print($"cut scene movie {cutSceneId}: {path} sound: {note}, volume {volume:F2} ({(volume > 0f ? $"plays from {offset:F2}s" : "silent")}), movie bus {SoundBuses.BusGain(SoundBuses.Movie):F2}, categories {(Ms2.Formats.Options.SoundMix.Shared.AppActive ? "on" : "muted")}");
     }
 
     /// <summary>Harness: the 0-based frame of the loaded cut scene swf's main timeline, or -1 without one (a before/after shot at the same frame).</summary>
