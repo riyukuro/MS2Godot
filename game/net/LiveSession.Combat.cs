@@ -1349,6 +1349,20 @@ public partial class LiveSession
                 Shot($"ridewarp_{rideId}.png");
                 continue;
             }
+            if (step.StartsWith("attendraw:"))      // attendraw:<event id>: a raw AttendGift event and an Attendance kind 7 the server's debug packet command sends (no test server holds a running one); the window opens on it
+            {
+                int eventId = int.Parse(step[10..]);
+                long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                bool sentEvent = hud.SubmitChatLine("/debug packet " + live.AttendEventBytes(eventId, now - 86400, now + 7 * 86400, 20302686, 20302775));
+                await until(() => live.AttendDialog.Events.Any(e => e.Id == eventId), 60 * 8);
+                Check($"attendraw {eventId}: the dialog holds the event (sent {sentEvent})", live.AttendDialog.Events.Any(e => e.Id == eventId));
+                bool sentSelect = hud.SubmitChatLine("/debug packet " + live.AttendSelectBytes(eventId));
+                await until(() => hud.AttendGiftOpenScripted, 60 * 8);
+                await frames(90);
+                Check($"attendraw {eventId}: the window opened (sent {sentSelect})", hud.AttendGiftOpenScripted);
+                Shot($"attend_{eventId}.png");
+                continue;
+            }
             if (step.StartsWith("rideraw:"))      // rideraw:<ride id>: the own pc rides the row by a ResponseRide mode 0 the server's debug packet command sends, then rides off (mode 1)
             {
                 int rideId = int.Parse(step[8..]);

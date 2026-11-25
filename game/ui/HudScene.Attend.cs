@@ -21,6 +21,8 @@ public partial class HudScene
     bool attendWatched;
 
     bool AttendGiftOpen => attendGift != null && !attendGift.IsClosed;
+    /// <summary>Whether the window is up (the live run's check).</summary>
+    public bool AttendGiftOpenScripted => AttendGiftOpen;
 
     /// <summary>Once per scene: the event strings and the game menu's refresh when an attendance event starts or ends
     /// (CGameMenuItem::IsAffectedBy, "AttendGift"), and the state's notice and open hooks.</summary>

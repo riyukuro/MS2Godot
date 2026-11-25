@@ -34,6 +34,34 @@ public partial class LiveSession
         return Ms2.Ui.Items.InventoryCount.FirstUidById(Items.All, itemData, itemId, CharacterId, ServerTime);
     }
 
+    /// <summary>The live run's raw GameEvent add (kind 0) of one AttendGift event (gameeventcontext.cpp:424-443): the server's debug
+    /// packet command sends it, as no test server's data holds a running attendance event.</summary>
+    internal string AttendEventBytes(int eventId, long begin, long end, int giftA, int giftB)
+    {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        w.WriteShort((short)game.Profile.Number(Ms2.Net.Inbound.GameEvent));
+        w.WriteByte(0); w.WriteInt(1);
+        w.WriteUnicodeString("AttendGift");
+        w.WriteInt(eventId); w.WriteLong(begin); w.WriteLong(end);
+        w.WriteUnicodeString("Attend"); w.WriteString("");
+        w.WriteBool(false); w.WriteBool(false);
+        w.WriteInt(0);
+        w.WriteByte(0); w.WriteInt(0);
+        w.WriteByte(0);
+        w.WriteInt(2);
+        foreach (int item in new[] { giftA, giftB }) { w.WriteInt(item); w.WriteShort(1); w.WriteInt(1); w.WriteByte(0); w.WriteByte(0); w.WriteByte(0); w.WriteByte(0); }
+        return string.Join(" ", w.ToArray().Select(b => b.ToString("X2")));
+    }
+
+    /// <summary>The live run's raw Attendance kind 7 (select event): the dialog opens on it.</summary>
+    internal string AttendSelectBytes(int eventId)
+    {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        w.WriteShort((short)game.Profile.Number(Ms2.Net.Inbound.Attendance));
+        w.WriteByte(7); w.WriteInt(eventId);
+        return string.Join(" ", w.ToArray().Select(b => b.ToString("X2")));
+    }
+
     /// <summary>The window's requests (Attendance modes 2, 3, 4 and 8).</summary>
     public void SendAttendance(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
 
