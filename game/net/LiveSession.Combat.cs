@@ -940,6 +940,50 @@ public partial class LiveSession
                 if (!shown) Check($"{step}: one of {spots.Count} takes the action key with the tooltip", false);
                 continue;
             }
+            if (step == "tooltip:taxi" || step == "tooltip:portal")      // tooltip:taxi|portal: the own pc put at the nearest taxi station (TaxiStationAction 8) or in the nearest shown portal with a box and a target (PortalAction 0x13; not a kind 1 portal, which moves at once) until that is the current action; the action tooltip shows its vfunc_6 caption (the portal's at its point lifted 75), a shot
+            {
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                var tip = hud.ActionTooltip;
+                if (tfc == null || tip == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the field and the tooltip", false); continue; }
+                var tt = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
+                var me = FieldPortals.ToMs2(live.player.GlobalPosition);
+                bool taxi = step == "tooltip:taxi";
+                int code = taxi ? 8 : 0x13;
+                string want = "", what = "";
+                Ms2.Formats.Model.Vec3? wantTarget = null;
+                if (taxi)
+                {
+                    if (live.TaxiAction.Stations.Count == 0) { GD.Print($"live: combat {step}: not run; no taxi station in the field"); continue; }
+                    var st = live.TaxiAction.Stations.OrderBy(x => (x - me).X * (x - me).X + (x - me).Y * (x - me).Y).First();
+                    live.player.GlobalPosition = FieldBuilder.ToGodotPoint(st) + new Vector3(40, 5, 0);
+                    live.player.Velocity = Vector3.Zero;
+                    want = tt.Common(0x64a) ?? "";
+                    what = $"station at {st}";
+                }
+                else
+                {
+                    var pt = live.Portals?.All.Where(x => x.HasEntity && x.HasBox && x.Glow && x.Shown && x.Kind != 1 && x.TargetMap != 0)
+                        .OrderBy(x => (x.Center - me).X * (x.Center - me).X + (x.Center - me).Y * (x.Center - me).Y).FirstOrDefault();
+                    if (pt == null || !tfc.StandInPortal(pt.Id)) { GD.Print($"live: combat {step}: not run; no shown portal with a box and a target"); continue; }
+                    want = Ms2.Ui.ActionCaption.Portal(tt, true, pt.Type, pt.TargetMap,
+                        id => Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id));
+                    wantTarget = pt.Type == 5 ? pt.Position with { Z = pt.Position.Z + 75 } : pt.Position;
+                    wantTarget = wantTarget.Value with { Z = wantTarget.Value.Z + 75 };
+                    what = $"portal {pt.Id} type {pt.Type} to {pt.TargetMap}";
+                }
+                await frames(20);
+                await until(() => live.ActionKeyCode(tfc.CurrentAction) == code && tip.ShownAction == code, 60 * 2);
+                await frames(20);
+                GD.Print($"live: combat {step}: {what}: action {tfc.CurrentAction}, tooltip action {tip.ShownAction}, caption \"{tip.ShownText}\", want \"{want}\", "
+                    + $"target {tip.ShownTarget}, at {tip.Place}");
+                var tv = tip.ShownTarget;
+                Check($"{step}: {what}: the tooltip shows the caption (\"{want}\"){(taxi ? " at the centre" : " at the portal lifted 75")}",
+                    tip.ShownAction == code && want.Length > 0 && tip.ShownText == want
+                    && (taxi ? tv == null : tv is { } v && wantTarget is { } w && Math.Abs(v.X - w.X) < 1 && Math.Abs(v.Y - w.Y) < 1 && Math.Abs(v.Z - w.Z) < 1));
+                Shot($"tooltip_{step[8..]}.png");
+                if (!taxi) { live.player.GlobalPosition += new Vector3(0, 0, 600); await frames(30); }
+                continue;
+            }
             if (step.StartsWith("tooltip:gather:"))      // tooltip:gather:<interact id>: the own pc put at that gathering object (no walk) until the action key's current action is gathering (4); the action tooltip (UIActionTooltip 0x4e5c) shows the gathering caption with the key, a shot; then the key starts the gathering and the tooltip hides while it runs (StateInteraction 0x19) and is back after it
             {
                 int id = int.Parse(step[15..]);

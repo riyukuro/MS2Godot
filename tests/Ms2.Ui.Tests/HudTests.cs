@@ -3273,4 +3273,28 @@ public class HudTests
         Assert.That(ActionCaption.Talk(t, 11001898, "Mia"), Is.EqualTo(t.Common(0x62d) + name), "no action name: common 0x62d");
         Assert.That(ActionCaption.Talk(t, 0, "Mia"), Is.EqualTo(""));
     }
+    /// <summary>PortalAction::vfunc_6: "" without the entity; the action text without a target; else the target's portal
+    /// tooltip name (table 0xf) or map name (3) in common 0x633, with " &lt;common 0x99d&gt;" for a field that cannot be
+    /// entered, common 0x632 for a target missing from the field table. LiftCubeAction::vfunc_6: GetActionCaption(0x63a, the
+    /// lift item's name).</summary>
+    [Test]
+    public void PortalAndLiftCaptionsFollowTheirVfunc6()
+    {
+        var t = Model().Tables;
+        var open = new Ms2.Formats.World.FieldData();
+        var admin = new Ms2.Formats.World.FieldData { EnterAdminLevel = 1 };
+        Assert.That(ActionCaption.Portal(t, false, 0, 2000001, _ => open), Is.EqualTo(""));
+        Assert.That(ActionCaption.Portal(t, true, 8, 0, _ => open), Is.EqualTo(t.Common("s_action_portal_DungeonLobby")));
+        Assert.That(ActionCaption.Portal(t, true, 0, 0, _ => open), Is.EqualTo(t.Common(0x632)));
+        Assert.That(ActionCaption.Portal(t, true, 0, 3000002, _ => open), Is.EqualTo(ClientFormat.Format(t.Common(0x633), "Twisted Pocket Realm")));
+        Assert.That(ActionCaption.Portal(t, true, 0, 2000001, _ => open), Is.EqualTo(ClientFormat.Format(t.Common(0x633), t.MapName(2000001))),
+            "no portal tooltip name: the map name");
+        Assert.That(ActionCaption.Portal(t, true, 0, 2000001, _ => admin),
+            Is.EqualTo(ClientFormat.Format(t.Common(0x633), t.MapName(2000001) + " <" + t.Common(0x99d) + ">")));
+        Assert.That(ActionCaption.Portal(t, true, 0, 2000001, _ => null), Is.EqualTo(t.Common(0x632)), "not in the field table");
+
+        string ore = t.StringTableText(1, 30000001);
+        Assert.That(ActionCaption.Lift(t, true, 30000001), Is.EqualTo(ActionCaption.Of(t.Common(0x63a), ore)));
+        Assert.That(ActionCaption.Lift(t, false, 30000001), Is.EqualTo(""));
+    }
 }

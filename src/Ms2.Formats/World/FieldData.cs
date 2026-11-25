@@ -95,6 +95,9 @@ public sealed class FieldData
     public bool GemSystem = true;
     /// <summary>m_nPkMode: &lt;property pkMode&gt; (fielddata.cpp:688), CFieldData::GetPkMode.</summary>
     public int PkMode;
+    /// <summary>m_nEnterAdminLevel: &lt;property enterAdminLevel&gt; (fielddata.cpp:669); above 0 the field cannot be entered
+    /// (FUN_140a55d20, fielddatacli.cpp:296, the release build's debug mode is off).</summary>
+    public int EnterAdminLevel;
     /// <summary>m_nContinentCode: &lt;property continentCode&gt; (fielddata.cpp:678), the MapContinentTable row of GetShadowContinent.</summary>
     public int ContinentCode;
     /// <summary>m_nRequireQuest: &lt;property requireQuest&gt; (fielddata.cpp:703), the quest a portal into the field needs rewarded
@@ -238,7 +241,7 @@ public sealed class FieldData
         o.AutoFindTaxiStation = QueryInt(ui, "autoFindTaxiStation", 1) != 0;
         o.MapType = QueryInt(prop, "mapType", 0);
         o.Capacity = QueryInt(prop, "capacity", 0);
-        o.PkMode = QueryInt(prop, "pkMode", 0); o.ContinentCode = QueryInt(prop, "continentCode", 0);
+        o.PkMode = QueryInt(prop, "pkMode", 0); o.EnterAdminLevel = QueryInt(prop, "enterAdminLevel", 0); o.ContinentCode = QueryInt(prop, "continentCode", 0);
         o.RequireQuest = QueryInt(prop, "requireQuest", 0); o.TutorialType = QueryInt(prop, "tutorialType", 0);   // XmlGetTutorialType: XmlQuery int (fielddata.cpp:918)
         o.ChannelGroupId = QueryInt(prop, "channelGroupID", 0);
         o.RecallOtherUserProhibit = QueryInt(env.Element("cashCall"), "RecallOtherUserProhibit", 0) != 0;

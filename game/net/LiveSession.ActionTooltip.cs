@@ -29,9 +29,9 @@ public partial class LiveSession
     };
 
     /// <summary>
-    /// The current action's vfunc_6 for the tooltip, by key: gathering 4 (the counted names), hold 6, interact npc 0x11,
-    /// interact 0x12, billboard 0x18, reactor 0x1a; each kept while what it reads stays the same. The talk's (0x14) is the
-    /// field talk's (NpcTalk.TalkActionCaption). STILL-OPEN: portal, taxi, lift, put down and hold pc give "".
+    /// The current action's vfunc_6 for the tooltip, by key: gathering 4 (the counted names), hold 6, taxi 8, put down 0xc, interact npc
+    /// 0x11, interact 0x12, portal 0x13, lift 0x15, billboard 0x18, reactor 0x1a, hold pc 0x1b; each kept while what it
+    /// reads stays the same. The talk's (0x14) is the field talk's (NpcTalk.TalkActionCaption).
     /// </summary>
     public string ActionKeyCaption(int code)
     {
@@ -48,8 +48,32 @@ public partial class LiveSession
                     npcCaption = ActionCaption.Interact(CaptionTables().Common(0x634) ?? "", npc.Row?.Name ?? "");
                 }
                 return npcCaption;
+            case 0xc: return CaptionTables().Common(0x63d) ?? "";           // PutDownLiftableAction::vfunc_6 (@0x14095add0, :2017)
+            case 8: return CaptionTables().Common(0x64a) ?? "";            // TaxiStationAction::vfunc_6 (@0x14095bfb0, :824)
             case 0x12: return InteractObjects?.ActionPickCaption(billBoard: false) ?? "";
             case 0x18: return InteractObjects?.ActionPickCaption(billBoard: true) ?? "";
+            case 0x13:
+                var p = PortalAction.Current;
+                if (p == null) return "";
+                if (!ReferenceEquals(p, portalCaptionPortal) || p.TargetMap != portalCaptionTarget || p.HasEntity != portalCaptionEntity || portalCaption == null)
+                {
+                    portalCaptionPortal = p;
+                    portalCaptionTarget = p.TargetMap;
+                    portalCaptionEntity = p.HasEntity;
+                    portalCaption = ActionCaption.Portal(CaptionTables(), p.HasEntity, p.Type, p.TargetMap, PortalCaptionField);
+                }
+                return portalCaption;
+            case 0x15:
+                var lift = Liftables.Find(Liftables.Polled);
+                if (!ReferenceEquals(lift, liftCaptionLift) || lift?.ItemId != liftCaptionItem || liftCaption == null)
+                {
+                    liftCaptionLift = lift;
+                    liftCaptionItem = lift?.ItemId;
+                    liftCaption = ActionCaption.Lift(CaptionTables(), lift != null, lift?.ItemId ?? 0);
+                }
+                return liftCaption;
+            // HoldPCAction::vfunc_6 (@0x14095cad0, :2373-2378): s_action_hold_pc while a player is kept (m_n18)
+            case 0x1b: return HoldPc.Target != 0 ? CaptionTables().Common(HoldPcAction.LabelKey) ?? "" : "";
             case 0x1a:
                 var r = polledReactor != 0 ? reactors?.Get(polledReactor) : null;
                 var state = r?.State;
@@ -64,6 +88,13 @@ public partial class LiveSession
         }
         return "";
     }
+    LivePortal portalCaptionPortal;
+    int portalCaptionTarget;
+    bool portalCaptionEntity;
+    string portalCaption;
+    object liftCaptionLift;
+    int? liftCaptionItem;
+    string liftCaption;
     InteractNpcEntry npcCaptionNpc;
     string npcCaption;
     int reactorCaptionId;
@@ -77,6 +108,9 @@ public partial class LiveSession
         switch (code)
         {
             case 0x11: return InteractNpcs?.Current?.Position;                                 // InteractNpcAction::vfunc_12 (@0x140959630)
+            case 0x13:                                                                             // PortalAction::vfunc_12 (@0x140956060): +75 for type 5
+                if (PortalAction.Current is not { } pc) return null;
+                return pc.Type == 5 ? pc.Position with { Z = pc.Position.Z + 75 } : pc.Position;
             case 0x12: return InteractObjects?.ActionPick(billBoard: false)?.Position;          // InteractAction::vfunc_12 (@0x140958d50)
             case 0x18: return InteractObjects?.ActionPick(billBoard: true)?.Position;           // the billboard keeps InteractAction's
             case 0x1a:
@@ -98,6 +132,11 @@ public partial class LiveSession
 
     /// <summary>GetLocalPlayer: the own pc is in the field.</summary>
     public bool HasLocalPlayer => player != null && IsInstanceValid(player);
+
+    static Ms2.Formats.World.FieldData PortalCaptionField(int id)
+    {
+        try { return Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id); } catch { return null; }
+    }
 
     static Ms2.Ui.GameTables CaptionTables() =>
         Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
