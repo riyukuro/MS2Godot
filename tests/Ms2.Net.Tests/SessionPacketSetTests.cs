@@ -49,8 +49,8 @@ public class SessionPacketSetTests
         new(Inbound.NpsInfo,               0xC6,  0xC8,  "networkservice.cpp:1075 @0x14153e0d0",   "i64 id, wstr name"),
         new(Inbound.AaErr,                 0xD0,  0xD2,  "networkservice.cpp:1080 @0x14153e150",   "empty -> notice 0xc07"),
         new(Inbound.BypassKey,             0xE6,  0xE8,  "networkservice.cpp:891 @0x14153b3b0",    "i32 clientValue, i64 token"),
-        new(Inbound.SyncWorld,             0x10F, 0x112, "scenestatemulti.cpp:766 @0x14174fcc0",   "i64 serverTime"),
-        new(Inbound.WorldTimeSync,         0x110, null,  "networkservice.cpp:806 @0x14153a8a0",    "i32 idleIntervalMs"),
+        new(Inbound.SyncWorld,             0x10F, 0x111, "scenestatemulti.cpp:766 @0x14174fcc0",   "i64 serverTime"),
+        new(Inbound.WorldTimeSync,         0x110, 0x112, "networkservice.cpp:806 @0x14153a8a0",    "i32 idleIntervalMs"),
     };
 
     /// <summary>The session packets the client sends (SendOp, 21 ops).</summary>

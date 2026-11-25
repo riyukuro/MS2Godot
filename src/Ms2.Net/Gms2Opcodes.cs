@@ -4,7 +4,7 @@ namespace Ms2.Net;
 /// The GMS2 opcode numbers (client version 12), keyed by the same Inbound / Outbound members the KMS2 profile uses. Source: the
 /// Maple2 upstream server's SendOp table (server to client, our Inbound) and RecvOp table (client to server, our Outbound),
 /// Maple2.Server.Core/Constants. A member upstream has no row for stays unmapped, so the profile throws KeyNotFoundException for it
-/// exactly as for any unknown op: Inbound.DataPatch, Inbound.UserChatItemLink, Inbound.UserSkinColor, Inbound.WorldTimeSync, Inbound.AdventurerBar, Inbound.NpcSkillSpread and Outbound.PersonalInfoAgreement.
+/// exactly as for any unknown op: Inbound.DataPatch, Inbound.UserChatItemLink, Inbound.UserSkinColor, Inbound.AdventurerBar, Inbound.NpcSkillSpread and Outbound.PersonalInfoAgreement.
 /// </summary>
 static class Gms2Opcodes {
     public static readonly Dictionary<Inbound, ushort> InboundNumbers = new() {
@@ -186,7 +186,8 @@ static class Gms2Opcodes {
         [Inbound.NpsInfo] = 0xC8,
         [Inbound.AaErr] = 0xD2,
         [Inbound.BypassKey] = 0xE8,
-        [Inbound.SyncWorld] = 0x112,
+        [Inbound.SyncWorld] = 0x111,        // the KMS2 0x10F + 2: 8 bytes, i64 server time (GMS2 recordings: 0x111 is always 8 bytes). Upstream SendOp names 0x112 SyncWorld; the recordings carry the 4-byte WorldTimeSync there
+        [Inbound.WorldTimeSync] = 0x112,    // the KMS2 0x110 + 2: 4 bytes, i32 idle interval (GMS2 recordings: 120000 ms). Upstream SendOp has no row for it
     };
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
