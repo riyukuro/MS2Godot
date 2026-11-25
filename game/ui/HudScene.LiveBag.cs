@@ -189,6 +189,87 @@ public partial class HudScene
         return true;
     }
 
+    /// <summary>The open gacha machine: its box item, sent, the result slots bound; null when it is not open.</summary>
+    public (int Box, bool Sent, int Slots)? GachaBoxScripted() => GachaBoxOpen ? (gachaBox.BoxItemId, gachaBox.Sent, gachaBox.SlotBinds.Count) : null;
+
+    /// <summary>The capsule machine item of a gacha item's function (its second argument), 0 when none.</summary>
+    public int GachaMachineScripted(int itemId) => hudModel.Tables.Items.Get(itemId)?.FunctionArgInt(1, 0) ?? 0;
+
+    /// <summary>The machine's open buttons: onCanOpenBox(multi) as the movie calls it; the movie's onOpenBox plays and ends on
+    /// onSendOpenBox.</summary>
+    public bool GachaBoxOpenScripted(bool multi)
+    {
+        if (!GachaBoxOpen) return false;
+        gachaBox.OnCallback("onCanOpenBox", new object[] { multi });
+        return true;
+    }
+
+    /// <summary>The machine's close button.</summary>
+    public bool GachaBoxCloseScripted()
+    {
+        if (!GachaBoxOpen) return false;
+        gachaBox.Close();
+        return true;
+    }
+
+    /// <summary>The key and box items of a Lullu box item's function (the first item of each tag), 0 when none.</summary>
+    public (int Key, int Box) LulluItemsScripted(int itemId)
+    {
+        var t = hudModel.Tables;
+        if (t.Items.Get(itemId) is not { } d) return (0, 0);
+        int Tag(string k) => d.HasFunctionXmlKey(k) ? t.Items.TagItemId(Ms2.Ui.Items.ItemTags.ByName(d.FunctionXmlString(k))) : 0;
+        return (Tag("keyItemTag"), Tag("boxItemTag"));
+    }
+
+    /// <summary>The open Lullu box: its box item, sent, the result slots bound; null when it is not open.</summary>
+    public (int Box, bool Sent, int Slots)? LulluBoxScripted() => LulluBoxOpen ? (lulluBox.BoxItemId, lulluBox.Sent, lulluBox.SlotBinds.Count) : null;
+
+    /// <summary>The Lullu box's single (0) or multi (1) open button (its buttonClick handler, OnSelectMode).</summary>
+    public bool LulluBoxOpenScripted(int mode)
+    {
+        if (!LulluBoxOpen) return false;
+        lulluBox.OnSelectMode(mode);
+        return true;
+    }
+
+    /// <summary>The Lullu box's close button.</summary>
+    public bool LulluBoxCloseScripted()
+    {
+        if (!LulluBoxOpen) return false;
+        lulluBox.Close();
+        return true;
+    }
+
+    /// <summary>The open treasure map dialog: its state, free flag, the bag's map uids, the picked map's uid (0: none) and the
+    /// shown slot's item id (0: none); null when it is not open.</summary>
+    public (int State, bool Free, System.Collections.Generic.List<long> Maps, long Target, int Shown)? TreasureMapScripted() =>
+        TreasureMapOpen ? (treasureMap.State, treasureMap.Free, treasureMap.Items.Select(i => i.Uid).ToList(), treasureMap.Target?.Uid ?? 0,
+            hudModel.ItemSlots.TryGetValue(Ms2.Ui.Hud.ItemTreasureMapDialogController.Bind, out var shown) ? shown.Item?.ItemId ?? 0 : 0) : null;
+
+    /// <summary>The treasure map bag's row <paramref name="row"/> picked (its selectedIndex, which fires listIndexChange).</summary>
+    public bool TreasureMapPickScripted(int row)
+    {
+        if (!TreasureMapOpen) return false;
+        treasureMap.SelectRow(row);
+        return true;
+    }
+
+    /// <summary>The treasure map dialog's m_submit button (its click handler, OnSubmitClick).</summary>
+    public bool TreasureMapSubmitScripted()
+    {
+        if (!TreasureMapOpen) return false;
+        treasureMap.OnSubmitClick();
+        return true;
+    }
+
+    /// <summary>The treasure map dialog's close button.</summary>
+    public bool TreasureMapCloseScripted()
+    {
+        if (!TreasureMapOpen) return false;
+        treasureMap.Close();
+        return true;
+    }
+
     /// <summary>A common string as the boxes show it.</summary>
     public string CommonText(int id) => hudModel.Tables.Common(id) ?? "";
 

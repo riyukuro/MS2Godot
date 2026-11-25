@@ -2087,7 +2087,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagselect:id[:row|open], bagyes, bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagselect:id[:row|open], bagyes, bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used], baggacha:id[:multi], baglullu:id[:multi], bagtreasure:id[:free]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -2301,6 +2301,110 @@ public partial class LiveSession
                         Check($"item {id} used by the server ({n0} -> {Count(id)}), row {row} item {reward} in the bag ({r0} -> {Count(reward)}), the dialog closed",
                             Count(id) == n0 - 1 && Count(reward) > r0 && hud.SelectItemBoxScripted() == null);
                         Shot($"bag_select_{id}_ok.png");
+                        break;
+                    }
+                    case "baggacha":    // baggacha:<item id>[:multi]: the capsules given (1, or 10 for multi), one double clicked, the machine's open: the capsules used by the server and the result bound
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]); bool multi = parts.Length > 1 && parts[1] == "multi"; int need = multi ? 10 : 1;
+                        int machine = hud.GachaMachineScripted(id);    // the capsule machine item a GachaCapsuleMachine open also needs held
+                        foreach (int give in machine != 0 && machine != id ? new[] { id, machine } : new[] { id })
+                            if (Count(give) < need) { long g0 = Count(give); hud.SubmitChatLine($"/item {give} --amount {need - g0}"); await until(() => Count(give) >= need, 60 * 5); await frames(30); }
+                        long n0 = Count(id);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        GD.Print($"live: combat gacha {id} ({slot}, {n0} held): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                        await until(() => hud.GachaBoxScripted() != null, 60 * 5); await frames(90);
+                        Shot($"gacha_{id}.png");
+                        Check($"item {id}: the gacha machine is open (box {hud.GachaBoxScripted()?.Box}), nothing used ({n0} -> {Count(id)})", hud.GachaBoxScripted() is { } g && g.Box == id && Count(id) == n0);
+                        if (hud.GachaBoxScripted() == null) break;
+                        var notices = new System.Collections.Generic.List<string>();
+                        hud.WatchBagNotices(notices.Add);
+                        GD.Print($"live: combat gacha {id} {(multi ? "multi" : "single")}: {(hud.GachaBoxOpenScripted(multi) ? "open clicked" : "not open")}");
+                        await until(() => hud.GachaBoxScripted() is { Slots: > 0 } || hud.GachaBoxScripted() == null, 60 * 20); await frames(120);
+                        hud.WatchBagNotices(null);
+                        var after = hud.GachaBoxScripted();
+                        GD.Print($"live: combat gacha {id}: sent {after?.Sent} slots {after?.Slots}, boxes [{Tags()}] notices [{string.Join(" | ", notices)}]");
+                        Shot($"gacha_{id}_result.png");
+                        Check($"item {id}: {need} used by the server ({n0} -> {Count(id)}), the result bound ({after?.Slots} slots), no box or notice",
+                              Count(id) == n0 - need && after is { Slots: > 0, Sent: false } && notices.Count == 0);
+                        hud.GachaBoxCloseScripted();
+                        await frames(60);
+                        Check($"item {id}: the machine closed", hud.GachaBoxScripted() == null);
+                        break;
+                    }
+                    case "baglullu":    // baglullu:<item id>[:multi]: the Lullu box item, its keys and boxes given, the item double clicked, the box's open button: a key and a box used per open, the result bound
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]); bool multi = parts.Length > 1 && parts[1] == "multi"; int need = multi ? 10 : 1;
+                        var (keyItem, boxItem) = hud.LulluItemsScripted(id);
+                        GD.Print($"live: combat lullu {id}: key item {keyItem}, box item {boxItem}");
+                        var want = new System.Collections.Generic.Dictionary<int, long> { [id] = 1 };   // an item that is also a key or box: the sum
+                        foreach (int give in new[] { keyItem, boxItem }) if (give != 0) want[give] = (want.TryGetValue(give, out long w) && give != id ? w : 0) + need;
+                        foreach (var (give, n) in want)
+                            if (Count(give) < n) { long g0 = Count(give); hud.SubmitChatLine($"/item {give} --amount {n - g0}"); await until(() => Count(give) >= n, 60 * 5); await frames(30); }
+                        long k0 = Count(keyItem), b0 = Count(boxItem);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        GD.Print($"live: combat lullu {id} ({slot}, keys {k0}, boxes {b0}): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                        await until(() => hud.LulluBoxScripted() != null, 60 * 5); await frames(90);
+                        Shot($"lullu_{id}.png");
+                        Check($"item {id}: the Lullu box is open (box {hud.LulluBoxScripted()?.Box}), nothing used (keys {k0} -> {Count(keyItem)})", hud.LulluBoxScripted() is { } l && l.Box == id && Count(keyItem) == k0);
+                        if (hud.LulluBoxScripted() == null) break;
+                        var notices = new System.Collections.Generic.List<string>();
+                        hud.WatchBagNotices(notices.Add);
+                        GD.Print($"live: combat lullu {id} {(multi ? "multi" : "single")}: {(hud.LulluBoxOpenScripted(multi ? 1 : 0) ? "open clicked" : "not open")}");
+                        await until(() => hud.LulluBoxScripted() is { Slots: > 0 } || hud.LulluBoxScripted() == null, 60 * 20); await frames(120);
+                        hud.WatchBagNotices(null);
+                        var after = hud.LulluBoxScripted();
+                        GD.Print($"live: combat lullu {id}: sent {after?.Sent} slots {after?.Slots}, keys {k0} -> {Count(keyItem)}, boxes {b0} -> {Count(boxItem)}, boxes [{Tags()}] notices [{string.Join(" | ", notices)}]");
+                        Shot($"lullu_{id}_result.png");
+                        long keysUsed = k0 - Count(keyItem), boxesUsed = b0 - Count(boxItem);
+                        Check($"item {id}: {need} key(s) and box(es) used by the server (keys -{keysUsed}, boxes -{boxesUsed}), the result bound ({after?.Slots} slots)",
+                              (keyItem == boxItem ? keysUsed == 2 * need : keysUsed == need && (boxItem == 0 || boxesUsed == need)) && after is { Slots: > 0, Sent: false });
+                        hud.LulluBoxCloseScripted();
+                        await frames(60);
+                        Check($"item {id}: the Lullu box closed", hud.LulluBoxScripted() == null);
+                        break;
+                    }
+                    case "bagtreasure": // bagtreasure:<map item id>[:free]: the map given when missing, the talk's open-dialog action for ItemTreasureMapDialog (as NpcTalk sub 4 raises it), the map picked: its cost; the submit: the appraise (paid: the map used and the item shown; free without the npc's free talk: refused, the map kept); back and closed
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]); bool free = parts.Length > 1 && parts[1] == "free";
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        long n0 = Count(id);
+                        long uid = live.Items.All.First(e => e.Id == id).Uid;
+                        live.RaiseTalkDialogOpen(Ms2.Ui.Hud.ItemTreasureMapDialogController.Name, free ? Ms2.Ui.Hud.ItemTreasureMapDialogController.FreeArgument : "");
+                        await until(() => hud.TreasureMapScripted() != null, 60 * 5); await frames(90);
+                        var tm = hud.TreasureMapScripted();
+                        GD.Print($"live: combat treasure map {id} (uid {uid}, {n0} held): state {tm?.State} free {tm?.Free} maps [{string.Join(",", tm?.Maps ?? new())}]");
+                        Shot($"treasure_{id}{(free ? "_free" : "")}.png");
+                        Check($"item {id}: the treasure map dialog is open (free {tm?.Free}) and lists the map", tm is { } t0 && t0.Free == free && t0.Maps.Contains(uid));
+                        if (tm is not { } t1 || !t1.Maps.Contains(uid)) { hud.TreasureMapCloseScripted(); break; }
+                        GD.Print($"live: combat treasure map {id}: {(hud.TreasureMapPickScripted(t1.Maps.IndexOf(uid)) ? "picked" : "not open")}");
+                        await until(() => hud.TreasureMapScripted() is { Target: > 0 }, 60 * 10); await frames(60);
+                        var picked = hud.TreasureMapScripted();
+                        GD.Print($"live: combat treasure map {id}: target {picked?.Target} shown {picked?.Shown}");
+                        Shot($"treasure_{id}{(free ? "_free" : "")}_cost.png");
+                        Check($"item {id}: the server's cost answer shows the map (target {picked?.Target}, shown {picked?.Shown})", picked is { } p1 && p1.Target == uid && p1.Shown == id);
+                        if (picked is not { Target: > 0 }) { hud.TreasureMapCloseScripted(); break; }
+                        GD.Print($"live: combat treasure map {id}: submit {(hud.TreasureMapSubmitScripted() ? "clicked" : "not open")}, state {hud.TreasureMapScripted()?.State}");
+                        await until(() => hud.TreasureMapScripted() is { State: not 1 }, 60 * 15); await frames(90);
+                        var done = hud.TreasureMapScripted();
+                        GD.Print($"live: combat treasure map {id}: state {done?.State} shown {done?.Shown}, held {n0} -> {Count(id)}");
+                        Shot($"treasure_{id}{(free ? "_free" : "")}_result.png");
+                        if (free)
+                            Check($"item {id}: the free appraise without the npc's free talk is refused: back to the list, the map kept ({n0} -> {Count(id)})",
+                                  done is { State: 0, Shown: 0 } && Count(id) == n0);
+                        else
+                        {
+                            Check($"item {id}: appraised: the map used ({n0} -> {Count(id)}), the result item {done?.Shown} shown with the back button",
+                                  done is { State: 2 } d2 && d2.Shown != 0 && d2.Shown != id && Count(id) == n0 - 1);
+                            hud.TreasureMapSubmitScripted();
+                            await frames(60);
+                            Check($"item {id}: back to the list (state {hud.TreasureMapScripted()?.State})", hud.TreasureMapScripted() is { State: 0 });
+                        }
+                        hud.TreasureMapCloseScripted();
+                        await frames(60);
+                        Check($"item {id}: the treasure map dialog closed", hud.TreasureMapScripted() == null);
                         break;
                     }
                     case "bagnamecheck": // bagnamecheck:<item id>:<name>[:used]: the name change item used, the name sent, the answer's box checked and closed
