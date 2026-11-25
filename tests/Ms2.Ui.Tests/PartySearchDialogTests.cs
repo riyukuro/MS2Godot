@@ -131,6 +131,31 @@ public class PartySearchDialogTests
     }
 
     [Test]
+    public void APartyResultMessageRefreshesTheListAndOtherModesDoNot()
+    {
+        // UIPartySearchDialog::vfunc_79 (@0x140f8c6b0): a Party packet of mode 0 runs ForceClickRefresh.
+        var e = new Env();
+        var c = Search(e);
+        c.Tick();
+        e.Book.Apply(new PartySearchResults(Enumerable.Range(1, 3).Select(i => Recruit(i)).ToArray()));
+        Assert.That(c.SearchQueued, Is.False);
+
+        e.Book.Apply(new PartyNotice("a", "b", "c"), 12, true);
+        Assert.That(c.SearchQueued, Is.False, "mode 0x14 is not the result message");
+
+        e.Book.Apply(new PartyResult(1, "x"), 12, true);
+        Assert.That(c.SearchQueued, Is.True, "mode 0: forceClickRefresh queues a search");
+        e.Now += 1000;
+        c.Tick();
+        Assert.That(e.Sent.Last(), Is.TypeOf<PartySearchRequest>());
+        Assert.That(e.Sent.Count, Is.EqualTo(2));
+
+        c.Detach();
+        e.Book.Apply(new PartyResult(1, "x"), 12, true);
+        Assert.That(c.SearchQueued, Is.False, "detached: no refresh");
+    }
+
+    [Test]
     public void RegisterAndModifyAreGatedByThePartyAndTheOwnListing()
     {
         var e = new Env();

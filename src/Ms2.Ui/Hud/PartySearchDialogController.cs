@@ -10,10 +10,10 @@ namespace Ms2.Ui.Hud;
 /// CMatchPartyRecruitSchCond), queues a search (m_178) that the tick sends no sooner than 500 ms after the last one (m_17c),
 /// lists the received listings 12 a page and handles the rows' join, whisper and invite calls and the register buttons
 /// (the register dialog, <see cref="PartySearchRegisterDialogController"/>, is UI id 0x4edb).
-/// STILL-OPEN: vfunc_79 (@0x140f8c6b0, uipartysearchdialog.cpp:344) takes a packet event, not a key: with the dialog loaded, a
-/// packet of opcode 0x53 (RecvOp Party in KMS2) whose vfunc_1 is 0 runs ForceClickRefresh. What vfunc_1 of Unk_PsdKeyEvent
-/// answers is not recovered, so no Party packet refreshes the list here. The chief menu's proxy variant (FUN_141a7eb60: the
-/// chief is a character in the field) is not ported either (see PopupMenuController.OpenForPartySearch).
+/// A Party packet (opcode 0x53) whose mode byte is 0 (the party result message) refreshes the list: UIPartySearchDialog::vfunc_79
+/// (@0x140f8c6b0, uipartysearchdialog.cpp:343) is the dialog's packet handler (the event is the CInPacket, and
+/// Unk_PsdKeyEvent::vfunc_1 reads its next byte, the mode) and with the movie loaded runs ForceClickRefresh, see <see cref="OnPartyApplied"/>.
+/// The chief menu's field-player variant (FUN_141a7eb60) is <see cref="PopupMenuController.OpenForPartySearch"/>'s.
 /// </summary>
 public sealed class PartySearchDialogController : UiController, IMessageBoxListener
 {
@@ -37,6 +37,7 @@ public sealed class PartySearchDialogController : UiController, IMessageBoxListe
         book.ResultsReceived += OnResults;
         book.RecruitShown += OnRecruitShown;
         book.SearchTextCleared += ClearSearchText;
+        book.Applied += OnPartyApplied;
     }
 
     /// <summary>Drops the book subscriptions (the HUD's teardown).</summary>
@@ -45,6 +46,14 @@ public sealed class PartySearchDialogController : UiController, IMessageBoxListe
         book.ResultsReceived -= OnResults;
         book.RecruitShown -= OnRecruitShown;
         book.SearchTextCleared -= ClearSearchText;
+        book.Applied -= OnPartyApplied;
+    }
+
+    /// <summary>vfunc_79 (@0x140f8c6b0, uipartysearchdialog.cpp:343): with the movie loaded, a Party packet of mode 0 (the party
+    /// result message) runs ForceClickRefresh.</summary>
+    void OnPartyApplied(PartyMessage message)
+    {
+        if (message is PartyResult && Host?.Entity != null && !IsClosed) Host.Invoke("forceClickRefresh");
     }
 
     /// <summary>m_180: the search condition, made by the first InitSearchCondition.</summary>
