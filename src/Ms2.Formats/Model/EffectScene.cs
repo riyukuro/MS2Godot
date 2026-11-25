@@ -321,8 +321,13 @@ public sealed class ParticleSystemDef
     public (double t, double v)[] SizeKeys = Array.Empty<(double, double)>();
     public (double t, byte r, byte g, byte b, byte a)[] ColorKeys = Array.Empty<(double, byte, byte, byte, byte)>();
     public double GrowTime, ShrinkTime; public int GrowGeneration, ShrinkGeneration;
-    public bool Aligned;                         // NiPSAlignedQuadGenerator (stretched along velocity) vs facing
-    public double ScaleAmountU, ScaleLimitU, ScaleRestU, ScaleAmountV, ScaleLimitV, ScaleRestV;
+    public bool Aligned;                         // NiPSAlignedQuadGenerator (AlignedQuad) vs NiPSFacingQuadGenerator
+    public double ScaleAmountU, ScaleLimitU, ScaleRestU, ScaleAmountV, ScaleLimitV, ScaleRestV, CenterU, CenterV;
+    /// <summary>The system's quad alignment (AlignedQuad): "Normal Method" / "Up Method" (AlignMethod, ALIGN_CAMERA when
+    /// absent) and their directions, read by NiPSParticleSystem::LoadBinary; HasRotations: "Has Rotations", the system
+    /// keeps rotation angles (without them the kernels take no rotation).</summary>
+    public int NormalMethod = AlignedQuad.Camera, UpMethod = AlignedQuad.Camera; public Vec3 NormalDirection, UpDirection;
+    public bool HasRotations = true;
     public int FramesAcross = 1, FramesDown = 1, NumFrames, InitialFrame, InitialFrameVar; public double InitialTime, FinalTime; public bool PingPong;
     public string Texture;                       // base texture file (or the first shader map)
     public int AlphaFlags = -1;                  // NiAlphaProperty flags of the system
@@ -621,6 +626,10 @@ public sealed class EffectScene
     {
         var B = n.Blocks; var b = B[blk];
         var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
+        d.HasRotations = b.IntOr("Has Rotations", 1) != 0;
+        d.NormalMethod = (int)b.IntOr("Normal Method", AlignedQuad.Camera); d.UpMethod = (int)b.IntOr("Up Method", AlignedQuad.Camera);
+        if (b.Has("Normal Direction")) d.NormalDirection = V3(b.Struct("Normal Direction"));
+        if (b.Has("Up Direction")) d.UpDirection = V3(b.Struct("Up Direction"));
         // The quads are drawn through an NiStandardMaterial (SoftParticlesMaterial, softparticlesmaterial.cpp:241-251), whose
         // HandlePreLightTextureApplication applies the base map and then the detail map at twice its colour
         // (NiStandardMaterial::HandleBaseMap / HandleDetailMap, NiStandardMaterial.cpp:4500-4527, 4765-4774, called at
@@ -702,20 +711,18 @@ public sealed class EffectScene
                 }
             }
 
-        long gen = b.IntOr("Generator", -1);
-        if (gen >= 0)
+        // The quad generator is one of the mesh's modifiers (NiMesh "Modifiers", beside the NiPSSimulator); the system's own
+        // "Generator" is its NiPSBoundUpdater (NiPSParticleSystem::LoadBinary).
+        foreach (var gi in b.Ints("Modifiers"))
         {
-            var g = B[(int)gen];
-            d.Aligned = g.Type == "NiPSAlignedQuadGenerator";
+            if (gi < 0 || B[(int)gi].Type != "NiPSAlignedQuadGenerator") continue;
+            var g = B[(int)gi];
+            d.Aligned = true;
             double F(string k, double def) => g.TryGetValue(k, out var v) && v is float f ? f : def;
-            d.ScaleAmountU = F("Scale Amount U", 0); d.ScaleLimitU = F("Scale Limit U", 1); d.ScaleRestU = F("Scale Rest U", 1);
-            d.ScaleAmountV = F("Scale Amount V", 0); d.ScaleLimitV = F("Scale Limit V", 1); d.ScaleRestV = F("Scale Rest V", 1);
-            if (g.Has("Num Frames Across"))
-            {
-                d.FramesAcross = Math.Max(1, (int)g.Int("Num Frames Across")); d.FramesDown = Math.Max(1, (int)g.Int("Num Frames Down"));
-                d.NumFrames = (int)g.Int("Num Frames"); d.InitialFrame = (int)g.Int("Initial Frame"); d.InitialFrameVar = (int)g.Int("Initial Frame Variation");
-                d.InitialTime = g.Float("Initial Time"); d.FinalTime = g.Float("Final Time"); d.PingPong = g.IntOr("Ping Pong", 0) != 0;
-            }
+            d.ScaleAmountU = F("Scale Amount U", 0); d.ScaleLimitU = F("Scale Limit U", 10000); d.ScaleRestU = F("Scale Rest U", 1);
+            d.ScaleAmountV = F("Scale Amount V", 0); d.ScaleLimitV = F("Scale Limit V", 10000); d.ScaleRestV = F("Scale Rest V", 1);
+            d.CenterU = F("Center U", 0); d.CenterV = F("Center V", 0);
+            break;
         }
 
         foreach (var ei in b.Ints("Emitters"))

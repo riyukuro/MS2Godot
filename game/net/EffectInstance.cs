@@ -16,7 +16,7 @@ static class FxParam
 /// <summary>
 /// A playing effect NIF: its node tree with the transform controllers, its static meshes with the alpha, uv-scroll and flipbook controllers, and its
 /// particle systems simulated on the CPU (emitters, gravity, drag and bomb forces, size / color keys over the particle's age, grow and shrink ramps)
-/// and drawn as camera-facing or velocity-aligned quads in one MultiMesh per system. All of it lives in MS2 file space (Z up) under one rotated node.
+/// and drawn as camera-facing or aligned quads (AlignedQuad) in one MultiMesh per system. All of it lives in MS2 file space (Z up) under one rotated node.
 /// A mesh's morph controller moves its vertices (EffectMorph). Not simulated: the other forces, colliders, spawners (death
 /// spawns), emitter-radius / color controllers, mesh particles (drawn as quads).
 /// </summary>
@@ -57,6 +57,8 @@ public sealed partial class EffectInstance : Node3D
     readonly Transform3D[] rest; readonly Basis[] restBasis; readonly float[] restScale;
     readonly int[] dynNodes;             // the nodes whose world transform changes over time (an animated or billboard node on the way to the root)
     readonly bool needCam;               // a billboard node or a particle system reads the camera
+    readonly bool hasAligned;            // a system has NiPSAlignedQuadGenerator quads
+    Vector3 worldX = new(1, 0, 0), worldZ = new(0, 0, 1); float worldScale = 1f;
     bool inTree, shown = true;           // shown: z's Visible as last set (a new node is visible)
     readonly Random rng;
     readonly float emitUntil, life;
@@ -303,6 +305,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         bool Dyn(int i) => i >= 0 && (dyn[i] ??= scene.Nodes[i].Anim != null || scene.Nodes[i].Billboard || Dyn(scene.Nodes[i].Parent));
         dynNodes = Enumerable.Range(0, scene.Nodes.Count).Where(Dyn).ToArray();
         needCam = scene.Nodes.Any(n => n.Billboard) || scene.Systems.Any(d => d.Emitters.Count > 0);
+        hasAligned = scene.Systems.Any(d => d.Aligned);
         AddChild(z);
         foreach (var em in scene.Meshes)
         {
@@ -399,14 +402,15 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); }
             if (baseMap != null) mat.SetShaderParameter(FxParam.BaseClamp, (baseMap.ClampS ? 1 : 0) | (baseMap.ClampT ? 2 : 0));
             if (detailMap != null) mat.SetShaderParameter(FxParam.DetailClamp, (detailMap.ClampS ? 1 : 0) | (detailMap.ClampT ? 2 : 0));
-            // The quads are drawn through SoftParticlesMaterial, an NiStandardMaterial that adds only the soft-depth opacity
-            // (softparticlesmaterial.cpp:210-279; ms2materiallibrary.cpp:481-482), so their colour is the standard material's,
-            // as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
+            // The system blocks name no material, so the quads are drawn through the renderer's default, NiStandardMaterial
+            // (NiRenderer::NiRenderer, NiRenderer.cpp:49-54; nothing in the client calls SetDefaultMaterial): their colour is
+            // the standard material's, as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
             // NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450). Nearly every
             // system is AMB_DIFF with E_A_D (flags 40): the emissive is added to the key colour times the light, so a dark key
             // colour over a dark texture still shows the emissive.
-            // STILL-OPEN: the soft-depth opacity (GetParticleOpacity, softparticlesmaterial.cpp:241-279) is not drawn; the
-            // dark and decal maps and texture transform controllers on a system's maps are not either.
+            // SoftParticlesManager::RegisterModel takes only objects whose material is already SoftParticlesMaterial
+            // (softparticlesmanager.cpp:133-162) and nothing gives it to a particle system, so there is no soft-depth opacity.
+            // STILL-OPEN: the dark and decal maps and texture transform controllers on a system's maps are not either.
             ps.Shading = new MeshState { Def = d.Material, Mat = mat, BaseMap = baseMap, GlowMap = glowMap, DetailMap = detailMap };
             SetRows(ps.Shading, baseMap?.Transform, 0, true);
             SetRows(ps.Shading, glowMap?.Transform, 1, true);
@@ -419,12 +423,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             Shade(ps.Shading, 0, true);
             mat.SetShaderParameter(FxParam.Alpha, ps.Shading.LastAlpha = (float)d.Material.Opacity(0));
             // The quad's corners sit at +-(right +- up) times the particle size (initial size times the size multiplier):
-            // NiPSFacingQuadGeneratorKernel.cpp:127-131, NiPSAlignedQuadGeneratorKernelVV.cpp:103-129. So the quad is 2 x 2
-            // and the per-particle basis carries the size. STILL-OPEN: the aligned quads' velocity scale is
-            // (amount * speed * limit + rest) / (amount * speed + 1) per axis there (NiPSAlignedQuadGeneratorKernelVV.cpp:108-118).
+            // NiPSFacingQuadGeneratorKernel.cpp:127-131, NiPSAlignedQuadGeneratorKernelFF.cpp:145-169. So the quad is 2 x 2
+            // and the per-particle basis carries the size (and for aligned quads the speed scale and pivot, AlignedQuad).
             ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = 0, VisibleInstanceCount = 0,
                 Mesh = new QuadMesh { Size = new Vector2(2, 2), Material = mat } };
             ps.Node = new MultiMeshInstance3D { Multimesh = ps.MM, Name = d.Name ?? "particles", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            if (d.Aligned && !AlignedQuad.ScaleValid(d)) ps.Node.Visible = false;     // the generator refuses it (AlignedQuad.ScaleValid)
             z.AddChild(ps.Node);
             systems.Add(ps);
         }
@@ -616,6 +620,15 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             camDir = (inv * -cam.GlobalBasis.Z).Normalized();   // Godot's camera looks along -Z
         }
         camRightFx = camRight; camUpFx = camUp; camDirFx = camDir; camLocalFx = camLocal;
+        // the file's world X and Z axes (Z goes to Godot's up) and its world scale in this effect's space, for the aligned
+        // quads of world-space systems (AlignedQuad: the kernels' UNIT_X / UNIT_Z defaults and the world velocity)
+        if (hasAligned)
+        {
+            // (the first step runs in the constructor, before the effect is in the tree: its own transform until then)
+            var zb = z.IsInsideTree() ? z.GlobalTransform.Basis : Transform.Basis * z.Transform.Basis;
+            var zi = zb.Inverse();
+            worldX = (zi * Vector3.Right).Normalized(); worldZ = (zi * Vector3.Up).Normalized(); worldScale = zb.Scale.X;
+        }
         // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
         foreach (int i in dynNodes) done[i] = false;
         long q1 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
@@ -724,7 +737,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         // they are drawn (NiPSParticleSystem::UpdateWorldData keeps the scale of a world-space system, NiPSParticleSystem.cpp:
         // 510-520); an emitter only rotates the velocity into that space (NiPSBoxEmitter.cpp:100-103). Here the particles
         // are kept in the effect's space, so the system node's scale multiplies their size, emitted speed and the forces.
-        float psScale = World(d.Node, t, camLocal).Basis.Scale.X;
+        var sysWorld = World(d.Node, t, camLocal);
+        float psScale = sysWorld.Basis.Scale.X;
         // Forces on at this time. A bomb or drag takes its object's position and its object's rotation times its axis
         // (NiPSBombForce::Update, NiPSBombForce.cpp:59-80; NiPSDragForce::Update, NiPSDragForce.cpp:57-78); without an
         // object, or a drag with Percentage <= 0, it is left out (NiPSSimulatorForcesStep.cpp:186-226). The system's
@@ -808,7 +822,43 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         bool sizeKeys = d.SizeKeys.Length > 0, colorKeys = d.ColorKeys.Length > 0, aligned = d.Aligned, flips = d.NumFrames > 1;
         bool grow = d.GrowTime > 0, shrink = d.ShrinkTime > 0;
         float growTime = (float)d.GrowTime, shrinkTime = (float)d.ShrinkTime;
-        float stretchLo = (float)Math.Min(d.ScaleRestV, d.ScaleLimitV), stretchHi = (float)Math.Max(d.ScaleRestV, d.ScaleLimitV);
+        // Aligned quads (AlignedQuad): the system's fixed normal and up and the kernels' defaults, in this effect's space. The
+        // particles are kept here for a world-space system too, so its original world rotation is the system node's rotation
+        // here and the world axes are the file's world axes brought here; a local-space system's are its own axes. A
+        // world-space system's velocities are world ones (times the effect's world scale), a local one's its own (over the
+        // system's scale).
+        var aN = System.Numerics.Vector3.Zero; var aU = aN; var aX = aN; var aZ = aN; var aO = aN;
+        float amtU = 0f, amtV = 0f, limU = 1f, limV = 1f, restU = 1f, restV = 1f, cenU = 0f, cenV = 0f, speedMul = 1f;
+        bool scaleSpeed = false, rotations = d.HasRotations, anyPer = false;
+        int nMethod = d.NormalMethod, uMethod = d.UpMethod;
+        if (aligned)
+        {
+            var r = sysWorld.Basis.Orthonormalized();
+            Vector3 defX = d.WorldSpace ? worldX : r * Vector3.Right, defZ = d.WorldSpace ? worldZ : r * Vector3.Back;
+            aX = new(defX.X, defX.Y, defX.Z); aZ = new(defZ.X, defZ.Y, defZ.Z); aO = new(sysWorld.Origin.X, sysWorld.Origin.Y, sysWorld.Origin.Z);
+            var camN = camRight.Cross(camUp);
+            if (nMethod == AlignedQuad.LocalFixed)
+            {
+                var v = r * new Vector3((float)d.NormalDirection.X, (float)d.NormalDirection.Y, (float)d.NormalDirection.Z);
+                aN = AlignedQuad.Unitize(new(v.X, v.Y, v.Z), aX);
+            }
+            else if (nMethod == AlignedQuad.Camera) aN = new(camN.X, camN.Y, camN.Z);
+            else { var v = r * Vector3.Back; aN = new(v.X, v.Y, v.Z); }          // the constructor's (0,0,1) (NiPSAlignedQuadGenerator.cpp:41-42)
+            if (uMethod == AlignedQuad.LocalFixed)
+            {
+                var v = r * new Vector3((float)d.UpDirection.X, (float)d.UpDirection.Y, (float)d.UpDirection.Z);
+                aU = AlignedQuad.Unitize(new(v.X, v.Y, v.Z), aZ);
+            }
+            else if (uMethod == AlignedQuad.Camera) aU = new(camUp.X, camUp.Y, camUp.Z);
+            else { var v = r * Vector3.Up; aU = new(v.X, v.Y, v.Z); }            // the constructor's (0,1,0)
+            anyPer = ((nMethod | uMethod) & AlignedQuad.PerParticle) != 0;
+            amtU = AlignedQuad.NormalizedAmount(d.ScaleAmountU, d.ScaleLimitU, d.ScaleRestU);
+            amtV = AlignedQuad.NormalizedAmount(d.ScaleAmountV, d.ScaleLimitV, d.ScaleRestV);
+            limU = (float)d.ScaleLimitU; limV = (float)d.ScaleLimitV; restU = (float)d.ScaleRestU; restV = (float)d.ScaleRestV;
+            cenU = (float)d.CenterU; cenV = (float)d.CenterV;
+            scaleSpeed = amtU != 0f || amtV != 0f;
+            speedMul = d.WorldSpace ? worldScale : (psScale != 0 ? 1f / psScale : 0f);
+        }
         float initialTime = (float)d.InitialTime, flipSpan = Mathf.Max((float)(d.FinalTime - d.InitialTime), 1e-4f);
         float flipFactor = d.PingPong ? 1 : 0.999f, numFrames = d.NumFrames, frameMod = Mathf.Max(d.FramesAcross * d.FramesDown, 1);
         float cx = camLocal.X, cy = camLocal.Y, cz = camLocal.Z;
@@ -831,24 +881,24 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             float tx = cx - pos.X, ty = cy - pos.Y, tz = cz - pos.Z, l2 = tx * tx + ty * ty + tz * tz;
             if (l2 > 1e-6f) { float l = MathF.Sqrt(l2); tx /= l; ty /= l; tz /= l; } else { tx = 0f; ty = 0f; tz = 1f; }
             float xx, xy, xz, yx, yy, yz, reach;                  // the basis X and Y columns (Z is toCam); the quad's reach
+            float ox = 0f, oy = 0f, oz = 0f;                      // the aligned quad's pivot offset
             if (aligned)
             {
                 var vel = pvel[i];
-                float sp = MathF.Sqrt(vel.X * vel.X + vel.Y * vel.Y + vel.Z * vel.Z);
-                float ax = 1f, ay = 0f, az = 0f;                  // along: the velocity direction (Vector3.Right when still)
-                if (sp > 1e-3f) { ax = vel.X / sp; ay = vel.Y / sp; az = vel.Z / sp; }
-                float stretch = Mathf.Clamp((float)(d.ScaleRestV + d.ScaleAmountV * sp * 0.01), stretchLo, stretchHi);
-                float sx = ay * tz - az * ty, sy = az * tx - ax * tz, sz = ax * ty - ay * tx, s2 = sx * sx + sy * sy + sz * sz;
-                if (s2 > 1e-6f) { float l = MathF.Sqrt(s2); sx /= l; sy /= l; sz /= l; }
-                else
+                var vn = new System.Numerics.Vector3(vel.X, vel.Y, vel.Z);
+                float sU = 1f, sV = 1f;
+                if (scaleSpeed)
                 {
-                    // up (Vector3.Back) cross along, normalized
-                    sx = 0f * az - 1f * ay; sy = 1f * ax - 0f * az; sz = 0f * ay - 0f * ax; s2 = sx * sx + sy * sy + sz * sz;
-                    if (s2 == 0f) { sx = 0f; sy = 0f; sz = 0f; } else { float l = MathF.Sqrt(s2); sx /= l; sy /= l; sz /= l; }
+                    float sp = vn.Length() * speedMul;
+                    sU = AlignedQuad.SpeedScale(amtU, limU, restU, sp); sV = AlignedQuad.SpeedScale(amtV, limV, restV, sp);
                 }
-                xx = ax * size * stretch; xy = ay * size * stretch; xz = az * size * stretch;
-                yx = sx * size; yy = sy * size; yz = sz * size;
-                reach = MathF.Abs(size) * (MathF.Abs(stretch) + 1f);
+                var qn = aN; var qu = aU;
+                if (anyPer)
+                    AlignedQuad.Inputs(nMethod, uMethod, rotations, aN, aU, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z) - aO, vn,
+                                       aX, aZ, out qn, out qu);
+                AlignedQuad.Quad(qn, qu, size, sU, sV, cenU, cenV, rotations ? rot[i] : 0f, out var qx, out var qy, out var qo);
+                xx = qx.X; xy = qx.Y; xz = qx.Z; yx = qy.X; yy = qy.Y; yz = qy.Z; ox = qo.X; oy = qo.Y; oz = qo.Z;
+                reach = MathF.Abs(size) * (MathF.Abs(sU) + MathF.Abs(sV) + MathF.Abs(sU * cenU) + MathF.Abs(sV * cenV));
             }
             else
             {
@@ -865,9 +915,9 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (pos.Z - reach < bz0) bz0 = pos.Z - reach; if (pos.Z + reach > bz1) bz1 = pos.Z + reach;
             // one buffer write per system instead of three engine calls per particle: 12 transform floats (rows), colour, custom data
             int o = i * 20;
-            buf[o] = xx; buf[o + 1] = yx; buf[o + 2] = tx; buf[o + 3] = pos.X;
-            buf[o + 4] = xy; buf[o + 5] = yy; buf[o + 6] = ty; buf[o + 7] = pos.Y;
-            buf[o + 8] = xz; buf[o + 9] = yz; buf[o + 10] = tz; buf[o + 11] = pos.Z;
+            buf[o] = xx; buf[o + 1] = yx; buf[o + 2] = tx; buf[o + 3] = pos.X - ox;
+            buf[o + 4] = xy; buf[o + 5] = yy; buf[o + 6] = ty; buf[o + 7] = pos.Y - oy;
+            buf[o + 8] = xz; buf[o + 9] = yz; buf[o + 10] = tz; buf[o + 11] = pos.Z - oz;
             buf[o + 12] = cr; buf[o + 13] = cg; buf[o + 14] = cb; buf[o + 15] = ca;
             float frame = frame0[i];
             if (flips)
