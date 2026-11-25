@@ -227,15 +227,19 @@ public sealed class UiHost
     /// <summary>
     /// GFxMovie::InvokeCommonCallback (gfxmovie.cpp:334) with the callback CUIService sets, FUN_141ade430
     /// (uiservice.cpp:3185): members of scaleform.ms2.common.Common: the feature list, and the meso and numeric text
-    /// functions (GetMesoText / GetNumericText, uiservice.cpp:3147 / 3166: (obj, text) sets obj.text). The stage margins
-    /// (FUN_1418dd0c0 / dd110 / dd0d0, from DAT_1439f8ccc, DAT_1439f8cd0, DAT_1439f8cc8) and the tooltip label width are
-    /// not set yet.
+    /// functions (GetMesoText / GetNumericText, uiservice.cpp:3147 / 3166: (obj, text) sets obj.text) and the stage margins
+    /// (uiservice.cpp:3196-3197, <see cref="StageMargins"/>). STILL-OPEN: the tooltip label width is not set yet.
     /// </summary>
     void CommonCallback()
     {
         if (RT.GetClass("scaleform.ms2.common.Common") is not { } common) return;
         if (Model.FeatureEnabledByName != null)
             RT.SetProperty(common, Name.Public("m_currentFeatureByString"), FeatureTable.EnabledString(Model.FeatureEnabledByName));
+        // m_bottomMarginOfStage = FUN_1418dd0c0() + FUN_1418dd110(), m_bottomMarginOfGamePlayScene = FUN_1418dd0d0(): the area the
+        // exp bars use, which the dialogs' drag clamp (DockingDialog.onStopDrag) keeps a window out of
+        bool adventure = Model.IsFeatureEnabled(StageMargins.AdventureLevelFeature);
+        RT.SetProperty(common, Name.Public("m_bottomMarginOfStage"), (uint)StageMargins.BottomOfStage(adventure));
+        RT.SetProperty(common, Name.Public("m_bottomMarginOfGamePlayScene"), (uint)StageMargins.BottomOfGamePlayScene(adventure));
         // GFxMovie::RegisterFormatFunction (gfxmovie.cpp:319) with CUIService's format callback (FUN_141addb30)
         Static(common, "m_getFormatFunction", FormatCallback);
         Static(common, "m_getMesoTextFunction", a => TextCallback(a, NumberText.MesoText));
