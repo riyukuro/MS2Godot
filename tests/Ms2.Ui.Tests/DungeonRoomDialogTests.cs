@@ -114,6 +114,22 @@ public class DungeonRoomDialogTests
     }
 
     [Test]
+    public void TheSetBeforeLoadCallsFindRoomsWithoutAModel()
+    {
+        // The openers call OpenRoom / OpenDungeonOrRoom before the movie loads (no host and no model yet): they read PreloadTables.
+        var room = Rooms().RoomList.FirstOrDefault(r => r.Id > 100000);
+        if (room == null) Assert.Ignore("the room table has no rooms");
+        var c = new DungeonRoomDialogController(new PartyBook()) { PreloadTables = Tables() };
+        Assert.That(c.OpenRoom(room.Id), Is.True);
+        Assert.That(c.Room?.Id, Is.EqualTo(room.Id));
+        var c2 = new DungeonRoomDialogController(new PartyBook()) { PreloadTables = Tables() };
+        Assert.That(c2.OpenDungeonOrRoom(room.Id), Is.True);
+        Assert.That(c2.Room?.Id, Is.EqualTo(room.Id));
+        var c3 = new DungeonRoomDialogController(new PartyBook()) { PreloadTables = Tables(), Notice = _ => { } };
+        Assert.That(c3.OpenRoom(uint.MaxValue), Is.False, "an unknown room opens nothing");
+    }
+
+    [Test]
     public void OpeningAGroupTypeListsItsRoomsInTheRenderers()
     {
         int type = TypeWithRooms();

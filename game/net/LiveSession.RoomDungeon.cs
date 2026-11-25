@@ -29,10 +29,28 @@ public partial class LiveSession
     public int DungeonRecordCount => DungeonRecords.RecordCount;
     public int DungeonRankRewardCount => DungeonRecords.RankRewardCount;
 
+    // The HUD's dungeon room dialog (UI 0x4ebd), which the portal action opens and closes (PortalAction, actionkeyobject.cpp:1040-1180).
+    // Without a HUD (no scene) they stay null and the portal does nothing.
+    public Action<int> OpenDungeonRoomDialog;
+    public Action<int, int> OpenDungeonRoomDialogWithMode;
+    public Action<int> OpenDungeonRoomDialogRoom;
+    public Action CloseDungeonRoomDialog;
+
     /// <summary>Raised after a record or rank reward table changed (the dungeon room window refreshes its panel).</summary>
     public event Action DungeonRecordsChanged;
 
+    /// <summary>The dungeon room window's OnRoomPacket (@0x1412b8d60) hears the 0x1A packet after the record manager applied it:
+    /// (command, notice kind). The command is the client's number of the kind (AddRecord 6, RewardNotice 7, AddReward 20).</summary>
+    public event Action<int, int> DungeonRoomPacket;
+
     void OnRoomDungeon(RoomDungeonReply m)
+    {
+        ApplyRoomDungeon(m);
+        int cmd = m.Kind switch { RoomDungeonKind.AddRecord => 6, RoomDungeonKind.RewardNotice => 7, RoomDungeonKind.AddReward => 20, _ => 0 };
+        if (cmd != 0) DungeonRoomPacket?.Invoke(cmd, m.NoticeKind);
+    }
+
+    void ApplyRoomDungeon(RoomDungeonReply m)
     {
         switch (m.Kind)
         {

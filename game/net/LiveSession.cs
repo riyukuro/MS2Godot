@@ -3948,6 +3948,7 @@ public partial class LiveSession : Node
             bool searchRun = pp[0] is "asksearch" or "answersearch";            // the party search run: two clients
             bool joinLink = pp[0] == "joinlink";                                 // the dungeon join links run: one client
             bool dpsRun = pp[0] is "askdps" or "answerdps";                     // the party damage meter run: two clients
+            bool dungeonRun = pp[0] == "dungeonroom";                            // the dungeon room window run: one client
             bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch" or "askdps";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
@@ -4254,6 +4255,30 @@ public partial class LiveSession : Node
                     await Frames(60 * 3);
                     PShot("vote_end");
                 }
+            }
+            else if (dungeonRun)
+            {
+                // MS2_LIVE_PARTY "dungeonroom:<room>:<portal id>": the open key opens the window and shuts it; the party link
+                // "dungeonRoom,<room>" opens it on the room; the portal types 0xc (mode 3) and 0x11 and the portal's leave open and
+                // close it. The state is logged and shot at each step.
+                uint dRoom = pp.Length > 1 && uint.TryParse(pp[1], out var dr) ? dr : 0;
+                int dPortal = pp.Length > 2 && int.TryParse(pp[2], out var dp) ? dp : 7;
+                async Task Step(string what, Action act)
+                {
+                    try { act(); }
+                    catch (Exception e) { GD.Print($"live: party {role}: {what}: threw {e}"); }
+                    await Frames(240);
+                    GD.Print($"live: party {role}: {what}: {ph.DungeonRoomText()}");
+                    PShot(what);
+                }
+                await Step("key_open", () => ph.DungeonRoomKey());
+                await Step("key_close", () => ph.DungeonRoomKey());
+                await Step("link_room", () => ph.PartyLinkClick($"dungeonRoom,{dRoom}"));
+                await Step("leave_close", () => pl.LeavePortal());
+                await Step("portal_mode3", () => pl.OpenDungeonRoomDialogWithMode?.Invoke(dPortal, 3));
+                await Step("portal_room", () => pl.OpenDungeonRoomDialogRoom?.Invoke((int)dRoom));
+                await Step("portal_type8", () => pl.OpenDungeonRoomDialog?.Invoke(dPortal));
+                await Step("leave_close2", () => pl.LeavePortal());
             }
             else if (joinLink)
             {

@@ -119,6 +119,7 @@ public partial class HudScene
             Common = id => tables.Common(id) ?? "",
             Notice = SystemNoticeText,                           // ShowSystemNotice(text, 1, 1)
             Send = PartySend,
+            OpenRoom = OpenDungeonRoomOf,                        // UIDungeonRoomDialog::OpenRoom (FUN_141a16c50)
         };
         Action<PartyMessage> applied = msg =>
         {

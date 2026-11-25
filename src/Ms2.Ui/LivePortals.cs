@@ -45,6 +45,17 @@ public interface IPortalHost
     void ShowTextBox(string text);
     /// <summary>A client path that is not ported: the portal sends nothing.</summary>
     void StillOpen(string what);
+    /// <summary>PortalAction::OpenDungeonRoomDialog @0x140956290 (actionkeyobject.cpp:1076): a type 8 portal; the open dialog is closed,
+    /// OpenDungeonOrRoom(portalId) and, when it found a room, SetPortalId and the open.</summary>
+    void OpenDungeonRoomDialog(int portalId);
+    /// <summary>PortalAction::OpenDungeonRoomDialogWithMode @0x1409569a0 (:1166), types 0xc and 0xe: the open dialog is closed, then
+    /// SetGroupType(mode), SetPortalId(portalId) and the open.</summary>
+    void OpenDungeonRoomDialogWithMode(int portalId, int mode);
+    /// <summary>PortalAction::FUN_140956a20 @0x140956a20 (:1181), type 0x11: the open dialog is closed, then OpenRoom(portalId),
+    /// SetPortalId(portalId) and the open (the open follows the room even when OpenRoom found none).</summary>
+    void OpenDungeonRoomDialogRoom(int portalId);
+    /// <summary>PortalAction::vfunc_3 @0x140955990 (:853): CloseDialog(0x4ebd) when that dialog is open.</summary>
+    void CloseDungeonRoomDialog();
 }
 
 /// <summary>
@@ -402,21 +413,22 @@ public sealed class PortalAction
         UsePortal(p, p.TargetMap, p.Id);
     }
 
-    /// <summary>PortalAction::vfunc_3: close the dungeon room dialog (0x4ebd) when open. STILL-OPEN: that dialog is not ported.</summary>
-    public void Leave() { }
+    /// <summary>PortalAction::vfunc_3 @0x140955990 (actionkeyobject.cpp:853): the action key's poll leaves the portal (another action, or
+    /// none, becomes current): the dungeon room dialog (0x4ebd) closes when open.</summary>
+    public void Leave() => host.CloseDungeonRoomDialog();
 
     /// <summary>PortalAction::UsePortal by type.</summary>
     void UsePortal(LivePortal p, int target, int portalId)
     {
         switch (p.Type)
         {
-            case 8: host.StillOpen($"portal {portalId}: type 8 opens the dungeon room dialog (OpenDungeonRoomDialog)"); break;
+            case 8: host.OpenDungeonRoomDialog(portalId); break;
             case 9: host.Send(new RoomDungeonPortalRequest()); break;
-            case 0xc: host.StillOpen($"portal {portalId}: type 0xc opens the dungeon room dialog (mode 3)"); break;
+            case 0xc: host.OpenDungeonRoomDialogWithMode(portalId, 3); break;
             case 0xd: MoveTo(p, 0, 1); break;
-            case 0xe: host.StillOpen($"portal {portalId}: type 0xe opens the dungeon room dialog (mode 4)"); break;
+            case 0xe: host.OpenDungeonRoomDialogWithMode(portalId, 4); break;
             case 0x10: host.StillOpen($"portal {portalId}: type 0x10 (FUN_140dff580) is not ported"); break;
-            case 0x11: host.StillOpen($"portal {portalId}: type 0x11 (FUN_140956a20) is not ported"); break;
+            case 0x11: host.OpenDungeonRoomDialogRoom(portalId); break;
             default: MoveTo(p, target, portalId); break;
         }
     }

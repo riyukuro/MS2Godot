@@ -42,6 +42,11 @@ public class LivePortalTests
         public void ShowTextBox(string text) => TextBoxes.Add(text);
         public readonly List<string> Open = new();
         public void StillOpen(string what) => Open.Add(what);
+        public readonly List<string> Dungeon = new();
+        public void OpenDungeonRoomDialog(int portalId) => Dungeon.Add($"open {portalId}");
+        public void OpenDungeonRoomDialogWithMode(int portalId, int mode) => Dungeon.Add($"mode {mode} portal {portalId}");
+        public void OpenDungeonRoomDialogRoom(int portalId) => Dungeon.Add($"room {portalId}");
+        public void CloseDungeonRoomDialog() => Dungeon.Add("close");
     }
 
     static FieldEntity Xblock(int id, string maskIds = null, string maskStates = null, bool enabled = true)
@@ -148,11 +153,7 @@ public class LivePortalTests
         Assert.That(host.Sent, Is.Empty);
     }
 
-    [TestCase((byte)8)]
-    [TestCase((byte)0xc)]
-    [TestCase((byte)0xe)]
     [TestCase((byte)0x10)]
-    [TestCase((byte)0x11)]
     public void UnportedTypeSendsNothing(byte type)
     {
         var (host, action, portals) = Field(Xblock(7));
@@ -160,6 +161,30 @@ public class LivePortalTests
         Enter(action);
         Assert.That(host.Sent, Is.Empty);
         Assert.That(host.Open, Has.Count.EqualTo(1));
+    }
+
+    // PortalAction::UsePortal (actionkeyobject.cpp:1040): types 8, 0xc, 0xe and 0x11 open the dungeon room dialog and send nothing.
+    [TestCase((byte)8, "open 7")]
+    [TestCase((byte)0xc, "mode 3 portal 7")]
+    [TestCase((byte)0xe, "mode 4 portal 7")]
+    [TestCase((byte)0x11, "room 7")]
+    public void DungeonRoomTypesOpenTheDialog(byte type, string expected)
+    {
+        var (host, action, portals) = Field(Xblock(7));
+        portals.Apply(Add(7, type: type));
+        Enter(action);
+        Assert.That(host.Dungeon, Is.EqualTo(new[] { expected }));
+        Assert.That(host.Sent, Is.Empty);
+        Assert.That(host.Open, Is.Empty);
+    }
+
+    // PortalAction::vfunc_3 (:853): leaving the portal closes the dungeon room dialog.
+    [Test]
+    public void LeavingThePortalClosesTheDungeonRoomDialog()
+    {
+        var (host, action, _) = Field(Xblock(7));
+        action.Leave();
+        Assert.That(host.Dungeon, Is.EqualTo(new[] { "close" }));
     }
 
     [Test]

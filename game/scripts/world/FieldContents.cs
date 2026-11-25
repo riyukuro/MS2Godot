@@ -655,6 +655,7 @@ public partial class FieldContents : Node3D
             bool cubeMode = Ms2Godot.Net.LiveSession.Instance is { } cs && cs.CubeCraft.InCubeMode;
             if (actionKeys.Due((uint)Time.GetTicksMsec()))
             {
+                var wasCurrent = actionKeys.Current;
                 if (cubeMode)
                 {
                     bool onPutDown = LivePutDownPoll(playerMs2);
@@ -677,6 +678,9 @@ public partial class FieldContents : Node3D
                     if (onInteract && Ms2Godot.Net.LiveSession.Instance is { HoldPolled: true })
                         actionKeys.Current = Ms2.Ui.ActionKeyTarget.Hold;
                 }
+                // the current action changed: the old one's vfunc_3 (actionkeyobject.cpp:577); a portal's closes the dungeon room dialog
+                if (wasCurrent == Ms2.Ui.ActionKeyTarget.Portal && actionKeys.Current != wasCurrent)
+                    Ms2Godot.Net.LiveSession.Instance?.LeavePortal();
                 RefreshActionTooltip();
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);

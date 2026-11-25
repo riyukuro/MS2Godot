@@ -26,6 +26,18 @@ public sealed class DungeonRoomDialogController : UiController
     /// <summary>The group index the room list is shown for before a pick (m_180's start), and the groups the combo offers (0..15).</summary>
     public const int GroupCount = 16;
 
+    /// <summary>The window's key action: CKeyTable::FUN_14142b300 case 400037 runs ToggleDialog(0x4ebd) (keytable.cpp:828); the default key
+    /// table binds DIK 40 to it.</summary>
+    public const long OpenKeyAction = 400037;
+
+    /// <summary>True when DirectInput key <paramref name="dik"/> is bound to <see cref="OpenKeyAction"/> in <paramref name="keys"/>.</summary>
+    public static bool OpensWithKey(KeyTable keys, int dik)
+    {
+        foreach (int k in keys.KeysOfAction(OpenKeyAction))
+            if (k == dik) return true;
+        return false;
+    }
+
     public override string Movie => "uidungeonroomdialog";
     protected override string EntityMethod => "alignment";
     /// <summary>GetTypeName.</summary>
@@ -70,8 +82,12 @@ public sealed class DungeonRoomDialogController : UiController
     /// <summary>GetPortalId (m_178).</summary>
     public int PortalId => portalId;
 
+    /// <summary>The tables the set-before-load calls (OpenRoom, OpenDungeonOrRoom) read while the movie is not loaded and the
+    /// <see cref="UiController.Model"/> does not exist yet; the loaded dialog uses the model's.</summary>
+    public GameTables PreloadTables { get; set; }
+
     /// <summary>The dungeon room tables (CDungeonRoomTable).</summary>
-    internal DungeonRoomTable Table => Model.Tables.DungeonRooms;
+    internal DungeonRoomTable Table => (Host != null ? Model.Tables : PreloadTables ?? GameTables.Empty).DungeonRooms;
 
     /// <summary>The local player's level and gear score (vfunc_78, FUN_14152ea50); null without a local player.
     /// STILL-OPEN: the gear score has no source in the model yet, so the default is level only.</summary>

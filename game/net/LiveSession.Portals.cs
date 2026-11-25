@@ -90,6 +90,9 @@ public partial class LiveSession
         return on;
     }
 
+    /// <summary>The action key's poll left the portal (Unk_ActionKeyManager::Update, actionkeyobject.cpp:577: the old action's vfunc_3).</summary>
+    public void LeavePortal() => PortalAction.Leave();
+
     /// <summary>The action key on the portal (PortalAction::vfunc_2).</summary>
     public void UsePortal() => PortalAction.Use();
 
@@ -162,6 +165,10 @@ public partial class LiveSession
             MessageBoxQueue.ShowMessageBox(text, 0, null, "");
         }
         public void StillOpen(string what) => GD.Print($"live: STILL-OPEN {what}; nothing sent");
+        public void OpenDungeonRoomDialog(int portalId) => s.OpenDungeonRoomDialog?.Invoke(portalId);
+        public void OpenDungeonRoomDialogWithMode(int portalId, int mode) => s.OpenDungeonRoomDialogWithMode?.Invoke(portalId, mode);
+        public void OpenDungeonRoomDialogRoom(int portalId) => s.OpenDungeonRoomDialogRoom?.Invoke(portalId);
+        public void CloseDungeonRoomDialog() => s.CloseDungeonRoomDialog?.Invoke();
     }
 
     /// <summary>MyPC's box listener (MyPC::OnMessage) for the portal move boxes.</summary>

@@ -136,6 +136,7 @@ public partial class HudScene : Node, IUiStageHost
         BuildHud();
         WatchParty();
         WatchPartySearch();
+        WatchDungeonRoom();
         WatchPcInfo();
         WatchItemMerge();
         // the portal and interact actions' notices & casting bar, the channel notices
@@ -246,6 +247,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPartySearch = null;
         unwatchPartyDps?.Invoke();
         unwatchPartyDps = null;
+        unwatchDungeonRoom?.Invoke();
+        unwatchDungeonRoom = null;
         unwatchAchieves?.Invoke();
         unwatchAchieves = null;
         unwatchMails?.Invoke();
@@ -1980,8 +1983,11 @@ public partial class HudScene : Node, IUiStageHost
         if (actions && k.PhysicalKeycode == Key.K) { if (!RideRefusesKey(0x61a85)) ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
         if (actions && Ms2.Ui.Hud.SkillCompactControlController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
         { ToggleSkillCompact(); return true; }   // action 400031: ToggleDialog(0x4ef6), no default key
+        if (actions && DungeonRoomDialogController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
+        { ToggleDungeonRoom(); return true; }    // action 400037 (DIK 40): ToggleDialog(0x4ebd), keytable.cpp:828
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
+        if (k.Keycode == Key.Escape && DungeonRoomOpen) { dungeonRoom.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
         if (k.Keycode == Key.Escape && PcInfoOpen) { pcInfo.Close(); return true; }
@@ -2396,7 +2402,7 @@ public partial class HudScene : Node, IUiStageHost
                 if (field != 0) worldMapSide?.SetPendingField(field);
                 if (search.Length != 0) worldMapSide?.SetPendingSearch(search);
             };
-            levelUpGuide.OpenDungeonRoom += code => GD.Print($"level-up guide: the dungeon room dialog (room {code}) is not in this HUD yet");
+            levelUpGuide.OpenDungeonRoom += OpenDungeonRoomOf;
             levelUpGuide.OpenDialog += name =>
             {
                 if (name == "InventoryDialog") { if (inventory == null || inventory.IsClosed) ToggleInventory(); }
@@ -4345,6 +4351,7 @@ public partial class HudScene : Node, IUiStageHost
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
         TickPartyDps();                                                      // UIPartyDPSDialog::vfunc_72
+        TickDungeonRoom();                                                   // UIDungeonRoomDialog's list
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
