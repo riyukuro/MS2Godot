@@ -677,6 +677,46 @@ public class LiveInteractObjectsTests
         Assert.That(live.IsCasting, Is.False);
         Assert.That(host.Sent[1], Is.InstanceOf<InteractObjectCompleteRequest>());
     }
+
+    sealed class CaptionHost : Host, IInteractHost
+    {
+        string IInteractHost.Common(int id) => id == 0x634 ? "Gather {0}" : Common(id);
+        string IInteractHost.InteractActionName(int rowId) => rowId == 600 ? "Ore" : rowId == 601 ? "Herb" : InteractActionName(rowId);
+    }
+
+    /// <summary>GatheringAction::vfunc_6 (@0x14095d4a0): the in-range objects' names counted in a CAtlMap&lt;CStringW, int&gt;
+    /// and listed in its order ("Herb" hashes to bin 13, "Ore" to 15), not in the order they were found.</summary>
+    [Test]
+    public void GatheringCaptionCountsTheNamesInTheMapOrder()
+    {
+        var host = new CaptionHost { MasteryInteractionDistance = 300 };
+        var tbl = MakeTable(
+            new InteractObjectRow { Id = 600, Type = InteractObjectMessage.KindGathering, InteractionDistance = 300 },
+            new InteractObjectRow { Id = 601, Type = InteractObjectMessage.KindGathering, InteractionDistance = 300 });
+        var live = new LiveInteractObjects(host, tbl);
+        live.Attach(new[]
+        {
+            XblockEntity("ore-1", 600, new Vec3(0, 0, 0)),
+            XblockEntity("herb-1", 601, new Vec3(50, 0, 0)),
+            XblockEntity("ore-2", 600, new Vec3(100, 0, 0)),
+            XblockEntity("ore-far", 600, new Vec3(900, 0, 0)),
+        });
+        live.Apply(new InteractObjectMessage
+        {
+            Mode = InteractObjectMessage.ModeStates,
+            Entries = new List<InteractObjectMessage.StateEntry>
+            {
+                new("ore-1", 1, 6, 0), new("herb-1", 1, 6, 0), new("ore-2", 1, 6, 0), new("ore-far", 1, 6, 0),
+            }
+        });
+        Assert.That(live.Poll(new Vec3(20, 0, 0)), Is.True);
+        Assert.That(live.IsGatheringCurrent, Is.True);
+        string caption = live.GatheringCaption();
+        Assert.That(caption, Is.EqualTo("Gather Herb x1, Ore x2"));
+        Assert.That(live.GatheringCaption(), Is.SameAs(caption), "kept while the in-range objects stay");
+        Assert.That(live.Poll(new Vec3(-250, 0, 0)), Is.True);
+        Assert.That(live.GatheringCaption(), Is.EqualTo("Gather Ore x1"));
+    }
 }
 
 public class InteractKeyTests

@@ -3027,4 +3027,64 @@ public class HudTests
         Assert.That(c.Listener, Is.Null);
         Assert.That(h.RT.Errors, Is.Empty);
     }
+    /// <summary>
+    /// UIActionTooltip (0x4e5c) on its movie: the refresh shows the current action's key and caption (the entity's show),
+    /// the frame hides it while the action is busy (gathering in StateInteraction 0x19), without a target it sits at the
+    /// stage centre plus OffsetActionTooltipX/Y, with one at the projected point kept inside the stage less its size.
+    /// </summary>
+    [Test]
+    public void ActionTooltipShowsTheCaptionHidesWhileBusyAndPlacesItself()
+    {
+        var m = Model();
+        int state = 0;
+        string caption = "Gather Herb x1, Ore x2";
+        Ms2.Formats.Model.Vec3? target = null;
+        var c = new ActionTooltipController
+        {
+            HasPlayer = () => true,
+            Current = () => 4,
+            Caption = () => caption,
+            OwnState = () => state,
+            Target = () => target,
+            Project = p => ((float)p.X, (float)p.Y),
+        };
+        var h = Load(c, m);
+        Assert.That(c.NeedsRefresh(), Is.True, "nothing shown yet");
+        c.Refresh();
+        for (int i = 0; i < 25; i++) h.Player.Tick();
+        Assert.That(c.ShownAction, Is.EqualTo(4));
+        Assert.That(c.ShownKind, Is.EqualTo("key"));
+        Assert.That(c.ShownKeyText, Is.Not.Empty, "the action key's name");
+        Assert.That(c.ShownKeyText, Is.EqualTo(m.Keys.GetKeyName(m.Keys.FindKeyByActionAndPriority(ActionTooltipController.ActionKeyCode, 0))));
+        Assert.That(Text(h, "actionName"), Is.EqualTo(caption));
+        Assert.That(c.Place, Is.EqualTo((1920 / 2f + 50, 1080 / 2f - 30)), "no target: the centre plus the offsets");
+        Assert.That(c.NeedsRefresh(), Is.False);
+
+        caption = "Gather Ore x1";
+        Assert.That(c.NeedsRefresh(), Is.True, "the caption changed");
+        c.Refresh();
+        Assert.That(Text(h, "actionName"), Is.EqualTo(caption));
+
+        state = 0x19;      // StateInteraction: gathering runs
+        Assert.That(c.Busy(), Is.True);
+        c.Process();
+        Assert.That(c.ShownAction, Is.EqualTo(-1), "hidden while gathering");
+        state = 0;
+        c.Process();
+        Assert.That(c.ShownAction, Is.EqualTo(4), "back when it ends");
+
+        target = new Ms2.Formats.Model.Vec3(5000, -40, 0);
+        c.Refresh();
+        double w = Math.Ceiling(Rt.ToNumber(h.Get(h.Entity, "width")));
+        Assert.That(c.Place.X, Is.EqualTo((float)(1920 - w)), "kept inside the stage");
+        Assert.That(c.Place.Y, Is.EqualTo(0f));
+        target = new Ms2.Formats.Model.Vec3(300, 200, 0);
+        c.Refresh();
+        Assert.That(c.Place, Is.EqualTo((300f, 200f)));
+
+        caption = "";
+        c.Refresh();
+        Assert.That(c.ShownAction, Is.EqualTo(-1), "an empty caption hides it");
+        Assert.That(new ActionTooltipController { HasPlayer = () => false }.Busy(), Is.True, "no player: busy");
+    }
 }

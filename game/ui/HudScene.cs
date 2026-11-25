@@ -47,6 +47,9 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog targetBar;                  // uiupperhpbar
     /// <summary>UIUpperHpBar's C++ side: the target HP bar at the top (Hit / Remove from combat, Process per frame).</summary>
     public Ms2.Ui.Hud.UpperHpBarController TargetBar { get; private set; }
+    /// <summary>The action key's tooltip (UIActionTooltip 0x4e5c); the field's action key poll refreshes it.</summary>
+    public Ms2.Ui.Hud.ActionTooltipController ActionTooltip { get; private set; }
+    MovieDialog actionTooltip;              // uiactiontooltip
     MovieDialog systemText;                 // uisystemtext
     /// <summary>UISystemText's C++ side: the system lines across the upper middle (the red warnings and the rest).</summary>
     public Ms2.Ui.Hud.SystemTextController SystemText { get; private set; }
@@ -436,6 +439,7 @@ public partial class HudScene : Node, IUiStageHost
         Minimap(uiRoot);
         UpperHud(uiRoot);
         TargetHpBar(uiRoot);
+        ActionTooltipPane(uiRoot, constants);
         SystemTextLines(uiRoot);
         CastingGauge(uiRoot);
         GuideEventPane(uiRoot);
@@ -831,6 +835,44 @@ public partial class HudScene : Node, IUiStageHost
         TargetBar = new Ms2.Ui.Hud.UpperHpBarController();
         targetBar = new MovieDialog(assets, TargetBar, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(targetBar);
+    }
+
+    /// <summary>
+    /// The action key's tooltip (UIActionTooltip 0x4e5c, uiactiontooltip.cpp), run by its movie; kept across relayouts. It
+    /// reads the action key poll's current action from the field and the live session; the field asks for the refresh.
+    /// STILL-OPEN: the dialog checks of its busy switch (0x4e56, 0x4e77, 0x4ebd) read as closed.
+    /// </summary>
+    void ActionTooltipPane(Control ui, ClientConstants constants)
+    {
+        int Code() => GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents fc
+            && Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyCode(fc.CurrentAction) : ActionTooltipController.NoAction;
+        ActionTooltip = new ActionTooltipController
+        {
+            HasPlayer = () => Ms2Godot.Net.LiveSession.Instance is { HasLocalPlayer: true },
+            Current = Code,
+            Caption = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyCaption(Code()) : "",
+            Target = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.ActionKeyTargetPoint(Code()) : null,
+            Talking = () => GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Talk.Open: true },
+            OwnState = () => Ms2Godot.Net.LiveSession.Instance is { } ls ? ls.OwnCurStateIdNow : 0,
+            Gamepad = () => GameOptions.GamePad.Use,
+            Keys = () => hudModel?.Keys,
+            Project = ProjectActionTarget,
+            OffsetX = constants.Int(ActionTooltipController.OffsetXKey, ActionTooltipController.DefaultOffsetX),
+            OffsetY = constants.Int(ActionTooltipController.OffsetYKey, ActionTooltipController.DefaultOffsetY),
+        };
+        actionTooltip = new MovieDialog(assets, ActionTooltip, NewModel(), ScreenMode.PixelSize(GetWindow()));
+        ui.AddChild(actionTooltip);
+    }
+
+    /// <summary>The tooltip's WorldToScreen: the camera's place of the field point at the movie's stage units, in whole
+    /// twips; null behind the camera.</summary>
+    (float X, float Y)? ProjectActionTarget(Vec3 at)
+    {
+        var c = GetViewport().GetCamera3D();
+        var godot = FieldBuilder.ToGodotPoint(at);
+        if (c == null || c.IsPositionBehind(godot)) return null;
+        var p = c.UnprojectPosition(godot);
+        return ((float)(Math.Floor(p.X / u * 20.0) / 20.0), (float)(Math.Floor(p.Y / u * 20.0) / 20.0));
     }
 
     /// <summary>
@@ -4331,6 +4373,7 @@ public partial class HudScene : Node, IUiStageHost
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();
+        ActionTooltip?.Process();            // UIActionTooltip::vfunc_15: hidden while busy, else placed
         SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
         mastery?.Process(Godot.Time.GetTicksMsec());
         CastingBar?.Process();               // UICastingBar::vfunc_15: an expired cast finishes

@@ -830,6 +830,38 @@ public partial class LiveSession
                 fld?.SetMouseControl(GameOptions.MouseControl.Value);
                 continue;
             }
+            if (step.StartsWith("tooltip:gather:"))      // tooltip:gather:<interact id>: the own pc put at that gathering object (no walk) until the action key's current action is gathering (4); the action tooltip (UIActionTooltip 0x4e5c) shows the gathering caption with the key, a shot; then the key starts the gathering and the tooltip hides while it runs (StateInteraction 0x19) and is back after it
+            {
+                int id = int.Parse(step[15..]);
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                var tip = hud.ActionTooltip;
+                var io = live.InteractObjects;
+                Ms2.Ui.LiveInteractObject o = null;
+                await until(() => live.player != null && (o = io?.All.FirstOrDefault(x => x.RowId == id)) != null, 60 * 20);
+                Check($"{step}: the gathering object in the field ({o?.Name}, state {o?.State})", o != null && tfc != null && tip != null);
+                if (o == null || tfc == null || tip == null) continue;
+                live.player.GlobalPosition = FieldBuilder.ToGodotPoint(o.Position) + new Vector3(40, 5, 0);
+                live.player.Velocity = Vector3.Zero;
+                await until(() => live.ActionKeyCode(tfc.CurrentAction) == 4 && tip.ShownAction == 4, 60 * 5);
+                await frames(30);
+                string cap = live.ActionKeyCaption(4);
+                GD.Print($"live: combat {step}: action {tfc.CurrentAction} (key {live.ActionKeyCode(tfc.CurrentAction)}), tooltip action {tip.ShownAction}, "
+                    + $"key \"{tip.ShownKeyText}\", kind {tip.ShownKind}, caption \"{tip.ShownText}\", at {tip.Place}");
+                Check($"{step}: the tooltip shows the gathering caption with the key (\"{cap}\")",
+                    tip.ShownAction == 4 && cap.Length > 0 && tip.ShownText == cap && tip.ShownKeyText.Length > 0 && tip.ShownKind == "key");
+                Shot($"tooltip_gather_{id}.png");
+                await PressActionKey(frames);
+                bool running = false, hidden = false;
+                await until(() => (running = live.OwnCurStateIdNow == 0x19) && (hidden = tip.ShownAction < 0), 60 * 3);
+                GD.Print($"live: combat {step}: after the key: state {live.OwnCurStateIdNow}, casting {io.IsCasting}, tooltip action {tip.ShownAction}");
+                if (running) Shot($"tooltip_gather_{id}_busy.png");
+                Check($"{step}: the tooltip hides while the gathering runs (state 0x19)", running && hidden);
+                await until(() => live.OwnCurStateIdNow != 0x19, 60 * 15);
+                await until(() => tip.ShownAction == 4, 60 * 3);
+                GD.Print($"live: combat {step}: after the gathering: tooltip action {tip.ShownAction}, caption \"{tip.ShownText}\"");
+                Check($"{step}: the tooltip is back after the gathering", tip.ShownAction == 4 || live.ActionKeyCode(tfc.CurrentAction) != 4);
+                continue;
+            }
             if (step.StartsWith("hold:"))      // hold:<npc id>: spawns the npc, checks it has hold nodes (PCBase::vfunc_117), puts the own pc beside it until the action key's current action is the hold (6) with its caption, then the key holds on (StateHold 0x20 on that npc, the let-go caption) and the key again lets go
             {
                 int nid = int.Parse(step[5..]);
@@ -861,6 +893,10 @@ public partial class LiveSession
                 string wantCap = nid == Ms2.Ui.HoldAction.CartNpcId ? ht.Common(Ms2.Ui.HoldAction.CaptionCartKey) ?? "" : ht.Common(Ms2.Ui.HoldAction.CaptionHold);
                 Check($"{step}: the hold is the current action on the npc with the hold caption (want \"{wantCap}\")",
                     current && live.Hold.NpcId == nid && capHold.Length > 0 && capHold == wantCap);
+                await until(() => hud.ActionTooltip?.ShownAction == 6, 60);
+                Check($"{step}: the action tooltip shows the hold caption (\"{hud.ActionTooltip?.ShownText}\")",
+                    hud.ActionTooltip is { ShownAction: 6 } ht6 && ht6.ShownText == capHold);
+                Shot($"tooltip_hold_{nid}.png");
                 if (!current) continue;
                 // the move gate (Unk_PCMove::FUN_141683ef0): a held state flag (vfunc_63 0) closes it, and the poll drops the hold
                 live.player.AddStateFlags(Ms2.Ui.AutoFindTaxiStation.StateFlag);
@@ -883,6 +919,9 @@ public partial class LiveSession
                 GD.Print($"live: combat {step}: in the hold: action {hfc.CurrentAction}, caption \"{capEnd}\"");
                 Check($"{step}: in the hold the action is the hold with the let-go caption",
                     hfc.CurrentAction == Ms2.Ui.ActionKeyTarget.Hold && capEnd.Length > 0 && capEnd != capHold);
+                await until(() => hud.ActionTooltip?.ShownText == capEnd, 60);
+                Check($"{step}: the action tooltip changes to the let-go caption (\"{hud.ActionTooltip?.ShownText}\")",
+                    hud.ActionTooltip is { ShownAction: 6 } hte && hte.ShownText == capEnd);
                 hfc.ActivateCurrentAction();
                 await until(() => live.player.State != Player.MoveState.Hold, 60 * 3);
                 await frames(60);

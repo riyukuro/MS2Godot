@@ -959,6 +959,38 @@ public sealed class LiveInteractObjects : ICastingEventListener
     /// </summary>
     public bool Poll(Vec3 playerPos) => PollGatheringAction(playerPos) || PollInteractAction(playerPos);
 
+    /// <summary>
+    /// GatheringAction::vfunc_6 (@0x14095d4a0, actionkeyobject.cpp:2505-2527): each in-range object's name (string table 0xb
+    /// by its row) counted in a CAtlMap&lt;CStringW, int&gt;, then "{name} x{count}" joined by ", " in the map's order
+    /// (<see cref="Ms2.Quest.QuestLog.AtlStringMapOrder"/>), in GetActionCaption(0x634). Kept while the in-range objects
+    /// stay the same, so the action key's tooltip test allocates nothing.
+    /// </summary>
+    public string GatheringCaption()
+    {
+        bool same = gatherCaptionRows.Count == gatherInRange.Count && gatherCaption != null;
+        for (int i = 0; same && i < gatherInRange.Count; i++) same = gatherCaptionRows[i] == gatherInRange[i].RowId;
+        if (same) return gatherCaption;
+        gatherCaptionRows.Clear();
+        var names = new List<string>(gatherInRange.Count);
+        var counts = new Dictionary<string, int>();
+        foreach (var g in gatherInRange)
+        {
+            gatherCaptionRows.Add(g.RowId);
+            string name = host.InteractActionName(g.RowId) ?? "";
+            names.Add(name);
+            counts[name] = counts.TryGetValue(name, out int n) ? n + 1 : 1;
+        }
+        var text = new System.Text.StringBuilder();
+        foreach (string name in Ms2.Quest.QuestLog.AtlStringMapOrder(names))
+        {
+            if (text.Length != 0) text.Append(", ");
+            text.Append(ClientFormat.Format("{0} x{1}", name, counts[name]));
+        }
+        return gatherCaption = ActionCaption.Of(host.Common(0x634) ?? "", text.ToString());
+    }
+    readonly List<int> gatherCaptionRows = new();
+    string gatherCaption;
+
     /// <summary>GatheringAction (key 4), the first of <see cref="Poll"/>; clears the polled object when it does not take
     /// the key. InteractNpcAction (key 0x11) sits between it and <see cref="PollInteractAction"/>.</summary>
     public bool PollGatheringAction(Vec3 playerPos)

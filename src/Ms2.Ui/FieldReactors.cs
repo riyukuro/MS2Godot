@@ -312,7 +312,7 @@ public sealed class FieldReactors
     /// reactor, for one that is gone, without its current state data or when the state's action string
     /// (GetStringCommonByKey(actionStringKey)) is empty; else GetActionCaption(0x65e "s_action_reactor", action string).
     /// It builds strings: call it when the polled reactor or its state changes, not per frame.
-    /// STILL-OPEN: the action key tooltip that shows it (UIActionTooltip 0x4e5c) has no port.
+    /// The action key tooltip (UIActionTooltip 0x4e5c) shows it; no server here sends the Reactor packet, so it has no live run.
     /// </summary>
     public string Caption(int polled, Func<string, string> commonByKey)
     {

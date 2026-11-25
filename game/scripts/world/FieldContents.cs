@@ -677,6 +677,7 @@ public partial class FieldContents : Node3D
                     if (onInteract && Ms2Godot.Net.LiveSession.Instance is { HoldPolled: true })
                         actionKeys.Current = Ms2.Ui.ActionKeyTarget.Hold;
                 }
+                RefreshActionTooltip();
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
             if (!pressed) return;
@@ -687,6 +688,21 @@ public partial class FieldContents : Node3D
         if (talk != null && talk.Open) { if (pressed) talk.ActionKey(); return; }
         if (action && TryEnter()) return;
         if (pressed) talk?.ActionKey();
+    }
+
+    int tooltipCode = Ms2.Ui.Hud.ActionTooltipController.NoAction;
+
+    /// <summary>
+    /// Unk_ActionKeyManager::Update's end (actionkeyobject.cpp:571-601): the tooltip (UIActionTooltip 0x4e5c) refreshes when
+    /// m_nCur changes, else when it shows another action, title or caption than the current one. STILL-OPEN: vfunc_4's
+    /// accept of a new action and vfunc_10's refresh ask (the hold's npc change; its caption change is caught by the text).
+    /// </summary>
+    void RefreshActionTooltip()
+    {
+        if (GetTree().CurrentScene is not HudScene { ActionTooltip: { } tip } || Ms2Godot.Net.LiveSession.Instance is not { } ls) return;
+        int code = ls.ActionKeyCode(actionKeys.Current);
+        if (code != tooltipCode) { tooltipCode = code; tip.Refresh(); }
+        else if (tip.NeedsRefresh()) tip.Refresh();
     }
 
     /// <summary>The action key's current action (m_nCur) as the last poll left it; None offline.</summary>
