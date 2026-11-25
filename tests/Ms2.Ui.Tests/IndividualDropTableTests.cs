@@ -19,14 +19,24 @@ public class IndividualDropTableTests
         return packs = new PackSet(d);
     }
 
-    static int FirstBox(PackSet p)
+    static int FirstBox(PackSet p, IndividualDropTable table, ItemDataTable items)
     {
+        var probe = new List<ItemDropEntry>();
+        bool HasKnownItems(int id)
+        {
+            if (id == 0) return false;
+            probe.Clear();
+            return table.GetBoxItems(items, id, 1, 2, false, probe) && probe.Count > 0;
+        }
         if (p.Exists("Xml", "table/individualitemdrop_final.xml"))
         {
             foreach (var b in GameStrings.Parse(p.Read("Xml", "table/individualitemdrop_final.xml")).Root.Elements("dropBox"))
                 if (FeatureElements.IsAvailable(p, b) && b.Elements("group").Any(g => FeatureElements.IsAvailable(p, g)
                     && g.Elements("v").Any(v => FeatureElements.IsAvailable(p, v))))
-                    return ItemData.Atoi((string)b.Attribute("dropBoxID") ?? "0");
+                {
+                    int id = ItemData.Atoi((string)b.Attribute("dropBoxID") ?? "0");
+                    if (HasKnownItems(id)) return id;
+                }
             return 0;
         }
         string region = TablePath.Region(e => p.Exists("Xml", e));
@@ -35,12 +45,13 @@ public class IndividualDropTableTests
         var names = p.List("Xml").Where(n => n.EndsWith(".xml", StringComparison.Ordinal)
                 && (IsDropFile(n, "table/") || IsDropFile(n, "table/" + region + "/")))
             .OrderBy(n => n.Count(c => c == '/')).ThenBy(n => n, StringComparer.Ordinal);
+        var seen = new HashSet<int>();
         foreach (var name in names)
             foreach (var e in GameStrings.Parse(p.Read("Xml", name)).Root.Elements("individualDropBox"))
                 if (FeatureElements.IsAvailable(p, e))
                 {
                     int id = ItemData.Atoi((string)e.Attribute("individualDropBoxID") ?? "0");
-                    if (id != 0) return id;
+                    if (seen.Add(id) && HasKnownItems(id)) return id;
                 }
         return 0;
     }
@@ -60,13 +71,14 @@ public class IndividualDropTableTests
     public void ALoadedBoxListsItsItemsWithKnownData()
     {
         var p = Packs();
-        int id = FirstBox(p);
-        Assert.That(id, Is.Not.EqualTo(0), "no individual drop box in this data");
         var items = new ItemDataTable(p);
         var table = new IndividualDropTable(p);
+        int id = FirstBox(p, table, items);
+        Assert.That(id, Is.Not.EqualTo(0), "no individual drop box with known items in this data");
         Assert.That(table.Has(id));
         var list = new List<ItemDropEntry>();
         Assert.That(table.GetBoxItems(items, id, 1, 2, false, list), Is.True);
+        Assert.That(list, Is.Not.Empty);
         foreach (var e in list) Assert.That(items.Get(e.ItemId), Is.Not.Null);
         // hiding the tooltip-2 entries never adds any
         var shown = new List<ItemDropEntry>();
