@@ -143,4 +143,51 @@ public class SceneLoginTests
         Assert.That(ended, Is.EqualTo(0), "connected: FUN_141acf420 is not run");
         Assert.That(rt.Errors, Is.Empty);
     }
+
+    /// <summary>
+    /// IsRegionListUsed (uiscenelogin.cpp:443-456) over its inputs: the Nexon platform's vfunc_0, else the country. The
+    /// platforms this client makes (Nexon Korea, vfunc_0 0; Tencent, country 3) all give false, and the scene's default is
+    /// the same.
+    /// </summary>
+    [Test]
+    public void TheRegionListIsUsedForPlatformKind1OrCountry2Only()
+    {
+        Assert.That(SceneLoginController.IsRegionListUsed(true, 1, 0), Is.True);
+        Assert.That(SceneLoginController.IsRegionListUsed(true, 0, 2), Is.False, "on the Nexon platform the country is not read");
+        for (int country = 0; country < 4; country++)
+            Assert.That(SceneLoginController.IsRegionListUsed(false, 1, country), Is.EqualTo(country == 2));
+        Assert.That(SceneLoginController.IsRegionListUsed(true, 0, 0), Is.False, "the Nexon Korea platform");
+        Assert.That(SceneLoginController.IsRegionListUsed(false, 0, 3), Is.False, "the Tencent platform");
+        Assert.That(new SceneLoginController().RegionListUsed, Is.False);
+    }
+
+    /// <summary>
+    /// With the region list used, the scene's branches go to it (uiscenelogin.cpp:311-338, :412-418, :482-487): the id start
+    /// opens it before the login dialog, the ticket start opens it instead of hiding the movie, a failed connect pops it up,
+    /// and the movie's popdown end does not connect.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void AUsedRegionListTakesTheScenesBranches(bool passport)
+    {
+        var order = new List<string>();
+        var (h, c, p, rt) = Load(true, s =>
+        {
+            s.Passport = passport;
+            s.RegionListUsed = true;
+            s.OpenRegionList += () => order.Add("region");
+            s.PopupRegionList += () => order.Add("popup");
+            s.OpenLoginDialogs += () => order.Add("login");
+            s.EndPopdown += () => order.Add("connect");
+        });
+        if (passport) c.BackgroundEvent("endShowTitle");
+        for (int i = 0; i < 120; i++) { c.Tick(); p.Tick(); }
+        Assert.That(c.Shown, Is.True);
+        Assert.That(order, Is.EqualTo(passport ? new[] { "region" } : new[] { "region", "login" }));
+        order.Clear();
+        c.OnCallback("OnEndPopdown", Array.Empty<object>());
+        c.FailConnect();
+        Assert.That(order, Is.EqualTo(new[] { "popup" }));
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }

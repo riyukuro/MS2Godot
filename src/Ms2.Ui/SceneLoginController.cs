@@ -10,8 +10,8 @@ namespace Ms2.Ui;
 /// login dialogs. IsNexonPlatform is 0 for the id and password start, so the title shows as soon as the background has
 /// loaded; the launcher ticket's start is the Nexon platform's (<see cref="Passport"/>): the title plays to its end and the
 /// scene connects with no login dialog.
-/// STILL-OPEN: the region list dialog (0x4eef, IsRegionListUsed: country DAT_143ab0248 == 2) is not ported; the preload
-/// (CFilePreload) is taken as done.
+/// The region list dialog (0x4eef) goes with <see cref="RegionListUsed"/>, which is false on every start this client
+/// makes. STILL-OPEN: the preload (CFilePreload) is taken as done.
 /// </summary>
 public sealed class SceneLoginController : UiController
 {
@@ -39,7 +39,10 @@ public sealed class SceneLoginController : UiController
     public event Action GameOption;
     /// <summary>OnPrev (vfunc_28): the state service goes to the mode select scene 0x6200085.</summary>
     public event Action Prev;
-    /// <summary>OnEndPopdown (the movie's hide tween ended): UISceneLogin::OnEndPopdown, the connect to the chosen server.</summary>
+    /// <summary>
+    /// OnEndPopdown (the movie's hide tween ended): UISceneLogin::OnEndPopdown (uiscenelogin.cpp:482-487), the connect to the
+    /// configured server, when the region list is not used (its own popdown connects then).
+    /// </summary>
     public event Action EndPopdown;
 
     /// <summary>
@@ -48,6 +51,26 @@ public sealed class SceneLoginController : UiController
     /// connected it hides its movie (FUN_141acf420), whose OnEndPopdown connects (uiscenelogin.cpp:481-486).
     /// </summary>
     public bool Passport;
+    /// <summary>
+    /// IsRegionListUsed (:0x141acfb40, uiscenelogin.cpp:443-456): on the Nexon platform its vfunc_0 is 1, else the client
+    /// country (DAT_143ab0248, set from -locale by FUN_1406509e0, localepath.cpp:597-608: 0 KR, 1 JP, 2 NA, 3 CN) is 2.
+    /// </summary>
+    public static bool IsRegionListUsed(bool nexonPlatform, int platformKind, int country) =>
+        nexonPlatform ? platformKind == 1 : country == 2;
+
+    /// <summary>
+    /// <see cref="IsRegionListUsed"/> for this start; false on every start that reaches the scene. The Nexon Korea platform
+    /// (country 0) keeps the base vfunc_0, 0 (ms2clientplatformbase.cpp:187; ms2clientplatformnexonkorea.h overrides
+    /// vfunc_1 only), and off it the country is 0 or 3: CreateClientPlatform makes a platform for those two only
+    /// (ms2clientplatform.cpp:26-44) and InitInstance quits without one (ms2.cpp:1610-1617), so NA (2) never gets here.
+    /// The NA client's region source (its platform's vfunc_57, which UIRegionListDialog reads) is not in this client.
+    /// </summary>
+    public bool RegionListUsed;
+    /// <summary>OpenDialog(0x4eef), the region list, from OpenLoginDialogs and FUN_141acf420 when <see cref="RegionListUsed"/>.</summary>
+    public event Action OpenRegionList;
+    /// <summary>FUN_141acf470's UIRegionListDialog::FUN_140e80910 (popup) when <see cref="RegionListUsed"/>.</summary>
+    public event Action PopupRegionList;
+
     /// <summary>CNetworkService::IsConnected for the passport start's check (uiscenelogin.cpp:205-208); null is not connected.</summary>
     public Func<bool> Connected;
 
@@ -113,7 +136,6 @@ public sealed class SceneLoginController : UiController
     /// vfunc_15 (:0x141aceef0, uiscenelogin.cpp:192-220), every frame: the bar, then while the dialogs are not open the
     /// preload's bits, and at 0xffff the login dialogs; on the Nexon platform (<see cref="Passport"/>) none: when the network
     /// service is not connected (and DAT_143ab284b is clear) FUN_141acf420 hides the movie, whose OnEndPopdown connects.
-    /// STILL-OPEN: FUN_141acf420's region list (IsRegionListUsed: the platform's vfunc_0 == 1) is not ported.
     /// </summary>
     public void Tick()
     {
@@ -122,8 +144,8 @@ public sealed class SceneLoginController : UiController
         AddProgressBits(0x3ffe);
         if (progress == 0xffff)
         {
-            if (!Passport) OpenLoginDialogs?.Invoke();
-            else if (Connected?.Invoke() != true) HideMovie();
+            if (!Passport) { if (RegionListUsed) OpenRegionList?.Invoke(); OpenLoginDialogs?.Invoke(); }
+            else if (Connected?.Invoke() != true) RegionListOrHide();
             shown = true;
             exitFlag = 1;
         }
@@ -147,9 +169,20 @@ public sealed class SceneLoginController : UiController
         Host.Invoke("show", o);
     }
 
-    /// <summary>FUN_141acf470 (vfunc_64, the connect failed): failConnect(obj) with the button flags; the movie shows again.</summary>
+    /// <summary>FUN_141acf420 (uiscenelogin.cpp:311-317): the region list when used, else the movie hides.</summary>
+    void RegionListOrHide()
+    {
+        if (RegionListUsed) OpenRegionList?.Invoke();
+        else HideMovie();
+    }
+
+    /// <summary>
+    /// FUN_141acf470 (vfunc_64, the connect failed, uiscenelogin.cpp:320-338): the region list pops up again when used, then
+    /// failConnect(obj) with the button flags; the movie shows again.
+    /// </summary>
     public void FailConnect()
     {
+        if (RegionListUsed) PopupRegionList?.Invoke();
         if (Host?.Entity == null) return;
         Host.Invoke("failConnect", ButtonFlags());
     }
@@ -186,7 +219,7 @@ public sealed class SceneLoginController : UiController
         if (Is(name, "OnGameExit")) { GameExit?.Invoke(); return true; }
         if (Is(name, "OnGameOption")) { GameOption?.Invoke(); return true; }
         if (Is(name, "OnPrev")) { Prev?.Invoke(); return true; }
-        if (Is(name, "OnEndPopdown")) { EndPopdown?.Invoke(); return true; }
+        if (Is(name, "OnEndPopdown")) { if (!RegionListUsed) EndPopdown?.Invoke(); return true; }
         return false;
     }
 

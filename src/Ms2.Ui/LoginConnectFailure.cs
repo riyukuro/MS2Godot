@@ -2,8 +2,8 @@ namespace Ms2.Ui;
 
 /// <summary>
 /// UISceneLogin::vfunc_64 (FUN_141acf470, uiscenelogin.cpp:305-335), what the client does when the connect to the login
-/// server failed or timed out: the login dialog's ShowConnectFailure, then the scene movie's failConnect.
-/// STILL-OPEN: the region list call between the two (IsRegionListUsed, UIRegionListDialog) is not ported with the region list.
+/// server failed or timed out: the login dialog's ShowConnectFailure, then the scene's FailConnect (the region list's popup
+/// when it is used, <see cref="SceneLoginController.RegionListUsed"/>, then the movie's failConnect).
 /// </summary>
 public static class LoginConnectFailure
 {
