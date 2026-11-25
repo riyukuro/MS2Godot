@@ -262,25 +262,14 @@ public sealed class LiveInteractObjects : ICastingEventListener
         if (entities != null)
         {
             for (int i = 0; i < entities.Count; i++)
+                if (entities[i].HasMixin(TelescopeModel)) telescopes.Add(entities[i]);
+            foreach (var (e, row, name) in Registered(entities, table))
             {
-                var e = entities[i];
-                if (e.HasMixin(TelescopeModel)) telescopes.Add(e);
-                if (!IsInteractEntity(e)) continue;
-                int rowId = (int)e.Number("interactID");
-                var row = table?.Get(rowId);
-                if (row == null) continue;
-                string rawId = e.Raw?.Id;
-                if (string.IsNullOrEmpty(rawId)) continue;
-                string name = rawId.ToLowerInvariant();
-                if (byName.ContainsKey(name)) continue;
                 var (assetType, assetA, assetB) = MeshAssets(e);
-                // CInteractMeshObject::vfunc_1 returns 0 for an entity of neither model before CInteractObject::vfunc_1 sets
-                // the row and the name, so no mesh-kind object of another model is reachable by name.
-                if (IsMeshKind(row.Type) && assetType == 0) continue;
                 var obj = new LiveInteractObject
                 {
                     Name = name,
-                    RowId = rowId,
+                    RowId = row.Id,
                     Kind = (byte)row.Type,
                     State = 0,
                     Position = e.Position,
@@ -318,24 +307,68 @@ public sealed class LiveInteractObjects : ICastingEventListener
     }
 
     /// <summary>
-    /// The reactable model of a field entity's interact mesh object when it differs from the entity's own: the asset B that
-    /// CInteractMeshObject::vfunc_1 (@0x1413febf0, interactobject.cpp:752-777) reads from reactableAssetName (0xae1cf70e) and
-    /// FUN_1413ff690 (:909-921) sets as the entity's NifAsset in state 1. Null unless the entity is one <see cref="Attach"/> makes
-    /// a mesh object for (an MS2InteractObject with an id whose interactID row is a mesh kind, of model MS2InteractMesh), it is
-    /// visible at the load, the row is not a watch tower (its vfunc_3 applies an asset only near, @0x1414034e0) and
-    /// reactableAssetName is a urn:llid other than NifAsset.
-    /// STILL-OPEN: an entity hidden at the load (IsVisible false) is shown by the client's vfunc_3 in state 0 and 1; it is not
-    /// drawn here in either model.
+    /// The entities <see cref="Attach"/> registers, in its order, with their rows and names: an MS2InteractObject (model or
+    /// mixin) with an id whose interactID row exists, named by its lowercase id; the first of a name wins and a later entity
+    /// of that name is left out; a mesh-kind row on an entity of neither mesh model is left out before it takes the name
+    /// (CInteractMeshObject::vfunc_1 returns 0 for it before CInteractObject::vfunc_1 sets the row and the name).
     /// </summary>
-    public static string ReactableModel(FieldEntity e, InteractObjectTable table)
+    public static List<(FieldEntity Entity, InteractObjectRow Row, string Name)> Registered(IReadOnlyList<FieldEntity> entities, InteractObjectTable table)
     {
-        if (e == null || table == null || !IsInteractEntity(e) || !e.HasMixin("MS2InteractMesh")) return null;
-        if (string.IsNullOrEmpty(e.Raw?.Id) || !e.Bool("IsVisible", true)) return null;
-        var row = table.Get((int)e.Number("interactID"));
-        if (row == null || !IsMeshKind(row.Type) || row.Type == InteractObjectMessage.KindWatchTower) return null;
-        var (_, a, b) = MeshAssets(e);
-        if (!b.StartsWith("urn:llid:", StringComparison.Ordinal) || string.Equals(a, b, StringComparison.Ordinal)) return null;
-        return b;
+        var found = new List<(FieldEntity, InteractObjectRow, string)>();
+        if (entities == null || table == null) return found;
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < entities.Count; i++)
+        {
+            var e = entities[i];
+            if (!IsInteractEntity(e)) continue;
+            var row = table.Get((int)e.Number("interactID"));
+            if (row == null) continue;
+            string rawId = e.Raw?.Id;
+            if (string.IsNullOrEmpty(rawId)) continue;
+            string name = rawId.ToLowerInvariant();
+            if (names.Contains(name)) continue;
+            if (IsMeshKind(row.Type) && MeshAssets(e).Type == 0) continue;
+            names.Add(name);
+            found.Add((e, row, name));
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The reactable models of a field's interact mesh objects where they differ from the entity's own: for each MS2InteractMesh
+    /// object <see cref="Registered"/> gives with a mesh-kind row, the asset B that CInteractMeshObject::vfunc_1 (@0x1413febf0,
+    /// interactobject.cpp:752-777) reads from reactableAssetName (0xae1cf70e) and FUN_1413ff690 (:909-921) sets as the entity's
+    /// NifAsset, when it is a urn:llid other than NifAsset. That covers an entity hidden at the load (vfunc_3 sets IsVisible
+    /// whatever the load had, <see cref="StateShownMeshes"/>) and a watch tower (its vfunc_3 @0x1414034e0 sets the asset while the
+    /// player is near, <see cref="WatchTowerAsset"/>). An entity whose name an earlier one took has no object, so nothing ever
+    /// sets its asset and it has none here.
+    /// </summary>
+    public static Dictionary<FieldEntity, string> ReactableModels(IReadOnlyList<FieldEntity> entities, InteractObjectTable table)
+    {
+        var models = new Dictionary<FieldEntity, string>();
+        foreach (var (e, row, _) in Registered(entities, table))
+        {
+            if (!IsMeshKind(row.Type)) continue;
+            var (type, a, b) = MeshAssets(e);
+            if (type != 1 || !b.StartsWith("urn:llid:", StringComparison.Ordinal) || string.Equals(a, b, StringComparison.Ordinal)) continue;
+            models[e] = b;
+        }
+        return models;
+    }
+
+    /// <summary>
+    /// The MS2InteractMesh entities whose object's state sets IsVisible (0xa0b6b179): every one <see cref="Registered"/> gives
+    /// with a mesh-kind row other than a watch tower. CInteractObject::vfunc_1 ends with vfunc_3(0) (interactobject.cpp:369),
+    /// which sets IsVisible true (CInteractMeshObject::vfunc_3 @0x1413fef20, :781-819), so such an entity hidden at the load
+    /// is drawn from its registration until a state 2 hides it. A watch tower's vfunc_3 (@0x1414034e0, :1721-1734) never sets
+    /// IsVisible, so its entity keeps the load's.
+    /// </summary>
+    public static HashSet<FieldEntity> StateShownMeshes(IReadOnlyList<FieldEntity> entities, InteractObjectTable table)
+    {
+        var shown = new HashSet<FieldEntity>();
+        foreach (var (e, row, _) in Registered(entities, table))
+            if (IsMeshKind(row.Type) && row.Type != InteractObjectMessage.KindWatchTower && MeshAssets(e).Type == 1) shown.Add(e);
+        return shown;
     }
 
     /// <summary>FUN_1413ff690 (@0x1413ff690, interactobject.cpp:909-921) for an MS2InteractMesh object: SetAssetIdProperty
@@ -451,7 +484,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
         host.OnObjectStateChanged(o);
     }
 
-    static bool IsInteractEntity(FieldEntity e) =>
+    public static bool IsInteractEntity(FieldEntity e) =>
         string.Equals(e.ModelName, "MS2InteractObject", StringComparison.OrdinalIgnoreCase) || e.HasMixin("MS2InteractObject");
 
     // ---- Recv: CSceneStateGame::OnInteractObject (@0x14172d0f0, scenestategame.cpp:6218-6494) ------------------------

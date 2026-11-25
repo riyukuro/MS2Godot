@@ -84,7 +84,7 @@ public class InteractMeshStateTests
     }
 
     [Test]
-    public void AReactableModelIsTheMeshsOtherModelOnARegisteredVisibleNonTowerMesh()
+    public void AReactableModelIsTheOtherModelOfEveryRegisteredMeshObjectAndOnlyThoseAreShownByState()
     {
         var t = Table(new InteractObjectRow { Id = 1, Type = InteractObjectMessage.KindMesh },
                       new InteractObjectRow { Id = 6, Type = InteractObjectMessage.KindGathering },
@@ -96,17 +96,37 @@ public class InteractMeshStateTests
             e.Flat.Mixins.Add("MS2InteractMesh");
             return e;
         }
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M1", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.EqualTo("urn:llid:bb"));
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M2", 1, ("reactableAssetName", "urn:llid:bb")), t), Is.EqualTo("urn:llid:bb"), "no model of its own");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("G1", 6, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.EqualTo("urn:llid:bb"));
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M3", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:aa")), t), Is.Null, "the same model");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M4", 1, ("NifAsset", "urn:llid:aa")), t), Is.Null, "no reactable model");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M5", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"), ("IsVisible", "false")), t), Is.Null, "hidden at the load");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("W1", 9, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "a watch tower");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("T1", 2, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "not a mesh kind");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("N1", 7777, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "no row");
-        Assert.That(LiveInteractObjects.ReactableModel(Mesh("", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "no id");
-        Assert.That(LiveInteractObjects.ReactableModel(Entity("A1", 1, "MS2InteractActor", ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "not an MS2InteractMesh");
+        var m1 = Mesh("M1", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var m2 = Mesh("M2", 1, ("reactableAssetName", "urn:llid:bb"));
+        var g1 = Mesh("G1", 6, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var m3 = Mesh("M3", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:aa"));
+        var m4 = Mesh("M4", 1, ("NifAsset", "urn:llid:aa"));
+        var m5 = Mesh("M5", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"), ("IsVisible", "false"));
+        var w1 = Mesh("W1", 9, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var w2 = Mesh("W2", 9, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"), ("IsVisible", "false"));
+        var t1 = Mesh("T1", 2, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var n1 = Mesh("N1", 7777, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var noId = Mesh("", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var a1 = Entity("A1", 1, "MS2InteractActor", ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"));
+        var dup = Mesh("m1", 1, ("NifAsset", "urn:llid:cc"), ("reactableAssetName", "urn:llid:dd"));   // M1's name, lower case
+        var field = new[] { m1, m2, g1, m3, m4, m5, w1, w2, t1, n1, noId, a1, dup };
+        var models = LiveInteractObjects.ReactableModels(field, t);
+        Assert.That(models[m1], Is.EqualTo("urn:llid:bb"));
+        Assert.That(models[m2], Is.EqualTo("urn:llid:bb"), "no model of its own");
+        Assert.That(models[g1], Is.EqualTo("urn:llid:bb"));
+        Assert.That(models[m5], Is.EqualTo("urn:llid:bb"), "hidden at the load: its state shows it");
+        Assert.That(models[w1], Is.EqualTo("urn:llid:bb"), "a watch tower sets it while the player is near");
+        Assert.That(models[w2], Is.EqualTo("urn:llid:bb"));
+        foreach (var (e, why) in new[] { (m3, "the same model"), (m4, "no reactable model"), (t1, "not a mesh kind"), (n1, "no row"),
+                                         (noId, "no id"), (a1, "not an MS2InteractMesh"), (dup, "a name an earlier entity took") })
+            Assert.That(models.ContainsKey(e), Is.False, why);
+        Assert.That(models, Has.Count.EqualTo(6));
+        // the same entities the session registers
+        var (_, live) = Field(t, field);
+        Assert.That(live.All.Select(o => o.Entity).Where(models.ContainsKey), Is.EquivalentTo(models.Keys));
+        Assert.That(live.ByName("m1").Entity, Is.SameAs(m1));
+        var shown = LiveInteractObjects.StateShownMeshes(field, t);
+        Assert.That(shown, Is.EquivalentTo(new[] { m1, m2, g1, m3, m4, m5 }), "registered meshes but watch towers; hidden ones too");
     }
 
     [Test]

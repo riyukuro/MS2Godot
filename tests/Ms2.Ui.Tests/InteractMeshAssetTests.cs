@@ -8,8 +8,8 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>Every map's MS2InteractMesh objects on the data: the assets CInteractMeshObject::vfunc_1 (@0x1413febf0,
 /// interactobject.cpp:752-777) takes from the entity (NifAsset, reactableAssetName), and what state 1 swaps to. Every
-/// reactable model that differs from the entity's own resolves to a model, and LiveInteractObjects.ReactableModel names it for
-/// exactly the registered, visible, non-tower meshes whose reactable model differs.</summary>
+/// reactable model that differs from the entity's own resolves to a model, and LiveInteractObjects.ReactableModels names it for
+/// exactly the registered meshes whose reactable model differs (hidden at the load and watch towers too).</summary>
 public class InteractMeshAssetDataTests
 {
     [Test]
@@ -21,7 +21,7 @@ public class InteractMeshAssetDataTests
         var flats = new FlatLibrary(packs);
         var table = InteractObjectTable.Shared(packs);
         var assets = AssetIndex.For(packs);
-        int maps = 0, meshes = 0, same = 0, emptyB = 0, differ = 0, unresolved = 0, twins = 0, hidden = 0;
+        int maps = 0, meshes = 0, same = 0, emptyB = 0, differ = 0, unresolved = 0, twins = 0, hidden = 0, towers = 0;
         var wrong = new List<string>();
         var kinds = new SortedDictionary<string, int>();
         foreach (var entry in packs.List(XBlock.Archive).Where(n => n.StartsWith("xblock/") && n.EndsWith(".xblock")).OrderBy(n => n, StringComparer.Ordinal))
@@ -31,18 +31,21 @@ public class InteractMeshAssetDataTests
             try { map = FieldMap.Load(packs, flats, name); } catch (Exception) { continue; }
             var live = new LiveInteractObjects(new LiveInteractObjectsTests.Host(), table);
             live.Attach(map.Entities);
+            var models = LiveInteractObjects.ReactableModels(map.Entities, table);
             bool any = false;
             foreach (var o in live.All)
             {
                 if (o.AssetType != 1 || !LiveInteractObjects.IsMeshKind(o.Kind)) continue;
-                var reactable = LiveInteractObjects.ReactableModel(o.Entity, table);
-                bool visible = o.Entity.Bool("IsVisible", true);
-                bool wanted = visible && o.Kind != InteractObjectMessage.KindWatchTower && o.AssetB.Length > 0
-                              && !string.Equals(o.AssetA, o.AssetB, StringComparison.Ordinal);
+                var reactable = models.GetValueOrDefault(o.Entity);
+                bool wanted = o.AssetB.StartsWith("urn:llid:", StringComparison.Ordinal) && !string.Equals(o.AssetA, o.AssetB, StringComparison.Ordinal);
                 if ((reactable != null) != wanted || reactable != null && reactable != o.AssetB)
                     wrong.Add($"{name} {o.Name}: reactable model {reactable ?? "none"}, wanted {(wanted ? o.AssetB : "none")}");
-                if (reactable != null) twins++;
-                else if (!visible && o.AssetB.Length > 0 && !string.Equals(o.AssetA, o.AssetB, StringComparison.Ordinal)) hidden++;
+                if (reactable != null)
+                {
+                    twins++;
+                    if (!o.Entity.Bool("IsVisible", true)) hidden++;
+                    if (o.Kind == InteractObjectMessage.KindWatchTower) towers++;
+                }
                 any = true;
                 meshes++;
                 string k = $"kind {o.Kind} states {o.Row?.NormalCollision}/{o.Row?.ReactableCollision}";
@@ -59,9 +62,10 @@ public class InteractMeshAssetDataTests
                 kinds[k] = kinds.GetValueOrDefault(k) + 1;
             }
             if (any) maps++;
+            if (models.Count != live.All.Count(o => models.ContainsKey(o.Entity))) wrong.Add($"{name}: a reactable model on an entity with no object");
         }
         TestContext.Out.WriteLine($"{maps} maps, {meshes} interact meshes: B same {same}, B empty {emptyB}, B differs {differ} ({unresolved} not a model)");
-        TestContext.Out.WriteLine($"{twins} reactable models drawn apart, {hidden} hidden at the load (not drawn)");
+        TestContext.Out.WriteLine($"{twins} reactable models, {hidden} of them hidden at the load, {towers} on watch towers");
         foreach (var (k, n) in kinds) TestContext.Out.WriteLine($"  {k}: {n}");
         foreach (var w in wrong.Take(20)) TestContext.Out.WriteLine(w);
         Assert.That(meshes, Is.GreaterThan(0));
