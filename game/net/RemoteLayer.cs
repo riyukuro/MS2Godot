@@ -968,6 +968,7 @@ public sealed partial class RemoteLayer : Node3D
                     break;
                 case NpcRemovedEvent nr:
                     npcs.Remove(nr.ObjectId, nr.Dead);
+                    // FieldDeadNpc keeps the corpse's buffs and their keep effects (CNpc::vfunc_125 leaves the AdditionalCliList)
                     if (!nr.Dead) DropNpcBuffs(nr.ObjectId);
                     // the corpse stays an object (and keeps its throttle) until a later FieldRemoveNpc removes the body, or the field goes
                     if (!nr.Dead) hitEffects.Remove(nr.ObjectId);

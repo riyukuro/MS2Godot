@@ -101,8 +101,9 @@ public static class EffectRandom
     {
         into.Clear();
         if (parts == null) return into;
-        foreach (var p in parts)
+        for (int i = 0; i < parts.Count; i++)   // by index: a foreach over the interface boxes its enumerator each play
         {
+            var p = parts[i];
             if (!p.TopLevel) continue;
             Add(parts, p, randomIndex, tick, into, owner);
         }

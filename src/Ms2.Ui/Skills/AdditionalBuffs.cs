@@ -113,6 +113,11 @@ public interface IBuffMotionEffects
 /// suspension (m_bSuspended) and FUN_14096db40's immediateActiveRequireSkill disable are not ported; PlayStartEffect and
 /// PlayInvokeEffect skip a caster whose GameObject vfunc_25 (+0x40) is set, which is not known here, so they never skip; the
 /// IgnoreOptimalHideStartEffect flag goes nowhere, as the port has no optimal hide.
+/// Kept as the client has them: a keep effect that never spawns (its xml missing, every part refused, the owner not shown) is
+/// tried again each frame, an overlap keep's start row inserted again with each try (AdditionalCli::Update,
+/// additionalcli_1.cpp:269); a keep is not culled by the view (m_b30), so a far owner is not such a case. A Modify of a key not
+/// held makes an effect that is never listed (DecodeModifyPacket @0x14096f820): a keep its overlap count change spawns is
+/// stopped by nothing, as in the client.
 /// </summary>
 public sealed class AdditionalBuffList
 {

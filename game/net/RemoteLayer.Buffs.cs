@@ -50,7 +50,10 @@ public partial class RemoteLayer
         npcBuffs[n.ObjectId] = list;
     }
 
-    /// <summary>An npc's list gone with the npc (~AdditionalCliList's ClearAll: the keep effects removed).</summary>
+    /// <summary>An npc's list gone with the npc: FieldRemoveNpc's object release (PCBase::vfunc_15, pcbase.cpp:873, the list's
+    /// ClearAll: the keep effects removed). FieldDeadNpc does not drop it: CNpc::vfunc_125 (the dead state, the corpse box, the
+    /// dead effect) leaves the AdditionalCliList, so a corpse keeps its keep effects until the server removes the buffs or the
+    /// body (scenestategame.cpp:3604-3612).</summary>
     void DropNpcBuffs(int objectId)
     {
         if (npcBuffs.Remove(objectId, out var old)) old.ClearAll();
@@ -83,19 +86,22 @@ public partial class RemoteLayer
     }
 
     /// <summary>The effects of the buff lists (<see cref="IBuffMotionEffects"/>): FUN_1411a49c0 / InsertEffect on the owner's node
-    /// with the caster's object kind (WorldService::FUN_141bd19d0: 0 for no object), FUN_1411a6060 to stop.</summary>
+    /// with the caster's object kind (WorldService::FUN_141bd19d0: 0 for no object), FUN_1411a6060 to stop. A keep sets the
+    /// target's m_b30 (additionalcli_1.cpp:347, :403), so its nif parts are never out of view (effectskipmgr.cpp:138) and a
+    /// far owner's keep spawns at once; the start, stop, invoke and overlap start / end inserts do not set it.</summary>
     sealed class BuffEffectService : IBuffMotionEffects
     {
         readonly RemoteLayer layer;
         public BuffEffectService(RemoteLayer layer) => this.layer = layer;
 
-        static int KindOf(int casterId) => LiveSession.Instance?.ObjectKind(casterId) ?? 0;
+        // the live session's GetObjectKind (the own PC 1); without one (a check) the field's: another player 3, an npc 5 or 6
+        int KindOf(int casterId) => LiveSession.Instance is { } s ? s.ObjectKind(casterId) : layer.ObjectKind(casterId);
 
         public int Keep(string effect, int ownerId, int casterId)
         {
             var actor = layer.BuffActor(ownerId);
             if (actor == null) return 0;
-            int h = layer.SpawnKeptEffect(effect, actor, KindOf(casterId));
+            int h = layer.SpawnKeptEffect(effect, actor, KindOf(casterId), noCull: true);
             if (h != 0) Trace(effect, ownerId, h);
             return h;
         }
@@ -120,7 +126,10 @@ public partial class RemoteLayer
         void Trace(string effect, int ownerId, int h)
         {
             BuffEffectPlayed?.Invoke(effect, ownerId, h);
-            if (FxTrace) GD.Print($"fx: buff {(h < 0 ? "insert" : "keep")} {effect} on {ownerId}{(h < 0 ? "" : $" -> {h}")} at {Time.GetTicksMsec()}");
+            if (!FxTrace) return;
+            var actor = layer.BuffActor(ownerId);
+            float away = actor != null && EffectView.Viewer is { } eye ? System.Numerics.Vector3.Distance(eye, EffectView.Client(actor.GlobalPosition)) : -1;
+            GD.Print($"fx: buff {(h < 0 ? "insert" : "keep")} {effect} on {ownerId}{(h < 0 ? "" : $" -> {h}")}, viewer {away:F0} away, at {Time.GetTicksMsec()}");
         }
     }
 }

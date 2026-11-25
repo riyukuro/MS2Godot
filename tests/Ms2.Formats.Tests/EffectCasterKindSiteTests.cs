@@ -74,8 +74,8 @@ public class EffectCasterKindSiteTests
         new("net/NpcLayer.cs", "Combat?.PlayEffect(regen, i.Root.GlobalPosition,", "CasterSystem",
             "0: the npc data's regenEffect, inserted at the npc's place with no actor (StateSpawn, statespawn.cpp:114-127)"),
         // buffs' motion effects: the owner's node, the caster's kind
-        new("net/RemoteLayer.Buffs.cs", "int h = layer.SpawnKeptEffect(effect, actor, KindOf(casterId))", "KindOf(casterId)",
-            "the caster's GetObjectKind (WorldService::FUN_141bd19d0, 0 for no object): a buff's keep or overlap keep effect kept on its owner (AdditionalCli::Update, additionalcli_1.cpp)"),
+        new("net/RemoteLayer.Buffs.cs", "int h = layer.SpawnKeptEffect(effect, actor, KindOf(casterId), noCull: true)", "KindOf(casterId)",
+            "the caster's GetObjectKind (WorldService::FUN_141bd19d0, 0 for no object): a buff's keep or overlap keep effect kept on its owner, m_b30 set (AdditionalCli::Update, additionalcli_1.cpp:347, :403)"),
         new("net/RemoteLayer.Buffs.cs", "int inserted = layer.SpawnKeptEffect(effect, actor, KindOf(casterId))", "KindOf(casterId)",
             "the caster's GetObjectKind (FUN_141bd19d0, 0 for no object): a buff's start, stop, invoke or overlap start / end effect inserted on its owner (additionalcli_1.cpp)"),
         // tombs and field markers
@@ -110,7 +110,7 @@ public class EffectCasterKindSiteTests
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, yawRadians, casterKind)", "casterKind", PassThrough),
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),
         new("net/LiveSession.Skills.cs", "=> remote?.SpawnKeptEffect(effect, actor, casterKind)", "casterKind", PassThrough),
-        new("net/RemoteLayer.Magics.cs", "=> RegionFx?.SpawnOn(effect, actor, casterKind)", "casterKind", PassThrough),
+        new("net/RemoteLayer.Magics.cs", "RegionFx?.SpawnOn(effect, actor, casterKind, noCull)", "casterKind", PassThrough),
         new("net/RemoteLayer.Magics.cs", "combat.PlayEffectOn(xmlPath, node, casterKind)", "casterKind", PassThrough),
         new("net/RemoteLayer.cs", "=> combat.PlayEffect(effect, at, yawRadians, casterKind)", "casterKind", PassThrough),
         new("net/RemoteLayer.cs", "=> combat.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),

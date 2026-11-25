@@ -125,8 +125,10 @@ public sealed partial class RemoteLayer
         st.ReleaseEffect = FxTrace ? h => { GD.Print($"fx: remote release {h} at {Time.GetTicksMsec()}"); ReleaseKeptEffect(h); } : ReleaseKeptEffect;
     }
 
-    /// <summary>A kept effect on an actor (FUN_1411a49c0, SetActor): its id, 0 when it did not spawn.</summary>
-    public int SpawnKeptEffect(string effect, Node3D actor, int casterKind) => RegionFx?.SpawnOn(effect, actor, casterKind) ?? 0;
+    /// <summary>A kept effect on an actor (FUN_1411a49c0, SetActor): its id, 0 when it did not spawn. <paramref name="noCull"/>
+    /// is the target's m_b30 (<see cref="RegionSkills.SpawnOn"/>).</summary>
+    public int SpawnKeptEffect(string effect, Node3D actor, int casterKind, bool noCull = false) =>
+        RegionFx?.SpawnOn(effect, actor, casterKind, noCull) ?? 0;
     /// <summary>CEffectService::FUN_1411a6060: a kept effect stops at once.</summary>
     public void StopKeptEffect(int id) => RegionFx?.FadeOut(id, 0);
     /// <summary>CEffectService::FUN_1411a69e0: a kept effect released.</summary>

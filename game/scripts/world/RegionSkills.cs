@@ -210,7 +210,10 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     Ms2.Formats.World.EffectSkipTable Skip => skip ??= FieldAudio.EffectSkip(packs);
     Ms2.Formats.World.EffectSkipTable skip;
 
-    static System.Numerics.Vector3? Viewer => Ms2Godot.Net.EffectView.Viewer;
+    /// <summary>The camera actor's place the view tests measure from (EffectView.Viewer); a check gives its own.</summary>
+    internal Func<System.Numerics.Vector3?> ViewerOf;
+
+    System.Numerics.Vector3? Viewer => ViewerOf != null ? ViewerOf() : Ms2Godot.Net.EffectView.Viewer;
 
     static System.Numerics.Vector3 N(Vec3 v) => new((float)v.X, (float)v.Y, (float)v.Z);
 
@@ -219,7 +222,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     static Vec3 PartPlace(Xform world, Ms2.Formats.World.EffectPart part) => world.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));
 
     /// <summary>The viewer's distance to the first point, for the log; -1 without a viewer.</summary>
-    static float ViewerDistance(Vec3[] pts) =>
+    float ViewerDistance(Vec3[] pts) =>
         pts.Length > 0 && Viewer is { } eye ? System.Numerics.Vector3.Distance(eye, N(pts[0])) : -1;
 
     public bool ShouldSkipByView(string effect, int kind, Vec3 at) =>
@@ -250,13 +253,19 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// <summary>FUN_1411a49c0 with an actor target (m_nKind 0, SetActor): a kept effect on the actor; its handle, or 0 when it
     /// did not spawn. Its nif parts follow the actor except attach type 0 ones, which start at its node in the world
     /// (CombatLayer.ActorPlace); soundMusic parts play for <paramref name="casterKind"/> (SoundMusicEffectState).
+    /// With <paramref name="noCull"/> the target's m_b30 is set: its nif parts are never out of view (CNifEffect::vfunc_3,
+    /// nifeffectparam.cpp:762, and IsOutOfView's row 1, effectskipmgr.cpp:138); its sound, swoosh and random parts still are.
+    /// The client sets it on the buffs' keep and overlap keep effects (AdditionalCli::PlayKeepEffect and FUN_14096ca80,
+    /// additionalcli_1.cpp:347, :403); its other setters are kind 0 targets, never out of view anyway (the camera actor's
+    /// effect FUN_1411a8cb0 and the area effects, effectservice.cpp:2173, :2363, :2377), and the job sound emotion
+    /// (stateidle.cpp:720), which is not ported.
     /// STILL-OPEN: the light parts of such an effect stay where the actor was at the spawn; the following parts hang on the
     /// actor's root, not on their named node.</summary>
-    public int SpawnOn(string effect, Node3D actor, int casterKind)
+    public int SpawnOn(string effect, Node3D actor, int casterKind, bool noCull = false)
     {
         if (actor == null || !IsInstanceValid(actor)) return 0;
         int h = nextHandle;
-        var nodes = Play(effect, Identity, true, h, actor, casterKind);
+        var nodes = Play(effect, Identity, true, h, actor, casterKind, noCull: noCull);
         if (nodes == null) return 0;
         nextHandle++;
         kept[h] = nodes;
@@ -327,9 +336,10 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// triggers, reactors, lift markers, the invincible effect) is never out of view. The per-name count limit and the lod
     /// level are not ported. A random part makes one child (<see cref="Ms2.Formats.World.EffectRandom.PlayList"/>: the
     /// target's m_nRandomIndex <paramref name="randomIndex"/>, a region skill's object id, else the weighted pick on
-    /// EffectRandom.Tick), and counts as made when that child is made and passes the random part's own view test.</summary>
+    /// EffectRandom.Tick), and counts as made when that child is made and passes the random part's own view test.
+    /// <paramref name="noCull"/>: the target's m_b30 (<see cref="SpawnOn"/>), no nif part is out of view.</summary>
     List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null,
-        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, uint randomIndex = 0)
+        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, uint randomIndex = 0, bool noCull = false)
     {
         var all = table.Get(xml);
         if (all == null) return null;
@@ -350,7 +360,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         foreach (var part in parts)
         {
             if (part.SkippedFor(owner)) continue;
-            if (eye != null && (skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye)
+            if (eye != null && (skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye, noCull)
                     || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
             { PartsOutOfView++; continue; }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh && (actor == null || SwooshOutOfView(part, actor, casterKind, eye))) continue;
@@ -366,7 +376,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             // a nif part out of view is not made (CNifEffect::vfunc_3, nifeffectparam.cpp:757-766), a random part's chosen child
             // too (CreateEffect, randomeffectparam.cpp:174), nor a child out of its random part's view; a sound event's own test
             // is FieldAudio's (SoundEventOutOfView). The pre-pass above counted these.
-            if (eye != null && (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeNif && skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye)
+            if (eye != null && (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeNif && skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye, noCull)
                     || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
                 continue;
             if (part.Type == "soundEvent" && part.SoundEvent != null)

@@ -138,7 +138,7 @@ public sealed class EffectSkipTable
     /// The view tests one part of an effect meets as it is made, at its world place <paramref name="at"/>:
     /// <list type="bullet">
     /// <item>A nif part: CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766), row 1 with the part's viewDistance, unless offSkip
-    /// or the target's no-cull flag (m_b30, which no region skill target sets).</item>
+    /// or the target's no-cull flag (m_b30: the buffs' keep effects set it, no region skill target does).</item>
     /// <item>A soundEvent part: <see cref="SoundEventOutOfView"/>.</item>
     /// </list>
     /// True when the part is refused, and so not made. CreateEffect's other screen kinds (monochrome, radialBlur, vibrate,
