@@ -3285,6 +3285,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchBuddies();
         WatchGuild();
         WatchChangeJob();
+        WatchAttend();
         var slot = new Control { Name = "GameMenuSlot", MouseFilter = Control.MouseFilterEnum.Ignore };
         ui.AddChild(slot);
         HudOpen().Open(() =>
@@ -3305,7 +3306,7 @@ public partial class HudScene : Node, IUiStageHost
         gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
         var c = gameMenu = new Ms2.Ui.Hud.GameMenuController
         {
-            Table = gameMenuTable, NotifyCount = CommunityNotifyCount, EnabledBy = GameMenuEnabledBy, ChangeJobStartQuest = ChangeJobStartQuest,
+            Table = gameMenuTable, NotifyCount = CommunityNotifyCount, EnabledBy = GameMenuEnabledBy, FilterPasses = GameMenuFilterPasses, ChangeJobStartQuest = ChangeJobStartQuest,
             AdventureBarCount = () => Ms2Godot.Net.LiveSession.Instance?.AdventurerBarCount ?? 0,
         };
         c.SetNotifyRedCircle7Flag(agreementReminder);
@@ -3349,6 +3350,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4e7a) ToggleDynamicAction();   // UIDynamicActionDialog
         else if (id == 0x4f80) ToggleChatEmoticon();    // UIChatEmoticonDialog
         else if (id == ChangeJobDialogController.UiId) ToggleChangeJob();
+        else if (id == AttendGiftDialogController.UiId) ToggleAttendGift();    // entry 38 "attend"
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --

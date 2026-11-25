@@ -46,6 +46,7 @@ public partial class HudScene
         0x4e73 => Ms2Godot.Net.LiveSession.Instance?.Achieves.GetRewardTotal(0) ?? 0,
         0x4f1e => mastery?.TotalClaimableRewardLevels() ?? 0,      // CMasteryManager::GetTotalClaimableRewardLevels
         0x4f67 or 0x4f87 => AdventureNotifyCount(id),             // CAdventureLevelTable::CountUnclaimedRewards (+ the missions)
+        0x4eb8 => Ms2Godot.Net.LiveSession.Instance?.AttendDialog.GetTotalUsablePoints() ?? 0,     // UIAttendGiftDialog::GetTotalUsablePoints (uigamemenudialog.cpp:1359)
         0x4f2d => hudModel.HasLocalPlayer ? LocalJobs().ChangedMainSkills() : 0,     // JobSystemCli::ChangedMainSkills (uigamemenudialog.cpp:1329)
         _ => 0,
     };
