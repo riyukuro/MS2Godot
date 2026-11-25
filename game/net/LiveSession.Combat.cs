@@ -2225,6 +2225,12 @@ public partial class LiveSession
                         await frames(30);
                         break;
                     }
+                    case "hudonce":     // hudonce: the HUD's live player watch counted (HudScene.LiveWatchScripted), one per event and model
+                    {
+                        var counts = hud.LiveWatchScripted(out bool once);
+                        Check($"each live event reaches the HUD once ({counts})", once);
+                        break;
+                    }
                     case "bagyes":      // bagyes: the message box shown now answered with its first button (a bind-on-equip box's yes)
                     {
                         var shown = hud.ShownBoxScripted();
