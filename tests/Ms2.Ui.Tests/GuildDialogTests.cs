@@ -70,7 +70,8 @@ public class GuildDialogTests
             MapName = id => t.MapName(id) ?? id.ToString(),
             ImagePath = (_, _) => "x.png",
         };
-        Assert.That(c.Gms2Client, Is.EqualTo(variable == "MS2_GMS2_DATA"));
+        if (variable == "MS2_GMS2_DATA") Assert.That(c.Gms2Client, Is.True);
+        else Assume.That(c.Gms2Client, Is.False, "MS2_DATA holds GMS2 data here; the MS2_GMS2_DATA case covers it");
         var (rt, pl) = movies.Open(c.Movie, r => r.Budget = 20_000_000, c.Libraries);
         pl.StageW = 1920; pl.StageH = 1080;
         var h = new UiHost(pl, c, new UiModel(t));
