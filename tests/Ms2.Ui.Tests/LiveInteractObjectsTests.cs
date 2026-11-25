@@ -1038,4 +1038,26 @@ public class ActionKeyPollTests
         Assert.That(p.OnPress(false), Is.EqualTo(ActionKeyTarget.Interact));
         Assert.That(p.OnPress(true), Is.EqualTo(ActionKeyTarget.None));
     }
+
+    /// <summary>Update :575-588: a changed action becomes m_nCur only when its vfunc_4 accepts; only the portal's can refuse,
+    /// and it is asked again at each poll while refused; an unchanged action is not asked.</summary>
+    [Test]
+    public void ARefusedPortalAcceptKeepsThePreviousCurrentAction()
+    {
+        var p = new ActionKeyPoll { Current = ActionKeyTarget.Talk };
+        int asked = 0;
+        bool accept = false;
+        bool Accept() { asked++; return accept; }
+        Assert.That(p.Offer(ActionKeyTarget.Portal, Accept), Is.False);
+        Assert.That(p.Current, Is.EqualTo(ActionKeyTarget.Talk), "refused: m_nCur stays");
+        Assert.That(p.Offer(ActionKeyTarget.Portal, Accept), Is.False);
+        Assert.That(asked, Is.EqualTo(2), "asked again at the next poll");
+        accept = true;
+        Assert.That(p.Offer(ActionKeyTarget.Portal, Accept), Is.True);
+        Assert.That(p.Current, Is.EqualTo(ActionKeyTarget.Portal));
+        Assert.That(p.Offer(ActionKeyTarget.Portal, Accept), Is.False);
+        Assert.That(asked, Is.EqualTo(3), "unchanged: not asked");
+        Assert.That(p.Offer(ActionKeyTarget.None, Accept), Is.True, "the other actions always accept");
+        Assert.That(asked, Is.EqualTo(3));
+    }
 }

@@ -80,15 +80,13 @@ public partial class LiveSession
             $" type {p.Type} target {p.TargetMap} shown {p.Shown} glow {p.Glow}{(p.HasEntity ? "" : " (no entity)")}{(Portals.Attached ? "" : " (held)")}"));
     }
 
-    /// <summary>The player's point in the action key's poll: the portal it stands in (PortalAction::vfunc_1); with a new one
-    /// picked, vfunc_4 (a kind 1 portal enters at once). True when the action key goes to the portal.</summary>
-    public bool PollPortal(Ms2.Formats.Model.Vec3 at)
-    {
-        var before = PortalAction.Current;
-        bool on = PortalAction.Poll(at);
-        if (on && PortalAction.Current != null && PortalAction.Current != before) PortalAction.Accept();
-        return on;
-    }
+    /// <summary>The player's point in the action key's poll: the portal it stands in (PortalAction::vfunc_1). True when the
+    /// portal action applies.</summary>
+    public bool PollPortal(Ms2.Formats.Model.Vec3 at) => PortalAction.Poll(at);
+
+    /// <summary>PortalAction::vfunc_4, asked when the poll would make the portal the current action: false without a picked
+    /// portal, and for a kind 1 portal, which enters at once.</summary>
+    public bool AcceptPortal() => PortalAction.Accept();
 
     /// <summary>The action key's poll left the portal (Unk_ActionKeyManager::Update, actionkeyobject.cpp:577: the old action's vfunc_3).</summary>
     public void LeavePortal() => PortalAction.Leave();

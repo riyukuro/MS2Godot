@@ -659,7 +659,7 @@ public partial class FieldContents : Node3D
                 if (cubeMode)
                 {
                     bool onPutDown = LivePutDownPoll(playerMs2);
-                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.PickCubeMode(onPutDown, !onPutDown && LivePortalPoll(), false);
+                    actionKeys.Offer(Ms2.Ui.ActionKeyPoll.PickCubeMode(onPutDown, !onPutDown && LivePortalPoll(), false), acceptPortal ??= LivePortalAccept);
                 }
                 else
                 {
@@ -673,10 +673,11 @@ public partial class FieldContents : Node3D
                     bool onReactor = !before && !onLift && !onBoard && LiveReactorPoll(playerMs2);
                     bool onHoldPc = !before && !onLift && !onBoard && !onReactor
                         && Ms2Godot.Net.LiveSession.Instance is { } hls && hls.PollHoldPc();
-                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, onTalk, onLift, onBoard, onReactor, onHoldPc);
+                    var polled = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, onTalk, onLift, onBoard, onReactor, onHoldPc);
                     // the hold (6) is polled inside the interact part, between gathering (4) and the taxi (8)
                     if (onInteract && Ms2Godot.Net.LiveSession.Instance is { HoldPolled: true })
-                        actionKeys.Current = Ms2.Ui.ActionKeyTarget.Hold;
+                        polled = Ms2.Ui.ActionKeyTarget.Hold;
+                    actionKeys.Offer(polled, acceptPortal ??= LivePortalAccept);
                 }
                 // the current action changed: the old one's vfunc_3 (actionkeyobject.cpp:577); a portal's closes the dungeon room dialog
                 if (wasCurrent == Ms2.Ui.ActionKeyTarget.Portal && actionKeys.Current != wasCurrent)
@@ -699,7 +700,7 @@ public partial class FieldContents : Node3D
     /// <summary>
     /// Unk_ActionKeyManager::Update's end (actionkeyobject.cpp:571-601): the tooltip (UIActionTooltip 0x4e5c) refreshes when
     /// m_nCur changes or the current action asks with vfunc_10 (HoldAction's m_n18), else when it shows another action, title
-    /// or caption than the current one. vfunc_4 is PortalAction's accept in LiveSession.PollPortal.
+    /// or caption than the current one. A changed action becomes m_nCur only when its vfunc_4 accepts (ActionKeyPoll.Offer).
     /// </summary>
     void RefreshActionTooltip()
     {
@@ -748,6 +749,11 @@ public partial class FieldContents : Node3D
     }
 
     /// <summary>Live: the action key's poll at the player's point; true when the player stands in a portal the key goes to.</summary>
+    System.Func<bool> acceptPortal;
+
+    /// <summary>PortalAction::vfunc_4 for the action key's change of m_nCur (<see cref="Ms2.Ui.ActionKeyPoll.Offer"/>).</summary>
+    bool LivePortalAccept() => Ms2Godot.Net.LiveSession.Instance is { } ls && ls.AcceptPortal();
+
     public bool LivePortalPoll()
     {
         if (offline || player == null || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;

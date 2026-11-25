@@ -74,6 +74,20 @@ public struct ActionKeyPoll
         : talk ? ActionKeyTarget.Talk
         : ActionKeyTarget.None;
 
+    /// <summary>
+    /// Update's change of m_nCur (:575-588): a polled action other than the current one becomes current only when its vfunc_4
+    /// accepts. Only PortalAction overrides vfunc_4 (@0x1409559d0, :950-964; ActionKeyObject's returns 1, :735): it refuses
+    /// without a picked portal (the one used last) and for a kind 1 portal, which it enters at once. A refused action leaves
+    /// m_nCur as it was, so it is asked again at the next poll. True when m_nCur changed.
+    /// </summary>
+    public bool Offer(ActionKeyTarget polled, System.Func<bool> acceptPortal)
+    {
+        if (polled == Current) return false;
+        if (polled == ActionKeyTarget.Portal && acceptPortal != null && !acceptPortal()) return false;
+        Current = polled;
+        return true;
+    }
+
     /// <summary>ActivateCurrentAction (:612-614): the current action runs only if the active map has its key, so an action
     /// picked before the cube mode changed (until the next poll) does nothing. Portal and talk are in both maps; put down
     /// liftable only in the cube-mode one.</summary>
