@@ -3634,6 +3634,7 @@ public partial class LiveSession : Node
             bool frames = pp[0] is "askframes" or "answerframes";       // the member frames run: levels, deaths and a quit seen in the window
             bool voteRun = pp[0] is "askvote" or "answervote";                   // the vote kick run: four clients
             bool searchRun = pp[0] is "asksearch" or "answersearch";            // the party search run: two clients
+            bool joinLink = pp[0] == "joinlink";                                 // the dungeon join links run: one client
             bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
@@ -3884,6 +3885,26 @@ public partial class LiveSession : Node
                     await Frames(60 * 3);
                     PShot("vote_end");
                 }
+            }
+            else if (joinLink)
+            {
+                // MS2_LIVE_PARTY "joinlink:<helper|member>:<room>": one client clicks the chat link "joinPartyDungeonHelper" or
+                // "joinPartyDungeonMember" for the room (party 1, a leader that is not the player) as the messenger's hyperLinkLeft runs
+                // it. The notice or the yes / no box it gives is shot; the own record of the room is logged first. With
+                // MS2_LIVE_PARTY_CMD set to a link text, that text is clicked instead.
+                uint linkRoom = pp.Length > 2 && uint.TryParse(pp[2], out var lr) ? lr : 0;
+                var rec = pl.DungeonRecordOf(linkRoom);
+                GD.Print($"live: party {role}: records {pl.DungeonRecordCount}, room {linkRoom}: " +
+                    (rec == null ? "no record" : $"total clears {rec.TotalClears} flags {rec.Flags}"));
+                string link = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_CMD")
+                    ?? $"{(pp.Length > 1 && pp[1] == "member" ? "joinPartyDungeonMember" : "joinPartyDungeonHelper")},1,Nobody,{linkRoom}";
+                ph.PartyLinkClick(link);
+                await Frames(30);
+                bool boxUp = MessageBoxLayer.Instance?.Shown == true;
+                GD.Print($"live: party {role}: link {link}: box {(boxUp ? "shown" : "not shown")}");
+                await Frames(60);
+                PShot(boxUp ? "link_box" : "link_notice");
+                if (boxUp) { MessageBoxLayer.Instance?.Click(1); await Frames(60); }
             }
             else if (frames)
             {
