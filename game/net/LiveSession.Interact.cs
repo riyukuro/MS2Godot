@@ -355,6 +355,79 @@ public partial class LiveSession
         if (game != null) Send(packet);
     }
 
+    /// <summary>The furnishing storage's stacks by uid (item id), from OnFurnishingStorage (@0x141715bd0, scenestategame.cpp:2734-2815):
+    /// 1 clears, 3 adds, 4 removes. STILL-OPEN: the storage dialog and the build palette (CubeHolderManager) that list them.</summary>
+    public readonly System.Collections.Generic.Dictionary<long, int> StoredFurnishing = new();
+
+    void OnFurnishingStorage(Ms2.Net.Packets.FurnishingStorage m)
+    {
+        switch (m.Mode)
+        {
+            case 1: StoredFurnishing.Clear(); break;
+            case 3: StoredFurnishing[m.Uid] = m.ItemId; break;
+            case 4: StoredFurnishing.Remove(m.Uid); break;
+        }
+        if (LiveCheck) GD.Print($"live: FurnishingStorage mode {m.Mode} item {m.ItemId} uid {m.Uid}");
+    }
+
+    /// <summary>A scripted use of the nearest usable function cube within <paramref name="range"/> of the own pc: the request
+    /// CFunctionCubeObject::vfunc_8 (@0x1412265d0, functioncubeobject.cpp:608-621) sends for it. Returns the cube, or null.
+    /// STILL-OPEN: the action key does not reach vfunc_8 yet (the pc's interact target pick between cubes, objects and npcs).</summary>
+    public Ms2.Ui.FunctionCubes.Cube UseNearestFunctionCube(float range)
+    {
+        var cubes = FieldCubeCells()?.Functions;
+        if (cubes == null || OwnPlayer == null || game == null) return null;
+        var g = OwnPlayer.GlobalPosition;
+        var c = cubes.NearestUsable(new System.Numerics.Vector3(g.X, -g.Z, g.Y), range);
+        if (c != null) Send(new FunctionCubeUseRequest(c.Id));
+        return c;
+    }
+
+    /// <summary>MyPC::SendRequestHome (@0x14152a240, mypc.cpp:3162-3169), the game menu's go home: RequestHome u8 3, i32 the
+    /// model house picked for a first home (-1 none).</summary>
+    public void SendHomeWarp(int template = -1)
+    {
+        if (game != null) Send(new HomeWarpRequest(template));
+    }
+
+    /// <summary>MyPC::FUN_14152feb0 (@0x14152feb0, mypc.cpp:4151-4190), the build mode asked with a cube: RequestSetCraftMode
+    /// u8 mode, u8 1, the CubeItemInfo. A scripted start with <paramref name="itemId"/> as the palette's selected cube: its
+    /// furnishing storage stack when there is one (uid 0 otherwise: the place buys it from the furnishing shop).</summary>
+    public void SendCraftModeStart(int itemId)
+    {
+        long uid = 0;
+        foreach (var (u, id) in StoredFurnishing) if (id == itemId) { uid = u; break; }
+        if (game != null) Send(new CraftModeStartRequest(1, new CubeItemInfo { ItemId = itemId, InstanceId = uid, Count = 1 }));
+    }
+
+    /// <summary>ConfirmPlacement's RequestCube 10 (<see cref="CubePlaceRequest"/>) for the held cube on the given cell, or on
+    /// the cell in front of the own pc at its height. Returns the cell key, or -1 without a held cube.</summary>
+    public int PlaceHeldCube((int X, int Y, int Z)? cell = null)
+    {
+        var item = CubeCraft.Current?.Item;
+        if (item == null || OwnPlayer == null || game == null) return -1;
+        int key;
+        if (cell is { } c) key = Ms2.Ui.CubeCell.Key(c.X, c.Y, c.Z);
+        else
+        {
+            var g = OwnPlayer.GlobalPosition;
+            var at = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+            var f = -OwnPlayer.GlobalTransform.Basis.Z;
+            key = Ms2.Ui.CubeCell.Key(at + new System.Numerics.Vector3(f.X, -f.Z, 0) * Ms2.Ui.CubeCell.Size + new System.Numerics.Vector3(0, 0, 10));
+        }
+        Send(new CubePlaceRequest(key, item, 0f));
+        return key;
+    }
+
+    /// <summary>The nearest function cube of the field to the own pc (any state), or null.</summary>
+    public Ms2.Ui.FunctionCubes.Cube NearestFunctionCube()
+    {
+        var cubes = FieldCubeCells()?.Functions;
+        if (cubes == null || OwnPlayer == null) return null;
+        var g = OwnPlayer.GlobalPosition;
+        return cubes.NearestUsable(new System.Numerics.Vector3(g.X, -g.Z, g.Y), float.MaxValue);
+    }
+
     /// <summary>The use reply's asks (FUN_14122f270 mode 6): the object store (sub-kind 4) opens through
     /// <see cref="ObjectStoreRequested"/>. STILL-OPEN: each other one is logged only.</summary>
     void OnFunctionCubeUse(Ms2.Ui.FunctionCubes.UseResult r)

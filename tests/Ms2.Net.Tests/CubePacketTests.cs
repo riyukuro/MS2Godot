@@ -392,6 +392,29 @@ public class CubePacketTests
         var w = new ByteWriter(); req.Write(w);
         Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 0, 0 }));
     }
+
+    [Test]
+    public void CraftModeStartIsTheModeAFlagAndTheCube()
+    {
+        // mypc.cpp:4175-4187: u8 mode, u8 1, CubeItemInfo (i32 item, i64 uid, i64 count, u8 no look)
+        var req = new CraftModeStartRequest(1, new CubeItemInfo { ItemId = 50400024, InstanceId = 0x1122334455, Count = 1 });
+        Assert.That((ushort)req.Op, Is.EqualTo(0x0036));
+        var w = new ByteWriter(); req.Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] {
+            1, 1, 0x18, 0x0b, 0x01, 0x03, 0x55, 0x44, 0x33, 0x22, 0x11, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0 }));
+        var none = new ByteWriter(); new CraftModeStartRequest(1, null).Write(none);
+        Assert.That(none.Buffer.AsSpan(0, none.Length).ToArray(), Is.EqualTo(new byte[] { 1, 0 }));
+    }
+
+    [Test]
+    public void GoHomeIsRequestHomeThreeAndTheTemplate()
+    {
+        // MyPC::SendRequestHome, mypc.cpp:3165-3167
+        var req = new HomeWarpRequest(-1);
+        Assert.That(req.Op, Is.EqualTo(Outbound.RequestHome));
+        var w = new ByteWriter(); req.Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 3, 0xff, 0xff, 0xff, 0xff }));
+    }
 }
 
 [TestFixture]

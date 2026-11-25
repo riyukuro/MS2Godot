@@ -65,6 +65,25 @@ public sealed record CraftModeOffRequest() : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0); w.WriteByte(0); }
 }
 
+/// <summary>MyPC::FUN_14152feb0 (@0x14152feb0, mypc.cpp:4175-4187): RequestSetCraftMode u8 mode, then u8 1 and the
+/// CubeItemInfo (FUN_1408b39c0) with a cube, else u8 0.</summary>
+public sealed record CraftModeStartRequest(byte Mode, CubeItemInfo Item) : IOutPacket {
+    public Outbound Op => Outbound.RequestSetCraftMode;
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(Mode);
+        w.WriteByte((byte)(Item != null ? 1 : 0));
+        Item?.Write(w);
+    }
+}
+
+/// <summary>MyPC::SendRequestHome (@0x14152a240, mypc.cpp:3162-3169): RequestHome u8 3, i32 id (the model house of a first
+/// home, -1 none).</summary>
+public sealed record HomeWarpRequest(int Template) : IOutPacket {
+    public Outbound Op => Outbound.RequestHome;
+    public void Write(ByteWriter w) { w.WriteByte(3); w.WriteInt(Template); }
+}
+
 /// <summary>UIHomeSaveSlotDialog's design save (OnSaveNameEntered @0x140faa7d0, SendRequestCubeMode46 @0x140faadb0): RequestCube u8 0x2e, i32 slot, unicode name.</summary>
 public sealed record HomeDesignSaveRequest(int Slot, string Name) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;

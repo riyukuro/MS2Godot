@@ -1695,6 +1695,50 @@ public partial class LiveSession
                 await frames(120);
                 continue;
             }
+            if (step == "gohome")      // the game menu's go home (RequestHome 3, -1), then the field entry
+            {
+                int entered = 0; void Entered(int map, long ms) => entered++;
+                live.FieldEntered += Entered;
+                live.SendHomeWarp();
+                await until(() => entered > 0, 60 * 90); await frames(240);
+                live.FieldEntered -= Entered;
+                Check($"the field entry after go home (map {live.CurrentEntry?.MapId})", entered > 0);
+                Shot("home.png");
+                continue;
+            }
+            if (step.StartsWith("cubeplace:"))      // cubeplace:<item id>[:x:y:z]: the build mode with that cube, its place on the cell (else the one in front), the build mode off
+            {
+                var a = step[10..].Split(':');
+                int itemId = int.Parse(a[0]);
+                (int, int, int)? cell = a.Length == 4 ? (int.Parse(a[1]), int.Parse(a[2]), int.Parse(a[3])) : null;
+                live.SendCraftModeStart(itemId);
+                await until(() => live.CubeCraft.InCubeMode, 60 * 10); await frames(60);
+                Check($"the build mode with item {itemId} (cube mode {live.CubeCraft.CubeMode}, uid {live.CubeCraft.Current?.Item?.InstanceId ?? 0})", live.CubeCraft.InCubeMode);
+                int key = live.PlaceHeldCube(cell);
+                GD.Print($"live: combat {step}: place sent on cell 0x{key:x}");
+                await frames(180);
+                Shot("placed.png");
+                live.SendCraftModeOff();
+                await frames(120);
+                continue;
+            }
+            if (step.StartsWith("cubeuse"))      // cubeuse[:range]: a run to the nearest function cube, then the use of the nearest usable one (vfunc_8's request)
+            {
+                float range = step.Length > 8 ? float.Parse(step[8..]) : 300;
+                if (live.NearestFunctionCube() is { } near)
+                {
+                    var at = new Vector3(near.Position.X, near.Position.Z, -near.Position.Y);
+                    float dist = hud.DriveTowardScripted(at, false);
+                    for (int walk = 0; walk < 60 * 25 && dist > 120; walk++) { dist = hud.DriveTowardScripted(at, false); await frames(1); }
+                    hud.DriveEnd(); hud.FaceScripted(at); await frames(60);
+                    GD.Print($"live: combat {step}: at {dist:F0} from {near.Id}");
+                }
+                var c = live.UseNearestFunctionCube(range);
+                GD.Print($"live: combat {step}: {(c != null ? $"use sent for {c.Id} (item {c.ItemId}, state {c.State})" : "no usable cube in range")}");
+                await frames(180);
+                Shot("cubeuse.png");
+                continue;
+            }
             if (step.StartsWith("aimcast:"))      // aimcast:<skill id>[:<frames to wait after>]: a mob in front, the player turned to it, then the cast
             {
                 var parts = step[8..].Split(':');
