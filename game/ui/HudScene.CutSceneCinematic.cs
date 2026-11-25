@@ -89,10 +89,14 @@ public partial class HudScene
         cinematicLive = null;
     }
 
-    /// <summary>The pane's key handler (UICutSceneCinematic vfunc_13): Shift+Esc ends the cinematic (the trigger, the key group off,
-    /// the pane closed), plain Esc asks to skip (RequestSkip). True when the pane took the key; false when the pane is not shown.</summary>
+    /// <summary>The pane's key handler (UICutSceneCinematic vfunc_13): with the Develop feature (2) Shift+Esc ends the cinematic
+    /// (the trigger, the key group off, the pane closed), else Esc asks to skip (RequestSkip). True when the pane took the key;
+    /// false when the pane is not shown.</summary>
     bool CinematicEscape(bool shift)
     {
-        return cinematicLive?.Cinematic is { } cine && cine.KeyEscape(shift);
+        return cinematicLive?.Cinematic is { } cine && cine.KeyEscape(shift, shift && hudModel.IsFeatureEnabled(DevelopFeature));
     }
+
+    /// <summary>CFeatureManager feature 2, "Develop" (the feature table's second name).</summary>
+    const int DevelopFeature = 2;
 }
