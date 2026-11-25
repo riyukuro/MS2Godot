@@ -112,6 +112,7 @@ public partial class HudScene
             IsInParty = () => partyBook.IsInParty,
             EnterState = id => live?.DungeonEnterStateOf(id) ?? 0,
             RoomOf = id => live?.DungeonRoomOf?.Invoke(id),
+            RecordOf = id => live?.DungeonRecordOf((uint)id),
             DungeonName = id => tables.FieldEnteranceName(id),
             Key = k => tables.Common(k) ?? "",
             Common = id => tables.Common(id) ?? "",

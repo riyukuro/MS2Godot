@@ -21,9 +21,12 @@ namespace Ms2.Quest;
 /// <param name="LimitMesoRevival">limitMesoRevival (m_limitMesoRevival, :411): no meso revive in the room (with feature 0x5d).</param>
 /// <param name="LimitMeratRevival">limitMeratRevival (m_limitMeratRevival, :412): no merat revive in the room.</param>
 /// <param name="DefaultRevivalLimitCount">defaultRevivalLimitCount (m_defaultRevivalLimitCount, :431): the revives in the room, 0 = no limit.</param>
+/// <param name="DungeonHelperRequireClearCount">dungeonHelperRequireClearCount (m_dungeonHelperRequireClearCount, dungeonroom.cpp:432): the clears a
+/// helper needs before the helper reward can be claimed, 0 = the room has no helper reward (CanClaimHelperReward @0x140b223d0).</param>
 public sealed record DungeonRoom(int Id, int GroupType, int MaxUserCount, int[] FieldIds, int DungeonLevel = 0,
     int LimitPlayerLevel = 0, int IsTimeUp = 0, bool IsUseBossIcon = false, bool ChaosDamageMeter = false,
-    bool LimitMesoRevival = false, bool LimitMeratRevival = false, int DefaultRevivalLimitCount = 0);
+    bool LimitMesoRevival = false, bool LimitMeratRevival = false, int DefaultRevivalLimitCount = 0,
+    int DungeonHelperRequireClearCount = 0);
 
 /// <summary>DungeonRoomTable::LoadRooms (dungeonroom.cpp:1055-1072): the rows of table/dungeonroom.xml by room id.</summary>
 public sealed class DungeonRooms
@@ -59,7 +62,7 @@ public sealed class DungeonRooms
         foreach (var e in doc.Root?.Elements("dungeonRoom") ?? Enumerable.Empty<XElement>())
         {
             if (!available(e)) continue;
-            int id = 0, group = 0, max = 0, level = 0, limitLevel = 0, timeUp = 0, revivals = 0;
+            int id = 0, group = 0, max = 0, level = 0, limitLevel = 0, timeUp = 0, revivals = 0, helperRequire = 0;
             bool bossIcon = false, chaosMeter = false, limitMeso = false, limitMerat = false;
             QuestTable.QueryUInt(e, "dungeonRoomID", ref id);
             QuestTable.QueryInt(e, "groupType", ref group);
@@ -72,11 +75,12 @@ public sealed class DungeonRooms
             QuestTable.QueryBool(e, "limitMesoRevival", ref limitMeso);
             QuestTable.QueryBool(e, "limitMeratRevival", ref limitMerat);
             QuestTable.QueryUInt(e, "defaultRevivalLimitCount", ref revivals);
+            QuestTable.QueryInt(e, "dungeonHelperRequireClearCount", ref helperRequire);   // dungeonroom.cpp:432
             var fields = new List<int>();
             foreach (var tok in ((string)e.Attribute("fieldIDs") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(tok.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int f)) fields.Add(f);
             t.rooms[id] = new DungeonRoom(id, group, max, fields.ToArray(), level, limitLevel, timeUp, bossIcon, chaosMeter,
-                limitMeso, limitMerat, revivals);
+                limitMeso, limitMerat, revivals, helperRequire);
         }
         return t;
     }

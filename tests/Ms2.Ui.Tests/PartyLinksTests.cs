@@ -34,7 +34,10 @@ public class PartyLinksTests
         public readonly List<IOutPacket> Sent = new();
         public bool InParty;
         public int State;
-        public bool? Claimable = true;
+        /// <summary>The room's dungeonHelperRequireClearCount; the record below has just that many clears and flag bit 0.</summary>
+        public int HelperRequire = 3;
+        public bool NoRoom;
+        public DungeonRoomRecord Record = Record(3, 1);
         public readonly List<int> Opened = new();
         public PartyLinks Links;
     }
@@ -48,18 +51,21 @@ public class PartyLinksTests
             SelfName = () => self,
             IsInParty = () => rec.InParty,
             EnterState = _ => rec.State,
-            RoomOf = id => new DungeonRoom(id, 0, 4, new[] { 1 }, LimitPlayerLevel: 40),
+            RoomOf = id => rec.NoRoom ? null : new DungeonRoom(id, 0, 4, new[] { 1 }, LimitPlayerLevel: 40, DungeonHelperRequireClearCount: rec.HelperRequire),
+            RecordOf = _ => rec.Record,
             DungeonName = id => "dungeon" + id,
             Key = k => t.Common(k) ?? "",
             Common = id => t.Common(id) ?? "",
             Notice = rec.Notices.Add,
             ShowBox = rec.Boxes.Add,
             Send = rec.Sent.Add,
-            HelperRewardClaimable = _ => rec.Claimable,
             OpenRoom = rec.Opened.Add,
         };
         return rec;
     }
+
+    static DungeonRoomRecord Record(int clears, byte flags) =>
+        new(20000003, 0, 0, 0, 0, 0, 0, 0, clears, -1, 0, -1, flags);
 
     static string Key(string key) => Tables().Common(key) ?? "";
 
@@ -162,26 +168,74 @@ public class PartyLinksTests
         Assert.That((rec.Boxes, rec.Notices), Is.EqualTo((new List<MessageBoxData>(), new List<string>())));
     }
 
+    /// <summary>CanClaimHelperReward (@0x140b223d0): no row or a 0 clear count is false; the clears must reach the count, then flag bit 0 decides.</summary>
     [Test]
-    public void TheHelperLinkStopsWhereTheRewardClaimIsNotKnownOrNotAllowed()
+    public void TheHelperRewardNeedsTheRoomsClearCountAndFlagBitZero()
     {
-        foreach (bool? claim in new bool?[] { null, false })
+        DungeonRoom Row(int require) => new(1, 0, 4, new[] { 1 }, DungeonHelperRequireClearCount: require);
+        Assert.Multiple(() =>
         {
-            var rec = Make();
-            rec.Claimable = claim;
-            rec.Links.Handle("joinPartyDungeonHelper,1,Lead,5");
-            Assert.That((rec.Boxes, rec.Notices, rec.Sent), Is.EqualTo((new List<MessageBoxData>(), new List<string>(), new List<IOutPacket>())), claim?.ToString() ?? "unknown");
-        }
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(5, 1), null), Is.False, "no room row");
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(5, 1), Row(0)), Is.False, "a room without a helper reward");
+            Assert.That(PartyLinks.CanClaimHelperReward(null, Row(0)), Is.False);
+            Assert.That(PartyLinks.CanClaimHelperReward(null, Row(3)), Is.False, "no record is a zeroed one: no clears");
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(2, 1), Row(3)), Is.False, "one clear short");
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(3, 1), Row(3)), Is.True, "exactly the count");
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(9, 1), Row(3)), Is.True);
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(9, 0), Row(3)), Is.False, "the clears are there but flag bit 0 is not");
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(9, 0xFE), Row(3)), Is.False, "another bit is not bit 0");
+            Assert.That(PartyLinks.CanClaimHelperReward(Record(9, 3), Row(3)), Is.True);
+        });
+    }
+
+    [Test]
+    public void TheHelperLinkWithoutTheRewardGivesTheExpertNoticeAndNoBox()
+    {
+        var rec = Make();
+        rec.Record = Record(2, 1);
+        rec.Links.Handle("joinPartyDungeonHelper,1,Lead,20000003");
+        Assert.That(rec.Notices, Is.EqualTo(new[] { ClientFormat.Format(Key("s_party_join_only_dungeon_expert"), "dungeon20000003", 3) }));
+        Assert.That((rec.Boxes, rec.Sent), Is.EqualTo((new List<MessageBoxData>(), new List<IOutPacket>())));
+        var noRecord = Make();
+        noRecord.Record = null;
+        noRecord.Links.Handle("joinPartyDungeonHelper,1,Lead,20000003");
+        Assert.That(noRecord.Notices, Has.Count.EqualTo(1), "no record yet is a zeroed one");
+        Assert.That(noRecord.Boxes, Is.Empty);
+        var noFlag = Make();
+        noFlag.Record = Record(3, 0);
+        noFlag.Links.Handle("joinPartyDungeonHelper,1,Lead,20000003");
+        Assert.That(noFlag.Notices, Has.Count.EqualTo(1), "the flag decides after the clears");
+    }
+
+    [Test]
+    public void TheHelperLinkOfARoomWithoutARowOrAHelperRewardStopsWithTheRightNotice()
+    {
+        var noRow = Make();
+        noRow.NoRoom = true;
+        noRow.Links.Handle("joinPartyDungeonHelper,1,Lead,5");
+        Assert.That((noRow.Boxes, noRow.Notices), Is.EqualTo((new List<MessageBoxData>(), new List<string>())), "no row: nothing, not even a notice");
+        var none = Make();
+        none.HelperRequire = 0;
+        none.Links.Handle("joinPartyDungeonHelper,1,Lead,5");
+        Assert.That(none.Boxes, Is.Empty);
+        Assert.That(none.Notices, Is.EqualTo(new[] { ClientFormat.Format(Key("s_party_join_only_dungeon_expert"), "dungeon5", 0) }), "a row with 0 still gets the notice");
+    }
+
+    [Test]
+    public void TheMemberLinkHasNoRewardCheck()
+    {
         var member = Make();
-        member.Claimable = null;
+        member.Record = null;
+        member.HelperRequire = 99;
         member.Links.Handle("joinPartyDungeonMember,1,Lead,5");
-        Assert.That(member.Boxes, Has.Count.EqualTo(1), "the member link has no such check");
+        Assert.That(member.Boxes, Has.Count.EqualTo(1));
+        Assert.That(member.Notices, Is.Empty);
     }
 
     [Test]
     public void EveryStringTheLinksUseExistsInTheData()
     {
-        foreach (var key in new[] { "s_party_is_my_dungeon_help", "s_party_has_party", "s_party_join_dungeon_helper_msg", "s_party_join_dungeon_member_msg" })
+        foreach (var key in new[] { "s_party_is_my_dungeon_help", "s_party_has_party", "s_party_join_dungeon_helper_msg", "s_party_join_dungeon_member_msg", "s_party_join_only_dungeon_expert" })
             Assert.That(Tables().Common(key), Is.Not.Null.And.Not.Empty, key);
         Assert.That(Tables().Common(0x99b), Is.Not.Null.And.Not.Empty);
     }

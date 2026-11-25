@@ -12,9 +12,7 @@ namespace Ms2.Ui.Hud;
 /// "joinPartyDungeonMember,party,leader,room" (:2407) and "inviteParty,name" (SendPartyMode1). A link with another part count does
 /// nothing. The numbers are _wtoi (FUN_140718200).
 /// STILL-OPEN: "dungeonRoom" needs UIDungeonRoomDialog (0x4ebd), which this client does not have (<see cref="OpenRoom"/> is null
-/// and the link does nothing); the helper link's CanClaimHelperReward check (MyCharacter record) is not recovered
-/// (<see cref="HelperRewardClaimable"/> answers null and the link stops there, with no notice and no box); the "s_party_join_only_dungeon_expert"
-/// notice after it needs the room's helper clear count.
+/// and the link does nothing).
 /// </summary>
 public sealed class PartyLinks
 {
@@ -38,8 +36,9 @@ public sealed class PartyLinks
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
     /// <summary>FUN_140710590: a packet goes out.</summary>
     public Action<IOutPacket> Send = _ => { };
-    /// <summary>The own character's CanClaimHelperReward(room); null = not known (STILL-OPEN, the link stops).</summary>
-    public Func<int, bool?> HelperRewardClaimable = _ => null;
+    /// <summary>The own character's DungeonRecordManagerCli::GetRecord(room) as the server sent it; null = no record for the room
+    /// (the client then reads a new zeroed one).</summary>
+    public Func<int, DungeonRoomRecord> RecordOf = _ => null;
     /// <summary>UIDungeonRoomDialog::OpenRoom; null = no such dialog (STILL-OPEN).</summary>
     public Action<int> OpenRoom;
 
@@ -71,9 +70,19 @@ public sealed class PartyLinks
     /// <summary>The same for a link's text (FUN_14025a680 splits on ",").</summary>
     public void Handle(string text) => Handle((text ?? "").Split(','));
 
+    /// <summary>DungeonRecordManagerCli::CanClaimHelperReward (@0x140b223d0): a room with no row, or one whose helper clear count is 0,
+    /// has no helper reward; else the record (a new zeroed one when the player has none, so its clears are 0) needs at least that many
+    /// clears (Get5c @0x140b20820, the record's i32 after the extra counts: TotalClears) and flag bit 0 (TestFlag(0) @0x14031b940).</summary>
+    public static bool CanClaimHelperReward(DungeonRoomRecord record, DungeonRoom room)
+    {
+        if (room == null || room.DungeonHelperRequireClearCount == 0) return false;
+        int clears = record?.TotalClears ?? 0;
+        return clears >= room.DungeonHelperRequireClearCount && ((record?.Flags ?? 0) & 1) != 0;
+    }
+
     /// <summary>FUN_141a16cc0 (:2388, helper) and FUN_141a172a0 (:2407, member): no local player does nothing; the own name as the
     /// leader, a party and a dungeon enter state of 10 or more each give a notice and stop (the state through ShowEnterLimitMessage);
-    /// the helper link then needs CanClaimHelperReward; then the yes / no box of the leader and room, whose first button sends
+    /// the helper link then needs CanClaimHelperReward (else the "s_party_join_only_dungeon_expert" notice); then the yes / no box of the leader and room, whose first button sends
     /// Party 0x27 (helper) or 0x2b (member) with the party id and room, unless one of them is 0.</summary>
     void Join(int partyId, string leader, int roomId, bool helper)
     {
@@ -88,7 +97,14 @@ public sealed class PartyLinks
             if (!string.IsNullOrEmpty(text)) Notice(text);
             return;
         }
-        if (helper && HelperRewardClaimable(roomId) is not true) return;
+        if (helper && !CanClaimHelperReward(RecordOf(roomId), RoomOf(roomId)))
+        {
+            // FUN_141a16cc0 (:2391): no room row does nothing, else the notice with the room's name and the clears it asks for
+            var room = RoomOf(roomId);
+            if (room == null) return;
+            Notice(ClientFormat.Format(Key("s_party_join_only_dungeon_expert"), DungeonName(roomId) ?? "", room.DungeonHelperRequireClearCount));
+            return;
+        }
         string msg = ClientFormat.Format(Key(helper ? "s_party_join_dungeon_helper_msg" : "s_party_join_dungeon_member_msg"), leader, DungeonName(roomId) ?? "");
         ShowBox(MessageBoxQueue.CreateWithCallback(msg, 1, (button, _) =>
         {

@@ -33,6 +33,15 @@ public class QuestCommonTests
     }
 
     [Test]
+    public void TheRoomRowKeepsTheHelperRequireClearCount()
+    {
+        var t = DungeonRooms.Parse(System.Xml.Linq.XDocument.Parse(
+            @"<ms2><dungeonRoom dungeonRoomID=""7"" dungeonHelperRequireClearCount=""5"" /><dungeonRoom dungeonRoomID=""8"" /></ms2>"), _ => true);
+        Assert.That((t.GetRoom(7).DungeonHelperRequireClearCount, t.GetRoom(8).DungeonHelperRequireClearCount), Is.EqualTo((5, 0)),
+            "dungeonHelperRequireClearCount (dungeonroom.cpp:432), 0 when the row has none");
+    }
+
+    [Test]
     public void GiveupNeedsActiveAndNoDisable()
     {
         var d = new QuestData();
