@@ -299,4 +299,57 @@ public class OwnRayMagicTests
         Assert.That(into, Has.Count.EqualTo(3));
         Assert.That(bytes, Is.EqualTo(0), "1000 ticks with three segments");
     }
+
+    /// <summary>
+    /// The start follows the fire node each tick (<see cref="OwnTagMagics.NodePosition"/>): the game's lookup is the dummy
+    /// memo, which misses every tick while the caster moves, then <see cref="Ms2.Formats.Model.DummyWorld.FindPoint"/> on the
+    /// model's moved pose. The magic's ticks and that lookup together allocate nothing.
+    /// </summary>
+    [Test]
+    public void ATickWhileTheCasterMovesAllocatesNothing()
+    {
+        var (skill, attack) = Ray(1, targetCount: 3);
+        var objects = new[] { Me(), Mob(9, 0, -100), Mob(10, 0, -200), Mob(11, 0, -300) };
+        var rows = new List<Ms2.Formats.World.EffectDummy>
+        {
+            new() { Name = "Eff_FireNode", ParentNode = "Scene Root", ApplyWorldTransform = true, ApplyLocalScale = false, Translate = new Vector3(10, -20, 90) },
+        };
+        var memo = new Ms2.Formats.Model.DummyMemo();
+        var pose = new Ms2.Formats.Model.DummyWorld.Pose { S = 1 };
+        pose.R[0] = pose.R[4] = pose.R[8] = 1;
+        float x = 0;
+        Vector3 Fire(string node)
+        {
+            var at = new Ms2.Formats.Model.DummyMemo.Key(1, 0, 0, 0, 1, 0, 0, 0, 1, x, 0, 0);
+            if (!memo.TryGet(rows, node, "Scene Root", at, out var r))
+            {
+                pose.T = new Ms2.Formats.Model.Vec3(x, 0, 0);
+                r = Ms2.Formats.Model.DummyWorld.FindPoint(rows, node, pose, "Scene Root", out var p)
+                    ? new Ms2.Formats.Model.DummyMemo.Point((float)p.X, (float)p.Y, (float)p.Z, true) : default;
+                memo.Set(rows, node, "Scene Root", at, r);
+            }
+            return new Vector3(r.X, r.Y, r.Z);
+        }
+        var m = new OwnTagMagics { NodePosition = Fire };
+        var paths = new MagicPathTable(XDocument.Parse(
+            "<ms2><type id=\"31\"><move distance=\"600\" destroyTime=\"100\" lookAtType=\"1\" fireNode=\"Eff_FireNode\"/></type></ms2>"));
+        Assert.That(m.Add(skill, attack, new CastRecord { CastId = 7 }, Tags(), T, paths, null), Is.EqualTo(1));
+        var into = new List<MagicRaySegment>(16);
+        Func<int> rand = () => 0;
+        void Step(int i)
+        {
+            x = i;   // the caster walks one unit a tick
+            m.Tick(T + i, 0, new MagicOwner(new Vector3(x, 0, 0), 0, true, false, false), objects, null, null, null, rand, null, false,
+                null, null, null, null);
+            into.Clear();
+            m.RaySegments(into);
+        }
+        for (int i = 0; i < 10; i++) Step(i);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 10; i < 1010; i++) Step(i);
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.That(into, Has.Count.EqualTo(3));
+        Assert.That(into[0].From.X, Is.EqualTo(1009f + 10f), "the start is the moved fire node");
+        Assert.That(bytes, Is.EqualTo(0), "1000 ticks of a moving caster");
+    }
 }

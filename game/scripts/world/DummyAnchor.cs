@@ -21,15 +21,21 @@ public static class DummyAnchor
     public static Xform ClientWorld(Node3D node) => ClientWorld(node.GlobalTransform);
 
     /// <summary>A Godot world transform (a node's or a bone's) as a client-world transform.</summary>
-    public static Xform ClientWorld(in Transform3D global)
+    public static Xform ClientWorld(in Transform3D global) => ClientPose(global).ToXform();
+
+    /// <summary><see cref="ClientWorld(in Transform3D)"/> by value: no arrays.</summary>
+    public static DummyWorld.Pose ClientPose(in Transform3D global)
     {
         var t = ToClient * global;
         var b = t.Basis;
         double s = b.Column0.Length();
         if (s == 0) s = 1;
         Vector3 c0 = b.Column0 / (float)s, c1 = b.Column1 / (float)s, c2 = b.Column2 / (float)s;
-        var r = new double[] { c0.X, c1.X, c2.X, c0.Y, c1.Y, c2.Y, c0.Z, c1.Z, c2.Z };
-        return new Xform(new Vec3(t.Origin.X, t.Origin.Y, t.Origin.Z), r, s);
+        var p = new DummyWorld.Pose { T = new Vec3(t.Origin.X, t.Origin.Y, t.Origin.Z), S = s };
+        p.R[0] = c0.X; p.R[1] = c1.X; p.R[2] = c2.X;
+        p.R[3] = c0.Y; p.R[4] = c1.Y; p.R[5] = c2.Y;
+        p.R[6] = c0.Z; p.R[7] = c1.Z; p.R[8] = c2.Z;
+        return p;
     }
 
     /// <summary>A client-world transform back in Godot's world, the inverse of <see cref="ClientWorld(in Transform3D)"/>.</summary>
@@ -56,9 +62,10 @@ public static class DummyAnchor
         var memo = memos.GetValue(model, _ => new DummyMemo());
         if (!memo.TryGet(rows, name, rootName, at, out var r))
         {
-            if (DummyWorld.Find(rows, name, ClientWorld(model), rootName) is { } w)
+            // a model that moves misses every frame: the by-value lookup makes no arrays
+            if (DummyWorld.FindPoint(rows, name, ClientPose(g), rootName, out var w))
             {
-                var v = FieldBuilder.ToGodotPoint(w.T);
+                var v = FieldBuilder.ToGodotPoint(w);
                 r = new DummyMemo.Point(v.X, v.Y, v.Z, true);
             }
             else r = default;

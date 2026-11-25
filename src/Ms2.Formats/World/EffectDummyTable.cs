@@ -194,7 +194,7 @@ public sealed class EffectDummyTable
     public static EffectDummy Find(IReadOnlyList<EffectDummy> rows, string name)
     {
         if (rows == null) return null;
-        foreach (var r in rows) if (r.Name == name) return r;
+        for (int i = 0; i < rows.Count; i++) if (rows[i].Name == name) return rows[i];   // by index: an interface foreach boxes the enumerator
         return null;
     }
 }

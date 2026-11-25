@@ -47,7 +47,7 @@ public class WiringGuardTests
     {
         var s = Source("game/scripts/world/DummyAnchor.cs");
         int get = s.IndexOf("memo.TryGet(rows, name, rootName, at, out var r)", StringComparison.Ordinal);
-        int find = s.IndexOf("DummyWorld.Find(", StringComparison.Ordinal);
+        int find = s.IndexOf("DummyWorld.FindPoint(", StringComparison.Ordinal);
         int set = s.IndexOf("memo.Set(rows, name, rootName, at, r);", StringComparison.Ordinal);
         Assert.That(get, Is.GreaterThan(-1), "the memo lookup");
         Assert.That(find, Is.GreaterThan(get), "the matrices are walked only after a memo miss");
