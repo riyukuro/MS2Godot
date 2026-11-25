@@ -399,6 +399,10 @@ public sealed class GameTables
     public readonly Items.ItemSocketTable ItemSockets = Ms2.Ui.Items.ItemSocketTable.Empty;
     /// <summary>table/individualItemDrop_Final.xml (ItemDropTable's individual boxes), read on first use; empty without data.</summary>
     public readonly Items.IndividualDropTable IndividualDrops = Ms2.Ui.Items.IndividualDropTable.Empty;
+
+    Ms2.Ui.Items.RewardPreviewTable rewardPreviews;
+    /// <summary>CRewardPreviewTable's dungeon rows (table/RewardPreview_dungeon.xml), read on the first use; empty without data.</summary>
+    public Ms2.Ui.Items.RewardPreviewTable RewardPreviews => rewardPreviews ??= packs == null ? Ms2.Ui.Items.RewardPreviewTable.Empty : new Ms2.Ui.Items.RewardPreviewTable(packs);
     /// <summary>The stat and special ability definitions, CItemOptionTable's random and variation rows and
     /// CItemEnchantLimitTable; empty without data.</summary>
     public readonly Items.ItemOptionTables ItemOptions = Ms2.Ui.Items.ItemOptionTables.Empty;
@@ -1143,7 +1147,7 @@ public sealed class GameTables
 
     /// <summary>
     /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 3 mapName, 38 GuildEventDesc, 1 itemName,
-    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 49 stringRideeName, 51 stringUgc, 59 petName, 74 achieveCategoryName, and 80
+    /// 20 stringFieldEnterance (0x15: its uiDescription), 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 49 stringRideeName, 51 stringUgc, 59 petName, 74 achieveCategoryName, and 80
     /// specialQuestType (string/&lt;lang&gt;/specialquesttype.xml, the character ability dialog's); "" for an unknown id or
     /// another table.
     /// </summary>
@@ -1156,9 +1160,15 @@ public sealed class GameTables
             1 => "itemname", 0x2f => "stringmasteryreceipename", 0x30 => "stringmasteryreceipedesc", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname", 0x1e => "stringfishdesc", 0x1f => "stringfishdetaildesc",
             0x3b => "petname", 0x31 => "stringrideename", 0x33 => "stringugc", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
         };
+        string attr = "name";
+        if (table == 0x15) { file = "stringfieldenterance"; attr = "uiDescription"; }   // the room's description (uidungeonroomdialog.cpp:631)
         if (file == null) return "";
-        if (!numberedTables.TryGetValue(file, out var d)) numberedTables[file] = d = strings?.Table(file, "name") ?? new Dictionary<string, string>();
-        return d.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+        string cache = attr == "name" ? file : file + "/" + attr;
+        if (!numberedTables.TryGetValue(cache, out var d)) numberedTables[cache] = d = strings?.Table(file, attr) ?? new Dictionary<string, string>();
+        if (!d.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) || n == null) return "";
+        // CStringTable::Load @0x141810f70 runs the object words over every table at load (stringtable.cpp:640)
+        if (attr != "name" && n.Contains('$')) d[id.ToString(CultureInfo.InvariantCulture)] = n = ReservedWords.ReplaceObjectWords(n);
+        return n;
     }
     readonly Dictionary<string, Dictionary<string, string>> numberedTables = new();
 

@@ -4,8 +4,9 @@ using Ms2.Formats.World;
 
 namespace Ms2.Ui.Items;
 
-/// <summary>One entry GetBoxItems emits (ItemDropResult, itemdroptable.cpp:945).</summary>
-public sealed record ItemDropEntry(int ItemId, int Count, int Rank, int Enchant, int Tooltip);
+/// <summary>One entry GetBoxItems and GetUniqueBoxItems emit (ItemDropResult, itemdroptable.cpp:945); <paramref name="Tradable"/> is the row's
+/// tradableCountDeduction (IsTradableCountDeduction, ItemDropData::Load :220).</summary>
+public sealed record ItemDropEntry(int ItemId, int Count, int Rank, int Enchant, int Tooltip, bool Tradable = false);
 
 /// <summary>
 /// ItemDropTable's individual boxes (ms2/commonfiles/itemdroptable.cpp), the part the select-item-box dialog lists.
@@ -25,7 +26,7 @@ public sealed record ItemDropEntry(int ItemId, int Count, int Rank, int Enchant,
 /// </summary>
 public sealed class IndividualDropTable
 {
-    sealed record Item(int ItemId, int ItemId2, int Rank, int Enchant, int Count, int Tooltip);
+    sealed record Item(int ItemId, int ItemId2, int Rank, int Enchant, int Count, int Tooltip, bool Tradable);
     sealed record Group(bool SmartGender, int SmartDropRate, List<Item> Items);
 
     readonly PackSet packs;
@@ -60,7 +61,8 @@ public sealed class IndividualDropTable
                         ItemData.Atoi((string)v.Attribute("uiItemRank") ?? "0"),
                         ItemData.Atoi((string)v.Attribute("enchantLevel") ?? "0"),
                         min,
-                        ItemData.Atoi((string)v.Attribute("showTooltip") ?? "0")));
+                        ItemData.Atoi((string)v.Attribute("showTooltip") ?? "0"),
+                        Bool(v, "tradableCountDeduction")));
                 }
                 if (items.Count == 0) continue;
                 groups.Add(new Group(ItemData.Atoi((string)g.Attribute("isApplySmartGenderDrop") ?? "0") != 0,
@@ -94,7 +96,7 @@ public sealed class IndividualDropTable
                     at = list.Count - 1;
                 }
                 int min = e.Attribute("minCount") != null ? Int(e, "minCount") : 1;
-                list[at].Value.Items.Add(new Item(Int(e, "item"), Int(e, "item2"), 0, Int(e, "enchantLevel"), min, Int(e, "showTooltip")));
+                list[at].Value.Items.Add(new Item(Int(e, "item"), Int(e, "item2"), 0, Int(e, "enchantLevel"), min, Int(e, "showTooltip"), Bool(e, "tradableCountDeduction")));
             }
         foreach (var (box, list) in groupsOf) into[box] = list.Select(g => g.Value).ToList();
         return into;
@@ -131,8 +133,43 @@ public sealed class IndividualDropTable
                 if (skipHidden && i.Tooltip == 2) continue;
                 if (g.SmartGender && !data.IsGenderAllowed(gender)) continue;
                 if (g.SmartDropRate > 0 && !data.IsJobRecommended(job)) continue;
-                output.Add(new ItemDropEntry(i.ItemId, i.Count, i.Rank, i.Enchant, i.Tooltip));
-                if (i.ItemId2 != 0) output.Add(new ItemDropEntry(i.ItemId2, i.Count, i.Rank, i.Enchant, i.Tooltip));
+                output.Add(new ItemDropEntry(i.ItemId, i.Count, i.Rank, i.Enchant, i.Tooltip, i.Tradable));
+                if (i.ItemId2 != 0) output.Add(new ItemDropEntry(i.ItemId2, i.Count, i.Rank, i.Enchant, i.Tooltip, i.Tradable));
+            }
+        return true;
+    }
+
+    /// <summary>ItemDropTable::IsGlobalBox (@0x1402ec060): the ids below 10000000 are global boxes, not individual ones.</summary>
+    public static bool IsGlobalBox(int boxId) => (uint)boxId < 10000000;
+
+    /// <summary>
+    /// GetUniqueBoxItems (@0x1402eb730, itemdroptable.cpp:1294-1345), what the dungeon room's reward preview lists: false for a global
+    /// box or an unknown one. Per item, in group order: skipped when its data is unknown, when its id was already emitted (by this call:
+    /// the client's set lives in the call, so a second box of the preview may list it again), when showTooltip is 2, when the group applies
+    /// the smart gender drop and the item's gender does not allow <paramref name="gender"/>, or when the group's smartDropRate is above 0
+    /// and the item does not recommend <paramref name="job"/>. The first entry has count 1; an itemID2 adds a second one with the row's
+    /// count, and marks that id seen too. Both carry the row's rank, enchant, showTooltip and tradable flag.
+    /// STILL-OPEN: ShutdownDropBox (CGameEventValueManager::IsShutdown, which makes the client answer false for a shut-down box) is not
+    /// ported, so no box is ever shut down.
+    /// </summary>
+    public bool GetUniqueBoxItems(ItemDataTable items, int boxId, int job, int gender, List<ItemDropEntry> output)
+    {
+        if (IsGlobalBox(boxId) || !Boxes().TryGetValue(boxId, out var groups)) return false;
+        var seen = new HashSet<int>();
+        foreach (var g in groups)
+            foreach (var i in g.Items)
+            {
+                var data = items.Get(i.ItemId);
+                if (data == null || seen.Contains(i.ItemId) || i.Tooltip == 2) continue;
+                if (g.SmartGender && !data.IsGenderAllowed(gender)) continue;
+                if (g.SmartDropRate > 0 && !data.IsJobRecommended(job)) continue;
+                output.Add(new ItemDropEntry(i.ItemId, 1, i.Rank, i.Enchant, i.Tooltip, i.Tradable));
+                seen.Add(i.ItemId);
+                if (i.ItemId2 != 0)
+                {
+                    output.Add(new ItemDropEntry(i.ItemId2, i.Count, i.Rank, i.Enchant, i.Tooltip, i.Tradable));
+                    seen.Add(i.ItemId2);
+                }
             }
         return true;
     }
