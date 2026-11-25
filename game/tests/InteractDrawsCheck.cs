@@ -24,6 +24,17 @@ namespace Ms2Godot.Tests;
 /// The mesh swap on 02000284_bf (the buckets whose reactable model is another bucket, and the map whose entity has no model of
 /// its own): the reactable model is hidden at the load and in state 0, drawn in place of the entity's own in state 1, both are
 /// hidden in state 2, and state 0 brings the entity's own back.
+/// The review fixes, each on a field of its own:
+/// <list type="bullet">
+/// <item>02000332_bf: an object whose own model animates (drawn by world/FieldProps) gets no reactable twin, so its state 1
+/// cannot draw both models.</item>
+/// <item>02000024_bf and 02000011_bf: the NIF collision follows NifAsset (FieldBuilder.InteractCollider): the own model's
+/// shapes in state 0, asset B's in state 1, kept through state 2.</item>
+/// <item>02000011_bf and 02000024_bf: a fade target (Transparency) with a reactable model: a fade of the own model ends at the swap, the
+/// reactable model fades in state 1, and in state 2 the hidden draws are not picked (no zero-basis transform is inverted).
+/// With a renderer (not --headless) the same ray picks the drawn model in state 0.</item>
+/// <item>02000348_bf: an interact mesh hidden at the load is drawn from its registration (its vfunc_3(0) sets IsVisible).</item>
+/// </list>
 /// Events only: nothing runs per frame. Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
 /// </summary>
 public partial class InteractDrawsCheck : Node
@@ -55,7 +66,7 @@ public partial class InteractDrawsCheck : Node
         AddChild(people);
         fnpcs = new FieldNpcs(packs, AssetIndex.For(packs), builder);
         fnpcs.PlaceActors(people, map);
-        draws = new FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders, fb.InteractReactableDraws);
+        draws = new FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders, fb.InteractReactableDraws, fb.InteractColliders);
         AddChild(draws.Fader);
         live = new LiveInteractObjects(new Host { Draws = draws }, InteractObjectTable.Shared(packs));
         live.Attach(map.Entities);
@@ -68,7 +79,161 @@ public partial class InteractDrawsCheck : Node
         if (++frame < 3) return;
         try { Check(); CheckMeshSwap(); CheckWatchTowers(); }
         catch (Exception e) { fails.Add(e.ToString()); }
+        foreach (var (name, check) in new (string, Action)[]
+                 {
+                     ("drawn apart", CheckDrawnApart), ("collision", CheckCollisionSwap), ("fade", CheckFade), ("hidden at the load", CheckHiddenAtLoad),
+                 })
+        {
+            try { check(); }
+            catch (Exception e) { fails.Add($"{name}: {e}"); }
+        }
         Done();
+    }
+
+    sealed class Built
+    {
+        public FieldMap Map;
+        public FieldBuilder Fb;
+        public LiveInteractObjects Live;
+        public FieldInteractDraws Draws;
+        public FieldFade Fade;
+        public void State(LiveInteractObject o, byte state) =>
+            Live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = o.Name, State = state, Kind = o.Kind });
+    }
+
+    /// <summary>A field as Field builds it for these: the animated props taken by world/FieldProps, the fade, the interact draws
+    /// with their reactable draws and collision.</summary>
+    Built BuildField(string xblock)
+    {
+        var packs = PackSet.Shared(Settings.DataDir);
+        var b = new Built { Map = FieldMap.Load(packs, new FlatLibrary(packs), xblock) };
+        b.Fb = new FieldBuilder(packs, AssetIndex.For(packs), builder) { DrawsInstance = new FieldProps(builder).TakesModel };
+        foreach (var _ in b.Fb.BuildSteps(b.Map)) { }
+        AddChild(b.Fb.World);
+        b.Fade = new FieldFade(b.Fb.FadeDraws, () => null, () => null);
+        AddChild(b.Fade);
+        b.Draws = new FieldInteractDraws(b.Fb.InteractMeshDraws, b.Fb.Colliders, b.Fb.InteractReactableDraws, b.Fb.InteractColliders) { Fade = b.Fade };
+        AddChild(b.Draws.Fader);
+        b.Live = new LiveInteractObjects(new Host { Draws = b.Draws }, InteractObjectTable.Shared(packs));
+        b.Live.Attach(b.Map.Entities);
+        b.Draws.Bind(b.Live, null);
+        return b;
+    }
+
+    /// <summary>02000332_bf: no twin where the own model is drawn elsewhere (an animated prop), so nothing draws both.</summary>
+    void CheckDrawnApart()
+    {
+        var b = BuildField("02000332_bf");
+        var apart = b.Live.All.Where(o => o.AssetType == 1 && o.AssetB.StartsWith("urn:llid:") && o.AssetB != o.AssetA && b.Fb.DrawnElsewhere.Contains(o.Entity)).ToList();
+        GD.Print($"interact draws check: 02000332_bf {apart.Count} objects with a reactable model whose own model is drawn elsewhere, {b.Fb.ReactableNotDrawn} reactable models not drawn, {b.Fb.ReactableTwins} twins");
+        if (apart.Count == 0) { fails.Add("02000332_bf: no object whose own model is drawn elsewhere"); return; }
+        foreach (var o in apart)
+        {
+            if (b.Fb.InteractReactableDraws.ContainsKey(o.Entity)) fails.Add($"{o.Name}: its own model is drawn elsewhere and it has a reactable twin (both would draw)");
+            b.State(o, 1);
+            if (b.Draws.ShownReactable(o.Entity) == true) fails.Add($"{o.Name}: state 1 draws a reactable model beside its own animated one");
+        }
+        if (b.Fb.ReactableNotDrawn < apart.Count) fails.Add($"02000332_bf: {b.Fb.ReactableNotDrawn} reactable models not drawn, fewer than {apart.Count}");
+    }
+
+    /// <summary>The NIF collision follows NifAsset: 02000024_bf (both models collide) and 02000011_bf (only asset B does).</summary>
+    void CheckCollisionSwap()
+    {
+        foreach (var (xblock, wantA) in new[] { ("02000024_bf", true), ("02000011_bf", false) })
+        {
+            var b = BuildField(xblock);
+            var list = b.Live.All.Where(o => b.Draws.Collision(o.Entity) is { B: not null }).ToList();
+            int withA = list.Count(o => b.Draws.Collision(o.Entity).A != null);
+            GD.Print($"interact draws check: {xblock} {b.Fb.ReactableColliders} reactable colliders, {list.Count} objects with them ({withA} with their own model's too)");
+            if (list.Count == 0 || wantA && withA == 0 || !wantA && withA == list.Count) { fails.Add($"{xblock}: {list.Count} objects with reactable collision, {withA} with their own"); continue; }
+            void Expect(LiveInteractObject o, string when, bool onB)
+            {
+                var c = b.Draws.Collision(o.Entity);
+                if (c.A != null && (c.A.Body.CollisionLayer != 0) == onB) fails.Add($"{xblock} {o.Name}: {when}: its own model's shapes in the world {c.A.Body.CollisionLayer != 0}");
+                if ((c.B.Body.CollisionLayer != 0) != onB) fails.Add($"{xblock} {o.Name}: {when}: asset B's shapes in the world {c.B.Body.CollisionLayer != 0}");
+                if (c.B.Body.CollisionLayer != 0 && c.B.Body.CollisionLayer != 1u << c.B.Group) fails.Add($"{xblock} {o.Name}: {when}: asset B's layer {c.B.Body.CollisionLayer}, not its group {c.B.Group}");
+            }
+            foreach (var o in list)
+            {
+                if (o.State == 0) Expect(o, "the load", false);
+                b.State(o, 1);
+                Expect(o, "state 1", true);
+                b.State(o, 2);
+                Expect(o, "state 2", true);
+                b.State(o, 0);
+                Expect(o, "state 0", false);
+            }
+        }
+    }
+
+    /// <summary>02000011_bf and 02000024_bf: BGTransparencyMgr (world/FieldFade) on fade targets with a reactable model, with
+    /// and without a model of their own.</summary>
+    void CheckFade()
+    {
+        int own = 0, ownless = 0;
+        foreach (var xblock in new[] { "02000011_bf", "02000024_bf" }) CheckFade(xblock, ref own, ref ownless);
+        if (own == 0 || ownless == 0) fails.Add($"fade: {own} fade targets with both models, {ownless} with the reactable one only: both kinds wanted");
+    }
+
+    void CheckFade(string xblock, ref int ownCount, ref int ownlessCount)
+    {
+        var b = BuildField(xblock);
+        bool rendered = DisplayServer.GetName() != "headless";
+        var list = b.Live.All.Where(o => b.Fb.FadeDraws.ContainsKey(o.Entity) && b.Fb.InteractReactableDraws.ContainsKey(o.Entity)).ToList();
+        var both = list.Where(o => b.Fb.InteractMeshDraws.ContainsKey(o.Entity)).ToList();
+        ownCount += both.Count;
+        ownlessCount += list.Count - both.Count;
+        GD.Print($"interact draws check: {xblock} {list.Count} fade targets with a reactable model ({both.Count} with a model of their own), rendered {rendered}");
+        if (list.Count == 0) return;
+        bool IsOwn(LiveInteractObject o, FieldBuilder.FadeDraw d) => b.Fb.InteractMeshDraws[o.Entity].Any(x => x.Mm == d.Mm && x.Index == d.Index);
+        bool IsB(LiveInteractObject o, FieldBuilder.FadeDraw d) => b.Fb.InteractReactableDraws[o.Entity].Any(x => x.Mm == d.Mm && x.Index == d.Index);
+        foreach (var o in list)
+        {
+            var e = o.Entity;
+            var at = FieldBuilder.ToGodotPoint(o.Position);
+            Vector3 from = at + Vector3.Up * 5000, dir = Vector3.Down;
+            if (b.Fb.InteractMeshDraws.ContainsKey(e))
+            {
+                if (rendered && !b.Fade.Picks(e, from, dir)) fails.Add($"{o.Name}: state 0: the ray down onto it picks nothing");
+                b.Fade.FadeOutNow(e);
+                var f = b.Fade.Fading(e);
+                if (f.Count == 0 || f.Any(d => !IsOwn(o, d))) fails.Add($"{o.Name}: state 0: the fade holds {f.Count} draws, not its own model's");
+            }
+            b.State(o, 1);
+            if (b.Fade.Fading(e).Count != 0) fails.Add($"{o.Name}: state 1: a fade of its own model goes on after the swap");
+            if (b.Draws.ShownOwn(e) == true || b.Draws.ShownReactable(e) != true) fails.Add($"{o.Name}: state 1: own drawn {b.Draws.ShownOwn(e)}, reactable {b.Draws.ShownReactable(e)}");
+            b.Fade.FadeOutNow(e);
+            var fb1 = b.Fade.Fading(e);
+            if (fb1.Count == 0 || fb1.Any(d => !IsB(o, d))) fails.Add($"{o.Name}: state 1: the fade holds {fb1.Count} draws, not asset B's");
+            b.State(o, 2);
+            if (b.Fade.Fading(e).Count != 0) fails.Add($"{o.Name}: state 2: a fade goes on while hidden");
+            if (b.Fade.Picks(e, from, dir)) fails.Add($"{o.Name}: state 2: a hidden draw is picked");
+            b.Fade.FadeOutNow(e);
+            if (b.Fade.Fading(e).Count != 0) fails.Add($"{o.Name}: state 2: a hidden draw fades");
+            b.State(o, 0);
+        }
+        GD.Print($"interact draws check: {xblock} {list.Count} fade targets through the fade in state 0, the swap, the fade in state 1 and state 2");
+    }
+
+    /// <summary>02000348_bf: an interact mesh hidden at the load, drawn once registered.</summary>
+    void CheckHiddenAtLoad()
+    {
+        var b = BuildField("02000348_bf");
+        var list = b.Live.All.Where(o => o.AssetType == 1 && o.Kind != InteractObjectMessage.KindWatchTower && !o.Entity.Bool("IsVisible", true)).ToList();
+        GD.Print($"interact draws check: 02000348_bf {list.Count} interact meshes hidden at the load");
+        if (list.Count == 0) { fails.Add("02000348_bf: no interact mesh hidden at the load"); return; }
+        foreach (var o in list)
+        {
+            bool own = b.Fb.InteractMeshDraws.ContainsKey(o.Entity), twin = b.Fb.InteractReactableDraws.ContainsKey(o.Entity);
+            GD.Print($"interact draws check: {o.Name}: own model drawn {own}, reactable twin {twin}");
+            if (!own && !twin) fails.Add($"{o.Name}: hidden at the load and neither model has draws");
+            if (own && b.Draws.ShownOwn(o.Entity) != true) fails.Add($"{o.Name}: hidden at the load and not drawn once registered");
+            b.State(o, 2);
+            if (b.Draws.Shown(o.Entity) != false) fails.Add($"{o.Name}: state 2 still drawn");
+            b.State(o, 1);
+            if (b.Draws.Shown(o.Entity) != true) fails.Add($"{o.Name}: state 1 not drawn");
+            if (twin && b.Draws.ShownReactable(o.Entity) != true) fails.Add($"{o.Name}: state 1 does not draw its reactable model");
+        }
     }
 
     void Done()

@@ -424,6 +424,10 @@ public partial class LiveSession
                 bool reactable = draws?.ShownReactable(o.Entity) == true;
                 Check($"{step}: state {o.State} draws the {(o.State == 1 ? "reactable" : "own")} model (reactable drawn {reactable}, asset B set {o.ShowsAssetB})",
                       o.State == 2 ? draws?.Drawn(o) == false : reactable == (o.State == 1));
+                if (draws?.Collision(o.Entity) is { } col)
+                    Check($"{step}: the NIF collision is the {(o.ShowsAssetB ? "reactable" : "own")} model's (own shapes in the world {col.A?.Body.CollisionLayer > 0}, reactable {col.B?.Body.CollisionLayer > 0})",
+                          col.OnB == o.ShowsAssetB && (col.A == null || col.A.Body.CollisionLayer > 0 != o.ShowsAssetB) && (col.B == null || col.B.Body.CollisionLayer > 0 == o.ShowsAssetB));
+                else GD.Print($"live: combat {step}: no swapped NIF collision (neither model has PhysX shapes)");
                 Shot($"reactable_{id}.png");
                 continue;
             }
