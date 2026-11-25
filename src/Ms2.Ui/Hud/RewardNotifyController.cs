@@ -56,6 +56,22 @@ public sealed class RewardNotifyController : UiController
         foreach (var r in q) AppendReward(r);
     }
 
+    /// <summary>The bottom bar heights and margin FUN_1418dd0d0 sums (uibuiltindialog.cpp:53), as PopupNpcTalk keeps them.</summary>
+    public int BottomBarHeight = 21, AdventureBarHeight = 21, ScreenMargin = 193;
+
+    /// <summary>FUN_1418dd0d0: (DAT_1439f8ccc - 2) + the adventure bar's height - 2 with feature 0xbd (FUN_1418dd110) + DAT_1439f8cc8.</summary>
+    public int BottomInset
+        => BottomBarHeight - 2 + (Model.IsFeatureEnabled(MainPlayerInfoController.AdventureLevelFeature) ? AdventureBarHeight - 2 : 0) + ScreenMargin;
+
+    /// <summary>vfunc_43 (@0x141abe680, uirewardnotify.cpp:198): the entity aligned bottom centre (mode 2) with dx 8 and dy
+    /// -(FUN_1418dd0d0 + 0x2c), on the stage's width and height whatever the window. Not UIDialog's (this is a UISwfEntity): the
+    /// movie's own "alignment" is not called.</summary>
+    public override void Layout(double stageW, double stageH)
+    {
+        if (Host?.Entity == null) return;
+        Host.Align(Host.Entity, 2, 8, -(BottomInset + 0x2c));
+    }
+
     /// <summary>ShowMeratNotice (@0x141ac0860): msg = FormatStringId(0x685, value), type "merat".</summary>
     public void ShowMeratNotice(long value) => Show(value, "merat");
 

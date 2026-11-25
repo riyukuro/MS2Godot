@@ -275,4 +275,22 @@ public class RewardNotifyTests
         for (int i = 0; i < 5; i++) p.Tick();
         Assert.That(NotifyType(h), Is.EqualTo("boxOpen"), "the movie shows it");
     }
+    /// <summary>UIRewardNotify::vfunc_43 (@0x141abe680): the toast movie sits bottom centre (dx 8) the bottom inset and 0x2c above the
+    /// stage's bottom, whatever the window: 1280x720, 1920x1080 and an odd 1913x1007.</summary>
+    [TestCase(1280, 720)]
+    [TestCase(1920, 1080)]
+    [TestCase(1913, 1007)]
+    public void TheMovieIsPlacedBottomCentreOnEveryStageSize(int w, int h)
+    {
+        var (host, c, p) = Load();
+        double oldW = p.StageW, oldH = p.StageH;
+        p.StageW = w; p.StageH = h;
+        c.Resize(oldW, oldH, w, h);
+        c.LayoutAndClear(w, h);
+        int ew = (int)Rt.ToNumber(host.Get(host.Entity, "width")), eh = (int)Rt.ToNumber(host.Get(host.Entity, "height"));
+        int x = (int)Rt.ToNumber(host.Get(host.Entity, "x")), y = (int)Rt.ToNumber(host.Get(host.Entity, "y"));
+        int inset = 21 - 2 + 193;                      // FUN_1418dd0d0 without the adventure bar (feature 0xbd is off in this model)
+        Assert.That(x, Is.EqualTo((int)((w - ew) * 0.5f) + 8), $"{w}x{h}: centred on the stage, not the movie's own corner");
+        Assert.That(y, Is.EqualTo(h - eh - (inset + 0x2c)), $"{w}x{h}: the bottom inset and 0x2c over the stage's bottom");
+    }
 }
