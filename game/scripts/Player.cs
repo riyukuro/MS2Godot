@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
     public const string Group = "player";
     public Player() { AddToGroup(Group); }
 
-    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit, Hold, FallDamage, TriggerEmotion, Emotion, EmotionIdle, CoupleEmotion }
+    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit, Hold, FallDamage, TriggerEmotion, Emotion, EmotionIdle, CoupleEmotion, TriggerFollowNpc }
 
     public Node3D Visual;                 // the character root (faces +Z)
     /// <summary>The body's gender (0 male, 1 female) and its model root node name, for the player's effect dummies.</summary>
@@ -468,6 +468,10 @@ public partial class Player : CharacterBody3D
                 TriggerEmotionUpdate(dt);
                 break;
 
+            case MoveState.TriggerFollowNpc:
+                TriggerFollowNpcUpdate();
+                break;
+
             case MoveState.Emotion:
                 EmotionUpdate(input, upPressed, downPressed, dir, hasInput, dt);
                 break;
@@ -482,8 +486,9 @@ public partial class Player : CharacterBody3D
         }
         prevRawInput = rawInput;
 
-        // the couple state places the body itself (SyncWithPartner) and stands still otherwise
-        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Revival or MoveState.Hold or MoveState.TriggerEmotion or MoveState.CoupleEmotion))
+        // the couple state places the body itself (SyncWithPartner) and stands still otherwise; the follow npc state stands where its npc is
+        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Revival or MoveState.Hold or MoveState.TriggerEmotion or MoveState.CoupleEmotion
+                          or MoveState.TriggerFollowNpc))
         {
             if (hasInput && State != MoveState.Dash) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
             var before = GlobalPosition;
@@ -543,6 +548,7 @@ public partial class Player : CharacterBody3D
         if (old is MoveState.Ladder or MoveState.Climb) StopJump();                // StateLadder / StateClimb::vfunc_5
         if (old == MoveState.Hit) LeaveHit();
         if (old == MoveState.TriggerEmotion) TriggerEmotionExit();   // ChangeState runs vfunc_5 also when 0x35 is entered again
+        if (old == MoveState.TriggerFollowNpc) followNpc = 0;
         if (old is MoveState.Emotion or MoveState.EmotionIdle) EmotionExit(old, s);   // also when 0xb is entered again (bForce)
         if (old == MoveState.CoupleEmotion) CoupleExit(s);                     // StateCoupleEmotion::vfunc_5, also into 0x3a again
         // StateDead::vfunc_5 (statedead.cpp:181) on any exit: the body shown and the shadow on, also when the dead flag was

@@ -65,11 +65,12 @@ public sealed class HeldItem
         HeldItemState.TreeWatering => SendRequestCube(send),    // StateTreeWatering::vfunc_4 (statetreewateringcontext.cpp:114-118)
         HeldItemState.SwimDash => SendRequestCube(send),        // StateSwimDash::vfunc_4 (stateswimdash.cpp:96-98), after its fallback too
         HeldItemState.Talk => SendRequestCube(send),            // StateTalk::vfunc_4 (statetalk.cpp:124-126)
+        HeldItemState.TriggerFollowNpc => SendRequestCube(send), // StateTriggerFollowNpc::vfunc_4 (stateemotionidle.cpp:502-505), before its data test
         _ => false,
     };
 
     /// <summary>The PC state ids (PC ctor, pc.cpp:675-697) whose state is in <see cref="HeldItemState"/>: 8 ladder, 9 rope,
-    /// 0xc dead, 0x1d climb, 0x21 ride, 0x26 summon, 0x1c swim dash, 0x16 talk, 0x2c recall, 0x39 auto interaction, 0x3e tree watering. STILL-OPEN: 0xb emotion and 0x1e glide map to Other until those states are
+    /// 0xc dead, 0x1d climb, 0x21 ride, 0x26 summon, 0x1c swim dash, 0x16 talk, 0x2c recall, 0x39 auto interaction, 0x3e tree watering, 0x46 trigger follow npc (pc.cpp:709). STILL-OPEN: 0xb emotion and 0x1e glide map to Other until those states are
     /// ported (their vfunc_4 also calls SendRequestCube); TriggerEmotion's id is not registered in that ctor.</summary>
     public static HeldItemState ForStateId(int state) => state switch
     {
@@ -84,6 +85,7 @@ public sealed class HeldItem
         0x2c => HeldItemState.Recall,
         0x39 => HeldItemState.AutoInteraction,
         0x3e => HeldItemState.TreeWatering,
+        0x46 => HeldItemState.TriggerFollowNpc,
         _ => HeldItemState.Other,
     };
 
@@ -129,4 +131,4 @@ public sealed class HeldItem
 }
 
 /// <summary>The local pc's states whose vfunc_4 calls PC::SendRequestCube (see <see cref="HeldItem.EnterState"/>).</summary>
-public enum HeldItemState { Other, Ride, Rope, Climb, Ladder, Dead, Glide, Emotion, TriggerEmotion, Hold, Summon, Recall, AutoInteraction, TreeWatering, SwimDash, Talk }
+public enum HeldItemState { Other, Ride, Rope, Climb, Ladder, Dead, Glide, Emotion, TriggerEmotion, Hold, Summon, Recall, AutoInteraction, TreeWatering, SwimDash, Talk, TriggerFollowNpc }

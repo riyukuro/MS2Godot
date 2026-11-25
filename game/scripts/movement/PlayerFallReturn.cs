@@ -117,7 +117,7 @@ public partial class Player
     {
         MoveState.Idle => 1, MoveState.Walk => 2, MoveState.Land => 4, MoveState.Fall => 5, MoveState.Jump => 6,
         MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, MoveState.Hold => 0x20, MoveState.FallDamage => 0x1f, MoveState.TriggerEmotion => 0x35,
-        MoveState.Emotion => 0xb, MoveState.EmotionIdle => 0xf, MoveState.CoupleEmotion => 0x3a, _ => 1,
+        MoveState.Emotion => 0xb, MoveState.EmotionIdle => 0xf, MoveState.CoupleEmotion => 0x3a, MoveState.TriggerFollowNpc => 0x46, _ => 1,
     };
 
     /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18 (statewalk.cpp:86; the gamepad 0x19 is not modelled), Swim 0x84,
@@ -240,6 +240,7 @@ public partial class Player
             // StateCoupleEmotionData::vfunc_1 (statecoupleemotion.cpp:174-186): m_n64 the emotion, and the couple fields
             rec.CoupleTail = null;
             if (State == MoveState.CoupleEmotion && Couple.Active) { rec.Emotion = (int)Couple.Emotion; rec.CoupleTail = Couple.SyncTail(); rec.CoupleAni = Couple.Ani; }
+            if (State == MoveState.TriggerFollowNpc) rec.Emotion = followNpc;   // StateDataTriggerFollowNpc::vfunc_1 (stateemotionidle.cpp:473-476): the npc id
             if (State == MoveState.Hold)
             {
                 rec.HoldId = holdTargetId; rec.HoldNode = holdNode;

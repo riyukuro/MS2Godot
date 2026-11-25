@@ -228,6 +228,10 @@ public sealed class ActionAnims
     /// <summary>The body folder the sequences come from ("male" or "female").</summary>
     public string BodyDir => bodyDir;
 
+    /// <summary>The name of the body actor's sequence of a KFM id (NiActorManager::GetSequenceData(id)->GetName()); null when
+    /// the body has no sequence of the id.</summary>
+    public string SequenceName(int id) => kfm?.ById(id)?.Name;
+
     /// <summary>A sequence by its name (the body's &lt;name&gt;.kf), loaded on first use; null when the body has none.</summary>
     public string Sequence(string seq, bool loop)
     {
