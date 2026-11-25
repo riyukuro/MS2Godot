@@ -16,8 +16,11 @@ public class RcMeretMarketTests {
     // gms2 recording: packet 2669, 2 bytes
     static readonly byte[] Mode22 = RcPkt.Hex(
         "1600");
-    // gms2 recording: packet 2215, 5 bytes
+    // gms2 recording: 1-Audience chamber.msb packet 2215, 5 bytes (0x6E)
     static readonly byte[] ModeC9 = RcPkt.Hex(
+        "C900000000");
+    // kms2 recording: ApplyingLayoutWithPortals.msb packet 514, 5 bytes (0x6C, extracted with extract.py)
+    static readonly byte[] KmsModeC9 = RcPkt.Hex(
         "C900000000");
 
     [Test] public void Mode1EReadsTheBuyAnswer() {
@@ -34,7 +37,17 @@ public class RcMeretMarketTests {
         var p = MeretMarketPacket.Read(r, ProtocolProfile.Gms2);
         Assert.That(p, Is.Not.Null);
         Assert.That(p.Mode, Is.EqualTo((byte) 0xC9));
-        Assert.That(RcPkt.Member<int>(p, "Value"), Is.EqualTo(0));
+        Assert.That(RcPkt.MemberAny<int>(p, "Value", "Count"), Is.EqualTo(0));
+        Assert.That(r.Available, Is.EqualTo(0), "the i32 after the mode byte must be read");
+    }
+
+    [Ignore("GMS2 meret market value not read yet")]
+    [Test] public void KmsModeC9ReadsTheValue() {
+        var r = new ByteReader(KmsModeC9);
+        var p = MeretMarketPacket.Read(r, ProtocolProfile.Kms2525);
+        Assert.That(p, Is.Not.Null);
+        Assert.That(p.Mode, Is.EqualTo((byte) 0xC9));
+        Assert.That(RcPkt.MemberAny<int>(p, "Value", "Count"), Is.EqualTo(0));
         Assert.That(r.Available, Is.EqualTo(0), "the i32 after the mode byte must be read");
     }
 }
