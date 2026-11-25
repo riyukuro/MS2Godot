@@ -3458,7 +3458,8 @@ public partial class LiveSession : Node
 
         // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at
         // most 5 s) and 2 s more; "~N" waits N s instead. With MS2_LIVE_CHAT_SHOTS=<dir> the screen is shot after each as
-        // chat_<n>.png; "@chatup:N" first scrolls the log N lines up from the bottom
+        // chat_<n>.png; "@chatup:N" first scrolls the log N lines up from the bottom. "@warp:<map>", "@skillapply", "@lapenunmount:N", "@boxclose",
+        // "@statusoptions" and "@optionsclose" press the field limit checks' buttons and open the status options (below).
         string chat = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAT");
         if (!string.IsNullOrEmpty(chat) && tree.CurrentScene is Ui.HudScene chatHud)
         {
@@ -3519,6 +3520,48 @@ public partial class LiveSession : Node
                     GD.Print($"live: chat link {n}: line {(back ? "came back" : "did not come back")}, item links {(linked ? "came" : "did not come")}");
                     await Frames(120);
                 }
+                else if ((line == "@skillapply" || line.StartsWith("@lapenunmount:")) && tree.CurrentScene is Ui.HudScene lh)
+                {
+                    // "@skillapply": the skill book (opened first) and its apply button; "@lapenunmount:<slot>": the lapenshard
+                    // window (opened first) and its equip page's unmount of that slot. The HUD is the current one (a field move
+                    // makes it again). Logs the field's limit content and the box the press showed; the shot keeps the box up.
+                    bool skill = line == "@skillapply";
+                    bool open = skill ? lh.OpenSkillBookScripted() : lh.OpenLapenshardScripted();
+                    await Frames(300);
+                    var shown = Ms2.Ui.Hud.MessageBoxQueue.Current();
+                    bool pressed = skill ? lh.PressSkillApplyScripted() : int.TryParse(line.AsSpan(14), out int slot) && lh.UnmountLapenshardScripted(slot);
+                    await Frames(90);
+                    var box = Ms2.Ui.Hud.MessageBoxQueue.Current();
+                    GD.Print($"live: {(skill ? "skill apply" : "lapenshard unmount")} {n}: field {Instance?.FieldId}, limitContent 0x{Instance?.CurrentFieldData()?.LimitContent ?? 0:x}, "
+                             + $"open {open}, pressed {pressed}, box {(box != null && box != shown ? "\"" + box.Msg + "\"" : "none")}");
+                }
+                else if (line.StartsWith("@warp:") && tree.CurrentScene is Ui.HudScene wh)
+                {
+                    // "@warp:<map>": the GM warp line sent from the current HUD's chat window (the first one is gone after a field
+                    // move); waits for the field's entry (at most 20 s)
+                    int was = Instance?.FieldId ?? 0;
+                    GD.Print($"live: warp {n}: /warp {line.Substring(6)} {(wh.SubmitChatLine("/warp " + line.Substring(6)) ? "sent" : "no chat window")}");
+                    await Until(() => Instance == null || (Instance.FieldId ?? was) != was, 60 * 20);
+                    await Frames(240);
+                    GD.Print($"live: warp {n}: field {Instance?.FieldId}");
+                }
+                else if (line == "@boxclose")
+                {
+                    // "@boxclose": the shown message box taken off without an answer
+                    if (Ms2.Ui.Hud.MessageBoxQueue.Current() is { } shownBox) Ms2.Ui.Hud.MessageBoxQueue.Remove(shownBox);
+                    await Frames(60);
+                }
+                else if (line == "@statusoptions" && tree.CurrentScene is Ui.HudScene oh)
+                {
+                    // "@statusoptions": the options dialog on its status page; logs the pet check boxes (null: the movie has no such box)
+                    int tab = oh.OpenStatusOptionsScripted();
+                    for (int i = 0; i < 600 && !oh.StatusOptionsReadyScripted(); i++) await Frames(1);
+                    await Frames(60);
+                    GD.Print($"live: status options {n}: tab {tab}, ready {oh.StatusOptionsReadyScripted()}, m_displayHideMyPet "
+                             + $"{oh.OptionSelectedScripted("m_displayHideMyPet")?.ToString() ?? "absent"}, m_displayHideOtherPet "
+                             + $"{oh.OptionSelectedScripted("m_displayHideOtherPet")?.ToString() ?? "absent"}");
+                }
+                else if (line == "@optionsclose" && tree.CurrentScene is Ui.HudScene ch) { ch.CloseOptionsScripted(); await Frames(60); }
                 else if (await CallChatStep(line, chatHud, n, Frames, Until)) { }   // the recall and air taxi lines (LiveSession.CallRuns.cs)
                 else
                 {
