@@ -1092,10 +1092,28 @@ public sealed class ModelBuilder
     {
         var anim = new Animation { Length = (float)kf.Duration, LoopMode = Animation.LoopModeEnum.Linear };
         int nfr = Math.Max(2, (int)Math.Round(kf.Duration * fps) + 1);
+        var bad = new bool[nfr];
         foreach (var (node, ch) in kf.Channels)
         {
-            if (md.BoneIndex(node) < 0) continue;
+            int bone = md.BoneIndex(node);
+            if (bone < 0) continue;
             var path = new NodePath($"{SkeletonName}:{node}");
+            // A frame where the channel's translation, rotation or scale is not finite: some kf keys are NaN (the scale of
+            // npc 02010040's Bottle_Point01 in its talk, of 21803600's Point04 in its idle, the whole of the seesaw's
+            // Apple_Point01). The client's node then has a NaN world transform and what hangs from it, rigid or skinned, has
+            // NaN vertices, drawn as nothing. A NaN pose here would reach the renderer as a NaN skeleton or attachment box and
+            // a NaN transparent sort depth (Godot's "bad comparison function"); the frame instead takes the node's rest
+            // translation and rotation and a zero scale, which draws the same nothing with finite numbers.
+            bool anyBad = false;
+            for (int f = 0; f < nfr; f++)
+            {
+                double t = kf.Duration * f / (nfr - 1);
+                bool ok = ch.S == null || double.IsFinite(ch.S(t));
+                if (ok && ch.T != null) { var v = ch.T(t); ok = double.IsFinite(v.X + v.Y + v.Z); }
+                if (ok && ch.R != null) { var q = ch.R(t); ok = double.IsFinite(q.X + q.Y + q.Z + q.W); }
+                bad[f] = !ok; anyBad |= !ok;
+            }
+            var rest = anyBad ? ToGodot(md.Bones[bone].Rest) : Transform3D.Identity;
             if (ch.T != null)
             {
                 int tr = anim.AddTrack(Animation.TrackType.Position3D);
@@ -1104,7 +1122,7 @@ public sealed class ModelBuilder
                 {
                     double t = kf.Duration * f / (nfr - 1);
                     var v = ch.T(t);
-                    anim.PositionTrackInsertKey(tr, t, new Vector3((float)v.X, (float)v.Y, (float)v.Z));
+                    anim.PositionTrackInsertKey(tr, t, bad[f] ? rest.Origin : new Vector3((float)v.X, (float)v.Y, (float)v.Z));
                 }
             }
             if (ch.R != null)
@@ -1115,20 +1133,21 @@ public sealed class ModelBuilder
                 for (int f = 0; f < nfr; f++)
                 {
                     double t = kf.Duration * f / (nfr - 1);
-                    var q = ToGodot(ch.R(t));
+                    var q = bad[f] ? rest.Basis.Orthonormalized().GetRotationQuaternion() : ToGodot(ch.R(t));
                     if (prev is Quaternion p && p.Dot(q) < 0) q = -q;
                     prev = q;
                     anim.RotationTrackInsertKey(tr, t, q);
                 }
             }
-            if (ch.S != null)
+            if (ch.S != null || anyBad)
             {
                 int tr = anim.AddTrack(Animation.TrackType.Scale3D);
                 anim.TrackSetPath(tr, path);
+                float restS = (float)md.Bones[bone].Rest.S;
                 for (int f = 0; f < nfr; f++)
                 {
                     double t = kf.Duration * f / (nfr - 1);
-                    float s = (float)ch.S(t);
+                    float s = bad[f] ? 0f : ch.S != null ? (float)ch.S(t) : restS;
                     anim.ScaleTrackInsertKey(tr, t, new Vector3(s, s, s));
                 }
             }
