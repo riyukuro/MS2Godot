@@ -112,6 +112,8 @@ public partial class LiveSession
     public int SpawnKeptEffect(string effect, Node3D actor, int casterKind) => remote?.SpawnKeptEffect(effect, actor, casterKind) ?? 0;
     /// <summary>A kept effect stopped at once (CEffectService::FUN_1411a6060).</summary>
     public void StopKeptEffect(int id) => remote?.StopKeptEffect(id);
+    /// <summary>Whether a kept effect is still in (for the live checks).</summary>
+    public bool IsKeptEffect(int id) => remote?.IsKeptEffect(id) == true;
 
     /// <summary>The buff lists' effect service through the field of the moment (none between fields).</summary>
     public Ms2.Ui.Skills.IBuffMotionEffects BuffEffects => buffEffects ??= new FieldBuffEffects(this);

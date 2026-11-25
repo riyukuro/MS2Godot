@@ -281,6 +281,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// STILL-OPEN: CNifEffect::vfunc_11 (nifeffectparam.cpp:946-967) moves an attach type 1 part still inside its duration
     /// to the world root, keeping its place; here the parts on an actor stay under it.
     /// </summary>
+    /// <summary>Whether a kept effect's handle still names live parts (for the live checks).</summary>
+    public bool IsKept(int handle) => kept.ContainsKey(handle);
+
     public void Release(int handle)
     {
         if (looping.Contains(handle)) { FadeOut(handle, 0); return; }

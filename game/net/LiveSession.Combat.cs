@@ -69,6 +69,21 @@ public partial class LiveSession
             flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shots, name)); GD.Print($"live: shot {name} at {Time.GetTicksMsec()}");
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
+        // the own mount's loopEffect (Ridee::vfunc_12 / ~Ridee): riding, a row with one keeps it (handle in the field's
+        // effects) and a row without keeps none; after the ride off the handle is gone. Returns the riding handle.
+        int RideLoopScripted(LiveSession ls, string what, bool riding, int had)
+        {
+            if (riding)
+            {
+                var m = ls.OwnPlayer?.Mount;
+                string loop = m?.Data.LoopEffect;
+                int h = m?.LoopFx.Handle ?? 0;
+                Check($"{what}: loopEffect '{loop ?? "-"}' kept as {h}", loop == null ? h == 0 : h != 0 && ls.IsKeptEffect(h));
+                return h;
+            }
+            if (had != 0) Check($"{what}: loopEffect {had} stopped at the ride off", !ls.IsKeptEffect(had));
+            return 0;
+        }
         void Shows(string what)     // the frame is not one colour: nothing full screen is left over the field
         {
             var img = flow.GetViewport().GetTexture().GetImage();
@@ -1318,6 +1333,7 @@ public partial class LiveSession
                 await frames(90);
                 Check($"rideraw {rideId}: riding (sent {sent}); {hud.RideHudScripted()}", live.OwnRidee?.Id == rideId);
                 Shot($"ride_{rideId}_on.png");
+                int loopFx = RideLoopScripted(live, "rideraw " + rideId, true, 0);
                 hud.DriveTowardScripted(live.OwnPlayer.GlobalPosition + new Vector3(400, 0, 0), false);
                 await frames(60);
                 Shot($"ride_{rideId}_run.png");
@@ -1327,6 +1343,7 @@ public partial class LiveSession
                 await until(() => live.OwnRidee == null, 60 * 8);
                 await frames(60);
                 Check($"rideraw {rideId}: off; {hud.RideHudScripted()}", live.OwnRidee == null);
+                RideLoopScripted(live, "rideraw " + rideId, false, loopFx);
                 Shot($"ride_{rideId}_off.png");
                 continue;
             }
@@ -1343,6 +1360,7 @@ public partial class LiveSession
                 await frames(90);
                 Check($"rideitem {itemId} (uid {uid}, ridee {ridee}): riding {live.OwnRidee?.Id}; {hud.RideHudScripted()}", live.OwnRidee?.Id == ridee && ridee != 0);
                 Shot($"rideitem_{itemId}_on.png");
+                int loopFx = RideLoopScripted(live, "rideitem " + itemId, true, 0);
                 hud.DriveTowardScripted(live.OwnPlayer.GlobalPosition + new Vector3(400, 0, 0), false);
                 await frames(60);
                 Shot($"rideitem_{itemId}_run.png");
@@ -1352,6 +1370,7 @@ public partial class LiveSession
                 await until(() => live.OwnRidee == null, 60 * 8);
                 await frames(60);
                 Check($"rideitem {itemId}: off; {hud.RideHudScripted()}", live.OwnRidee == null);
+                RideLoopScripted(live, "rideitem " + itemId, false, loopFx);
                 Shot($"rideitem_{itemId}_off.png");
                 continue;
             }
