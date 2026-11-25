@@ -115,4 +115,24 @@ public class Gms2ItemUpdateRecordedTests {
         Assert.That((m.Item.Transfer.HasBinding, m.Item.Transfer.BindingId, m.Item.Transfer.BindingName),
             Is.EqualTo((true, 7000000002L, "*********")), "bound to the character");
     }
+
+    [Test]
+    public void TheLiveCheckFindsTheRemovedItemAndReadsTheSkippedBodyToItsEnd() {
+        // LiveSession.CheckSkippedUpdate's steps: the item the Remove took out, the Update read with the body skipped, then
+        // the skipped body read as that item's
+        var item = Added();
+        var me = new MyCharacter();
+        Assert.That(ItemReader.SkippedUpdateItem(null, Uid, me), Is.Null, "no removed, worn or gem item: nothing to check with");
+        Assert.That(ItemReader.SkippedUpdateItem(new EquipItem { Uid = 1 }, Uid, null), Is.Null, "another uid removed, no character");
+        Assert.That(ItemReader.SkippedUpdateItem(item, Uid, me), Is.SameAs(item), "the removed bag item");
+        var r = new ByteReader(UpdateFrame);
+        Assert.That(ItemMessage.Read(r, _ => null, Gms), Is.EqualTo(new ItemMessage.Update(Uid, null)));
+        var read = ItemReader.ReadSkippedBody(r, item, Gms);
+        Assert.That(r.Available, Is.EqualTo(0), "the skipped body reads to its end");
+        Assert.That((read.Id, read.Uid, read.Transfer.BindingId), Is.EqualTo((11300001, Uid, 7000000002L)));
+        Assert.That(item.Transfer.HasBinding, Is.False, "the removed item itself is not changed");
+        Assert.That(ItemReader.SkippedUpdateItem(null, Uid, new MyCharacter { Equips = new[] { item } }), Is.SameAs(item), "a worn item");
+        Assert.That(ItemReader.SkippedUpdateItem(new EquipItem { Uid = 1 }, Uid, new MyCharacter { Gems = new[] { item } }), Is.SameAs(item),
+            "a worn gem");
+    }
 }

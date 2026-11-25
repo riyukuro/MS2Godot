@@ -1711,6 +1711,7 @@ public class InventoryTests
     public void ALimitedQuantityBoxWaitsItsCooldownUnlessTheGmLevelIsHigh()
     {
         // OpenItemBoxLimitedQuantity @0x140d25c50: <xmlData cooldownTime="3"/>, s_itemUseMap by item id, DAT_143ab2914 < 0x32
+        InventoryController.ClearLimitedUses();      // the map is static: no earlier test's use counts
         var (c, model, item, sent, boxes, raised) = UseSetup("OpenItemBoxLimitedQuantity", 20302629);
         int cooldown = item.Data.FunctionXmlInt("cooldownTime");
         Assert.That(cooldown, Is.GreaterThan(0));
@@ -1900,10 +1901,29 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { Slot(70200001), 1 });
         Assert.That(raised, Is.EqualTo(new[] { "notifySlotUse", "notifySlotUse" }), "without the bar and my info: raised");
         c.AddToQuickSlot = i => bar.Add(i.Uid);
-        c.EquipGemFromBag = i => gems.Add(i.Uid);
+        MyInfoController open = null;
+        c.FindMyInfoDialog = () => open;
         c.OnCallback("notifySlotUse", new object[] { Slot(20000021), 1 });
         c.OnCallback("notifySlotUse", new object[] { Slot(70200001), 1 });
-        Assert.That((bar, gems, raised.Count), Is.EqualTo((new[] { 30L }, new[] { 31L }, 2)));
+        Assert.That((bar, raised.Count), Is.EqualTo((new[] { 30L }, 2)));
+
+        // case 12 (invenslot.cpp:1026): EquipGem only when FindMyInfoDialog(0x2711) finds the dialog
+        var view = new InventoryView(book);
+        var sent = new List<(long, byte)>(); view.RequestEquipGem = (u, s) => sent.Add((u, s));
+        var shown = new List<MessageBoxData>();
+        var me = UiFixture.Character();
+        var info = new MyInfoController { Inventory = view, ShowBox = shown.Add, Record = () => me.ToPcInfo(0), StatPoints = me.StatPoints };
+        var (rt, p) = src.Open(info.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        Assert.That(new UiHost(p, info, model).Load(), Is.True, "my info load: " + string.Join("; ", rt.Errors));
+        c.OnCallback("notifySlotUse", new object[] { Slot(70200001), 1 });
+        Assert.That((sent.Count, shown.Count, raised.Count), Is.EqualTo((0, 0, 2)), "my info not open: nothing");
+        open = info;
+        c.OnCallback("notifySlotUse", new object[] { Slot(70200001), 1 });
+        Assert.That(sent.Count + shown.Count, Is.EqualTo(1), "my info open: its EquipGem (the request, or its bind box)");
+        if (sent.Count == 1) Assert.That(sent[0], Is.EqualTo((31L, (byte)255)), "slot -1");
+        else Assert.That(shown[0].ItemUid, Is.EqualTo(31L));
     }
 
     sealed class GemSlots : IDragSlotOwner, IGemSlotOwner

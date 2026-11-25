@@ -247,6 +247,29 @@ public static class ItemReader {
     }
 
     /// <summary>
+    /// The item a skipped Update body is checked against. OnItemInventory mode 0xe (scenestategame.cpp:2960) reads the body only
+    /// for an uid Unk_Inventory::FindItemByUid (inventory.cpp:561) finds in the bag, so the client (and the port) skip the body
+    /// of an item the Remove took out (an equip's bind update); the live check reads it anyway, as: the bag item the last
+    /// Remove took out when it has the uid, else the worn equip or outfit, else the worn gem; null without one.
+    /// </summary>
+    public static EquipItem SkippedUpdateItem(EquipItem lastRemoved, long uid, MyCharacter me) {
+        if (lastRemoved?.Uid == uid) return lastRemoved;
+        if (me == null) return null;
+        if (me.EquipByUid(uid) is { } worn) return worn;
+        if (me.Gems is { } gems)
+            for (int i = 0; i < gems.Count; i++) if (gems[i].Uid == uid) return gems[i];
+        return null;
+    }
+
+    /// <summary>A skipped Update body read as <paramref name="known"/>'s body into a copy (the item itself is not changed);
+    /// <paramref name="r"/> is left after the body.</summary>
+    public static EquipItem ReadSkippedBody(ByteReader r, EquipItem known, ProtocolProfile profile) {
+        var copy = new EquipItem { Id = known.Id, Uid = known.Uid, Rarity = known.Rarity, Slot = known.Slot, InventorySlot = known.InventorySlot };
+        ReadBodyInto(r, copy, profile);
+        return copy;
+    }
+
+    /// <summary>
     /// An item made from its id and rarity and then read (CItem::FUN_140523c40 + ReadFromStream, as the npc shop's products,
     /// npcshopproductbase.cpp:186): the body alone, its first model slot from <see cref="SlotOf"/>.
     /// </summary>

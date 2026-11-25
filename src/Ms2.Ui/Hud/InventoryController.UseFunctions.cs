@@ -39,6 +39,9 @@ public sealed partial class InventoryController
     /// <summary>s_itemUseMap (@0x1400d1fc0): item id to the tick of its last limited quantity use; one map for the client.</summary>
     static readonly Dictionary<int, uint> lastLimitedUse = new();
 
+    /// <summary>Empties s_itemUseMap (tests: the map outlives a controller, as the client's does).</summary>
+    internal static void ClearLimitedUses() => lastLimitedUse.Clear();
+
     /// <summary>
     /// The ported handlers of RegisterItemUseFuncs by the item's function name: their result (UseItem returns it), or null
     /// for a name whose handler is not ported here (UseItem then raises it).
