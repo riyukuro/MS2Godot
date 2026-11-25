@@ -451,7 +451,7 @@ public partial class LiveSession
                     Check($"{step}: the NIF collision is the {(o.ShowsAssetB ? "reactable" : "own")} model's (own shapes in the world {col.A?.Body.CollisionLayer > 0}, reactable {col.B?.Body.CollisionLayer > 0})",
                           col.OnB == o.ShowsAssetB && (col.A == null || col.A.Body.CollisionLayer > 0 != o.ShowsAssetB) && (col.B == null || col.B.Body.CollisionLayer > 0 == o.ShowsAssetB));
                 else GD.Print($"live: combat {step}: no swapped NIF collision (neither model has PhysX shapes)");
-                Shot($"reactable_{id}.png");
+                Shot($"reactable_{id}_state{o.State}.png");
                 continue;
             }
             if (step.StartsWith("telescope:"))      // telescope:<interact id>: the own pc put at the nearest telescope of that id, the action key; its view checked, then Esc skips it
