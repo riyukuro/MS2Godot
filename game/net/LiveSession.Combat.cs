@@ -948,6 +948,46 @@ public partial class LiveSession
                 if (!shown) Check($"{step}: one of {spots.Count} takes the action key with the tooltip", false);
                 continue;
             }
+            if (step.StartsWith("tooltip:lift:"))      // tooltip:lift:x y z (a liftable's map point): the own pc put beside it until the lift (LiftCubeAction 0x15) is the current action; the tooltip shows GetActionCaption(0x63a, the lift item's name) at the centre (a shot); the action key lifts it (cube mode), then the put-down (PutDownLiftableAction 0xc, cube-mode map) shows common 0x63d (a shot) and the key puts it down
+            {
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                var tip = hud.ActionTooltip;
+                if (tfc == null || tip == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the field and the tooltip", false); continue; }
+                var tt = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
+                var lp = step[13..].Split(' ');
+                var liftAt = new Ms2.Formats.Model.Vec3(float.Parse(lp[0]), float.Parse(lp[1]), float.Parse(lp[2]));
+                live.player.GlobalPosition = FieldBuilder.ToGodotPoint(liftAt) + new Vector3(60, 40, 0);
+                live.player.Velocity = Vector3.Zero;
+                live.player.Face(new Vector3(-1, 0, 0));
+                await frames(30);
+                await until(() => live.ActionKeyCode(tfc.CurrentAction) == 0x15 && tip.ShownAction == 0x15, 60 * 3);
+                await frames(20);
+                var lift = live.Liftables.Find(live.Liftables.Polled);
+                string want = lift == null ? "" : Ms2.Ui.ActionCaption.Lift(tt, true, lift.ItemId);
+                GD.Print($"live: combat {step}: lift '{live.Liftables.Polled}' item {lift?.ItemId}: action {tfc.CurrentAction}, tooltip action {tip.ShownAction}, "
+                    + $"caption \"{tip.ShownText}\", want \"{want}\", target {tip.ShownTarget}, at {tip.Place}");
+                Check($"{step}: the tooltip shows the lift caption (\"{want}\") at the centre",
+                    tip.ShownAction == 0x15 && want.Length > 0 && tip.ShownText == want && tip.ShownTarget == null);
+                Shot("tooltip_lift.png");
+                if (tip.ShownAction != 0x15) continue;
+                await PressActionKey(frames);
+                await until(() => live.CubeCraft.InCubeMode, 60 * 5);
+                await frames(30);
+                await until(() => live.ActionKeyCode(tfc.CurrentAction) == 0xc && tip.ShownAction == 0xc, 60 * 3);
+                await frames(20);
+                string wantDown = tt.Common(0x63d) ?? "";
+                GD.Print($"live: combat {step}: cube mode {live.CubeCraft.InCubeMode}: action {tfc.CurrentAction}, tooltip action {tip.ShownAction}, "
+                    + $"caption \"{tip.ShownText}\", want \"{wantDown}\"");
+                Check($"{step}: carrying, the tooltip shows the put-down caption (\"{wantDown}\")",
+                    live.CubeCraft.InCubeMode && tip.ShownAction == 0xc && wantDown.Length > 0 && tip.ShownText == wantDown);
+                Shot("tooltip_putdown.png");
+                if (!live.CubeCraft.InCubeMode) continue;
+                await PressActionKey(frames);
+                await until(() => !live.CubeCraft.InCubeMode, 60 * 5);
+                await frames(30);
+                Check($"{step}: the put-down ended the carry and the put-down tooltip is gone", !live.CubeCraft.InCubeMode && tip.ShownAction != 0xc);
+                continue;
+            }
             if (step == "tooltip:taxi" || step == "tooltip:portal")      // tooltip:taxi|portal: the own pc put at the nearest taxi station (TaxiStationAction 8) or in the nearest shown portal with a box and a target (PortalAction 0x13; not a kind 1 portal, which moves at once) until that is the current action; the action tooltip shows its vfunc_6 caption (the portal's at its point lifted 75), a shot
             {
                 var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
