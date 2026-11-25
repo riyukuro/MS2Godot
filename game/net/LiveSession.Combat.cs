@@ -414,6 +414,9 @@ public partial class LiveSession
                 live.player.Velocity = Vector3.Zero;
                 await frames(90);
                 Shot("telescope_before.png");
+                // the field's fog as the load set it (ms2_fog's z, the camera bias, moves with the camera)
+                string FogNow() => triggerFieldOf(live)?.FogShown ?? "no field";
+                string fogBefore = FogNow();
                 await PressActionKey(frames);
                 await until(() => o.TelescopeActive, 60 * 5);
                 var cine = live.Cinematic;
@@ -426,6 +429,8 @@ public partial class LiveSession
                 hud.Escape();
                 await frames(60 * 2);
                 Check($"{step}: Esc skipped the view (inactive, key mode {cine.KeyMode})", !o.TelescopeActive && !cine.KeyMode);
+                string fogAfter = FogNow();
+                Check($"{step}: the skip put the field's fog back ({fogBefore} -> {fogAfter})", fogAfter == fogBefore);
                 await frames(60);
                 Shot("telescope_after.png");
                 continue;
