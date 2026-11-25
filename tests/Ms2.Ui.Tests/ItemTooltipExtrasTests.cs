@@ -364,32 +364,48 @@ public class ItemTooltipExtrasTests
     static int FirstRepackItem(UiModel m)
     {
         var rx = new System.Text.RegularExpressions.Regex("<item id=\"(\\d+)\"");
+        bool anyKms = false;
         for (int f = 0; f < 1000; f++)
         {
             string entry = $"itemdata/{f:000}.xml";
             if (!Packs().Exists("Xml", entry)) continue;
+            anyKms = true;
             string text = System.Text.Encoding.UTF8.GetString(Packs().Read("Xml", entry));
             if (!text.Contains("rePackingLimitCount=\"")) continue;
             foreach (System.Text.RegularExpressions.Match x in rx.Matches(text))
                 if (m.Tables.Items.Get(int.Parse(x.Groups[1].Value)) is { RePackingLimitCount: > 0, TransferType: 3 or 5, IsPetItem: false } d)
                     return d.Id;
         }
+        if (anyKms) return 0;
+        foreach (var (id, entry) in ItemDataTable.PerItemIndex(Packs().List("Xml")).OrderBy(kv => kv.Key))
+        {
+            string text = System.Text.Encoding.UTF8.GetString(Packs().Read("Xml", entry));
+            if (!text.Contains("rePackingLimitCount=\"")) continue;
+            if (m.Tables.Items.Get(id) is { RePackingLimitCount: > 0, TransferType: 3 or 5, IsPetItem: false } d)
+                return d.Id;
+        }
         return 0;
     }
 
-    /// <summary>The first item id of the item data (file order) the predicate passes.</summary>
+    /// <summary>The first item id of the item data (file order on KMS, id order on GMS2 per-item files) the predicate passes.</summary>
     static int FirstItem(UiModel m, Func<ItemData, bool> pass)
     {
         var rx = new System.Text.RegularExpressions.Regex("<item id=\"(\\d+)\"");
+        bool anyKms = false;
         for (int f = 0; f < 1000; f++)
         {
             string entry = $"itemdata/{f:000}.xml";
             if (!Packs().Exists("Xml", entry)) continue;
+            anyKms = true;
             string text = System.Text.Encoding.UTF8.GetString(Packs().Read("Xml", entry));
             foreach (System.Text.RegularExpressions.Match x in rx.Matches(text))
                 if (m.Tables.Items.Get(int.Parse(x.Groups[1].Value)) is { } d && pass(d))
                     return d.Id;
         }
+        if (anyKms) return 0;
+        foreach (int id in ItemDataTable.PerItemIndex(Packs().List("Xml")).Keys.OrderBy(k => k))
+            if (m.Tables.Items.Get(id) is { } d && pass(d))
+                return d.Id;
         return 0;
     }
 
@@ -400,7 +416,7 @@ public class ItemTooltipExtrasTests
         m.HasLocalPlayer = true;
         int id = FirstItem(m, d => !d.IsPetItem && !d.RemakeDisable && d.LevelLimit >= 0x32 && d.Rank is 0 or >= 4
             && d.EquipSubtype is 0xc or (>= 0xd and <= 0x16));
-        if (id == 0) Assert.Ignore("no remakeable equipment");
+        Assert.That(id, Is.Not.Zero, "no remakeable equipment");
         var r = new EquipItem { Id = id, Uid = 6, Rarity = 4, Amount = 1, RemakeCount = 3 };
         string before = Tip(m, r).Data.TryGetValue("itemDamage", out var t0) ? (string)t0 : "";
         Assert.That(before, Does.Not.Contain(Ms2.Quest.ClientFormat.Format(m.Tables.Common(0xbf9), 3)));
@@ -419,9 +435,9 @@ public class ItemTooltipExtrasTests
     {
         var m = NewModel();
         m.HasLocalPlayer = true;
-        int id = FirstItem(m, d => d.ItemPreset != 0 && m.Tables.ItemModels.Get(d.ItemPreset) is { ColorEnabled: true, Palette: not 0, MultiColor: false } gm
+        int id = FirstItem(m, d => d.ItemPreset != 0 && m.Tables.ItemModels.ForItem(d) is { ColorEnabled: true, Palette: not 0, MultiColor: false } gm
             && gm.DefaultColor(0) < 0);
-        if (id == 0) Assert.Ignore("no customizable item without a default colour");
+        Assert.That(id, Is.Not.Zero, "no customizable item without a default colour");
         var r = new EquipItem { Id = id, Uid = 11, Rarity = 1, Amount = 1 };
         var item = Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items);
         string dye = m.Tables.Common(0x9b7);
@@ -446,7 +462,7 @@ public class ItemTooltipExtrasTests
         TestContext.WriteLine($"feature 0x38: {m.IsFeatureEnabled(0x38)}");
         if (!m.IsFeatureEnabled(0x38)) Assert.Ignore("feature 0x38 is off in this data");
         int id = FirstRepackItem(m);
-        if (id == 0) Assert.Ignore("no item with a repack limit");
+        Assert.That(id, Is.Not.Zero, "no item with a repack limit");
         var d = m.Tables.Items.Get(id);
         var r = new EquipItem { Id = id, Uid = 5, Rarity = 4, Amount = 1 };
         var text = (string)Tip(m, r).Data["itemDamage"];

@@ -21,10 +21,27 @@ public class IndividualDropTableTests
 
     static int FirstBox(PackSet p)
     {
-        foreach (var b in GameStrings.Parse(p.Read("Xml", "table/individualitemdrop_final.xml")).Root.Elements("dropBox"))
-            if (FeatureElements.IsAvailable(p, b) && b.Elements("group").Any(g => FeatureElements.IsAvailable(p, g)
-                && g.Elements("v").Any(v => FeatureElements.IsAvailable(p, v))))
-                return ItemData.Atoi((string)b.Attribute("dropBoxID") ?? "0");
+        if (p.Exists("Xml", "table/individualitemdrop_final.xml"))
+        {
+            foreach (var b in GameStrings.Parse(p.Read("Xml", "table/individualitemdrop_final.xml")).Root.Elements("dropBox"))
+                if (FeatureElements.IsAvailable(p, b) && b.Elements("group").Any(g => FeatureElements.IsAvailable(p, g)
+                    && g.Elements("v").Any(v => FeatureElements.IsAvailable(p, v))))
+                    return ItemData.Atoi((string)b.Attribute("dropBoxID") ?? "0");
+            return 0;
+        }
+        string region = TablePath.Region(e => p.Exists("Xml", e));
+        static bool IsDropFile(string name, string folder) =>
+            name.StartsWith(folder + "individualitemdrop", StringComparison.Ordinal) && name.IndexOf('/', folder.Length) < 0;
+        var names = p.List("Xml").Where(n => n.EndsWith(".xml", StringComparison.Ordinal)
+                && (IsDropFile(n, "table/") || IsDropFile(n, "table/" + region + "/")))
+            .OrderBy(n => n.Count(c => c == '/')).ThenBy(n => n, StringComparer.Ordinal);
+        foreach (var name in names)
+            foreach (var e in GameStrings.Parse(p.Read("Xml", name)).Root.Elements("individualDropBox"))
+                if (FeatureElements.IsAvailable(p, e))
+                {
+                    int id = ItemData.Atoi((string)e.Attribute("individualDropBoxID") ?? "0");
+                    if (id != 0) return id;
+                }
         return 0;
     }
 
@@ -43,9 +60,8 @@ public class IndividualDropTableTests
     public void ALoadedBoxListsItsItemsWithKnownData()
     {
         var p = Packs();
-        if (!p.Exists("Xml", "table/individualitemdrop_final.xml")) Assert.Ignore("no individual drop table");
         int id = FirstBox(p);
-        Assume.That(id, Is.Not.EqualTo(0));
+        Assert.That(id, Is.Not.EqualTo(0), "no individual drop box in this data");
         var items = new ItemDataTable(p);
         var table = new IndividualDropTable(p);
         Assert.That(table.Has(id));

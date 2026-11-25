@@ -26,13 +26,25 @@ public class SelectItemBoxTests
         src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
     }
 
-    static int FirstBox(PackSet p)
+    static int FirstBox(PackSet p, int minRewards = 1)
     {
-        if (!p.Exists("Xml", "table/individualitemdrop_final.xml")) Assert.Ignore("no individual drop table");
-        foreach (var b in GameStrings.Parse(p.Read("Xml", "table/individualitemdrop_final.xml")).Root.Elements("dropBox"))
-            if (FeatureElements.IsAvailable(p, b) && b.Elements("group").Any(g => FeatureElements.IsAvailable(p, g)
-                && g.Elements("v").Any(v => FeatureElements.IsAvailable(p, v))))
-                return ItemData.Atoi((string)b.Attribute("dropBoxID") ?? "0");
+        GameTables tables = null;
+        if (p.Exists("Xml", "table/individualitemdrop_final.xml"))
+        {
+            foreach (var b in GameStrings.Parse(p.Read("Xml", "table/individualitemdrop_final.xml")).Root.Elements("dropBox"))
+                if (FeatureElements.IsAvailable(p, b) && b.Elements("group").Any(g => FeatureElements.IsAvailable(p, g)
+                    && g.Elements("v").Any(v => FeatureElements.IsAvailable(p, v))))
+                {
+                    int id = ItemData.Atoi((string)b.Attribute("dropBoxID") ?? "0");
+                    if (id != 0 && (minRewards <= 1 || SelectItemBoxController.BoxRewards(tables ??= new GameTables(p, "en"), id, 1, 0).Count >= minRewards))
+                        return id;
+                }
+            return 0;
+        }
+        tables = new GameTables(p, "en");
+        foreach (int id in tables.IndividualDrops.BoxIds)
+            if (SelectItemBoxController.BoxRewards(tables, id, 1, 0).Count >= minRewards)
+                return id;
         return 0;
     }
 
@@ -92,7 +104,7 @@ public class SelectItemBoxTests
     {
         Packs();
         int box = FirstBox(packs);
-        Assume.That(box, Is.Not.EqualTo(0));
+        Assert.That(box, Is.Not.EqualTo(0), "no individual drop box in this data");
         using var r = new Rig(1, box);
         Assert.That(r.C.State.SelectCount, Is.EqualTo(1));
         Assert.That(r.C.State.Rewards, Is.Not.Empty);
@@ -139,10 +151,10 @@ public class SelectItemBoxTests
     public void OkOpensWithTheJoinedIndicesOnlyWhenAllArePicked()
     {
         Packs();
-        int box = FirstBox(packs);
-        Assume.That(box, Is.Not.EqualTo(0));
+        int box = FirstBox(packs, minRewards: 3);
+        Assert.That(box, Is.Not.EqualTo(0), "no box with at least 3 rewards");
         using var r = new Rig(2, box);
-        Assume.That(r.C.State.Rewards.Count, Is.GreaterThan(2));
+        Assert.That(r.C.State.Rewards.Count, Is.GreaterThan(2));
         r.Picks.Add(1);
         r.C.OnOk();
         Assert.That(r.Opened, Is.Empty, "one pick of two");
@@ -157,7 +169,7 @@ public class SelectItemBoxTests
     {
         Packs();
         int box = FirstBox(packs);
-        Assume.That(box, Is.Not.EqualTo(0));
+        Assert.That(box, Is.Not.EqualTo(0), "no individual drop box in this data");
         using var r = new Rig(1, box);
         r.Picks.Add((uint)r.C.State.Rewards.Count);
         r.C.OnOk();

@@ -42,9 +42,10 @@ public class MinimapIconsTablesTests
     public void SharedFieldMetaGivesTheSamePortalNpcsAndTaxis()
     {
         using var packs = Packs();
-        if (!packs.Exists(FieldMeta.Archive, FieldMeta.Entry)) Assert.Ignore("no field meta table");
+        var entry = FieldMeta.EntryOf(packs);
+        Assert.That(entry, Is.Not.Null, "no field meta table");
         // the tree read MinimapIcons did before: <npc id><field id/></npc> (npcs in the npc table only) and <taxiStation field/>
-        var root = GameStrings.Parse(packs.Read(FieldMeta.Archive, FieldMeta.Entry)).Root!;
+        var root = GameStrings.Parse(packs.Read(FieldMeta.Archive, entry)).Root!;
         var npcs = new NpcTable(packs, "en");
         var fieldNpcs = new Dictionary<int, List<int>>();
         var taxis = new HashSet<int>();

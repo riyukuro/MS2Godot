@@ -7,9 +7,8 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>
 /// G16 — merge options (D15): GMS2 table/itemmergeoptionbase.xml wraps the slots in &lt;mergeStep&gt; and writes idxN="min,max"
-/// (option 37000001 part 13 pap idx0="3,4" .. idx9="18,19", so the first range is 3..19); ItemMergeOptionTable reads
-/// mergeOption/slot and idxN_max, so nothing loads on GMS2. KMS option 37000013 part 13 has min="2" idx0_max="4" ..
-/// idx9_max="19", the same 3..19.
+/// (option 37000001 part 13 pap idx0="3,4" .. idx9="18,19", so the first range is 3..19). KMS option 37000013 part 13 has
+/// min="2" idx0_max="4" .. idx9_max="19", the same 3..19.
 /// </summary>
 public class RcG16MergeOptionsTests
 {
@@ -36,7 +35,6 @@ public class RcG16MergeOptionsTests
     }
 
     [Test]
-    [Ignore("G16: ItemMergeOptionTable reads mergeOption/slot and idxN_max only; GMS2 mergeStep and idxN=\"min,max\" are unread")]
     public void TheGms2MergeOptionReadsItsSteps()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));

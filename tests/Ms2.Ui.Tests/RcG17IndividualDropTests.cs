@@ -6,8 +6,7 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>
 /// G17 — individual drop boxes (D16): GMS2 replaces individualitemdrop_final.xml with twelve flat files; box 310000070 in
-/// table/individualitemdrop.xml holds 30000063, 30000064, 39000001, ... IndividualDropTable reads the final file only.
-/// KMS box 20001001 group 1 keeps item 30000448 ×5.
+/// table/individualitemdrop.xml holds 30000063, 30000064, 39000001, ... KMS box 20001001 group 1 keeps item 30000448 ×5.
 /// </summary>
 public class RcG17IndividualDropTests
 {
@@ -23,7 +22,6 @@ public class RcG17IndividualDropTests
     }
 
     [Test]
-    [Ignore("G17: IndividualDropTable reads table/individualitemdrop_final.xml only; the twelve GMS2 files are unread")]
     public void TheGms2DropBoxReadsItsFlatRows()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
