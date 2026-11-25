@@ -56,11 +56,9 @@ public partial class HudScene
     /// max(SkillPointLimitLevel1, SkillPointLimitLevel2): ShowSkillLevelUpNotice while the skill book (0x4f2d) is closed and
     /// the chat line s_msg_skillbook_add_skillpoint (kind 0x14).</item>
     /// </list>
-    /// STILL-OPEN: the inventory's auto-equip of the level (Unk_Inventory::FUN_140a66990, feature 232, levels
-    /// AutoInstallEquipmentMinLevel..Max) is not ported: it is the inventory's own pending item, queue and excluded items
-    /// (inventory.cpp:1755-1882) with its other callers (the item add and equip result, scenestategame.cpp:2858, :3128; the
-    /// bind message box, uimessagebox.cpp:1901; the preset equip, mypc.cpp:4903; the user command, usercommandcli.cpp:2180)
-    /// and it sends equip requests, so it goes in as one piece. The exp bar's UpdateExp(3) is the status listener's
+    /// The inventory's auto-equip of the level (Unk_Inventory::FUN_140a66990, :9565, feature 232, levels
+    /// AutoInstallEquipmentMinLevel..Max) is the session's (LiveSession.AutoEquipOnLevelUp, Ms2.Ui.Hud.AutoEquip), called
+    /// after this and NotifyChangeMyLevel, from the level up packet. The exp bar's UpdateExp(3) is the status listener's
     /// (ExpBarController).
     /// </summary>
     void OwnLevelUp(int oldLevel, int level)
