@@ -238,9 +238,12 @@ public sealed class MessageBoxController : UiController
     public Action<string> SystemNotice;
 
     /// <summary>HandleUseBindEquipItemButton's yes (uimessagebox.cpp:1885): the box's item uid, arg 0 (the slot) and arg 1 (the
-    /// layer) put on again with the binding skip (RequestEquipItem(item, a0, a1, 1)); false when the inventory no longer has
-    /// the item. Null: the item is not found.</summary>
-    public Func<long, uint, uint, bool> UseBindEquipItem;
+    /// layer) put on again with the binding skip (RequestEquipItem(item, a0, a1, 1)): its result, or null when the inventory
+    /// no longer has the item. Null hook: the item is not found.</summary>
+    public Func<long, uint, uint, int?> UseBindEquipItem;
+    /// <summary>HandleUseBindEquipItemButton's end (uimessagebox.cpp:1899): the box's item uid and nResult (0 for the no, else
+    /// the yes's RequestEquipItem), for the auto-equip's pending item (<see cref="AutoEquip.OnBindEquipAnswered"/>).</summary>
+    public Action<long, int> BindEquipAnswered;
 
     /// <summary>HandleUseBindGemEquipItemButton's yes (uimessagebox.cpp:1907): the box's item uid and arg 0 (the gem slot) put
     /// on with the binding skip (EquipGem(item, a0, 1)); false when the inventory no longer has the item.</summary>
@@ -794,14 +797,20 @@ public sealed class MessageBoxController : UiController
         return true;
     }
 
-    /// <summary>HandleUseBindEquipItemButton @0x1419fdf80: no record, 1; the yes finds the item (0 without it) and puts it on
-    /// with FUN_141a02e90(0, 0) and FUN_141a02e90(1, 0); 1. The feature 0xe8 pending item reset is not ported (no pending
-    /// item).</summary>
+    /// <summary>HandleUseBindEquipItemButton @0x1419fdf80 (uimessagebox.cpp:1885): no record, 1; the yes finds the item (0
+    /// without it) and puts it on with FUN_141a02e90(0, 0) and FUN_141a02e90(1, 0), nResult its RequestEquipItem; then, for
+    /// the no too, the feature 0xe8 pending item test with nResult (<see cref="BindEquipAnswered"/>); 1.</summary>
     bool HandleUseBindEquipItemButton(int button)
     {
         if (data == null) return true;
         long uid = data.ItemUid;
-        if (button == 0 && !(UseBindEquipItem?.Invoke(uid, data.ArgUInt(0, 0), data.ArgUInt(1, 0)) ?? false)) return false;
+        int result = 0;
+        if (button == 0)
+        {
+            if (UseBindEquipItem?.Invoke(uid, data.ArgUInt(0, 0), data.ArgUInt(1, 0)) is not { } r) return false;
+            result = r;
+        }
+        BindEquipAnswered?.Invoke(uid, result);
         return true;
     }
 

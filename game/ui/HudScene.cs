@@ -3505,7 +3505,7 @@ public partial class HudScene : Node, IUiStageHost
         if (MessageBoxLayer.Instance?.Controller is not { } boxes || unbindBoxAnswers != null && boundBoxes == boxes) return;
         unbindBoxAnswers?.Invoke();
         Func<long, bool> use = uid => inventory?.ConfirmBindUse(uid) ?? false;
-        Func<long, uint, uint, bool> equip = (uid, slot, mode) => inventory?.ConfirmBindEquip(uid, slot, mode) ?? false;
+        Func<long, uint, uint, int?> equip = (uid, slot, mode) => inventory?.ConfirmBindEquip(uid, slot, mode);
         Func<long, int, bool> gem = (uid, slot) => myInfo?.ConfirmBindGemEquip(uid, slot) ?? false;
         boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem;
         Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);

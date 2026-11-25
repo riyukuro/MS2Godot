@@ -1045,15 +1045,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// FUN_140527b10 (the item's name), 1, 0, -1, -1, 1), SetButtonLabelIds(0x477, 0x478, 0). The equip box appends its slot
     /// and mode first.
     /// </summary>
-    MessageBoxData BindBox(Item item, string key, string tag)
-    {
-        string text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(key) ?? "", Pc.Name);
-        var box = MessageBoxQueue.Create(0x11, text, null, tag);
-        box.ItemUid = item.Uid;
-        box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item), 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
-        box.SetButtonLabelIds(0x477, 0x478, 0);
-        return box;
-    }
+    MessageBoxData BindBox(Item item, string key, string tag) => InventoryEquip.BindBox(Model, item, key, tag);
 
     /// <summary>HandleUseBindFuncItemButton @0x1419fde80 (uimessagebox.cpp:1868), the yes: FindItemByUid of the box's item uid,
     /// then UseItem(item, 1). False when the inventory no longer has the item (the handler's 0).</summary>
@@ -1066,19 +1058,10 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         return true;
     }
 
-    /// <summary>HandleUseBindEquipItemButton @0x1419fdf80 (uimessagebox.cpp:1885), the yes: FindItemByUid of the box's item
-    /// uid, then RequestEquipItem(item, arg 0, arg 1, 1), the slot and mode the box kept. False when the inventory no longer
-    /// has the item (the handler's 0).
-    /// STILL-OPEN: with feature 0xe8, a refused equip of the pending item clears it (FUN_140a66f20 / FUN_140a66f40,
-    /// inventory.cpp:1769, the auto-equip pending item): the port has no pending item.</summary>
-    public bool ConfirmBindEquip(long uid, uint slot, uint mode)
-    {
-        if (View?.FindByUid(uid) is not { } e || Model == null) return false;
-        var item = ToItem(e, Model.Tables.Items);
-        if (item == null) return false;
-        RequestEquip(item, (int)slot, (int)mode, true);
-        return true;
-    }
+    /// <summary>HandleUseBindEquipItemButton @0x1419fdf80 (uimessagebox.cpp:1885), the yes:
+    /// <see cref="InventoryEquip.ConfirmBindEquip"/>: RequestEquipItem's result, null when the inventory no longer has the item
+    /// (the handler's 0).</summary>
+    public int? ConfirmBindEquip(long uid, uint slot, uint mode) => Equip.ConfirmBindEquip(uid, slot, mode);
 
     /// <summary>FUN_141275260(id, 1, 1) (unit_141274d10_uihelpers.cpp:267) and ShowSystemNotice of a common string: the
     /// notice, by its key.</summary>
@@ -1372,74 +1355,21 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     public const string LowLevelKey = "s_item_err_puton_low_level", ExpiredKey = "s_item_err_puton_expired", GenderKey = "s_err_gender",
         EquipJobKey = "s_item_err_puton_job", DisabledJobKey = "s_item_err_disable_job";
 
-    /// <summary>
-    /// Unk_Inventory::RequestEquipItem(item, slot, layer, skipBinding) (inventory.cpp:1236): while the guide restricts putting
-    /// items on (CGuideManager::IsRestricted(4), :1237): notice 2185 (<see cref="Guide.GuideManager.ItemPutOnOffNotice"/>);
-    /// no local player, nothing.
-    /// FUN_140a65e30 (:1630) on GetItemUseError (:1572): an expired item (CItem::IsExpired, server time) without a maid id:
-    /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError (:1586) on the wearer's record:
-    /// gender box 45, job box 232 for an equipment item else 233, level box 224. A slot of 0 is
-    /// <see cref="WornEquipment.EquipSlotFor"/> (FUN_141420a70; worn items usable as PC::CanUseItem's expiry, CItem::FUN_140528980
-    /// (item.cpp:1717: expired, not a pet and no maid id), and codi-layer parts). CanEquipItem (:1418): not an equipment item with model groups none of type 0 (FUN_14053c710):
-    /// nothing; layer 2 without feature 0x8e or a skin type: s_item_err_Invalid_slot_codi; layer 1 without a skin type: box
-    /// 0xd3 (211). No record: no worn item. Unless <paramref name="skipBinding"/>, an item that binds on equip and is not
-    /// bound asks first (:1245-1256): box 17 with s_msg_transfer_bind_when_equip and the player's name, tag
-    /// <see cref="BindOnEquipBox"/>, the slot asked for and the layer appended, the item uid and entry, yes / no; its yes comes
-    /// back as <see cref="ConfirmBindEquip"/>, which asks again with the skip. The send maps the layer as FUN_1401fb870: 2
-    /// only with feature 142. Nothing is put on here: the server's equip packets do.
-    /// A dead local player (IsDead, :1241) gets box 66 (<see cref="MyInfoController.DeadKey"/>) first.
-    /// STILL-OPEN: the PC bang, VIP
-    /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
-    /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
-    /// 0x43, s_item_err_codi_slot, the cube texture block), the warning sounds (s_warningLevel,
-    /// s_warningGender, s_warningClass) and the item sound. Without the wearer's record the requirement checks are skipped
-    /// (the client always has the player).
-    /// </summary>
-    void RequestEquip(Item item, int slot, int layer, bool skipBinding = false)
+    /// <summary>The global inventory's equip request (<see cref="InventoryEquip"/>) over this dialog's view, wearer, boxes and
+    /// notices, read at each call.</summary>
+    InventoryEquip Equip => equip ??= new InventoryEquip
     {
-        if (Guide.GuideManager.Current?.IsRestricted(Guide.GuideLimit.ItemPutOn) == true)
-        { SystemNotice?.Invoke(Guide.GuideManager.ItemPutOnOffNotice); return; }
-        if (!Model.HasLocalPlayer) return;
-        if (LocalPlayerDead()) { ShowCommonBox(MyInfoController.DeadKey); return; }      // inventory.cpp:1241
-        var d = item.Data;
-        long now = View.ServerTime();
-        bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= now;
-        if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
-        var record = Wearer?.Invoke();
-        if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
-        if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(d.Type == 1 ? EquipJobKey : DisabledJobKey); return; }
-        if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
-        var models = Model.Tables.ItemModels;
-        var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
-        bool CanUse(Item w) => ItemLevels.Usable(w, now) && (record?.CodiActive == true || !IsLayer2(w));
-        bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
-        int selected = slot == 0 ? worn.EquipSlotFor(item, models, Feature, CanUse, w => ItemLevels.Of(w)?.Total) : slot;
-        if (!CanEquipItem(item, selected, layer)) return;      // inventory.cpp:1244: the slot picked, not the one asked for
-        if (!skipBinding && NeedsBindConfirm(item))
-        {
-            // inventory.cpp:1245-1256: the box keeps the slot asked for (0: chosen again on the yes) and the layer
-            var box = BindBox(item, BindOnEquipKey, BindOnEquipBox);
-            box.Append((uint)slot);
-            box.Append((uint)layer);
-            ShowBox(box);
-            return;
-        }
-        byte mode = layer switch { 1 => 1, 2 => Feature(142) ? (byte)2 : (byte)1, _ => 0 };
-        View.RequestEquip?.Invoke(item.Uid, (byte)selected, mode);
-    }
+        Model = () => Model, View = () => View, Wearer = () => Wearer?.Invoke(), LocalPlayerDead = () => LocalPlayerDead(),
+        SystemNotice = key => SystemNotice?.Invoke(key), ShowBox = box => ShowBox(box),
+    };
+    InventoryEquip equip;
 
-    /// <summary>The part of CanEquipItem (inventory.cpp:1418) the port has (see <see cref="RequestEquip"/>): not an equipment
-    /// item with model groups none of type 0 (FUN_14053c710): false; layer 2 without feature 0x8e or a skin type: box
-    /// s_item_err_Invalid_slot_codi; layer 1 without a skin type: box 0xd3 (211). The slot is not read (its acceptance is
-    /// STILL-OPEN, see <see cref="RequestEquip"/>).</summary>
-    public bool CanEquipItem(Item item, int slot, int layer)
-    {
-        var d = item.Data;
-        if (d.Type != 1 || Model.Tables.ItemModels.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return false;
-        if (layer == 2 && (!Feature(0x8e) || !d.HasSkinType)) { ShowCommonBox(InvalidCodiSlotKey); return false; }
-        if (layer == 1 && !d.HasSkinType) { ShowCommonBox(InvalidSlotKey); return false; }
-        return true;
-    }
+    /// <summary>Unk_Inventory::RequestEquipItem(item, slot, layer, skipBinding) (inventory.cpp:1236):
+    /// <see cref="InventoryEquip.RequestEquipItem"/>.</summary>
+    int RequestEquip(Item item, int slot, int layer, bool skipBinding = false) => Equip.RequestEquipItem(item, slot, layer, skipBinding);
+
+    /// <summary>CanEquipItem (inventory.cpp:1418): <see cref="InventoryEquip.CanEquipItem"/>.</summary>
+    public bool CanEquipItem(Item item, int slot, int layer) => Equip.CanEquipItem(item, slot, layer);
 
     /// <summary>RequestEquipItem(item, slot, layer, 0): <see cref="RequestEquip"/>.</summary>
     public void RequestEquipItem(Item item, int slot, int layer) { if (Model != null && View != null) RequestEquip(item, slot, layer); }

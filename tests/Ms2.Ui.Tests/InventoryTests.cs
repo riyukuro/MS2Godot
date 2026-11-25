@@ -728,11 +728,11 @@ public class InventoryTests
         Assert.That(model.ItemSlots[bag].Item.Uid, Is.EqualTo(14L), "the bag is bound to the item (CreateItemInfoSlot)");
         bind.ReleaseItems(model);
         Assert.That(model.ItemSlots.ContainsKey(bag), Is.False, "the record's item binding goes with it");
-        Assert.That(c.ConfirmBindEquip(14, bind.ArgUInt(0, 0), bind.ArgUInt(1, 0)), Is.True);
+        Assert.That(c.ConfirmBindEquip(14, bind.ArgUInt(0, 0), bind.ArgUInt(1, 0)), Is.EqualTo(1), "sent: RequestEquipItem's 1");
         Assert.That(sent.Last(), Is.EqualTo((14L, (byte)t.ItemModels.Get(t.Items.Get(11400001).ItemPreset).FirstSlotType, (byte)0)),
             "the yes asks again with the binding skip: the slot chosen then, layer 0");
         Assert.That(shownBoxes.Last(), Is.SameAs(bind), "no second box");
-        Assert.That(c.ConfirmBindEquip(99, 0, 0), Is.False, "an item the inventory no longer has: the handler's 0");
+        Assert.That(c.ConfirmBindEquip(99, 0, 0), Is.Null, "an item the inventory no longer has: the handler's 0");
         count = sent.Count;
         record.JobGroup = 0;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
@@ -1363,6 +1363,70 @@ public class InventoryTests
         Assert.That(drops.Count, Is.EqualTo(1), "the other button: nothing");
         mb.HandlePlainTag(0, "drop");
         Assert.That(drops.Last(), Is.EqualTo((51L, 1)), "the plain tag drops one");
+    }
+
+    /// <summary>
+    /// The global inventory's equip request (<see cref="InventoryEquip"/>, RequestEquipItem inventory.cpp:1236) with no bag
+    /// dialog: 1 when sent or when the bind box is shown, 0 and nothing sent when refused; the bind box's answer
+    /// (HandleUseBindEquipItemButton, uimessagebox.cpp:1885) passes on nResult, 0 for the no, for the auto-equip's pending
+    /// item.
+    /// </summary>
+    [Test]
+    public void TheGlobalEquipRequestAsksWithoutTheBagDialog()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        model.Player.Name = "Tester";
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[]
+        {
+            new EquipItem { Id = 11400001, Uid = 11, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = 11400001, Uid = 14, InventorySlot = 1, Amount = 1, Rarity = 1, Transfer = { Rule = 8 } }, // binds on equip
+        }));
+        var view = new InventoryView(book) { ServerTime = () => 1000 };
+        var sent = new List<(long, byte, byte)>(); view.RequestEquip = (u, s, m) => sent.Add((u, s, m));
+        var record = new PcInfo { Level = 50, JobGroup = 10, Equips = new List<EquipItem>() };
+        var boxes = new List<MessageBoxData>();
+        bool dead = false;
+        var eq = new InventoryEquip { Model = () => model, View = () => view, Wearer = () => record, LocalPlayerDead = () => dead, ShowBox = boxes.Add };
+        var t = model.Tables;
+        Item Bag(long uid) => InventoryController.ToItem(view.FindByUid(uid), t.Items);
+        byte slot = (byte)t.ItemModels.Get(t.Items.Get(11400001).ItemPreset).FirstSlotType;
+
+        Assert.That(eq.RequestEquipItem(Bag(11), 0, 0), Is.EqualTo(1), "sent: 1");
+        Assert.That(sent, Is.EqualTo(new[] { (11L, slot, (byte)0) }));
+        record.Level = 0;
+        Assert.That(eq.RequestEquipItem(Bag(11), 0, 0), Is.EqualTo(0), "the level refused: 0");
+        Assert.That((sent.Count, boxes.Last().Msg), Is.EqualTo((1, t.Common(InventoryController.LowLevelKey))), "box 224, nothing sent");
+        record.Level = 50;
+        dead = true;
+        Assert.That((eq.RequestEquipItem(Bag(11), 0, 0), sent.Count), Is.EqualTo((0, 1)), "dead: 0, nothing sent");
+        dead = false;
+        model.HasLocalPlayer = false;
+        Assert.That((eq.RequestEquipItem(Bag(11), 0, 0), sent.Count), Is.EqualTo((0, 1)), "no local player: 0, nothing sent");
+        model.HasLocalPlayer = true;
+        Assert.That((eq.RequestEquipItem(null, 0, 0), sent.Count), Is.EqualTo((0, 1)), "no item: 0");
+
+        Assert.That(eq.RequestEquipItem(Bag(14), 0, 0), Is.EqualTo(1), "the bind box shown: 1 (asked)");
+        var bind = boxes.Last();
+        Assert.That((sent.Count, bind.Extra, bind.ItemUid), Is.EqualTo((1, InventoryController.BindOnEquipBox, 14L)), "nothing sent before the yes");
+
+        var answered = new List<(long, int)>();
+        var mb = new MessageBoxController { UseBindEquipItem = eq.ConfirmBindEquip, BindEquipAnswered = (u, r) => answered.Add((u, r)), data = bind };
+        Assert.That(mb.HandlePlainTag(1, InventoryController.BindOnEquipBox), Is.True);
+        Assert.That((sent.Count, answered.Single()), Is.EqualTo((1, (14L, 0))), "the no: nothing sent, nResult 0");
+        Assert.That(mb.HandlePlainTag(0, InventoryController.BindOnEquipBox), Is.True);
+        Assert.That((sent.Last(), answered.Last()), Is.EqualTo(((14L, slot, (byte)0), (14L, 1))), "the yes: sent with the skip, nResult 1");
+        record.Level = 0;
+        mb.HandlePlainTag(0, InventoryController.BindOnEquipBox);
+        Assert.That((sent.Count, answered.Last()), Is.EqualTo((2, (14L, 0))), "a refused yes: nothing sent, nResult 0");
+        record.Level = 50;
+        var gone = MessageBoxQueue.Create(0x11, "", null, InventoryController.BindOnEquipBox);
+        gone.ItemUid = 99;
+        var mb2 = new MessageBoxController { UseBindEquipItem = eq.ConfirmBindEquip, BindEquipAnswered = (u, r) => answered.Add((u, r)), data = gone };
+        Assert.That(mb2.HandlePlainTag(0, InventoryController.BindOnEquipBox), Is.False, "the bag no longer has it: the handler's 0");
+        Assert.That((sent.Count, answered.Count), Is.EqualTo((2, 3)), "and no pending test");
     }
 
     [Test]
