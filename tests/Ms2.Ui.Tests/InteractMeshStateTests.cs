@@ -61,6 +61,55 @@ public class InteractMeshStateTests
     }
 
     [Test]
+    public void AMeshsNifAssetFollowsTheAssetItsStateSetsAndStateTwoKeepsIt()
+    {
+        var t = Table(new InteractObjectRow { Id = 1, Type = InteractObjectMessage.KindMesh });
+        var (_, live) = Field(t,
+            Entity("M1", 1, "MS2InteractMesh", ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")),
+            Entity("A1", 1, "MS2InteractActor", ("InitialSequence", "On"), ("reactableSequenceName", "Off")));
+        var mesh = live.ByName("m1");
+        bool Step(LiveInteractObject o, byte state)
+        {
+            live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = o.Name, State = state, Kind = 1 });
+            LiveInteractObjects.MeshDraw(o, out _, out string asset, out _);
+            return LiveInteractObjects.ApplyMeshAsset(o, asset);
+        }
+        Assert.That(mesh.ShowsAssetB, Is.False, "the load draws NifAsset");
+        Assert.That(Step(mesh, 1), Is.True, "state 1 sets asset B");
+        Assert.That(Step(mesh, 2), Is.True, "state 2 returns before FUN_1413ff690: asset B stays");
+        Assert.That(Step(mesh, 0), Is.False, "state 0 sets asset A");
+        Assert.That(Step(mesh, 2), Is.False);
+        Assert.That(Step(mesh, 1), Is.True);
+        Assert.That(Step(live.ByName("a1"), 1), Is.False, "an actor plays sequences; its NifAsset is not set");
+    }
+
+    [Test]
+    public void AReactableModelIsTheMeshsOtherModelOnARegisteredVisibleNonTowerMesh()
+    {
+        var t = Table(new InteractObjectRow { Id = 1, Type = InteractObjectMessage.KindMesh },
+                      new InteractObjectRow { Id = 6, Type = InteractObjectMessage.KindGathering },
+                      new InteractObjectRow { Id = 9, Type = InteractObjectMessage.KindWatchTower },
+                      new InteractObjectRow { Id = 2, Type = InteractObjectMessage.KindTelescope });
+        FieldEntity Mesh(string id, int row, params (string, string)[] props)
+        {
+            var e = Entity(id, row, "MS2InteractMesh", props);
+            e.Flat.Mixins.Add("MS2InteractMesh");
+            return e;
+        }
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M1", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.EqualTo("urn:llid:bb"));
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M2", 1, ("reactableAssetName", "urn:llid:bb")), t), Is.EqualTo("urn:llid:bb"), "no model of its own");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("G1", 6, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.EqualTo("urn:llid:bb"));
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M3", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:aa")), t), Is.Null, "the same model");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M4", 1, ("NifAsset", "urn:llid:aa")), t), Is.Null, "no reactable model");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("M5", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb"), ("IsVisible", "false")), t), Is.Null, "hidden at the load");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("W1", 9, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "a watch tower");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("T1", 2, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "not a mesh kind");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("N1", 7777, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "no row");
+        Assert.That(LiveInteractObjects.ReactableModel(Mesh("", 1, ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "no id");
+        Assert.That(LiveInteractObjects.ReactableModel(Entity("A1", 1, "MS2InteractActor", ("NifAsset", "urn:llid:aa"), ("reactableAssetName", "urn:llid:bb")), t), Is.Null, "not an MS2InteractMesh");
+    }
+
+    [Test]
     public void AWatchTowerIsLeftToItsOwnStateChange()
     {
         var t = Table(new InteractObjectRow { Id = 9, Type = InteractObjectMessage.KindWatchTower });

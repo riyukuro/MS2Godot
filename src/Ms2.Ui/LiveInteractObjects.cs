@@ -154,6 +154,10 @@ public sealed class LiveInteractObject
     /// (they are sequence names, played on the actor), 0 for the kinds that are not mesh objects (telescope, UI, web, display
     /// image, guild poster).</summary>
     public byte AssetType;
+    /// <summary>For an MS2InteractMesh object (<see cref="AssetType"/> 1): the entity's NifAsset is <see cref="AssetB"/> (set by
+    /// <see cref="LiveInteractObjects.ApplyMeshAsset"/>), so its reactable model draws in place of its own. False at the load,
+    /// where NifAsset is the entity's own asset A.</summary>
+    public bool ShowsAssetB;
     public long BoardOwner;
     public string BoardText = "";
     /// <summary>CInteractGatheringObject::m_nRespawnTick (ms timestamp, 0 when not cooling down).</summary>
@@ -311,6 +315,39 @@ public sealed class LiveInteractObjects : ICastingEventListener
         if (e.HasMixin("MS2InteractMesh")) return (1, e.Get("NifAsset") ?? "", e.Get("reactableAssetName") ?? "");
         if (e.HasMixin("MS2InteractActor")) return (2, e.Get("InitialSequence") ?? "", e.Get("reactableSequenceName") ?? "");
         return (0, "", "");
+    }
+
+    /// <summary>
+    /// The reactable model of a field entity's interact mesh object when it differs from the entity's own: the asset B that
+    /// CInteractMeshObject::vfunc_1 (@0x1413febf0, interactobject.cpp:752-777) reads from reactableAssetName (0xae1cf70e) and
+    /// FUN_1413ff690 (:909-921) sets as the entity's NifAsset in state 1. Null unless the entity is one <see cref="Attach"/> makes
+    /// a mesh object for (an MS2InteractObject with an id whose interactID row is a mesh kind, of model MS2InteractMesh), it is
+    /// visible at the load, the row is not a watch tower (its vfunc_3 applies an asset only near, @0x1414034e0) and
+    /// reactableAssetName is a urn:llid other than NifAsset.
+    /// STILL-OPEN: an entity hidden at the load (IsVisible false) is shown by the client's vfunc_3 in state 0 and 1; it is not
+    /// drawn here in either model.
+    /// </summary>
+    public static string ReactableModel(FieldEntity e, InteractObjectTable table)
+    {
+        if (e == null || table == null || !IsInteractEntity(e) || !e.HasMixin("MS2InteractMesh")) return null;
+        if (string.IsNullOrEmpty(e.Raw?.Id) || !e.Bool("IsVisible", true)) return null;
+        var row = table.Get((int)e.Number("interactID"));
+        if (row == null || !IsMeshKind(row.Type) || row.Type == InteractObjectMessage.KindWatchTower) return null;
+        var (_, a, b) = MeshAssets(e);
+        if (!b.StartsWith("urn:llid:", StringComparison.Ordinal) || string.Equals(a, b, StringComparison.Ordinal)) return null;
+        return b;
+    }
+
+    /// <summary>FUN_1413ff690 (@0x1413ff690, interactobject.cpp:909-921) for an MS2InteractMesh object: SetAssetIdProperty
+    /// NifAsset (0x770e5fc6) to <paramref name="asset"/>, the asset <see cref="MeshDraw"/> gives. Sets and returns
+    /// <see cref="LiveInteractObject.ShowsAssetB"/>; a null asset (state 2: vfunc_3 returns before FUN_1413ff690) leaves the
+    /// entity's asset as it was. Any other asset type is left alone.</summary>
+    public static bool ApplyMeshAsset(LiveInteractObject o, string asset)
+    {
+        if (o == null) return false;
+        if (o.AssetType == 1 && asset != null)
+            o.ShowsAssetB = !string.Equals(asset, o.AssetA, StringComparison.Ordinal) && string.Equals(asset, o.AssetB, StringComparison.Ordinal);
+        return o.ShowsAssetB;
     }
 
     /// <summary>What CInteractMeshObject::vfunc_3 (@0x1413fef20, interactobject.cpp:781-819) does to a mesh object's entity
