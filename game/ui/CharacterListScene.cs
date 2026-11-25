@@ -297,6 +297,7 @@ public partial class CharacterListScene : LobbyFieldScene
             // UICharacterListDialog::OnLoadComplete: feature 0x112; feature.xml has DeleteAccount at KR level 100, over the
             // Live server level (feature_setting.xml Live KR 78)
             DeleteAccountEnabled = LobbyFeatures.IsEnabled(features, "DeleteAccount"),
+            ServerListScene = CharacterListController.ServerListSceneFor(LobbyFeatures.RegionOf(features)),
             // GetServerTime for the delete waits: the login session's clock (UTC without a sync)
             ServerNow = () => Net.LiveSession.Instance?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ServerTick = () => (long)Time.GetTicksMsec(),

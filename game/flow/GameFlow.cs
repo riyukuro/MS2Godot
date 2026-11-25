@@ -485,34 +485,49 @@ public partial class GameFlow : Node
 
     async void ServerListAgain() => await LobbyLogin(false);
 
+    /// <summary>One server list connect at a time from the lobby (the popdown's end and the AlreadyLogin box's OK).</summary>
+    readonly ServerListConnect serverListConnect = new();
+
     /// <summary>
     /// The server list's connect from the lobby: after the list's RequestServerList, or (<paramref name="configured"/>) the
     /// AlreadyLogin box's OK. A good login enters character select again with the new list. AlreadyLogin (4, 5) shows its box
     /// and the lobby stays (CNetworkService::OnLoginResult, networkservice.cpp:1033-1036; UIServerListDialog::OnLoginResult only
-    /// fails the hidden dialog, :604-611), so the box's OK connects again. Any other failure goes to the login scene with the
-    /// box a first login shows: the server scene, where the client stays, is not hosted.
+    /// fails the hidden dialog, :604-611), so the box's OK connects again; the box answers only that OK, Escape included. Any
+    /// other failure goes to the login scene with the box a first login shows: the server scene, where the client stays, is not
+    /// hosted. A second start while one connects is ignored (<see cref="ServerListConnect"/>), and when the flow left the lobby
+    /// meanwhile (the new login connection lost: the login scene and its box) nothing more is shown and a good login is dropped
+    /// as the login scene's own quit drops it (QuitAndDisconnect).
     /// </summary>
     async System.Threading.Tasks.Task LobbyLogin(bool configured)
     {
         if (Current != State.Lobby) return;
-        if (Net.LiveSession.Instance is not { Busy: false } live) { if (!configured) Go(State.Login); return; }   // offline: no server list to connect to
-        if (configured ? await live.ConnectConfiguredAgainAsync() : await live.ServerListAgainAsync())
+        if (Net.LiveSession.Instance is not { } live) { if (!configured) Go(State.Login); return; }   // offline: no server list to connect to
+        if (live.Busy) return;   // a request in flight owns the session (a server list connect too: set before its first await)
+        var end = await serverListConnect.RunAsync(() => Current == State.Lobby, async () =>
+            new ServerListConnectResult(configured ? await live.ConnectConfiguredAgainAsync() : await live.ServerListAgainAsync(), live.LastLoginRefusal?.State));
+        if (Net.LiveSession.LiveCheck) GD.Print($"lobby: the server list's connect ended: {end}");
+        switch (end)
         {
-            if (Current == State.Lobby) Change(LobbyScene);   // CSceneStateMulti back to its select scene with the new list
-            return;
+            case ServerListConnectEnd.Entered:
+                Change(LobbyScene);   // CSceneStateMulti back to its select scene with the new list
+                break;
+            case ServerListConnectEnd.AlreadyLogin:
+                GD.Print($"lobby: the server list's login was refused, state {live.LastLoginRefusal.State}; its box, and the lobby stays");
+                Ui.MessageBoxLayer.Ensure(this);
+                FrontEndBoxes.LoginRefused(live.LastLoginRefusal);
+                break;
+            case ServerListConnectEnd.Failed:
+                GD.Print("lobby: the server list's login failed; back to the login scene");
+                Go(State.Login);
+                Ui.MessageBoxLayer.Ensure(this);
+                if (live.LastLoginRefusal is { } r) FrontEndBoxes.LoginRefused(r);
+                else Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FrontEndConnection.ConnectFailed(live.LastConnectError, Ms2.Ui.Hud.MessageBoxData.Common), 0, null, "");
+                break;
+            case ServerListConnectEnd.LeftLoggedIn:
+                GD.Print("lobby: the flow left character select during the server list's login; the new login is dropped");
+                _ = live.SendRequestQuitAndDisconnect();
+                break;
         }
-        if (live.LastLoginRefusal is { State: 4 or 5 } already)
-        {
-            GD.Print($"lobby: the server list's login was refused, state {already.State}; its box, and the lobby stays");
-            Ui.MessageBoxLayer.Ensure(this);
-            FrontEndBoxes.LoginRefused(already);
-            return;
-        }
-        GD.Print("lobby: the server list's login failed; back to the login scene");
-        Go(State.Login);
-        Ui.MessageBoxLayer.Ensure(this);
-        if (live.LastLoginRefusal is { } r) FrontEndBoxes.LoginRefused(r);
-        else Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FrontEndConnection.ConnectFailed(live.LastConnectError, Ms2.Ui.Hud.MessageBoxData.Common), 0, null, "");
     }
 
     async void ManageLive(CharacterIdCommand command, string sn)

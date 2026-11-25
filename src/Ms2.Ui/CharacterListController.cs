@@ -52,9 +52,19 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
     /// <summary>
     /// The platform's vfunc_1 is set, as on the KMS client's Nexon Korea platform (4; CreateClientPlatform makes it for
     /// country 0, ms2clientplatform.cpp:26-44): the server list button goes to the lobby's server scene (FUN_1418f11c0
-    /// :1432-1440, m_1d4 0x620001a). Unset (the Tencent platform, 0) it quits to the login scene (m_1d4 0x6200009).
+    /// :1432-1440, m_1d4 0x620001a). Unset (the Tencent platform, 0) it quits to the login scene (m_1d4 0x6200009). The host
+    /// sets it from the data's region (only CN data is Tencent's).
     /// </summary>
     public bool ServerListScene = true;
+
+    /// <summary>
+    /// <see cref="ServerListScene"/> for a region (GameOptionLocale.RegionId: KR 0, JP 1, NA 2, CN 3). CreateClientPlatform makes
+    /// the Nexon Korea platform for country 0 and Tencent's for 3 (ms2clientplatform.cpp:26-44); only Tencent's vfunc_1 returns 0
+    /// (ms2clientplatformtencent.cpp:88), the base's returns 1 (ms2clientplatformbase.cpp:189). The GMS2 exe (NA) is packed and its
+    /// platform not decompiled: it is a Nexon platform, not Tencent's, and its login server lists servers to pick, so NA keeps the
+    /// server scene as KR does.
+    /// </summary>
+    public static bool ServerListSceneFor(int region) => region != 3;
 
     /// <summary>m_1dc: set once RefreshLobby built the list; vfunc_13 sends Enter only after that.</summary>
     bool built;

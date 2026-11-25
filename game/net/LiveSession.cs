@@ -1094,6 +1094,11 @@ public partial class LiveSession : Node
     /// </summary>
     public async Task<bool> ServerListAgainAsync()
     {
+        // busy before the first await, so no other request starts on this connection; and the old connection's close from
+        // here on is the move: the client's ConnectTo closes it itself right after (networkservice.cpp:465-471), so a reset
+        // by the server never reaches window message 0x465 on the server scene
+        Busy = true;
+        leavingLogin = true;
         var old = login;
         if (old != null && !old.IsClosed && old.Profile.Has(Ms2.Net.Outbound.RequestServerList))
         {

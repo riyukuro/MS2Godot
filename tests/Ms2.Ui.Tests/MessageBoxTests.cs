@@ -261,6 +261,32 @@ public class MessageBoxTests
         Assert.That(c.IsIdle, Is.True);
     }
 
+    /// <summary>
+    /// The AlreadyLogin box (CNetworkService::OnLoginResult 4 or 5, networkservice.cpp:1033-1036): type 0, tag alreadyReconnect, no
+    /// listener. Its one button and Escape both reach HandleAlreadyReconnectButton (uimessagebox.cpp:1572-1577); the box can only
+    /// be answered with the button the handler takes as the OK, so the login again always follows.
+    /// </summary>
+    [Test]
+    public void TheAlreadyLoginBoxAnswersItsOkToEveryKeyAndClick()
+    {
+        foreach (var how in new[] { "escape", "enter", "click" })
+        {
+            var (h, c) = Load();
+            var answered = new List<int>();
+            c.AlreadyReconnect += () => answered.Add(0);
+            var box = LoginRefusalBox.Build(4, 0, "x");
+            MessageBoxQueue.Show(box);
+            for (int i = 0; i < 3; i++) h.Player.Tick();
+            if (how == "click") Click(h, "m_button0");
+            else c.ProcessKey(how);
+            for (int i = 0; i < 5; i++) h.Player.Tick();
+            TestContext.WriteLine($"{how}: reconnects {answered.Count}, idle {c.IsIdle}");
+            Assert.That(c.IsIdle, Is.True, how + " closes the box");
+            Assert.That(answered, Has.Count.EqualTo(1), how + " answers the OK: the login again");
+            MessageBoxQueue.Clear(0);
+        }
+    }
+
     /// <summary>UICharacterListDialog's delete box (uicharacterlistdialog.cpp:2239): CreateMessageBox(0xe, text, this,
     /// "deletePC"), SetInput(2, "", 0, 0, 0), SetCheckbox0(BlockFormat(7), 0). OnMessage @0x1418eb540 splits the answer's
     /// tag into "deletePC" and the typed name.</summary>

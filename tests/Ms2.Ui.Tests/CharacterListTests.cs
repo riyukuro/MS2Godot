@@ -397,6 +397,16 @@ public class CharacterListTests
         Assert.That((left.Server, left.Login, left.Other), Is.EqualTo((0, 1, 0)));
     }
 
+    /// <summary>Every region the data can name (GameOptionLocale.RegionId): only CN, the Tencent platform, quits to the login scene.</summary>
+    [TestCase("KR", true)]
+    [TestCase("JP", true)]
+    [TestCase("NA", true)]
+    [TestCase("CN", false)]
+    public void TheRegionsPlatformPicksTheServerListButtonsScene(string region, bool serverScene)
+    {
+        Assert.That(CharacterListController.ServerListSceneFor(Ms2.Formats.Options.GameOptionLocale.RegionId(region)), Is.EqualTo(serverScene));
+    }
+
     [Test]
     public void AServerListClickDuringASelectionGoesOnAfterThePreview()
     {
