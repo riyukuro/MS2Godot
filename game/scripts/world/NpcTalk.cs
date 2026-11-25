@@ -105,6 +105,9 @@ public sealed partial class NpcTalk : Node
     /// <summary>The page shown (0 based) and its script id, for the shots.</summary>
     public int Page => page;
     public int ScriptId => script?.Id ?? 0;
+    /// <summary>The script's content <paramref name="offset"/> pages from the one shown (0 the shown page, 1 the next), null past either end.</summary>
+    public NpcScriptTable.Content ContentAt(int offset) =>
+        script != null && page + offset >= 0 && page + offset < script.Contents.Count ? script.Contents[page + offset] : null;
     /// <summary>NpcTalk mode 3 sub 1 (UITalkManager::SetNpcNameTag): the talk npc's name tag text, for its emoticon.</summary>
     public event Action<FieldNpcs.Placed, string> NpcNameTag;
     /// <summary>NpcTalk mode 10 sub 1 (OnTalkPacket, uitalkcinematic.cpp:1054-1062): the npc's balloon line, for its chat

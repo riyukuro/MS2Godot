@@ -557,15 +557,38 @@ public partial class LiveSession
                 live.player.Velocity = Vector3.Zero;
                 live.player.Face(-front);
                 await frames(90);
+                // a page with a screen effect (screenEffectMovie): its name logged, shots a third into the fade and a second after it
+                async System.Threading.Tasks.Task FxShots(Ms2.Formats.World.NpcScriptTable.Content fx, string fxName)
+                {
+                    int ms = Math.Max(fx.ScreenEffectValue, 10);
+                    GD.Print($"live: combat {step}: screen effect {fx.ScreenEffectMovie} {fx.ScreenEffectAction} {fx.ScreenEffectValue} on script {tfc.Talk.ScriptId} page {tfc.Talk.Page + 1} (shown {tfc.Talk.ContentAt(0) == fx})");
+                    await frames(Math.Max(1, ms * 60 / 1000 / 3));
+                    Shot(fxName + "_during.png");
+                    await frames(ms * 60 / 1000 + 60);
+                    Shot(fxName + "_after.png");
+                }
+                string FxName(Ms2.Formats.World.NpcScriptTable.Content fx, int pageNo) => $"talk{id}_s{tfc.Talk.ScriptId}_p{pageNo}_{fx.ScreenEffectMovie}_{fx.ScreenEffectAction}{fx.ScreenEffectValue}";
+                Shot($"talk{id}_{Math.Abs(step.GetHashCode()) % 1000}_before.png");   // the field before the action key
                 tfc.Talk.ActionKey();
                 await until(() => tfc.Talk.Open, 60 * 5);
                 Check($"{step}: the talk opened", tfc.Talk.Open);
+                if (tfc.Talk.Open && tfc.Talk.ContentAt(0) is { ScreenEffectMovie: { Length: > 0 } } first)
+                    await FxShots(first, FxName(first, tfc.Talk.Page + 1));
                 Shot($"talk{id}_{Math.Abs(step.GetHashCode()) % 1000}_open.png");
                 for (int k = 0; k < pages && tfc.Talk.Open; k++)
                 {
                     GD.Print($"live: combat {step} page {k + 1}: script {tfc.Talk.ScriptId} page {tfc.Talk.Page + 1}, quest page {tfc.Talk.OnQuestPage}");
+                    // a next page with a screen effect: a shot before it, then the fade's
+                    var fx = tfc.Talk.ContentAt(1) is { ScreenEffectMovie: { Length: > 0 } } next ? next : null;
+                    string fxName = fx == null ? null : FxName(fx, tfc.Talk.Page + 2);
+                    if (fx != null) Shot(fxName + "_before.png");
                     tfc.Talk.ActionKey();
-                    await frames(90);
+                    if (fx != null)
+                    {
+                        await until(() => tfc.Talk.ScriptId != 0 && tfc.Talk.ContentAt(0) == fx, 60 * 5);
+                        await FxShots(fx, fxName);
+                    }
+                    else await frames(90);
                     if (k == 0 && tfc.Talk.Open) Shot($"talk{id}_{Math.Abs(step.GetHashCode()) % 1000}_page2.png");   // the window drawn, its second page
                 }
                 if (tfc.Talk.Open) { GD.Print($"live: combat {step}: still open after {pages} pages, ended"); tfc.Talk.End(); }
