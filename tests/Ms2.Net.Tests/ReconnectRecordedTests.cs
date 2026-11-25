@@ -44,6 +44,8 @@ internal sealed class RecordedReconnectHost : IReconnectHost
 /// </summary>
 public class ReconnectRecordedTests
 {
+    static readonly string MaskedToken = new('*', 36);
+
     // kms2: 0x05 kind 0, 47 bytes (mode 1, 36-byte session token masked with '*', endpoint id 477813)
     static readonly byte[] KmsContextMode1 = Convert.FromHexString(
         "00010000002400" +
@@ -82,16 +84,14 @@ public class ReconnectRecordedTests
     {
         var notice = ReconnectNotice.Read(new ByteReader(KmsContextMode1));
         Assert.That(notice.Kind, Is.EqualTo(ReconnectNotice.KindContext));
-        Assert.That(notice.Context.Mode, Is.EqualTo(1));
-        Assert.That(notice.Context.Host.Length, Is.EqualTo(36));
-        Assert.That(notice.Context.Port, Is.EqualTo(477_813));
+        Assert.That(notice.Context, Is.EqualTo(new ReconnectionContext(1, MaskedToken, 477_813)));
 
         var host = new RecordedReconnectHost();
         var mgr = EnabledManager(host);
         Assert.That(mgr.ShouldReconnect(ReconnectionManager.ErrorSocketClosed), Is.False);
 
         mgr.OnPacket(notice);
-        Assert.That(mgr.Context, Is.EqualTo(notice.Context));
+        Assert.That(mgr.Context, Is.EqualTo(new ReconnectionContext(1, MaskedToken, 477_813)));
         Assert.That(mgr.ShouldReconnect(ReconnectionManager.ErrorSocketClosed), Is.True);
     }
 
@@ -100,14 +100,13 @@ public class ReconnectRecordedTests
     {
         var ctx1 = ReconnectNotice.Read(new ByteReader(Gms2ContextMode1));
         Assert.That(ctx1.Kind, Is.EqualTo(ReconnectNotice.KindContext));
-        Assert.That(ctx1.Context.Mode, Is.EqualTo(1));
-        Assert.That(ctx1.Context.Port, Is.EqualTo(6496));
+        Assert.That(ctx1.Context, Is.EqualTo(new ReconnectionContext(1, MaskedToken, 6496)));
 
         var host = new RecordedReconnectHost();
         var mgr = EnabledManager(host);
 
         mgr.OnPacket(ctx1);
-        Assert.That(mgr.Context, Is.EqualTo(ctx1.Context));
+        Assert.That(mgr.Context, Is.EqualTo(new ReconnectionContext(1, MaskedToken, 6496)));
         Assert.That(mgr.ShouldReconnect(ReconnectionManager.ErrorSocketClosed), Is.True);
 
         mgr.Begin(ReconnectionManager.ErrorSocketClosed);
@@ -127,9 +126,9 @@ public class ReconnectRecordedTests
 
         // Mode 2 disables reconnect attempts for this context.
         var ctx2 = ReconnectNotice.Read(new ByteReader(Gms2ContextMode2));
-        Assert.That(ctx2.Context.Mode, Is.EqualTo(2));
+        Assert.That(ctx2.Context, Is.EqualTo(new ReconnectionContext(2, MaskedToken, 6496)));
         mgr.OnPacket(ctx2);
-        Assert.That(mgr.Context, Is.EqualTo(ctx2.Context));
+        Assert.That(mgr.Context, Is.EqualTo(new ReconnectionContext(2, MaskedToken, 6496)));
         Assert.That(mgr.ShouldReconnect(ReconnectionManager.ErrorSocketClosed), Is.False);
     }
 }

@@ -68,7 +68,7 @@ public class GuildRecordedTests
         var create = GuildMessage.Read(new ByteReader(KmsCreateOk), ProtocolProfile.Kms2525);
         Assert.That(create.Type, Is.EqualTo(0x01));
         Assert.That(create.Result, Is.EqualTo(0));
-        Assert.That(create.Name, Is.EqualTo(new string('*', 10)));
+        Assert.That(create.Name, Is.EqualTo("**********"));
 
         var book = InGuildBook("****");
         var sounds = new List<string>();
@@ -87,8 +87,7 @@ public class GuildRecordedTests
 
         book.Apply(create);
         Assert.That(sounds, Is.EqualTo(new[] { "PC_GuildMake" }));
-        Assert.That(boxes.Count, Is.EqualTo(1));
-        Assert.That(boxes[0], Does.Contain(create.Name));
+        Assert.That(boxes, Is.EqualTo(new[] { "c:389:**********" }));
         Assert.That(closes, Is.EqualTo(1));
 
         var left = GuildMessage.Read(new ByteReader(KmsMemberLeft), ProtocolProfile.Kms2525);
@@ -98,9 +97,8 @@ public class GuildRecordedTests
         book.Apply(left);
         Assert.That(book.Info.Members, Is.Empty);
         Assert.That(infoRefreshes, Is.EqualTo(1));
-        Assert.That(removedMembers, Is.EqualTo(new[] { left.Name }));
-        Assert.That(chats.Count, Is.EqualTo(1));
-        Assert.That(chats[0].Kind, Is.EqualTo(0x0D));
+        Assert.That(removedMembers, Is.EqualTo(new[] { "****" }));
+        Assert.That(chats, Is.EqualTo(new[] { ("c:3A6:****", 0x0D) }));
 
         var ev = GuildMessage.Read(new ByteReader(KmsCustomEvent), ProtocolProfile.Kms2525);
         Assert.That(ev.Type, Is.EqualTo(0x38));
@@ -108,7 +106,7 @@ public class GuildRecordedTests
         Assert.That(ev.EventTime, Is.EqualTo(0x62B2BD80));
 
         book.Apply(ev);
-        Assert.That(book.Info.CustomEvents[0], Is.EqualTo((ev.EventId, ev.EventTime)));
+        Assert.That(book.Info.CustomEvents[0], Is.EqualTo((1, 0x62B2BD80)));
         Assert.That(eventRefreshes, Is.EqualTo(1));
 
         var disband = GuildMessage.Read(new ByteReader(KmsDisbandOk), ProtocolProfile.Kms2525);
@@ -147,8 +145,8 @@ public class GuildRecordedTests
         book.MyRequestsRefresh += () => myReqRefreshes++;
 
         book.Apply(upgrade);
-        Assert.That(book.Info.HouseLevel, Is.EqualTo(upgrade.HouseLevel));
-        Assert.That(book.Info.HouseTheme, Is.EqualTo(upgrade.HouseTheme));
+        Assert.That(book.Info.HouseLevel, Is.EqualTo(3));
+        Assert.That(book.Info.HouseTheme, Is.EqualTo(1));
         Assert.That(houseRefreshes, Is.EqualTo(1));
         Assert.That(npcRefreshes, Is.EqualTo(1));
 

@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Numerics;
 using Maple2.PacketLib.Tools;
 using Ms2.Net;
 using Ms2.Net.Packets;
@@ -14,9 +16,9 @@ namespace Ms2.Net.Tests;
 /// </summary>
 public class FieldAddUserRecordedTests
 {
-    // kms2: 0x17, 1118 bytes (names, picture URL, account ID and character ID masked in outer bytes and deflated equips)
+    // kms2: 0x17, 1111 bytes (object ID, names, picture URL, account ID, character ID, and 64-bit equip UIDs masked)
     static readonly byte[] KmsFieldAddUser = Convert.FromHexString(
-        "74310D001111111111111101222222222222220202002A002A000101111111111111110101000000" +
+        "010001001111111111111101222222222222220202002A002A000101111111111111110101000000" +
         "C14DC103C14DC1030100000003000000010000000A0000005E0000005E0000000000000000000000" +
         "00009FB7AE610000000094F0AC61000000002C851E00009805460000164400089645460000006D83" +
         "BEFF6D83BEFF47CFB161000000005401000011000000300000000000000000000000000000003800" +
@@ -35,19 +37,19 @@ public class FieldAddUserRecordedTests
         "002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A" +
         "002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A" +
         "002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A0000000000009792B261" +
-        "00000000000000004B000000011D010000000006C5789CE3F0C83EC9A05F7C28E0839C9E0A2B2303" +
-        "030308FFFFFFFFFFF9F31B13194800BE3155FFBD42D2FECBAA9BFEE7606060E06260606066106460" +
-        "6360609066E0676060906110642019809C830A38504419199520808989418B410BAB190BCD17301C" +
-        "77DAE8FF619E988A10B21FDD48F4233200E9274B232359F26717CF663808F50323257ED0D75FF5FF" +
-        "76ABCF7F61E104B0FB9920C2F6B87534E091A38BDFB3B4E6321C82FA9D8912BF6BAA6CFDFFF8F1F7" +
-        "FF4CEC2260BF3393A219BF1B09CA6F9CC77018EA07E6014F83D4F1D38EAF6B198E40FDC441899F8C" +
-        "ADEDFF4B2B28FFE71712F9CF092D3BA8545230E02C29A0091F05FCAC5ECF7014EA23CE018F256AF8" +
-        "E859E7268663501F710F8B3862F4457739006C798E0F000100000000000100000000000000000000" +
-        "00000000000000000000000000000000000000000000000000000000000000FFFFFF7F000000");
+        "00000000000000004B0000000116010000000006C5789CE3F0C83EC9C0C80002C6C6AC200608FFFF" +
+        "FFFFFFF9F31B13194800BE3155FFBD42D2FECBAA9BFEE7606060E062606060661064606360609066" +
+        "E067606090611064201940DC860C38504419199520808989418B410BAB190BCD17303041FD2884EC" +
+        "473712FD880C40FAC9D2C84896FCD9C5B31998C12C6363464AFCA0AFBFEAFFED569FFFC2C20960F7" +
+        "430286C11EB78E063C7274F17B96D65C061630CBD8988912BF6BAA6CFDFFF8F1F7FF4CEC2260BF43" +
+        "02942E7E60D8388F8115CC3036661EF034481D3FEDF8BA169CBD417EE2A0C44FC6D6F6FFA51594FF" +
+        "F30B89FCE784961D542A2918709614D0848F027E56AF67608738C99873C063891A3E7AD6B909AACB" +
+        "D8987B58C411A32FBACB01F6A173AD00010000000000010000000000000000000000000000000000" +
+        "000000000000000000000000000000000000000000000000FFFFFF7F000000");
 
-    // gms2: 0x17, 1408 bytes (names, picture URL, account ID and character ID masked in outer bytes and deflated equips)
+    // gms2: 0x17, 1400 bytes (object ID, names, picture URL, account ID, character ID, and 64-bit equip UIDs masked)
     static readonly byte[] Gms2FieldAddUser = Convert.FromHexString(
-        "E2CE48001111111111111101222222222222220204002A002A002A002A0001010000000000000000" +
+        "020002001111111111111101222222222222220204002A002A002A002A0001010000000000000000" +
         "000000004175190341751903AACE00000100000028000000900100003F0000003F00000000000000" +
         "00000000000000000000000000000000000000000000000000000000000000000000000000000000" +
         "0000B1D5FDFFB1D5FDFF7F33795E0000000000000000000000000100000000000000000000000000" +
@@ -74,58 +76,89 @@ public class FieldAddUserRecordedTests
         "FFB1D5FDFF38002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A" +
         "002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A" +
         "002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A0000" +
-        "000000009133795E00000000000000000000000001EF00000000000783789C635F68BE8081394656" +
-        "A27E86B51A13832B4310032303031883C0FFFFFFFFD71857C631900940FA19E80218C992175F329B" +
-        "E16F34CCF71E54F0FDE63D7BFEDBDE3AFC7FD7960DFF851918189818181866CD9C69875B47833DC3" +
-        "8001F2422D456B2EC33F78A8B93138521C6A9A2A5BFF3F7EFCFD3F13BB0838BD30330C5EDF336C9C" +
-        "C7F01FC9F72E4334C7502734F67C5DCBC0002F3F9C197C280E0D7DFD55FF6FB7FAFC17164E008704" +
-        "2B033D00A6EFF850E5199520808985410B0AB181AFD5EB1918E1E1114085BC31B4C3E345E7260626" +
-        "7878043378503D3CB848D14C36A05678609A0300D2F77A6E00010000000000010000000000000000" +
-        "000000000000000000000000000000000000000000000000000000000000000000FFFFFF7F000000" +
-        "0000000000000000");
+        "000000009133795E00000000000000000000000001E700000000000783789C635F68BE8081910104" +
+        "5C5C98185C1982C03C880803C3FFFFFFFFD71857C631900940FA19E80218C992175F329B8109EE7B" +
+        "0F2AF87EF39E3DFF6D6F1DFEBF6BCB86FFC20C0C60D367CD9C69875B47833DC38001F2422D456B2E" +
+        "03333CD4DC181C290E354D95ADFF1F3FFEFE9F895D049C5E20A60F4EDF336C9CC7C082E47B97219A" +
+        "63A8131A7BBEAE656085878633830FC5A1A1AFBFEAFFED569FFFC2C209E09080984E6B80E93B3E54" +
+        "79462508606261D082426CE06BF57A063678780450216F0CEDF078D1B989811D1E1EC10C1E540F0F" +
+        "2E5234930DA8151E98E6000002126D06000100000000000100000000000000000000000000000000" +
+        "00000000000000000000000000000000000000000000000000FFFFFF7F0000000000000000000000");
 
-    static void VerifyFieldAddUser(byte[] payload, ProtocolProfile profile, int expectedObjectId, int expectedHealth)
+    static void VerifyFieldAddUser(
+        byte[] payload,
+        ProtocolProfile profile,
+        int expectedObjectId,
+        string expectedName,
+        Vector3 expectedPosition,
+        int expectedHealth,
+        long[] expectedEquipUids)
     {
         var decoded = FieldAddUser.Read(new ByteReader(payload), profile);
         Assert.That(decoded.ObjectId, Is.EqualTo(expectedObjectId));
-        Assert.That(decoded.Equips.Count, Is.GreaterThan(0));
+        Assert.That(decoded.User.Name, Is.EqualTo(expectedName));
+        Assert.That(decoded.Position, Is.EqualTo(expectedPosition));
+        Assert.That(decoded.Stats[0].Health, Is.EqualTo(expectedHealth));
         Assert.That(decoded.Stats[2].Health, Is.EqualTo(expectedHealth));
+        Assert.That(decoded.Equips.Select(e => e.Uid).ToArray(), Is.EqualTo(expectedEquipUids));
 
         var tracker = new FieldTracker { Profile = profile };
         tracker.Inbound(new RawPacket(0x17, payload));
 
         var snapshot = tracker.Snapshot();
         Assert.That(snapshot.Count, Is.EqualTo(1));
-        Assert.That(snapshot[0].ObjectId, Is.EqualTo(decoded.ObjectId));
-        Assert.That(snapshot[0].Name, Is.EqualTo(decoded.User.Name));
+        Assert.That(snapshot[0].ObjectId, Is.EqualTo(expectedObjectId));
+        Assert.That(snapshot[0].Name, Is.EqualTo(expectedName));
         Assert.That(snapshot[0].IsSelf, Is.False);
-        Assert.That(snapshot[0].Position, Is.EqualTo(decoded.Position));
+        Assert.That(snapshot[0].Position, Is.EqualTo(expectedPosition));
 
         Assert.That(tracker.Events.TryDequeue(out var ev), Is.True);
         var added = ev as UserAddedEvent;
         Assert.That(added, Is.Not.Null);
         Assert.That(added.IsSelf, Is.False);
-        Assert.That(added.User.ObjectId, Is.EqualTo(decoded.ObjectId));
+        Assert.That(added.User.ObjectId, Is.EqualTo(expectedObjectId));
 
         var me = new MyCharacter();
         int changed = 0;
         me.Changed += () => changed++;
         me.Apply(decoded);
 
-        Assert.That(me.ObjectId, Is.EqualTo(decoded.ObjectId));
-        Assert.That(me.User.Name, Is.EqualTo(decoded.User.Name));
-        Assert.That(me.Equips.Count, Is.EqualTo(decoded.Equips.Count));
-        Assert.That(me.Stats0[PlayerStat.Health], Is.EqualTo(decoded.Stats[0].Health));
-        Assert.That(me.Stats2[PlayerStat.Health], Is.EqualTo(decoded.Stats[2].Health));
+        Assert.That(me.ObjectId, Is.EqualTo(expectedObjectId));
+        Assert.That(me.User.Name, Is.EqualTo(expectedName));
+        Assert.That(me.Equips.Select(e => e.Uid).ToArray(), Is.EqualTo(expectedEquipUids));
+        Assert.That(me.Stats0[PlayerStat.Health], Is.EqualTo(expectedHealth));
+        Assert.That(me.Stats2[PlayerStat.Health], Is.EqualTo(expectedHealth));
         Assert.That(me.Dead, Is.False);
         Assert.That(changed, Is.EqualTo(1));
     }
 
     [Test]
     public void KmsFieldAddUserPopulatesFieldTrackerAndMyCharacter()
-        => VerifyFieldAddUser(KmsFieldAddUser, ProtocolProfile.Kms2525, expectedObjectId: 864_628, expectedHealth: 94);
+        => VerifyFieldAddUser(
+            KmsFieldAddUser,
+            ProtocolProfile.Kms2525,
+            expectedObjectId: 65_537,
+            expectedName: "**",
+            expectedPosition: new Vector3(0.0f, -2700.0f, 1200.0f),
+            expectedHealth: 94,
+            expectedEquipUids: new[]
+            {
+                0x3333_0000_0000_0001L, 0x3333_0000_0000_0002L, 0x3333_0000_0000_0003L, 0x3333_0000_0000_0004L,
+                0x3333_0000_0000_0005L, 0x3333_0000_0000_0006L, 0x3333_0000_0000_0007L, 0x3333_0000_0000_0008L,
+            });
 
     [Test]
     public void Gms2FieldAddUserPopulatesFieldTrackerAndMyCharacter()
-        => VerifyFieldAddUser(Gms2FieldAddUser, ProtocolProfile.Gms2, expectedObjectId: 4_771_554, expectedHealth: 63);
+        => VerifyFieldAddUser(
+            Gms2FieldAddUser,
+            ProtocolProfile.Gms2,
+            expectedObjectId: 131_074,
+            expectedName: "****",
+            expectedPosition: new Vector3(-675.0f, 525.0f, 600.0f),
+            expectedHealth: 63,
+            expectedEquipUids: new[]
+            {
+                0x4444_0000_0000_0001L, 0x4444_0000_0000_0002L, 0x4444_0000_0000_0003L, 0x4444_0000_0000_0004L,
+                0x4444_0000_0000_0005L, 0x4444_0000_0000_0006L, 0x4444_0000_0000_0007L,
+            });
 }

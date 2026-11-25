@@ -21,10 +21,21 @@ public class TimeScaleRecordedTests
     // gms2: 0xF5, 14 bytes (Start=true, From=1.0f, To=0.1f, DurationMs=10f, Curve=1)
     static readonly byte[] Gms2StartLinear = Convert.FromHexString("010000803FCDCCCC3D0000204101");
 
-    // gms2: 0xF5, 14 bytes (Start=false, From=1.0f, To=1.0f, DurationMs=3.0f, Curve=0)
-    static readonly byte[] Gms2Stop = Convert.FromHexString("000000803F0000803F0000404000");
+    // gms2: 0xF5, 14 bytes (Start=false, From=1.0f, To=0.1f, DurationMs=2.5f, Curve=2)
+    static readonly byte[] Gms2Stop = Convert.FromHexString("000000803FCDCCCC3D0000204002");
 
-    static void VerifyStartRampAndStop(byte[] startBytes, byte[] stopBytes, float expectedFrom, float expectedTo, float expectedDuration)
+    static void VerifyStartRampAndStop(
+        byte[] startBytes,
+        byte[] stopBytes,
+        float expectedFrom,
+        float expectedTo,
+        float expectedDuration,
+        uint sampleOffsetMs,
+        float expectedMidScale,
+        float expectedStopFrom,
+        float expectedStopTo,
+        float expectedStopDuration,
+        byte expectedStopCurve)
     {
         var start = TimeScale.Read(new ByteReader(startBytes));
         Assert.That(start.Start, Is.True);
@@ -37,17 +48,18 @@ public class TimeScaleRecordedTests
         const uint t0 = 1000;
         Assert.That(ramp.Start(start.From, start.To, start.DurationMs, start.Curve, t0), Is.True);
         Assert.That(ramp.Running, Is.True);
-        Assert.That(ramp.Scale, Is.EqualTo(start.From).Within(1e-6f));
+        Assert.That(ramp.Scale, Is.EqualTo(expectedFrom).Within(1e-6f));
 
-        // Halfway through the linear ramp, Tick moves the scale between From and To.
-        uint half = t0 + (uint)((int)start.DurationMs / 2);
-        Assert.That(ramp.Tick(half), Is.True);
-        float expectedMid = start.To * ((half - t0) / (float)(int)start.DurationMs) +
-                            (1f - (half - t0) / (float)(int)start.DurationMs) * start.From;
-        Assert.That(ramp.Scale, Is.EqualTo(expectedMid).Within(1e-5f));
+        Assert.That(ramp.Tick(t0 + sampleOffsetMs), Is.True);
+        Assert.That(ramp.Scale, Is.EqualTo(expectedMidScale).Within(1e-5f));
 
         var stop = TimeScale.Read(new ByteReader(stopBytes));
         Assert.That(stop.Start, Is.False);
+        Assert.That(stop.From, Is.EqualTo(expectedStopFrom).Within(1e-6f));
+        Assert.That(stop.To, Is.EqualTo(expectedStopTo).Within(1e-6f));
+        Assert.That(stop.DurationMs, Is.EqualTo(expectedStopDuration).Within(1e-6f));
+        Assert.That(stop.Curve, Is.EqualTo(expectedStopCurve));
+
         Assert.That(ramp.Stop(), Is.True);
         Assert.That(ramp.Running, Is.False);
         Assert.That(ramp.Scale, Is.EqualTo(1f));
@@ -56,9 +68,17 @@ public class TimeScaleRecordedTests
 
     [Test]
     public void KmsTimeScaleStartsRampsAndStops()
-        => VerifyStartRampAndStop(KmsStartLinear, KmsStop, expectedFrom: 0.5f, expectedTo: 0.3f, expectedDuration: 15f);
+        => VerifyStartRampAndStop(
+            KmsStartLinear, KmsStop,
+            expectedFrom: 0.5f, expectedTo: 0.3f, expectedDuration: 15f,
+            sampleOffsetMs: 7, expectedMidScale: 0.40666667f,
+            expectedStopFrom: 1.0f, expectedStopTo: 1.0f, expectedStopDuration: 3.0f, expectedStopCurve: 0);
 
     [Test]
     public void Gms2TimeScaleStartsRampsAndStops()
-        => VerifyStartRampAndStop(Gms2StartLinear, Gms2Stop, expectedFrom: 1.0f, expectedTo: 0.1f, expectedDuration: 10f);
+        => VerifyStartRampAndStop(
+            Gms2StartLinear, Gms2Stop,
+            expectedFrom: 1.0f, expectedTo: 0.1f, expectedDuration: 10f,
+            sampleOffsetMs: 5, expectedMidScale: 0.55f,
+            expectedStopFrom: 1.0f, expectedStopTo: 0.1f, expectedStopDuration: 2.5f, expectedStopCurve: 2);
 }

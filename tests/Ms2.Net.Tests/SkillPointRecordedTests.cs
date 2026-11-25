@@ -42,7 +42,7 @@ public class SkillPointRecordedTests
         Assert.That(sp.Source(2, 2), Is.EqualTo(2));
         Assert.That(sp.RankTotal(1), Is.EqualTo(12));
         Assert.That(sp.RankTotal(2), Is.EqualTo(6));
-        Assert.That(sp.Extra, Is.EqualTo(pkt.Extra));
+        Assert.That(sp.Extra, Is.EqualTo(0));
     }
 
     [Test]

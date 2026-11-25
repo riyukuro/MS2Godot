@@ -39,7 +39,7 @@ public class PartyRecordedTests
     // kms2: 0x53 mode 0x30, 10 bytes (PartyVoteReply: CharA votes yes; ID masked)
     static readonly byte[] KmsVoteReply = Convert.FromHexString("30011111111111111101");
 
-    // kms2: 0x53 mode 0x31, 1 byte (PartyVoteEnd)
+    // kms2: 0x53 mode 0x31, 1 byte (PartyVoteEnd; bodyless 1-byte packet on both KMS2 and GMS2)
     static readonly byte[] KmsVoteEnd = Convert.FromHexString("31");
 
     // gms2: 0x54 mode 0x0B, 31 bytes (PartyInvite: 12-char name masked with '*', kind 0x0F40)
@@ -59,7 +59,7 @@ public class PartyRecordedTests
     // gms2: 0x54 mode 0x30, 10 bytes (PartyVoteReply: CharB votes yes; ID masked)
     static readonly byte[] Gms2VoteReply = Convert.FromHexString("30022222222222222201");
 
-    // gms2: 0x54 mode 0x31, 1 byte (PartyVoteEnd)
+    // gms2: 0x54 mode 0x31, 1 byte (PartyVoteEnd; bodyless 1-byte packet on both KMS2 and GMS2)
     static readonly byte[] Gms2VoteEnd = Convert.FromHexString("31");
 
     // gms2: 0x54 mode 0x08, 9 bytes (PartyLeaderChange -> CharB; ID masked)
@@ -92,22 +92,22 @@ public class PartyRecordedTests
         var book = SeedTwoMemberParty();
         PartyInvite invited = null;
         var updated = new List<(long Id, int Flags)>();
-        PartyVote startedVote = null, endedVote = null;
+        int startedVoteId = 0, endedVoteId = 0;
         book.Invited += inv => invited = inv;
         book.MemberUpdated += (m, f) => updated.Add((m.CharacterId, f));
-        book.VoteStarted += v => startedVote = v;
-        book.VoteEnded += v => endedVote = v;
+        book.VoteStarted += v => startedVoteId = v.Id;
+        book.VoteEnded += v => endedVoteId = v.Id;
 
         var inv = (PartyInvite)PartyMessage.Read(new ByteReader(KmsInvite), ProtocolProfile.Kms2525);
         book.Apply(inv, CharA, windowOpen: true);
-        Assert.That(invited, Is.EqualTo(inv));
+        Assert.That(invited, Is.EqualTo(new PartyInvite("******", 0x5251)));
         Assert.That(book.PartyName, Is.EqualTo("******"));
         Assert.That(book.PartyKind, Is.EqualTo(0x5251));
 
         var flags = (PartyMemberFlags)PartyMessage.Read(new ByteReader(KmsMemberFlags), ProtocolProfile.Kms2525);
         book.Apply(flags, CharA, windowOpen: true);
-        var memberA = book.Find(flags.CharacterId);
-        Assert.That(memberA.User.AccountId, Is.EqualTo(flags.AccountId));
+        var memberA = book.Find(CharA);
+        Assert.That(memberA.User.AccountId, Is.EqualTo(CharB));
         Assert.That(memberA.User.MaxHp, Is.EqualTo(5000));
         Assert.That(memberA.User.Hp, Is.EqualTo(5000));
         Assert.That(updated[^1], Is.EqualTo((CharA, 399)));
@@ -115,27 +115,27 @@ public class PartyRecordedTests
         var match = (PartyMatchDungeonChange)PartyMessage.Read(new ByteReader(KmsMatchDungeonChange), ProtocolProfile.Kms2525);
         book.Apply(match, CharA, windowOpen: true);
         Assert.That(book.Matchmaking, Is.True);
-        Assert.That(book.DungeonId, Is.EqualTo(match.DungeonId));
+        Assert.That(book.DungeonId, Is.EqualTo(21_001_001));
 
         var reg = (PartyDungeonMatchRegister)PartyMessage.Read(new ByteReader(KmsDungeonMatchRegister), ProtocolProfile.Kms2525);
         book.Apply(reg, CharA, windowOpen: true);
-        Assert.That(book.SearchBits, Is.EqualTo(reg.SearchBits));
+        Assert.That(book.SearchBits, Is.EqualTo(2));
         Assert.That(book.IsMatchSearching(1), Is.True);
 
         var start = (PartyVoteStart)PartyMessage.Read(new ByteReader(KmsVoteStart), ProtocolProfile.Kms2525);
         book.Apply(start, CharA, windowOpen: true);
-        Assert.That(startedVote, Is.SameAs(start.Vote));
+        Assert.That(startedVoteId, Is.EqualTo(1));
         Assert.That(book.Find(CharA).ReadyState, Is.EqualTo(1));
         Assert.That(book.Find(CharB).ReadyState, Is.EqualTo(2));
 
         var reply = (PartyVoteReply)PartyMessage.Read(new ByteReader(KmsVoteReply), ProtocolProfile.Kms2525);
         book.Apply(reply, CharA, windowOpen: true);
         Assert.That(book.Find(CharA).ReadyState, Is.EqualTo(2));
-        Assert.That(book.Vote.Yes.Contains(reply.CharacterId), Is.True);
+        Assert.That(book.Vote.Yes.Contains(CharA), Is.True);
 
         var end = (PartyVoteEnd)PartyMessage.Read(new ByteReader(KmsVoteEnd), ProtocolProfile.Kms2525);
         book.Apply(end, CharA, windowOpen: true);
-        Assert.That(endedVote, Is.SameAs(start.Vote));
+        Assert.That(endedVoteId, Is.EqualTo(1));
         Assert.That(book.Vote, Is.Null);
     }
 
@@ -145,41 +145,43 @@ public class PartyRecordedTests
         var book = SeedTwoMemberParty();
         PartyInvite invited = null;
         (long Old, long New)? chief = null;
-        int closed = 0;
-        PartyVote endedVote = null;
+        int closed = 0, endedVoteId = 0;
         book.Invited += inv => invited = inv;
         book.ChiefChanged += (oldL, newL) => chief = (oldL.CharacterId, newL.CharacterId);
         book.Closed += () => closed++;
-        book.VoteEnded += v => endedVote = v;
+        book.VoteEnded += v => endedVoteId = v.Id;
 
         var inv = (PartyInvite)PartyMessage.Read(new ByteReader(Gms2Invite), ProtocolProfile.Gms2);
         book.Apply(inv, CharA, windowOpen: true);
-        Assert.That(invited, Is.EqualTo(inv));
-        Assert.That(book.PartyName, Is.EqualTo(new string('*', 12)));
+        Assert.That(invited, Is.EqualTo(new PartyInvite("************", 0x0F40)));
+        Assert.That(book.PartyName, Is.EqualTo("************"));
         Assert.That(book.PartyKind, Is.EqualTo(0x0F40));
 
         var flags = (PartyMemberFlags)PartyMessage.Read(new ByteReader(Gms2MemberFlags), ProtocolProfile.Gms2);
         book.Apply(flags, CharA, windowOpen: true);
+        Assert.That(book.Find(CharA).User.AccountId, Is.EqualTo(CharB));
         Assert.That(book.Find(CharA).User.MaxHp, Is.EqualTo(6644));
         Assert.That(book.Find(CharA).User.Hp, Is.EqualTo(6200));
 
         var start = (PartyVoteStart)PartyMessage.Read(new ByteReader(Gms2VoteStart), ProtocolProfile.Gms2);
         book.Apply(start, CharA, windowOpen: true);
+        Assert.That(book.Vote.Id, Is.EqualTo(5));
         Assert.That(book.Find(CharA).ReadyState, Is.EqualTo(2));
         Assert.That(book.Find(CharB).ReadyState, Is.EqualTo(1));
 
         var reply = (PartyVoteReply)PartyMessage.Read(new ByteReader(Gms2VoteReply), ProtocolProfile.Gms2);
         book.Apply(reply, CharA, windowOpen: true);
         Assert.That(book.Find(CharB).ReadyState, Is.EqualTo(2));
+        Assert.That(book.Vote.Yes.Contains(CharB), Is.True);
 
         var end = (PartyVoteEnd)PartyMessage.Read(new ByteReader(Gms2VoteEnd), ProtocolProfile.Gms2);
         book.Apply(end, CharA, windowOpen: true);
-        Assert.That(endedVote, Is.SameAs(start.Vote));
+        Assert.That(endedVoteId, Is.EqualTo(5));
         Assert.That(book.Vote, Is.Null);
 
         var leader = (PartyLeaderChange)PartyMessage.Read(new ByteReader(Gms2LeaderChange), ProtocolProfile.Gms2);
         book.Apply(leader, CharA, windowOpen: true);
-        Assert.That(book.LeaderId, Is.EqualTo(leader.CharacterId));
+        Assert.That(book.LeaderId, Is.EqualTo(CharB));
         Assert.That(book.IsLeader(CharB), Is.True);
         Assert.That(chief, Is.EqualTo((CharA, CharB)));
 
