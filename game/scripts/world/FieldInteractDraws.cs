@@ -28,8 +28,11 @@ namespace Ms2Godot.World;
 /// </list>
 /// The objects registered before the draws are bound (the field load's attach) are applied in <see cref="Bind"/>.
 /// Nothing runs per frame.
-/// STILL-OPEN: the swapped model's collision (asset B's NIF PhysX props) is not made; an entity hidden at the load, and a
-/// reactable model drawn elsewhere or played as an effect, have no reactable draw (FieldBuilder.InteractReactableDraws); a
+/// <item>The NIF collision follows NifAsset (FieldBuilder.InteractCollider: the scene graph swap takes the entity's PhysX prop
+/// out and makes asset B's).</item>
+/// STILL-OPEN: a reactable model drawn elsewhere or played as an effect, or one whose entity's own model is, has no reactable
+/// draw (FieldBuilder.InteractReactableDraws), so that object keeps its own model; how the client's BGTransparencyMgr element
+/// carries over a scene graph swap (here the fade is dropped and the next test fades the new model again); a
 /// spawned object (InteractObject mode 9, its "urn:gamebryo-scenegraph:" assets) has no drawn entity here; EnableHighlight / DisableDynamicUpdate (the scene graph's update list) have no draw effect.
 /// </summary>
 public sealed class FieldInteractDraws
@@ -37,6 +40,7 @@ public sealed class FieldInteractDraws
     readonly Dictionary<FieldEntity, (int Id, TriggerFade.Target Target)> meshes = new();
     readonly Dictionary<FieldEntity, (int Id, TriggerFade.Target Target)> reactables = new();   // asset B's instances
     readonly Dictionary<LiveInteractObject, StaticBody3D> boxes = new();
+    readonly IReadOnlyDictionary<FieldEntity, FieldBuilder.InteractCollider> swapColliders;
     readonly Dictionary<LiveInteractObject, int> effectHandles = new();   // m_nEffect, the state effect
     readonly Dictionary<LiveInteractObject, int> particles = new();       // m_nParticle, the success effect
     readonly Node3D colliders;
@@ -51,11 +55,18 @@ public sealed class FieldInteractDraws
     public int Reactables => reactables.Count;
     public int Boxes => boxes.Count;
 
+    /// <summary>The field's BGTransparencyMgr: a swap or a hide drops the entity's fade there before its draws switch, so a
+    /// fade ending later does not put back a draw the state took away.</summary>
+    public FieldFade Fade { get; set; }
+
     /// <param name="reactableDraws">FieldBuilder.InteractReactableDraws: hidden here until an object's NifAsset is asset B.</param>
+    /// <param name="interactColliders">FieldBuilder.InteractColliders: the NIF collision that follows the object's NifAsset.</param>
     public FieldInteractDraws(IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> meshDraws, Node3D colliders,
-                              IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> reactableDraws = null)
+                              IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> reactableDraws = null,
+                              IReadOnlyDictionary<FieldEntity, FieldBuilder.InteractCollider> interactColliders = null)
     {
         this.colliders = colliders;
+        swapColliders = interactColliders ?? new Dictionary<FieldEntity, FieldBuilder.InteractCollider>();
         int id = 0;
         foreach (var (e, draws) in meshDraws)
         {
@@ -131,13 +142,23 @@ public sealed class FieldInteractDraws
         {
             LiveInteractObjects.ApplyMeshAsset(o, asset);   // vfunc_3 sets IsVisible, then the asset: one draw switch here
             SetVisible(o, visible);
+            SwapCollision(o);
             if (asset != null && o.AssetType == 2 && o.Entity != null && actors.TryGetValue(o.Entity, out var actor))
                 actor.PlayAnimation(asset);
             if (collision > 0) MakeBox(o);
             else if (collision == 0) ReleaseBox(o);
         }
-        else if (LiveInteractObjects.WatchTowerAsset(o) is { } towerAsset && o.AssetType == 2 && o.Entity != null && actors.TryGetValue(o.Entity, out var tower))
-            tower.PlayAnimation(towerAsset);
+        else if (LiveInteractObjects.WatchTowerAsset(o) is { } towerAsset && o.Entity != null)
+        {
+            if (o.AssetType == 2 && actors.TryGetValue(o.Entity, out var tower)) tower.PlayAnimation(towerAsset);
+            else if (o.AssetType == 1)
+            {
+                // the tower's FUN_1413ff690 alone: the entity keeps the load's IsVisible
+                LiveInteractObjects.ApplyMeshAsset(o, towerAsset);
+                SetVisible(o, o.Entity.Bool("IsVisible", true));
+                SwapCollision(o);
+            }
+        }
         if (model.StateEffect(o, out string effect)) ShowEffect(o, effect);
     }
 
@@ -176,15 +197,34 @@ public sealed class FieldInteractDraws
         return new Xform(new Vec3(o.Position.X, o.Position.Y, o.Position.Z + 1), q.ToMatrix(), 1);
     }
 
+    /// <summary>Whether the entity's own model or its reactable model is drawn: <paramref name="visible"/> and, where it has a
+    /// reactable model, the one its NifAsset is. Only a change switches them; it first drops the entity's BGTransparencyMgr
+    /// fade (<see cref="FieldFade.Release"/>), whose end would put its hidden instances back, then switches both.</summary>
     void SetVisible(LiveInteractObject o, bool visible)
     {
         if (o.Entity == null) return;
+        bool hasA = meshes.TryGetValue(o.Entity, out var t);
         bool hasB = reactables.TryGetValue(o.Entity, out var b);
         bool onB = hasB && o.ShowsAssetB;
-        if (meshes.TryGetValue(o.Entity, out var t)) Fader.Stop(t.Id, t.Target, visible && !onB);
-        if (hasB) Fader.Stop(b.Id, b.Target, visible && onB);
+        bool wantA = visible && !onB, wantB = visible && onB;
+        bool change = hasA && (t.Target.Shown != wantA || Fader.Fading(t.Id)) || hasB && (b.Target.Shown != wantB || Fader.Fading(b.Id));
+        if (change)
+        {
+            Fade?.Release(o.Entity);
+            if (hasA) Fader.Stop(t.Id, t.Target, wantA);
+            if (hasB) Fader.Stop(b.Id, b.Target, wantB);
+        }
         if (actors.TryGetValue(o.Entity, out var a)) a.Visible = visible;
     }
+
+    /// <summary>The NIF collision of the model the entity's NifAsset is (<see cref="FieldBuilder.InteractCollider"/>).</summary>
+    void SwapCollision(LiveInteractObject o)
+    {
+        if (o.Entity != null && o.AssetType == 1 && swapColliders.TryGetValue(o.Entity, out var c)) c.Swap(o.ShowsAssetB);
+    }
+
+    /// <summary>The entity's swapped collision, or null.</summary>
+    public FieldBuilder.InteractCollider Collision(FieldEntity e) => e != null && swapColliders.TryGetValue(e, out var c) ? c : null;
 
     /// <summary>CInteractMeshObject::MakeNxBoxController (@0x1413ff170, interactobject.cpp:848-889).</summary>
     void MakeBox(LiveInteractObject o)

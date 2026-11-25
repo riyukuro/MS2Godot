@@ -115,7 +115,48 @@ public sealed class FieldBuilder
             ColliderGroups.Set(Body.GetInstanceId(), group);   // a ray may have cached the old group (RayQuery.Nearest)
             if (OverlapKey >= 0) Overlap.SetLayer(OverlapKey, 1u << group);
         }
+
+        /// <summary>The body and its overlap copies in the world in their <see cref="Group"/>, or out of it (no layer).</summary>
+        public void SetOn(bool on)
+        {
+            if (on) { SetGroup(Group); return; }
+            Body.CollisionLayer = 0;
+            if (OverlapKey >= 0) Overlap.SetLayer(OverlapKey, 0);
+        }
     }
+
+    /// <summary>
+    /// The NIF collision of an interact mesh whose object has a reactable model (<see cref="Ms2.Ui.LiveInteractObjects.ReactableModels"/>):
+    /// <see cref="A"/> its own model's PhysX shapes, <see cref="B"/> asset B's, each on a body of its own (null: that model
+    /// has none). Setting NifAsset swaps the scene graph (SceneGraphService::HandleEntityUpdatedMessage -> ReplaceAsset,
+    /// SceneGraphService.cpp:1519-1538, 2046-2066: RemoveEntityFromAssetData sends SceneGraphRemoved, AddEntityToAssetData
+    /// SceneGraphAdded), and ecrPhysX::PropService follows it: SceneGraphRemoved takes the entity's PhysX prop out of the scene
+    /// (HandleSceneGraphRemovedMessage, PropService.cpp:503-540), SceneGraphAdded makes one from the new NIF's PhysX props
+    /// (HandleSceneGraphAddedMessage, :445-500, AddPhysXPropToPropData :855). So while NifAsset is asset B only B's shapes
+    /// collide. Built for an entity with no DisableCollision and no GeneratePhysX (HandleSceneGraphAddedMessage returns before
+    /// any prop for 0x38141815, PropService.cpp:458-462, and its generated box is not the scene graph's), that is no trigger
+    /// or vibrate object.
+    /// STILL-OPEN: a DisableCollision, trigger or vibrate entity with a reactable model (none in the KMS and GMS2 data) keeps
+    /// its own model's collision; whether PropService's deferred removal (a prop still in a simulation step,
+    /// m_pPropsPendingRemoval) leaves A's shapes for a frame.
+    /// </summary>
+    public sealed class InteractCollider
+    {
+        public TriggerCollider A, B;
+        public bool OnB { get; private set; }
+
+        /// <summary>The entity's NifAsset is asset B (<paramref name="onB"/>) or its own: that model's shapes are the ones in the world.</summary>
+        public void Swap(bool onB)
+        {
+            if (OnB == onB) return;
+            OnB = onB;
+            A?.SetOn(!onB);
+            B?.SetOn(onB);
+        }
+    }
+
+    /// <summary>Every interact mesh's swapped collision (<see cref="InteractCollider"/>), for world/FieldInteractDraws.</summary>
+    public readonly Dictionary<FieldEntity, InteractCollider> InteractColliders = new();
 
     /// <summary>The colliders of every trigger mesh entity that has any (<see cref="TriggerCollider"/>).</summary>
     public readonly Dictionary<FieldEntity, TriggerCollider> TriggerColliders = new();
@@ -183,12 +224,13 @@ public sealed class FieldBuilder
     /// <summary>
     /// The instances (drawn and shadow-only) of each MS2InteractMesh entity's reactable model (asset B, which state 1 sets as
     /// the entity's NifAsset: CInteractMeshObject::vfunc_1 and FUN_1413ff690, interactobject.cpp:752-777 and :909-921;
-    /// <see cref="Ms2.Ui.LiveInteractObjects.ReactableModel"/>), keyed by the entity. A twin of the entity with that NifAsset
+    /// <see cref="Ms2.Ui.LiveInteractObjects.ReactableModels"/>), keyed by the entity. A twin of the entity with that NifAsset
     /// draws them in the field's groups; world/FieldInteractDraws hides them at the load and shows them in place of the
-    /// entity's <see cref="InteractMeshDraws"/> while its NifAsset is asset B. They are in no other list (no fade, trigger,
-    /// breakable, vibrate or lift draw), and the twin has no collision, particles or effect.
-    /// STILL-OPEN: the swapped scene graph's PhysX props (the client's entity gets asset B's NIF collision); a reactable model
-    /// drawn elsewhere (world/FieldProps) or played as an effect has no twin.
+    /// entity's <see cref="InteractMeshDraws"/> while its NifAsset is asset B. A fade target's twin draws are the entity's
+    /// <see cref="FadeDraws"/> too (BGTransparencyMgr fades the entity whichever model it has); they are in no trigger,
+    /// breakable, vibrate or lift list, and the twin has no particles or effect. Its collision is <see cref="InteractColliders"/>.
+    /// STILL-OPEN: a reactable model drawn elsewhere (world/FieldProps) or played as an effect, or one whose entity's own
+    /// model is (its draw could not be hidden for it), has no twin (<see cref="ReactableNotDrawn"/>).
     /// </summary>
     public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> InteractReactableDraws = new();
     /// <summary>The reactable twins made by the build, with the entity each stands for.</summary>
@@ -234,7 +276,16 @@ public sealed class FieldBuilder
     void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving, uint lightOff)
     {
         AddTriggerDraw(e, mm, index);
-        if (reactableOf.ContainsKey(e)) return;
+        if (reactableOf.TryGetValue(e, out var of))
+        {
+            // the client's entity is one with asset B, so BGTransparencyMgr fades it as it would the entity's own
+            if (IsFadeTarget(of))
+            {
+                if (!FadeDraws.TryGetValue(of, out var faded)) FadeDraws[of] = faded = new List<FadeDraw>();
+                faded.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving, LightOff = lightOff });
+            }
+            return;
+        }
         if (IsVibrate(e))
         {
             if (!VibrateFadeDraws.TryGetValue(e, out var own)) VibrateFadeDraws[e] = own = new List<FadeDraw>();
@@ -549,6 +600,14 @@ public sealed class FieldBuilder
         // own whose ms2_receive instance uniform (field_lit.gdshader) is 0; world/FieldProps does the same for its entities
         var notReceiving = ShadowReceivers.NotReceiving(map.Entities, ShadowLevel);
 
+        // the interact mesh objects (Ms2.Ui.LiveInteractObjects): those whose state sets IsVisible are drawn whatever the load's
+        // IsVisible (their registration's vfunc_3(0) sets it true), and those with a reactable model swap their draws and NIF
+        // collision with it (InteractReactableDraws, InteractColliders)
+        var interactRows = InteractObjectTable.Shared(packs);
+        var reactableModels = Ms2.Ui.LiveInteractObjects.ReactableModels(map.Entities, interactRows);
+        var stateShown = Ms2.Ui.LiveInteractObjects.StateShownMeshes(map.Entities, interactRows);
+        var drawnApart = new HashSet<FieldEntity>();     // drawn elsewhere (FieldProps) or played as an effect
+
         int entityIndex = -1;
         foreach (var e in map.Entities)
         {
@@ -605,19 +664,21 @@ public sealed class FieldBuilder
                 // stays on the prop path, runs them here
                 var (ea, ee) = assets.Resolve(llid);
                 bool asEffect = ea != null && ee != null && e.PlaysAsEffect(ea, me.Data);
-                if (me.Particles != null && e.Bool("IsVisible", true) && !asEffect)
+                bool shown = e.Bool("IsVisible", true) || stateShown.Contains(e);
+                if (me.Particles != null && shown && !asEffect)
                 {
                     if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
                     else ParticleEntities.Add((e, me.Particles));
                 }
-                if (asEffect) { EffectEntities.Add((e, ea, ee)); }
-                else if (e.Bool("IsVisible", true) && me.Elsewhere)
+                if (asEffect) { EffectEntities.Add((e, ea, ee)); drawnApart.Add(e); }
+                else if (shown && me.Elsewhere)
                 {
                     DrawnElsewhere.Add(e);
+                    drawnApart.Add(e);
                     if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(e);
                     if (LightOff(e, me) is var off and not 0) LightOffElsewhere[e] = off;
                 }
-                else if (e.Bool("IsVisible", true))
+                else if (shown)
                 {
                     Group(groups, llid, e, me, notReceiving.Contains(e));
                     grouped = true;            // counted when its group is placed
@@ -638,6 +699,9 @@ public sealed class FieldBuilder
                 // a vibrate object's colliders also get a body of their own: its break and return switch their group
                 // (CEntityVibrator, entityvibrator.cpp:338-342 and the return's SetEntityCollisionGroup)
                 bool vibrate = !trigger && IsVibrate(e);
+                // an interact mesh with a reactable model: its NIF PhysX shapes get a body of their own, which the swap to
+                // asset B takes out of the world (InteractColliders)
+                bool swaps = !trigger && !vibrate && !disabled && !e.Bool("GeneratePhysX") && reactableModels.ContainsKey(e);
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -661,14 +725,16 @@ public sealed class FieldBuilder
                 TriggerCollider tc = null;
                 StaticBody3D Body(int at)
                 {
-                    if (!trigger && !vibrate) return Chunk(e.Position, at);
+                    if (!trigger && !vibrate && !swaps) return Chunk(e.Position, at);
                     if (tc == null)
                     {
                         tc = new TriggerCollider { Group = group, Overlap = twoSided };
-                        tc.Body = new StaticBody3D { Name = $"{(vibrate ? "Vibrate" : "Trigger")}_{entityIndex}", CollisionLayer = disabled ? 0u : 1u << at, CollisionMask = 0 };
+                        tc.Body = new StaticBody3D { Name = $"{(vibrate ? "Vibrate" : trigger ? "Trigger" : "Interact")}_{entityIndex}", CollisionLayer = disabled ? 0u : 1u << at, CollisionMask = 0 };
                         tc.Body.SetMeta(GroupMeta, at);
                         colliders.AddChild(tc.Body);
-                        if (vibrate) VibrateColliders[e] = tc; else TriggerColliders[e] = tc;
+                        if (vibrate) VibrateColliders[e] = tc;
+                        else if (trigger) TriggerColliders[e] = tc;
+                        else InteractColliders[e] = new InteractCollider { A = tc };
                     }
                     return tc.Body;
                 }
@@ -714,21 +780,24 @@ public sealed class FieldBuilder
         }
 
         // the interact meshes' reactable models (InteractReactableDraws): a twin of the entity with asset B as its NifAsset joins
-        // the groups as the entity would with that asset (same transform, colour, lights and shadow receipt)
-        var interactRows = InteractObjectTable.Shared(packs);
+        // the groups as the entity would with that asset (same transform, colour, lights and shadow receipt). An entity whose
+        // own model is drawn elsewhere or played as an effect gets none: its own draw could not be hidden for it
+        entityIndex = -1;
         foreach (var e in map.Entities)
         {
-            var llidB = Ms2.Ui.LiveInteractObjects.ReactableModel(e, interactRows);
-            if (llidB == null) continue;
+            entityIndex++;
+            if (!reactableModels.TryGetValue(e, out var llidB)) continue;
             yield return 0;
             var me = Model(llidB);
-            if (me == null || me.Elsewhere) continue;
+            if (me == null) continue;
+            ReactableCollision(e, me, entityIndex, colliders, twoSided);
+            if (me.Elsewhere || drawnApart.Contains(e)) { ReactableNotDrawn++; continue; }
             var raw = new XEntity { Id = e.Raw.Id, ModelName = e.Raw.ModelName, Name = e.Raw.Name, Sets = e.Raw.Sets,
                                     Props = new Dictionary<string, string>(e.Raw.Props, StringComparer.Ordinal) };
             raw.Props["NifAsset"] = llidB;
             var twin = new FieldEntity { Raw = raw, Flat = e.Flat };
             var (ba, be) = assets.Resolve(llidB);
-            if (ba != null && be != null && twin.PlaysAsEffect(ba, me.Data)) continue;
+            if (ba != null && be != null && twin.PlaysAsEffect(ba, me.Data)) { ReactableNotDrawn++; continue; }
             reactableOf[twin] = e;
             Group(groups, llidB, twin, me, notReceiving.Contains(e));
             ReactableTwins++;
@@ -854,6 +923,35 @@ public sealed class FieldBuilder
 
     /// <summary>The reactable twins the build drew (<see cref="InteractReactableDraws"/>).</summary>
     public int ReactableTwins;
+    /// <summary>The reactable models with no twin: asset B drawn elsewhere or played as an effect, or the entity's own model is.</summary>
+    public int ReactableNotDrawn;
+    /// <summary>The reactable models whose PhysX shapes the build made (<see cref="InteractCollider.B"/>).</summary>
+    public int ReactableColliders;
+
+    /// <summary>Asset B's NIF PhysX shapes for an <see cref="InteractCollider"/>: a body of its own, out of the world until the
+    /// swap, in the entity's PropCollisionGroup, at the entity's transform, tagged with its MapAttribute as the entity's own are.</summary>
+    void ReactableCollision(FieldEntity e, ModelEntry me, int index, Node3D colliders, TwoSidedSpace twoSided)
+    {
+        if (me.Collision.Count == 0 || e.Bool("DisableCollision") || e.Bool("GeneratePhysX") || IsTriggerMesh(e) || IsVibrate(e)) return;
+        int group = (int)e.Number("PropCollisionGroup");
+        var tc = new TriggerCollider { Group = group, Overlap = twoSided };
+        tc.Body = new StaticBody3D { Name = $"Reactable_{index}", CollisionLayer = 0, CollisionMask = 0 };
+        tc.Body.SetMeta(GroupMeta, group);
+        colliders.AddChild(tc.Body);
+        var xf = ModelBuilder.ToGodot(e.Transform);
+        var material = e.Get("MapAttribute");
+        for (int i = 0; i < me.Collision.Count; i++)
+        {
+            var cs = new CollisionShape3D { Shape = me.Collision[i], Transform = xf };
+            TagGround(cs, material);
+            tc.Body.AddChild(cs);
+            if (tc.OverlapKey < 0) tc.OverlapKey = twoSided.AddOwn(0u);
+            twoSided.AddOwn(tc.OverlapKey, me.Overlap[i], xf);
+        }
+        if (!InteractColliders.TryGetValue(e, out var ic)) InteractColliders[e] = ic = new InteractCollider();
+        ic.B = tc;
+        ReactableColliders++;
+    }
 
     /// <summary>Puts a visible entity drawn with <paramref name="llid"/> in its group: copies reached by different field lights
     /// draw apart, each with its light mask (the client's instancing batches split on their nearby-light list the same way,

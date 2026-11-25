@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Godot;
 
 namespace Ms2Godot.World;
@@ -75,9 +76,21 @@ public sealed partial class TriggerFade : Node
     /// <summary>Shows or hides every instance of the mesh at once: its own transform, or a zero basis.</summary>
     public static void Switch(Target t, bool show)
     {
-        foreach (var (mm, i, xf) in t.All) mm.SetInstanceTransform(i, show ? xf : new Transform3D(Zero, xf.Origin));
+        foreach (var (mm, i, xf) in t.All)
+        {
+            mm.SetInstanceTransform(i, show ? xf : new Transform3D(Zero, xf.Origin));
+            var set = hidden.GetOrCreateValue(mm);
+            if (show) set.Remove(i); else set.Add(i);
+        }
         t.Shown = show;
     }
+
+    // the instances a switch left hidden, by MultiMesh: what the slot holds without reading it back from the renderer (the
+    // headless one keeps no instance transforms)
+    static readonly ConditionalWeakTable<MultiMesh, HashSet<int>> hidden = new();
+
+    /// <summary>Whether a <see cref="Switch"/> left the instance hidden.</summary>
+    public static bool Hidden(MultiMesh mm, int index) => mm != null && hidden.TryGetValue(mm, out var set) && set.Contains(index);
 
     /// <summary>FadeEntity: true when a fade starts.</summary>
     public bool FadeEntity(int id, Target t, bool show, float fade)

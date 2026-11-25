@@ -177,8 +177,16 @@ public partial class FieldFade : Node
         if (!NearSphere(from, dir, t.Centre, t.Radius)) return false;
         foreach (var d in t.Draws)
         {
-            var xf = d.Mm.GetInstanceTransform(d.Index);
-            if (xf.Basis.Determinant() == 0) xf = Saved(t, d);   // hidden while it fades: its own transform
+            // while a fade holds it, its own transform; hidden otherwise (a state, a trigger, the other model of an interact
+            // mesh, or a zero basis from any other draw switch): not drawn, so not picked
+            Transform3D xf;
+            if (Saved(t, d) is { } saved) xf = saved;
+            else if (TriggerFade.Hidden(d.Mm, d.Index)) continue;
+            else
+            {
+                xf = d.Mm.GetInstanceTransform(d.Index);
+                if (xf.Basis.Determinant() == 0) continue;
+            }
             var inv = (d.Parent.GlobalTransform * xf).AffineInverse();
             var o = inv * from;
             var v = inv.Basis * dir;
@@ -190,12 +198,45 @@ public partial class FieldFade : Node
         return false;
     }
 
-    Transform3D Saved(Target t, FieldBuilder.FadeDraw d)
+    /// <summary>The draw's own transform while a fade holds it, else null.</summary>
+    Transform3D? Saved(Target t, FieldBuilder.FadeDraw d)
     {
         var el = fadeOut.TryGetValue(t, out var e) ? e : fadeIn.TryGetValue(t, out e) ? e : null;
         if (el != null) foreach (var p in el.Parts) if (p.draw == d) return p.xf;
-        return d.Mm.GetInstanceTransform(d.Index);
+        return null;
     }
+
+    /// <summary>
+    /// Drops the entity's fade at once, without putting its instances back: the caller is about to set them itself
+    /// (world/FieldInteractDraws switching an interact mesh's model or hiding it). A fade-in's end would otherwise write back a
+    /// transform the switch had hidden.
+    /// </summary>
+    public void Release(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return;
+        if (fadeOut.Remove(t, out var a)) foreach (var p in a.Parts) p.node.QueueFree();
+        if (fadeIn.Remove(t, out var b)) foreach (var p in b.Parts) p.node.QueueFree();
+    }
+
+    /// <summary>For the headless check: the entity as if the 300 ms test had hit it alone (Apply).</summary>
+    internal void FadeOutNow(FieldEntity e)
+    {
+        if (e != null && byEntity.TryGetValue(e, out var t)) Apply(new HashSet<Target> { t }, Time.GetTicksMsec());
+    }
+
+    /// <summary>For the headless check: whether the pick of the entity's draws (RayHits) meets the ray.</summary>
+    internal bool Picks(FieldEntity e, Vector3 from, Vector3 dir) => e != null && byEntity.TryGetValue(e, out var t) && RayHits(t, from, dir);
+
+    /// <summary>For the headless check: the draws a fade of the entity holds (none: not fading).</summary>
+    internal IReadOnlyList<FieldBuilder.FadeDraw> Fading(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<FieldBuilder.FadeDraw>();
+        var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
+        return el == null ? Array.Empty<FieldBuilder.FadeDraw>() : el.Parts.Select(p => p.draw).ToList();
+    }
+
+    /// <summary>Whether a fade holds the entity (fading out or back in).</summary>
+    public bool Holds(FieldEntity e) => e != null && byEntity.TryGetValue(e, out var t) && (fadeOut.ContainsKey(t) || fadeIn.ContainsKey(t));
 
     static bool Triangle(Vector3 o, Vector3 v, Vector3 p0, Vector3 p1, Vector3 p2)
     {
@@ -230,6 +271,8 @@ public partial class FieldFade : Node
             var el = new Element { Alpha = 0.3f, Start = now };
             foreach (var d in t.Draws)
             {
+                // a hidden draw (a state, a trigger, an interact mesh's other model) is not drawn, so not faded
+                if (TriggerFade.Hidden(d.Mm, d.Index) || d.Mm.GetInstanceTransform(d.Index).Basis.Determinant() == 0) continue;
                 var mesh = d.Mm.Mesh;
                 var colour = (ShaderMaterial)mesh.SurfaceGetMaterial(0);
                 if (colour.NextPass is ShaderMaterial next && colour.Shader != next.Shader) colour = next;   // a fluid shell's colour pass
@@ -247,7 +290,7 @@ public partial class FieldFade : Node
                 part.SetFade(1f);
                 el.Parts.Add(part);
             }
-            fadeOut[t] = el;
+            if (el.Parts.Count > 0) fadeOut[t] = el;
         }
     }
 
@@ -281,7 +324,8 @@ public partial class FieldFade : Node
         {
             foreach (var p in fadeIn[t].Parts)
             {
-                p.draw.Mm.SetInstanceTransform(p.draw.Index, p.xf);
+                // a draw a switch hid meanwhile stays hidden
+                if (!TriggerFade.Hidden(p.draw.Mm, p.draw.Index)) p.draw.Mm.SetInstanceTransform(p.draw.Index, p.xf);
                 p.node.QueueFree();
             }
             fadeIn.Remove(t);
