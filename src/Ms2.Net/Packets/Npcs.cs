@@ -18,6 +18,8 @@ public sealed class FieldAddNpc {
     public int ObjectId, NpcId; public Vector3 Position, Rotation;
     public string BossModelName;
     public (long Health, int Spirit)[] Stats = new (long, int)[3];
+    /// <summary>The single-stat form's stat id and its total, base and current (0 and null for the three-row form; see <see cref="ReadStats"/>).</summary>
+    public byte OneStat; public long[] OneStatValues;
     public bool Hidden;
     public List<Buff> Buffs = new();
     public long MaidUid; public bool Talkable; public int Level, Unknown;
@@ -28,7 +30,7 @@ public sealed class FieldAddNpc {
         var n = new FieldAddNpc { ObjectId = r.ReadInt(), NpcId = r.ReadInt(), Position = r.ReadVec3(), Rotation = r.ReadVec3() };
         var layout = layoutOf(n.NpcId);
         if (layout.IsBoss) n.BossModelName = r.ReadString();
-        ReadStats(r, n.Stats);
+        (n.OneStat, n.OneStatValues) = ReadStats(r, n.Stats);
         n.Hidden = r.ReadByte() != 0;
         int buffs = (ushort) r.ReadShort();
         for (int i = 0; i < buffs; i++) n.Buffs.Add(Buff.Read(r));
@@ -45,11 +47,26 @@ public sealed class FieldAddNpc {
         return n;
     }
 
-    /// <summary>CNpc::vfunc_90, the stats FieldAddNpc and FieldAddPet carry: type 1 = one stat (u8 id, 3 values), else 3 x (i64 health, i32 spirit).</summary>
-    internal static void ReadStats(ByteReader r, (long Health, int Spirit)[] stats) {
+    /// <summary>
+    /// CNpc::vfunc_90 @0x1410909a0, the stats FieldAddNpc and FieldAddPet carry, rows total, base, current (SetStat(i, stat, value)).
+    /// u8 type; type 1 = one stat: u8 stat id, 3 values, i64 when IsPercentStat (stat.cpp:314: only health, 4), else u32; health
+    /// goes to the rows' Health, spirit (0xd) to their Spirit. Any other type = 3 x (i64 health, u32 spirit). Returns the one
+    /// stat's id and values, or (0, null) for the three-row form.
+    /// </summary>
+    internal static (byte Stat, long[] Values) ReadStats(ByteReader r, (long Health, int Spirit)[] stats) {
         byte type = r.ReadByte();
-        if (type == 1) { r.ReadByte(); for (int i = 0; i < 3; i++) r.ReadLong(); /* percent stats are i64, others i32; only seen as type 35 */ throw new PacketLayoutException("npc single-stat form not decoded"); }
-        for (int i = 0; i < 3; i++) stats[i] = (r.ReadLong(), r.ReadInt());
+        if (type != 1) {
+            for (int i = 0; i < 3; i++) stats[i] = (r.ReadLong(), r.ReadInt());
+            return (0, null);
+        }
+        byte stat = r.ReadByte();
+        var v = new long[3];
+        for (int i = 0; i < 3; i++) {
+            v[i] = stat == 4 ? r.ReadLong() : (uint) r.ReadInt();
+            if (stat == 4) stats[i].Health = v[i];
+            else if (stat == 0xd) stats[i].Spirit = (int) v[i];
+        }
+        return (stat, v);
     }
 }
 

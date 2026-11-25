@@ -46,7 +46,7 @@ public class RcNpcRemoteReaderTests
         w.WriteFloat(1); w.WriteFloat(2); w.WriteFloat(3);     // position
         w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);     // rotation
         w.WriteByte(1);                    // the single-stat form
-        w.WriteByte(35);                   // the stat id seen in the recordings (a percent stat: three i64)
+        w.WriteByte(4);                    // health: IsPercentStat (stat.cpp:314), three i64
         w.WriteLong(1000); w.WriteLong(900); w.WriteLong(800);
         w.WriteByte(0);                    // not hidden
         w.WriteShort(0);                   // no buffs
@@ -58,7 +58,6 @@ public class RcNpcRemoteReaderTests
         return w.ToArray();
     }
 
-    [Ignore("the FieldAddNpc single-stat form throws")]
     [Test]
     public void Gms2FieldAddNpcType1ReadsTheSingleStat()
     {
@@ -66,7 +65,23 @@ public class RcNpcRemoteReaderTests
         // the three values are the stat's total, base and current: each row keeps its health value, no spirit
         Assert.That(n.Stats.Select(s => s.Health), Is.EqualTo(new long[] { 1000, 900, 800 }));
         Assert.That(n.Stats.Select(s => s.Spirit), Is.EqualTo(new[] { 0, 0, 0 }));
-        Assert.That(n.Level, Is.EqualTo(40));
+        Assert.That((n.OneStat, n.Level), Is.EqualTo(((byte) 4, 40)));
+    }
+
+    /// <summary>CNpc::vfunc_90 reads any stat but health as three u32, and only health and spirit land in the rows.</summary>
+    [Test]
+    public void TheSingleStatOfAnotherStatIsThreeInts()
+    {
+        foreach (var (stat, health, spirit) in new[] { ((byte) 0xd, 0L, 900), ((byte) 35, 0L, 0) }) {
+            var w = new ByteWriter();
+            w.WriteInt(77); w.WriteInt(9000001); for (int i = 0; i < 6; i++) w.WriteFloat(0);
+            w.WriteByte(1); w.WriteByte(stat); w.WriteInt(1000); w.WriteInt(900); w.WriteInt(800);
+            w.WriteByte(0); w.WriteShort(0); w.WriteLong(0); w.WriteBool(false); w.WriteInt(40); w.WriteInt(0); w.WriteByte(0);
+            var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+            var n = FieldAddNpc.Read(r, _ => default);
+            Assert.That((n.OneStat, n.OneStatValues, n.Stats[1].Health, n.Stats[1].Spirit, n.Level, r.Available),
+                Is.EqualTo((stat, new long[] { 1000, 900, 800 }, health, spirit, 40, 0)), $"stat {stat}");
+        }
     }
 
     [Ignore("FollowNpc is not read yet")]
