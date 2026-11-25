@@ -590,6 +590,140 @@ public partial class LiveSession
                 await frames(120);
                 continue;
             }
+            if (step.StartsWith("mclick:"))    // mclick:<portal|taxi|object|banner|talkend>[:<portal id>]: mouse control on, the own pc put 500 from the nearest such target (or the portal of that id) facing it, a left click at the target's middle on screen; checks the hover cursor and hint first (a shot), then that the pick is kept and (but for the banner, whose action is not ported) that it runs. talkend[:<npc id>|any|plain] opens the talk with that npc by the action key, then clicks the screen while the talk shows
+            {
+                var a = step.Split(':');
+                string kind = a[1];
+                var fld = live.player?.GetParent() as Field;
+                if (fld == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the own pc", false); continue; }
+                fld.SetMouseControl(true);
+                Movement.MouseMove.LastKept = Movement.MouseMove.LastRan = Ms2.Ui.MousePick.None;
+                Movement.MouseMove.LastHoverKind = -1;
+                var me = FieldPortals.ToMs2(live.player.GlobalPosition);
+                static double D2(Ms2.Formats.Model.Vec3 x, Ms2.Formats.Model.Vec3 y) { var d = x - y; return d.X * d.X + d.Y * d.Y + d.Z * d.Z; }
+                Ms2.Formats.Model.Vec3? target = null;
+                double height = 0;
+                var want = Ms2.Ui.MousePick.None;
+                switch (kind)
+                {
+                    case "portal":
+                        var portals = live.Portals?.All.Where(x => x.HasEntity && x.Glow && x.Kind != 1 && x.Dimension.Z > 0).ToList();
+                        var portal = a.Length > 2 ? portals?.FirstOrDefault(x => x.Id == int.Parse(a[2])) : portals?.OrderBy(x => D2(x.Position, me)).FirstOrDefault();
+                        if (portal != null) { target = portal.Position; height = portal.Dimension.Z; GD.Print($"live: combat {step}: portal {portal.Id} target map {portal.TargetMap}"); }
+                        want = Ms2.Ui.MousePick.Portal;
+                        break;
+                    case "taxi":
+                        if (live.TaxiAction.Stations.Count > 0) { target = live.TaxiAction.Stations.OrderBy(x => D2(x, me)).First(); height = Ms2.Ui.MouseInteract.TaxiPickSize; }
+                        want = Ms2.Ui.MousePick.Taxi;
+                        break;
+                    case "banner":
+                        if (live.UgcBanners.Count > 0) { target = live.UgcBanners.OrderBy(x => D2(x, me)).First(); height = Ms2.Ui.MouseInteract.UgcBannerPickSize; }
+                        want = Ms2.Ui.MousePick.UgcBanner;
+                        break;
+                    case "object":
+                        // one standing about level with the pc: the pick runs only once the action key reaches it (the row's
+                        // interactionDistance, 3D), so one up on a pedestal is walked to but never runs, in the client too
+                        var obj = live.InteractObjects?.All.Where(x => x.Row != null && x.Row.ShapeDimension.Z > 0 && live.InteractObjects.CanUse(x)
+                                && Math.Abs(x.Position.Z - me.Z) < x.Row.InteractionDistance
+                                // and alone: with another object nearer the pc than it the action key takes that one, and the
+                                // pick (whose vfunc_3 wants its own object current) never runs, in the client too
+                                && !live.InteractObjects.All.Any(y => y != x && y.Row != null && D2(y.Position, x.Position) < 4.0 * x.Row.InteractionDistance * x.Row.InteractionDistance))
+                            .OrderBy(x => D2(x.Position, me)).FirstOrDefault();
+                        if (obj != null) { target = obj.Position; height = obj.Row.ShapeDimension.Z; GD.Print($"live: combat {step}: object {obj.Name} row {obj.RowId} kind {obj.Kind}"); }
+                        want = Ms2.Ui.MousePick.Object;
+                        break;
+                    case "talkend":
+                        want = Ms2.Ui.MousePick.TalkCancel;
+                        break;
+                }
+                var cam = flow.GetViewport().GetCamera3D();
+                Vector2 screen;
+                if (want == Ms2.Ui.MousePick.TalkCancel)
+                {
+                    var tfc2 = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                    if (a.Length > 2 && tfc2?.Talk != null && !tfc2.Talk.Open)
+                    {
+                        // talkend:<npc id>: the talk opened first with the action key, the own pc 100 in front of the npc facing it
+                        // any: the field's first npc with a function kind; plain: the first with none (no shop or other window
+                        // opens over the click)
+                        int nid = a[2] is "any" or "plain" ? 0 : int.Parse(a[2]);
+                        bool plain = a[2] == "plain";
+                        // the candidates in turn until one opens a talk (not every npc without a function has one)
+                        await until(() => live.TalkNpcs.Any(x => (nid == 0 ? (plain ? x.Row.Kind == 0 : x.Row.Kind != 0) && x.Root.Visible : x.Row.Id == nid) && Alive(x)), 60 * 30);
+                        var cands = live.TalkNpcs.Where(x => (nid == 0 ? (plain ? x.Row.Kind == 0 : x.Row.Kind != 0) && x.Root.Visible : x.Row.Id == nid) && Alive(x)).Take(5).ToList();
+                        foreach (var tn in cands)
+                        {
+                            GD.Print($"live: combat {step}: talk npc {tn.Row.Id}");
+                            if (!GodotObject.IsInstanceValid(tn.Root)) continue;
+                            double yaw = tn.Root.Rotation.Y;
+                            var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                            live.player.GlobalPosition = tn.Position + front * 100 + new Vector3(0, 20, 0);
+                            live.player.Velocity = Vector3.Zero;
+                            live.player.Face(-front);
+                            await frames(30);
+                            tfc2.Talk.ActionKey();
+                            await until(() => tfc2.Talk.CinematicLoaded, 60 * 5);
+                            if (tfc2.Talk.CinematicLoaded) break;
+                        }
+                        await frames(60);
+                    }
+                    Check($"{step}: the talk is open", tfc2?.Talk?.CinematicLoaded == true);
+                    screen = flow.GetViewport().GetVisibleRect().Size * new Vector2(0.5f, 0.35f);
+                }
+                else
+                {
+                    Check($"{step}: a target in the field", target != null);
+                    if (target == null || cam == null) { fld.SetMouseControl(GameOptions.MouseControl.Value); continue; }
+                    var tg = FieldBuilder.ToGodotPoint(target.Value);
+                    var away = live.player.GlobalPosition - tg; away.Y = 0;
+                    away = away.LengthSquared() < 1 ? new Vector3(1, 0, 0) : away.Normalized();
+                    // a portal's pc goes nearer: from 500 off the straight line to it can be behind scenery in a town
+                    live.player.GlobalPosition = tg + away * (want == Ms2.Ui.MousePick.Portal ? 250 : 500) + new Vector3(0, 20, 0);
+                    live.player.Velocity = Vector3.Zero;
+                    live.player.Face(-away);
+                    await frames(90);
+                    var mid = tg + new Vector3(0, (float)height * 0.5f, 0);
+                    screen = cam.IsPositionBehind(mid) ? Vector2.Zero : cam.UnprojectPosition(mid);
+                }
+                // the hover first (UpdateHover every 100 ms): the mouse on the target sets the interact cursor and the pick's
+                // hint; over the UI (the talk window) the hand stays (GFxManager::FUN_1422aeed0(2))
+                flow.GetViewport().WarpMouse(screen);
+                Input.ParseInputEvent(new InputEventMouseMotion { Position = screen, GlobalPosition = screen });
+                await frames(30);
+                bool overUi = Ui.As3View.AnyMouseOverUi(flow.GetViewport());
+                int wantKind = overUi ? 0 : Ms2.Ui.MouseInteract.CursorKind(want);
+                int wantType = overUi ? Ms2.Ui.MouseCursorController.Hand : Ms2.Ui.MouseCursorController.Interact;
+                await until(() => Movement.MouseMove.LastHoverKind == wantKind, 60);
+                int cursorType = Ui.MouseCursorLayer.Cursor?.GetCursorType() ?? -1;
+                Check($"{step}: the hover cursor kind {Movement.MouseMove.LastHoverKind} (want {wantKind}{(overUi ? ", over the UI" : "")}), cursor type {cursorType}",
+                    Movement.MouseMove.LastHoverKind == wantKind && cursorType == wantType);
+                Shot($"mhover_{kind}.png");
+                GD.Print($"live: combat {step}: click at screen {screen}");
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = screen, GlobalPosition = screen });
+                await frames(2);
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = screen, GlobalPosition = screen });
+                await until(() => Movement.MouseMove.LastKept == want, 30);
+                Check($"{step}: the {want} pick kept", Movement.MouseMove.LastKept == want);
+                if (want != Ms2.Ui.MousePick.UgcBanner)
+                {
+                    await until(() => Movement.MouseMove.LastRan == want, 60 * 15);
+                    if (Movement.MouseMove.LastRan != want && target != null)
+                    {
+                        // why not: how far the pc stopped and what the action key holds
+                        var stopAt = FieldPortals.ToMs2(live.player.GlobalPosition);
+                        var gap = stopAt - target.Value;
+                        var afc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                        GD.Print($"live: combat {step}: not run; the pc at {stopAt}, {Math.Sqrt(gap.X * gap.X + gap.Y * gap.Y + gap.Z * gap.Z):F0} from the target, "
+                            + $"action {afc?.CurrentAction}, object {live.InteractObjects?.Current?.Name ?? "none"}, state {live.OwnCurStateIdNow}");
+                    }
+                    Check($"{step}: the {want} pick ran", Movement.MouseMove.LastRan == want);
+                }
+                await frames(120);
+                Shot($"mclick_{kind}.png");
+                fld = live.player?.GetParent() as Field;
+                fld?.SetMouseControl(GameOptions.MouseControl.Value);
+                continue;
+            }
             if (step.StartsWith("kill:"))      // kill:<npc id>[:<count>]: the field's server npcs of that id, nearest first, each walked to, faced and attacked until it dies (up to MS2_LIVE_COMBAT_PRESSES presses each)
             {
                 var a = step.Split(':');
