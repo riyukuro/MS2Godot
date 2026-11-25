@@ -63,6 +63,23 @@ public partial class HudScene
         uiRoot.AddChild(m);
     }
 
+    /// <summary>Live runs: the meter opened as Ctrl+Q opens it (TogglePartyDps); true while it is open.</summary>
+    public bool PartyDpsToggleScripted() { TogglePartyDps(); return PartyDpsOpen; }
+
+    /// <summary>Live runs: the meter's mode, group state and last ranking, as one log line.</summary>
+    public string PartyDpsText()
+    {
+        if (partyDps == null) return "no meter";
+        var rec = Ms2Godot.Net.LiveSession.Instance?.BattleRecords;
+        var rows = new System.Text.StringBuilder();
+        foreach (var m in partyDps.Ranking)
+            rows.Append($" [{m.User.Name} {(rec == null ? "" : Ms2.Ui.Hud.PartyDpsController.MeterText(rec, Ms2.Ui.Hud.PartyDpsController.Group, m.CharacterId, partyDps.Mode))}]");
+        return $"open {PartyDpsOpen}, mode {partyDps.Mode}, group running {rec?.IsGroupActive(Ms2.Ui.Hud.PartyDpsController.Group)}, time {rec?.ElapsedTimeText(Ms2.Ui.Hud.PartyDpsController.Group)}, ranking{rows}";
+    }
+
+    /// <summary>Live runs: the movie's own mode button (onTextToggle).</summary>
+    public bool PartyDpsNextModeScripted() => PartyDpsOpen && partyDps.OnCallback("onTextToggle", System.Array.Empty<object>());
+
     /// <summary>The party book's RemoveMemberAt: an open meter drops its last row under ten members.</summary>
     void WatchPartyDps()
     {

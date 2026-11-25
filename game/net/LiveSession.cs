@@ -3635,7 +3635,8 @@ public partial class LiveSession : Node
             bool voteRun = pp[0] is "askvote" or "answervote";                   // the vote kick run: four clients
             bool searchRun = pp[0] is "asksearch" or "answersearch";            // the party search run: two clients
             bool joinLink = pp[0] == "joinlink";                                 // the dungeon join links run: one client
-            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch";
+            bool dpsRun = pp[0] is "askdps" or "answerdps";                     // the party damage meter run: two clients
+            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch" or "askdps";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
             string partyShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_SHOTS");
@@ -3759,6 +3760,62 @@ public partial class LiveSession : Node
                     await Frames(60 * 10);
                     PShot("after");
                 }
+            }
+            else if (dpsRun)
+            {
+                // MS2_LIVE_PARTY "askdps:<name>" / "answerdps": after the invite and the join both clients open the party damage meter
+                // (Ctrl+Q's toggle), each spawns a mob (MS2_LIVE_COMBAT_MOB) and attacks it until it dies (the combat run's attack step);
+                // the ranking, the group's timer and each mode of the meter are logged and shot while the other's hits arrive.
+                if (asker)
+                {
+                    UserBlock who = null;
+                    await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == partner)) != null, 60 * 120);
+                    await Frames(120);
+                    ph.PartyLinkClick("inviteParty," + partner);
+                }
+                else await Box("invite", 120);
+                bool joined = await Joined(true, 60);
+                GD.Print($"live: party {role}: joined {joined}");
+                await Frames(60 * 3);
+                async Task PressKeyOf(Godot.Key key, bool ctrl, KeyLocation where = KeyLocation.Unspecified)
+                {
+                    foreach (bool down in new[] { true, false })
+                    {
+                        Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = down, CtrlPressed = ctrl && down, Location = where });
+                        await Frames(4);
+                    }
+                }
+                // Ctrl+Q as the keyboard gives it: the left Ctrl down, Q down and up under it, the Ctrl up
+                Input.ParseInputEvent(new InputEventKey { Keycode = Godot.Key.Ctrl, PhysicalKeycode = Godot.Key.Ctrl, Pressed = true, CtrlPressed = true, Location = KeyLocation.Left });
+                await Frames(4);
+                await PressKeyOf(Godot.Key.Q, true);
+                Input.ParseInputEvent(new InputEventKey { Keycode = Godot.Key.Ctrl, PhysicalKeycode = Godot.Key.Ctrl, Pressed = false, Location = KeyLocation.Left });
+                await Frames(60);
+                GD.Print($"live: party {role}: Ctrl+Q opened the meter: {ph.PartyDpsText().StartsWith("open True")}");
+                if (!ph.PartyDpsText().StartsWith("open True")) GD.Print($"live: party {role}: dps toggle (scripted): {ph.PartyDpsToggleScripted()}");
+                await Frames(60 * 3);
+                GD.Print($"live: party {role}: dps before: {ph.PartyDpsText()}");
+                PShot("dps_open");
+                System.Environment.SetEnvironmentVariable("MS2_LIVE_COMBAT_STEP", "attack");
+                System.Environment.SetEnvironmentVariable("MS2_LIVE_COMBAT_SHOTS", System.IO.Path.Combine(partyShots ?? ".", "combat" + role));
+                await CombatRun(flow, Frames, async (c, max) => await Until(c, max));
+                await Frames(60 * 4);
+                GD.Print($"live: party {role}: dps after the attack: {ph.PartyDpsText()}");
+                PShot("dps_after");
+                for (int mode = 1; mode <= 7; mode++)
+                {
+                    GD.Print($"live: party {role}: next mode {ph.PartyDpsNextModeScripted()}");
+                    await Frames(60 * 2);
+                    GD.Print($"live: party {role}: dps mode {mode % 7}: {ph.PartyDpsText()}");
+                    PShot("dps_mode" + (mode % 7));
+                }
+                await Frames(60 * 20);                                   // the other client's attacks arrive meanwhile
+                GD.Print($"live: party {role}: dps at the end: {ph.PartyDpsText()}");
+                PShot("dps_end");
+                await PressKeyOf(Godot.Key.Escape, false);
+                await Frames(60 * 2);
+                GD.Print($"live: party {role}: Esc closed the meter: {!ph.PartyDpsText().StartsWith("open True")}");
+                PShot("dps_closed");
             }
             else if (typedChat)
             {
