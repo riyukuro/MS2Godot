@@ -149,7 +149,7 @@ public class StringKeysTests
             {
                 var rel = Path.GetRelativePath(root, f).Replace('\\', '/');
                 if (rel.Contains("/contracts/") || rel.Contains("/obj/") || rel.Contains("/bin/") || rel.Contains("/.godot/") || rel.EndsWith(".g.cs")
-                    || rel.EndsWith("/CommonStringIds.cs")) continue;
+                    || rel.EndsWith("/CommonStringIds.cs") || rel.EndsWith("/Gms2CommonStringIds.cs")) continue;
                 var lines = File.ReadAllLines(f);
                 for (int i = 0; i < lines.Length; i++)
                     foreach (Match m in KeyLiteral.Matches(lines[i]))
