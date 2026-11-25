@@ -97,7 +97,7 @@ public sealed record WaitingTicketUpdate(int WaitingCount)
 }
 
 /// <summary>
-/// Inbound 0x10F (RecvOp::SyncWorld, CSceneStateMulti::OnServerTimePacket @0x14174fcc0, scenestatemulti.cpp:766-769):
+/// Inbound 0x10F (GMS2 0x111; RecvOp::SyncWorld, CSceneStateMulti::OnServerTimePacket @0x14174fcc0, scenestatemulti.cpp:766-769):
 /// i64 serverTime stored on CSceneStateMulti::m_nServerTime.
 /// </summary>
 public sealed record SyncWorldMessage(long ServerTime)
@@ -111,8 +111,8 @@ public sealed record SyncWorldMessage(long ServerTime)
 }
 
 /// <summary>
-/// Inbound 0x110 (RecvOp::WorldTimeSync, CNetworkService::OnWorldTimeSync @0x14153a8a0, networkservice.cpp:806-809):
-/// i32 idleIntervalMs -> WorldService::SetIdleInterval (@0x141bca170, worldservice_1.cpp:771).
+/// Inbound 0x110 (GMS2 0x112; RecvOp::WorldTimeSync, CNetworkService::OnWorldTimeSync @0x14153a8a0, networkservice.cpp:806-809):
+/// i32 idleIntervalMs -> WorldService::SetIdleInterval (@0x141bca170, worldservice_1.cpp:771), <see cref="WorldIdleTimer.SetIdleInterval"/>.
 /// </summary>
 public sealed record WorldTimeSync(int IdleIntervalMs)
 {
@@ -146,4 +146,14 @@ public sealed record AaErr
 {
     public const int NoticeStringId = 0xc07;
     public static AaErr Read(ByteReader r) { r.ExpectEnd("AaErr"); return new AaErr(); }
+}
+
+/// <summary>
+/// Outbound SyncWorld (SendOp::SyncWorld, KMS 0xA5 / GMS2 0xA6; WorldService::SendSyncWorld @0x141bca110, worldservice_1.cpp:762-767):
+/// one bool, true when the idle timer ran out (<see cref="WorldIdleTimer.CheckIdleTimeout"/>), false when it is reset or switched off.
+/// </summary>
+public sealed record SyncWorldRequest(bool Idle) : IOutPacket
+{
+    public Outbound Op => Outbound.SyncWorld;
+    public void Write(ByteWriter w) => w.WriteBool(Idle);
 }

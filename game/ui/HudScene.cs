@@ -90,6 +90,7 @@ public partial class HudScene : Node, IUiStageHost
         if (frameCase != null) DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
         PerfLog.ApplyFpsCap();
         toggleDynamicAction = ToggleDynamicAction;
+        ChatLog.ResetIdleTimer = () => Ms2.Net.WorldIdleTimer.Current?.ResetIdleTimer();   // UIMessenger::SendChat's end (uimessenger.cpp:4360): WorldService::ResetIdleTimer
         ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
         executeEmotion = ExecuteEmotionCommand;
         ChatLog.ExecuteEmotion = executeEmotion;             // a typed line's emotion command

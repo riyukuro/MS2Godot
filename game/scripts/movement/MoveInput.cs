@@ -44,7 +44,20 @@ public static class MoveInput
 
     const int JumpAction = 0x493e1;
 
+    /// <summary>
+    /// A move direction while the app has the focus (g_bAppActive) is a move action key down: Unk_PCMove::IsActionKeyDown (@0x141682fe0,
+    /// unit_141682f80.cpp:233-255) calls WorldService::ResetIdleTimer when CKeyTable says the key is down, after the guide's holds
+    /// (FUN_1416840c0) and the input block (FUN_141683ef0) let it through; GetMoveDirection (@0x141683290, :313-338) asks for the eight move actions
+    /// 0x30d41-0x30d48. The jump key is not read through it. STILL-OPEN: the other users of IsActionKeyDown (0x493e3, 0x49401, the camera wheel).
+    /// </summary>
     public static State Read()
+    {
+        var s = ReadKeys();
+        if (s.Move != Vector2.Zero && Ms2.Formats.Options.SoundMix.Shared.AppActive) Ms2.Net.WorldIdleTimer.Current?.ResetIdleTimer();
+        return s;
+    }
+
+    static State ReadKeys()
     {
         var s = new State();
         if (Blocked()) return s;

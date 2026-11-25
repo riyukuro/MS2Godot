@@ -1273,6 +1273,22 @@ public partial class LiveSession
                 Check("the job change shows UIChangeJobEffect and it hides at its end", up && !hud.ChangeJobEffectUp);
                 continue;
             }
+            if (step.StartsWith("idle:"))      // idle:<ms>: WorldTimeSync's SetIdleInterval with a short interval (the Maple2 fork sends none)
+            {
+                live.IdleTimer.SetIdleInterval(int.Parse(step[5..]));
+                GD.Print($"live: combat {step}: idle interval {live.IdleTimer.IntervalMs} ms, deadline {live.IdleTimer.DeadlineTick}, idle {live.IdleTimer.Idle}");
+                continue;
+            }
+            if (step.StartsWith("holdkey:"))      // holdkey:<Left|Right|Up|Down|C>:<frames>: the key held down for N frames, as the player's
+            {
+                var kp = step[8..].Split(':');
+                var key = System.Enum.Parse<Key>(kp[0]);
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = true });
+                await frames(int.Parse(kp[1]));
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
+                await frames(2);
+                continue;
+            }
             if (step.StartsWith("chat:"))      // one chat line, no comma in it
             {
                 GD.Print($"live: combat {step}: {(hud.SubmitChatLine(step[5..]) ? "sent" : "no chat window")}");

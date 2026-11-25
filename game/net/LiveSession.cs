@@ -1065,6 +1065,7 @@ public partial class LiveSession : Node
     {
         if (!Enabled || Instance != null) return;
         parent.AddChild(Instance = new LiveSession { Name = "LiveSession", ProcessMode = ProcessModeEnum.Always });
+        WorldIdleTimer.Current = Instance.IdleTimer;   // WorldService::GetInstance() for the callers outside the session
         Field.Built += Instance.OnFieldBuilt;
         ProfileImageService.Attach(Instance);
         ProfileImageService.Images.Arrived += Instance.PictureArrived;
@@ -1081,6 +1082,7 @@ public partial class LiveSession : Node
         ResetReconnect();
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
+        if (WorldIdleTimer.Current == idleTimer) WorldIdleTimer.Current = null;
     }
 
     /// <summary>The server's LoginResult when the last login was refused (null when it failed otherwise or succeeded).</summary>
@@ -1424,6 +1426,7 @@ public partial class LiveSession : Node
             if (from == null || from.IsClosed) return Dropped(from, null);
             LoginToGame go;
             short asked = BeginEnterGame();
+            gameStartPending = true;   // WorldService::FUN_141bca1e0, the same place in EnterGame (uiserverlistdialog.cpp:634)
             var select = GameClient.SelectAsync(from, chosen.User.CharacterId, asked);
             RememberEnterGame(chosen.User.CharacterId, asked);   // EnterGame saves the character, server and channel options right after the request (uiserverlistdialog.cpp:641-649)
             try { go = await select; }
@@ -2028,10 +2031,12 @@ public partial class LiveSession : Node
         if (player != null && IsInstanceValid(player)) Me.LeaveFallOnGround(player.Grounded);   // StateFall::vfunc_9, the state's update
         TickOwnStateExit(delta);
         if (bindPending) TryBindPlayer();
+        TickGameStart();   // WorldService::FUN_141bca240 (worldservice_1.cpp:817): OnGameStart once the own pc is in
         CubeCraft.Owner ??= cubeCraftOwner ??= new CubeCraftOwner(this);
         CubeCraft.Update();          // MyPC::vfunc_53 (mypc.cpp:2969-2970): the craft's Update while in cube mode
         Portals?.Tick((uint)game.Session.ServerTick);
         TickCombatEffects();
+        IdleTimer.CheckIdleTimeout();   // WorldService's update, among the sub-system updates (worldservice_1.cpp:9824)
         inGame ??= () => player != null && player.Live;   // IReconnectHost.InGame: the field was entered
         if (game.InGame != inGame) game.InGame = inGame;
         if (game.IsClosed) { StopCombatEffects(); GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); int lost = game.ReconnectEnded ? 0 : Ms2.Ui.FrontEndConnection.CodeOf(game.Failure); game.Dispose(); game = null; if (player != null) { player.Live = false; player.DeadFlag = false; } OnGameConnectionLost(lost); }   // offline fall-return emulation comes back
