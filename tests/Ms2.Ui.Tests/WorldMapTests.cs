@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
@@ -25,6 +26,21 @@ public class WorldMapTests
         var list = new List<WorldMapTable.Tile> { d, a, c, b };
         WorldMapTable.Sort(list, WorldMapTable.TileLess);
         Assert.That(list, Is.EqualTo(new[] { b, c, a, d }));
+    }
+
+    [Test]
+    public void FieldRowsComeFromTheSharedFieldTable()
+    {
+        // GetXmlPath("Table", "fielddata.xml") is the entry FieldData reads (or the data has none): the world map reads the
+        // shared parse, not the file a second time; every row is the one a fresh parse of the same entry gives
+        Packs();
+        var path = TablePath.Resolve(packs, "fielddata.xml");
+        Assert.That(path, Is.Null.Or.EqualTo(Ms2.Formats.World.FieldData.Entry), "the data has no locale copy of the field table");
+        Assert.That(WorldMapTable.FieldTable(packs), Is.SameAs(Ms2.Formats.World.FieldData.Document(packs)));
+        if (path == null) return;                                       // per-file tables: there was no second parse to drop
+        var fresh = Ms2.Formats.World.GameStrings.Parse(packs.Read("Xml", path));
+        Assert.That(XNode.DeepEquals(fresh, Ms2.Formats.World.FieldData.Document(packs)), Is.True);
+        Assert.That(table.Fields.Count, Is.GreaterThan(1000));
     }
 
     static PackSet packs;

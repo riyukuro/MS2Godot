@@ -102,8 +102,7 @@ public sealed class WorldMapTable
     /// <summary>CFieldData::vfunc_1 (fielddata.cpp:640-750) over the environment FUN_14028f8d0 picks.</summary>
     void LoadFields(PackSet packs)
     {
-        // the table (locale folder first), else the per-map files of data that has none
-        foreach (var fd in (Xml(packs, "fielddata.xml") ?? FieldData.Document(packs))?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
+        foreach (var fd in FieldTable(packs)?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
         {
             var env = FeatureElements.SelectEnvironment(packs, fd);
             if (env == null) continue;
@@ -120,6 +119,15 @@ public sealed class WorldMapTable
             if (env.Element("indoor") is { } indoor) f.IndoorMask = 1 << Int(indoor, "type");
             fields[f.Id] = f;
         }
+    }
+
+    /// <summary>The field table: GetXmlPath("Table", "fielddata.xml") (the locale folder first), else the per-map files of
+    /// data that has none. When that is the entry <see cref="FieldData"/> reads, its shared parse (read only here), not a
+    /// second parse of the same file.</summary>
+    internal static XDocument FieldTable(PackSet packs)
+    {
+        var path = TablePath.Resolve(packs, "fielddata.xml");
+        return path == null || path == FieldData.Entry ? FieldData.Document(packs) : GameStrings.Parse(packs.Read("Xml", path));
     }
 
     public Field FindField(uint id) => fields.TryGetValue((int)id, out var f) ? f : null;
