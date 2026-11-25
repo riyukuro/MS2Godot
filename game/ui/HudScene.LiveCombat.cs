@@ -65,6 +65,21 @@ public partial class HudScene
     /// <summary>Opens the inventory (the guide's InventoryDialog occurrence) when it is shut; the character window through the same menu route.</summary>
     public bool OpenInventoryScripted() { if (inventory == null || inventory.IsClosed) OpenInventory(); return inventory is { IsClosed: false }; }
 
+    /// <summary>Shuts every dialog, then opens one of the everyday windows the way its menu button does (inventory: the guide's
+    /// InventoryDialog occurrence, quest: the quest log toggle, sysmenu: the system menu); whether it is open. A live shot of the
+    /// same window in two builds compares how the whole swf UI draws.</summary>
+    public bool OpenWindowScripted(string name)
+    {
+        CloseAllDialogs();
+        switch (name)
+        {
+            case "inventory": return OpenInventoryScripted();
+            case "quest": ToggleQuestLog(); return questLogSide is { IsClosed: false };
+            case "sysmenu": OpenSystemMenu(); return systemMenu is { IsClosed: false };
+        }
+        return false;
+    }
+
     /// <summary>The open inventory switched to a tab (<see cref="Ms2.Ui.Hud.InventoryController.ShowTab"/>); whether it shows it.</summary>
     public bool InventoryTabScripted(int tab) => inventory is { IsClosed: false } inv && inv.ShowTab(tab);
 

@@ -263,6 +263,12 @@ public partial class LiveSession
                 Shot(step[5..] + ".png");
                 continue;
             }
+            if (step.StartsWith("openwin:"))      // openwin:inventory|quest|sysmenu: the window opens (the others shut), then settles for a shot
+            {
+                Check($"the {step[8..]} window opens", hud.OpenWindowScripted(step[8..]));
+                await frames(90);
+                continue;
+            }
             if (step.StartsWith("keys:"))      // keys:N: the action key pressed N times, a second apart (a talk's Next pages)
             {
                 for (int i = int.Parse(step[5..]); i > 0; i--) { await PressActionKey(frames); await frames(60); }
