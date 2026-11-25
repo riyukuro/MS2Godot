@@ -30,6 +30,7 @@ public sealed class NpcLayer
         public short AnimKey;                     // m_nDE8: the last sync block's sequence key, 0 until one came (CNpc ctor, :509)
         public string OwnerEffect = "";           // m_strEC8: the owner effect (NpcNotice mode 1)
         public int OwnerActor, OwnerEffectId;     // m_nEC0: the pc the effect sits on (a boss block's owner actor); m_nEC4: the kept effect
+        public Node3D OwnerNode;                  // the pc node the kept effect hangs on
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a dead body: eased toward the block position, no velocity
         public readonly Ms2.Net.Replay.NpcJumpArc Arc = new();   // m_unkDB0: the jump arc a -2/-3 block starts
@@ -743,12 +744,17 @@ public sealed class NpcLayer
     public (string Effect, int Actor, int Kept)? OwnerEffectOf(int id) =>
         inst.TryGetValue(id, out var i) ? (i.OwnerEffect, i.OwnerActor, i.OwnerEffectId) : null;
 
-    /// <summary>CNpc::SetOwnerEffectActor (@0x141094ff0, :1567-1575): a new actor moves the effect to it.</summary>
+    /// <summary>
+    /// CNpc::SetOwnerEffectActor (@0x141094ff0, :1567-1575): a new actor moves the effect to it; the same actor keeps it. The
+    /// client's kept effect names its actor by object id (NoticeMessage::SetActor in AttachOwnerEffect), so an owner that left
+    /// and came back with the same id has it again; here the effect hangs on the pc's node, so the same actor with a new node
+    /// (it left and was added again) attaches it again on that node.
+    /// </summary>
     void SetOwnerEffectActor(Inst i, int actor)
     {
         int old = i.OwnerActor;
         i.OwnerActor = actor;
-        if (actor == old) return;
+        if (actor == old && (i.OwnerEffect.Length < 1 || FindPc(actor) is not { } pc || !GodotObject.IsInstanceValid(pc) || pc == i.OwnerNode)) return;
         ReleaseOwnerEffect(i);
         AttachOwnerEffect(i);
     }
@@ -760,6 +766,7 @@ public sealed class NpcLayer
         if (FindPc(i.OwnerActor) is not { } pc || !GodotObject.IsInstanceValid(pc)) return;
         if (i.OwnerEffect.Length < 1) return;
         i.OwnerEffectId = SpawnKept(i.OwnerEffect, pc, OwnerEffectKind);
+        i.OwnerNode = pc;
     }
 
     /// <summary>CNpc::ReleaseOwnerEffect (@0x141095140, :1595-1600): the kept effect stopped at once.</summary>
@@ -767,6 +774,7 @@ public sealed class NpcLayer
     {
         if (i.OwnerEffectId != 0) StopKept(i.OwnerEffectId);
         i.OwnerEffectId = 0;
+        i.OwnerNode = null;
     }
 
     /// <summary>The npc a followed pc copies (StateTriggerFollowNpc::vfunc_3, stateemotionidle.cpp:521-562): <see cref="PoseOf"/>
