@@ -58,6 +58,9 @@ public partial class LiveSession : Node
     }
 
     public static bool Enabled => CommandLineLogin != null || (!string.IsNullOrEmpty(launchHost) && launchPort > 0);
+
+    /// <summary>CNetworkService::IsConnected for the login scene: the login connection is open.</summary>
+    public bool LoginConnected => login is { Session: not null, IsClosed: false };
     public static LiveSession Instance { get; private set; }
     /// <summary>A live session is running: the field's offline npcs, mobs and portal walking stay off; the server's replace them.</summary>
     public static bool Active => Instance != null;
@@ -3040,7 +3043,7 @@ public partial class LiveSession : Node
         async Task Frames(int n) { for (int i = 0; i < n; i++) await flow.ToSignal(tree, SceneTree.SignalName.ProcessFrame); }
         async Task Until(Func<bool> c, int max = 6000) { for (int i = 0; i < max && !c(); i++) await Frames(1); }
         await Until(() => tree.CurrentScene?.SceneFilePath == GameFlow.LoginScene); await Frames(30);
-        UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
+        if (!GameFlow.PassportStart) UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);   // the ticket's start connects by itself
         await Until(() => flow.Current == GameFlow.State.Lobby && tree.CurrentScene?.SceneFilePath == GameFlow.LobbyScene, 600); await Frames(30);
         if (flow.Current != GameFlow.State.Lobby) { GD.PushWarning("live: no character list"); tree.Quit(1); return; }
         string newName = System.Environment.GetEnvironmentVariable("MS2_LIVE_CREATE");   // create this character first (slice 6), then enter with it

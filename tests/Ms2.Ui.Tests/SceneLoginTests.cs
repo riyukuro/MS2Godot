@@ -24,10 +24,11 @@ public class SceneLoginTests
         return packs;
     }
 
-    static (UiHost, SceneLoginController, Player, Runtime) Load(bool background)
+    static (UiHost, SceneLoginController, Player, Runtime) Load(bool background, Action<SceneLoginController> setup = null)
     {
         var model = new UiModel(new GameTables(Packs(), "en"));
         var c = new SceneLoginController();
+        setup?.Invoke(c);
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;
         p.Translate = k => k.TrimStart('$');
@@ -95,5 +96,51 @@ public class SceneLoginTests
         Assert.That(c.Progress, Is.EqualTo(0x7fff));
         Assert.That(c.Shown, Is.False);
         Assert.That(h.Get(h.Entity, "m_title"), Is.Null);
+    }
+
+    /// <summary>
+    /// The launcher ticket's start is the Nexon platform's (UISceneLogin::vfunc_49 / vfunc_15, uiscenelogin.cpp:169-220): the
+    /// progress starts at 0, so the background's endShowTitle is what fills it; at full progress no login dialog opens and,
+    /// not connected, the movie hides and its OnEndPopdown is the connect (:481-486).
+    /// </summary>
+    [Test]
+    public void TheTicketStartOpensNoLoginDialogAndHidesTheMovieToConnect()
+    {
+        int opened = 0, ended = 0;
+        var (h, c, p, rt) = Load(true, s =>
+        {
+            s.Passport = true;
+            s.OpenLoginDialogs += () => opened++;
+            s.EndPopdown += () => ended++;
+        });
+        Assert.That(c.Progress & 0x4000, Is.EqualTo(0), "the title bit waits for the background's endShowTitle");
+        Assert.That(c.Shown, Is.False);
+        c.BackgroundEvent("showTitle");
+        c.BackgroundEvent("endShowTitle");
+        for (int i = 0; i < 120 && ended == 0; i++) { c.Tick(); p.Tick(); }
+        Assert.That(c.Progress, Is.EqualTo(0xffff));
+        Assert.That(c.Shown, Is.True);
+        Assert.That(opened, Is.EqualTo(0), "no login dialog on the ticket's start");
+        Assert.That(ended, Is.EqualTo(1), "the hidden movie's OnEndPopdown, the connect");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void TheTicketStartAlreadyConnectedLeavesTheMovieUp()
+    {
+        int opened = 0, ended = 0;
+        var (_, c, p, rt) = Load(true, s =>
+        {
+            s.Passport = true;
+            s.Connected = () => true;
+            s.OpenLoginDialogs += () => opened++;
+            s.EndPopdown += () => ended++;
+        });
+        c.BackgroundEvent("endShowTitle");
+        for (int i = 0; i < 120; i++) { c.Tick(); p.Tick(); }
+        Assert.That(c.Shown, Is.True);
+        Assert.That(opened, Is.EqualTo(0));
+        Assert.That(ended, Is.EqualTo(0), "connected: FUN_141acf420 is not run");
+        Assert.That(rt.Errors, Is.Empty);
     }
 }

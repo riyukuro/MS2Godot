@@ -7,8 +7,9 @@ namespace Ms2.Ui;
 /// UIDialog.
 /// The load progress is a 16-bit mask (m_nProgress): bit 0 is the scene shown (vfunc_55), 0x3ffe the file preload done,
 /// 0x4000 the background's title shown (preset off the Nexon platform), 0x8000 the background loaded. All 16 open the
-/// login dialogs. IsNexonPlatform is taken as 0 here, as in GameOptions, so the title shows as soon as the background has
-/// loaded.
+/// login dialogs. IsNexonPlatform is 0 for the id and password start, so the title shows as soon as the background has
+/// loaded; the launcher ticket's start is the Nexon platform's (<see cref="Passport"/>): the title plays to its end and the
+/// scene connects with no login dialog.
 /// STILL-OPEN: the region list dialog (0x4eef, IsRegionListUsed: country DAT_143ab0248 == 2) is not ported; the preload
 /// (CFilePreload) is taken as done.
 /// </summary>
@@ -41,6 +42,15 @@ public sealed class SceneLoginController : UiController
     /// <summary>OnEndPopdown (the movie's hide tween ended): UISceneLogin::OnEndPopdown, the connect to the chosen server.</summary>
     public event Action EndPopdown;
 
+    /// <summary>
+    /// IsNexonPlatform for this start: the launcher ticket's passport start (Launch.LoginStart.Passport). vfunc_49 starts the
+    /// progress at 0, so the background's endShowTitle sets 0x4000, and at 0xffff the scene opens no login dialog: when not
+    /// connected it hides its movie (FUN_141acf420), whose OnEndPopdown connects (uiscenelogin.cpp:481-486).
+    /// </summary>
+    public bool Passport;
+    /// <summary>CNetworkService::IsConnected for the passport start's check (uiscenelogin.cpp:205-208); null is not connected.</summary>
+    public Func<bool> Connected;
+
     int progress;          // m_nProgress
     bool progressDirty;    // m_nProgressDirty
     bool shown;            // m_nShown: the login dialogs were opened
@@ -51,12 +61,13 @@ public sealed class SceneLoginController : UiController
     public int Progress => progress;
     public bool Shown => shown;
 
-    /// <summary>vfunc_49 (:0x141acee00), entering the scene: off the Nexon platform the progress starts at 0x4000.</summary>
+    /// <summary>vfunc_49 (:0x141acee00, uiscenelogin.cpp:169-182), entering the scene: off the Nexon platform the progress
+    /// starts at 0x4000, on it (<see cref="Passport"/>) at 0.</summary>
     public void Enter()
     {
         titleDone = false;
         shown = false;
-        progress = 0x4000;
+        progress = Passport ? 0 : 0x4000;
     }
 
     /// <summary>
@@ -99,8 +110,10 @@ public sealed class SceneLoginController : UiController
     }
 
     /// <summary>
-    /// vfunc_15 (:0x141aceef0), every frame: the bar, then while the dialogs are not open the preload's bits, and at 0xffff
-    /// the login dialogs.
+    /// vfunc_15 (:0x141aceef0, uiscenelogin.cpp:192-220), every frame: the bar, then while the dialogs are not open the
+    /// preload's bits, and at 0xffff the login dialogs; on the Nexon platform (<see cref="Passport"/>) none: when the network
+    /// service is not connected (and DAT_143ab284b is clear) FUN_141acf420 hides the movie, whose OnEndPopdown connects.
+    /// STILL-OPEN: FUN_141acf420's region list (IsRegionListUsed: the platform's vfunc_0 == 1) is not ported.
     /// </summary>
     public void Tick()
     {
@@ -109,7 +122,8 @@ public sealed class SceneLoginController : UiController
         AddProgressBits(0x3ffe);
         if (progress == 0xffff)
         {
-            OpenLoginDialogs?.Invoke();
+            if (!Passport) OpenLoginDialogs?.Invoke();
+            else if (Connected?.Invoke() != true) HideMovie();
             shown = true;
             exitFlag = 1;
         }

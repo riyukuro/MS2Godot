@@ -76,9 +76,10 @@ public sealed class LoginDialogController : UiController
     /// <summary>vfunc_13 (uilogindialog.cpp:310-327): Tab -> onTabKey.</summary>
     public void TabKey() => Host.Invoke(Host.Entity, "onTabKey");
 
-    /// <summary>ShowConnectFailure (uilogindialog.cpp:500-507): failConnect, popup.</summary>
+    /// <summary>ShowConnectFailure (uilogindialog.cpp:500-507): failConnect, popup, only with the dialog's movie loaded (m_30).</summary>
     public void ShowConnectFailure()
     {
+        if (Host?.Entity == null) return;
         Host.Invoke(Host.Entity, "failConnect");
         Host.Invoke(Host.Entity, "popup");
     }

@@ -62,4 +62,35 @@ public class LaunchRouteTests
         Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, LaunchRoute.LiveAddress(alone, null), false, null).Mode, Is.EqualTo(LaunchMode.Launcher));
         Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, LaunchRoute.LiveAddress(withTicket, null), false, null).Mode, Is.EqualTo(LaunchMode.Live));
     }
+
+    /// <summary>
+    /// Every command line input, through the whole route: the live address, the first page, and how the login scene logs in.
+    /// Only a ticket with its address is the passport start (no login dialog); the account variable and the launcher's
+    /// entries keep the dialog; an address alone, no arguments and arguments with a problem keep the launcher page.
+    /// </summary>
+    [TestCase(new string[0], null, null, LaunchMode.Launcher, LoginStart.Dialog, TestName = "NoArguments")]
+    [TestCase(new[] { "--ip=192.0.2.1", "--port=6553" }, null, null, LaunchMode.Launcher, LoginStart.Dialog, TestName = "AddressAlone")]
+    [TestCase(new[] { "1234", "--ticket=t", "--ip=192.0.2.1", "--port=6553" }, null, "192.0.2.1:6553", LaunchMode.Live, LoginStart.Passport, TestName = "AddressAndTicket")]
+    [TestCase(new[] { "--ip=192.0.2.1", "--port=6553" }, "id:pw", "192.0.2.1:6553", LaunchMode.Live, LoginStart.Dialog, TestName = "AddressAndAccount")]
+    [TestCase(new[] { "--ticket=t", "--ip=192.0.2.1", "--port=6553" }, "id:pw", "192.0.2.1:6553", LaunchMode.Live, LoginStart.Passport, TestName = "AddressTicketAndAccount")]
+    [TestCase(new[] { "1234", "--ticket=t", "--ip=192.0.2.1", "--port=x" }, null, null, LaunchMode.Launcher, LoginStart.Dialog, TestName = "BadPortWithABarePort")]
+    [TestCase(new[] { "--ticket=t" }, null, null, LaunchMode.Launcher, LoginStart.Dialog, TestName = "TicketWithoutAddress")]
+    [TestCase(new[] { "--ticket=t", "--ip=192.0.2.1" }, "id:pw", null, LaunchMode.Launcher, LoginStart.Dialog, TestName = "IpWithoutPort")]
+    [TestCase(new[] { "--ticket=t", "--port=6553" }, "id:pw", null, LaunchMode.Launcher, LoginStart.Dialog, TestName = "PortWithoutIp")]
+    public void EveryCommandLineInputTakesItsRoute(string[] argv, string account, string address, LaunchMode mode, LoginStart login)
+    {
+        var args = LauncherArgs.Parse(argv);
+        string live = LaunchRoute.LiveAddress(args, account);
+        Assert.That(live, Is.EqualTo(address));
+        Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, live, false, null).Mode, Is.EqualTo(mode));
+        Assert.That(LaunchRoute.LoginStartFor(args), Is.EqualTo(login));
+    }
+
+    [Test]
+    public void TheLaunchersOwnStartsKeepTheLoginDialog()
+    {
+        // single player and an entry's Connect come with no command line ticket: the id and password dialog
+        Assert.That(LaunchRoute.LoginStartFor(LauncherArgs.Parse(null)), Is.EqualTo(LoginStart.Dialog));
+        Assert.That(LaunchRoute.LoginStartFor(null), Is.EqualTo(LoginStart.Dialog));
+    }
 }

@@ -117,11 +117,39 @@ public partial class LoginScene : Control
         Scene.GameExit += ShowGameExitBox;
         Scene.GameOption += () => GD.Print("login: OnGameOption (the options dialog is not hosted on this scene yet)");
         Scene.Prev += () => GD.Print("login: OnPrev (the mode select scene is not ported)");
+        // the launcher ticket's start (the Nexon platform's): no login dialog; the hidden movie's OnEndPopdown connects to the
+        // configured server (UISceneLogin::OnEndPopdown, uiscenelogin.cpp:481-486) and the flow sends the ticket login
+        Scene.Passport = Flow.GameFlow.PassportStart;
+        Scene.Connected = () => Net.LiveSession.Instance?.LoginConnected == true;
+        if (Scene.Passport) Scene.EndPopdown += PassportConnect;
         Scene.Enter();
         if (background != null) Scene.BackgroundLoaded();
         sceneMovie = new MovieDialog(assets, Scene, model, window);
         AddChild(sceneMovie);
         if (background != null) Scene.SceneShown();
+    }
+
+    void PassportConnect()
+    {
+        GD.Print("login: the scene's movie hid; the ticket login connects");
+        UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
+    }
+
+    /// <summary>True once the login dialog 0x4e22 was opened (the passport start opens none).</summary>
+    public bool DialogOpen => dialog != null;
+
+    bool titleEnded;
+    /// <summary>
+    /// The passport start's title (UISceneLogin::vfunc_61, uiscenelogin.cpp:244-255): the background's AS is not run, so its
+    /// events come from the title sprite stopping on its last frame: showTitle, then endShowTitle (bit 0x4000).
+    /// STILL-OPEN: the frame the background sends showTitle on; both go at the title's end here.
+    /// </summary>
+    void PassportTitle()
+    {
+        if (titleEnded || !Scene.Passport || !LoginBackground.TitleEnded(background)) return;
+        titleEnded = true;
+        Scene.BackgroundEvent("showTitle");
+        Scene.BackgroundEvent("endShowTitle");
     }
 
     /// <summary>OpenLoginDialogs (uiscenelogin.cpp, @0x141acfa00): the login dialog 0x4e22 over the scene's movie.</summary>
@@ -171,6 +199,7 @@ public partial class LoginScene : Control
 
     public override void _Process(double delta)
     {
+        PassportTitle();
         Scene.Tick();       // UISceneLogin::vfunc_15
         if (shotDir == null) return;
         frames++;

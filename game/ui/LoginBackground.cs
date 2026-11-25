@@ -112,6 +112,10 @@ public static class LoginBackground
         return true;
     }
 
+    /// <summary>The title animation has stopped on its last frame (endShowTitle), or there is none to wait for.</summary>
+    public static bool TitleEnded(MovieClipNode content) =>
+        content == null || Title(content) is not { FrameCount: > 1 } t || t.Frame >= t.FrameCount - 1;
+
     /// <summary>The title animation: the movie's first sprite, which stops on its last frame (endShowTitle).</summary>
     public static MovieClipNode Title(MovieClipNode content) =>
         content.Children.FirstOrDefault(c => c.Node is MovieClipNode)?.Node as MovieClipNode;

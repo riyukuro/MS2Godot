@@ -118,6 +118,9 @@ public partial class GameFlow : Node
         // --ip/--port with --ticket (the Lith launcher's own start) or MS2_LIVE_ACCOUNT start the live mode without the page
         string liveLogin = Net.LiveSession.CommandLineLogin;
         var start = LaunchRoute.Decide(GetTree().CurrentScene?.SceneFilePath, liveLogin, shotDir != null, null);
+        // a launcher ticket with its address: the Nexon platform's passport start, the login scene connects with no dialog
+        PassportStart = liveLogin != null && start.Mode == LaunchMode.Live && LaunchRoute.LoginStartFor(Net.LiveSession.LaunchArgs()) == LoginStart.Passport;
+        if (PassportStart) GD.Print("flow: the launcher ticket's start: no login dialog, the login scene connects by itself");
         Go(start.Mode == LaunchMode.Launcher ? State.Launcher : State.Login);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }
@@ -395,6 +398,13 @@ public partial class GameFlow : Node
     void DeferredGo(int state) => Go((State)state);
 
     // The live requests are awaited, so the continuation runs on Godot's context and may touch the session and the scene tree.
+    /// <summary>
+    /// The launcher ticket's start (<see cref="LaunchRoute.LoginStartFor"/>): the login scene opens no dialog and connects once
+    /// its load is done; the ticket login then goes to the server list and, with the saved server and channel picked, to
+    /// character select as an id and password login does.
+    /// </summary>
+    public static bool PassportStart { get; private set; }
+
     async void LoginLive(Net.LiveSession live)
     {
         // The dialog's own fields (UILoginDialog::SendLoginRequest reads m_inputID and m_inputPW, uilogindialog.cpp:204-246);
@@ -409,8 +419,9 @@ public partial class GameFlow : Node
             // login could not be tried again.
             GD.Print($"login: refused, state {r.State}; the dialog shows its failure state");
             Ui.MessageBoxLayer.Ensure(this);
+            // the passport start has no login dialog: only the scene's failConnect (FUN_141acf470, uiscenelogin.cpp:320-338)
             Ms2.Ui.LoginConnectFailure.AfterRefusal(() => FrontEndBoxes.LoginRefused(r),
-                scene?.Controller != null ? scene.Controller.ShowConnectFailure : null, scene?.Controller != null ? scene.Scene.FailConnect : null);
+                scene is { DialogOpen: true } ? scene.Controller.ShowConnectFailure : null, scene?.Controller != null ? scene.Scene.FailConnect : null);
         }
         else if (scene is { } shown && shown.Controller != null)
         {
@@ -429,13 +440,13 @@ public partial class GameFlow : Node
                 Ms2.Ui.Hud.MessageBoxQueue.ShowWithCallback(text, 0, (_, _) =>
                 {
                     if (GetTree().CurrentScene is Ui.LoginScene { Controller: not null } now)
-                        Ms2.Ui.LoginConnectFailure.Run(now.Controller.ShowConnectFailure, now.Scene.FailConnect);
+                        Ms2.Ui.LoginConnectFailure.Run(now.DialogOpen ? now.Controller.ShowConnectFailure : null, now.Scene.FailConnect);
                     return true;
                 });
                 return;
             }
             GD.Print("login: connect failed, the dialog shows its failure state");
-            Ms2.Ui.LoginConnectFailure.Run(shown.Controller.ShowConnectFailure, shown.Scene.FailConnect);
+            Ms2.Ui.LoginConnectFailure.Run(shown.DialogOpen ? shown.Controller.ShowConnectFailure : null, shown.Scene.FailConnect);
         }
     }
 
