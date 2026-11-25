@@ -6,9 +6,9 @@ using NUnit.Framework;
 namespace Ms2.Net.Tests;
 
 /// <summary>
-/// The remote-npc readers main does not have: the FieldAddNpc single-stat form (Npcs.cs:31-33 throws today), FollowNpc
-/// (KMS 0x70, GMS2 0x72), NpcNotice (KMS 0xE8, GMS2 0xEA, the client's OnNpcNotice scenestategame.cpp:9145-9215), the
-/// live name tag (KMS 0xB1, GMS2 crosswalk-only) and the 0x130 skill-spread body (scenestategame.cpp:7677-7692).
+/// The remote-npc readers: the FieldAddNpc single-stat form (CNpc::vfunc_90), FollowNpc (KMS 0x70, GMS2 0x72), NpcNotice
+/// (KMS 0xE8, GMS2 0xEA, the client's OnNpcNotice scenestategame.cpp:9145-9215), the live name tag (Insignia, KMS 0xB1,
+/// GMS2 0xB3) and the 0x130 skill-spread body (scenestategame.cpp:7677-7692).
 /// Recorded bytes are extracted with work/rc-samples/scripts/extract.py (mask_names).
 /// </summary>
 public class RcNpcRemoteReaderTests
@@ -36,9 +36,13 @@ public class RcNpcRemoteReaderTests
     static readonly byte[] Gms2NpcNoticeMode1 = RcLane.Hex(
         "01CA48070020004500740063002F004500660066005F0042006100740074006C0065005F005400610072006700650074",
         "005F00420061006C0072006F0067002E0078006D006C00");
+    // gms2 recording (Ignicore dungeon): mode 0, the unicode text $BullArmorRed_DashAttack$, 10000 ms
+    static readonly byte[] Gms2NpcNoticeAnnounce = RcLane.Bytes(
+        "00" + "1900" + "2400420075006C006C00410072006D006F0072005200650064005F004400610073006800410074007400610063006B002400" + "10270000");
 
-    // synthetic: no confirmed FieldAddNpc type=1 single-stat frame is isolated in samples.tsv
-    static byte[] SingleStatNpc()
+    /// <summary>A FieldAddNpc of a non-boss row with the single-stat form (type 1) of <paramref name="stat"/>: no recording
+    /// has one (both servers write type 0x23, the three-row form), so the body is built by the client's reader.</summary>
+    static byte[] SingleStatNpc(byte stat)
     {
         var w = new ByteWriter();
         w.WriteInt(77);                    // object id
@@ -46,8 +50,10 @@ public class RcNpcRemoteReaderTests
         w.WriteFloat(1); w.WriteFloat(2); w.WriteFloat(3);     // position
         w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);     // rotation
         w.WriteByte(1);                    // the single-stat form
-        w.WriteByte(4);                    // health: IsPercentStat (stat.cpp:314), three i64
-        w.WriteLong(1000); w.WriteLong(900); w.WriteLong(800);
+        w.WriteByte(stat);
+        // IsPercentStat (@0x14082f1a0) holds for health (4) only: three i64; any other stat three u32
+        if (stat == 4) { w.WriteLong(1000); w.WriteLong(900); w.WriteLong(800); }
+        else { w.WriteInt(1000); w.WriteInt(900); w.WriteInt(800); }
         w.WriteByte(0);                    // not hidden
         w.WriteShort(0);                   // no buffs
         w.WriteLong(0);                    // maid uid
@@ -61,8 +67,9 @@ public class RcNpcRemoteReaderTests
     [Test]
     public void Gms2FieldAddNpcType1ReadsTheSingleStat()
     {
-        var n = FieldAddNpc.Read(new ByteReader(SingleStatNpc()), _ => default);
-        // the three values are the stat's total, base and current: each row keeps its health value, no spirit
+        var n = FieldAddNpc.Read(new ByteReader(SingleStatNpc(4)), _ => default);
+        // health: the three i64 values are its total, base and current (SetStat(i, 4, value)); no spirit
+        Assert.That(n.OneStat, Is.EqualTo((byte) 4));
         Assert.That(n.Stats.Select(s => s.Health), Is.EqualTo(new long[] { 1000, 900, 800 }));
         Assert.That(n.Stats.Select(s => s.Spirit), Is.EqualTo(new[] { 0, 0, 0 }));
         Assert.That((n.OneStat, n.Level), Is.EqualTo(((byte) 4, 40)));
@@ -84,7 +91,17 @@ public class RcNpcRemoteReaderTests
         }
     }
 
-    [Ignore("FollowNpc is not read yet")]
+    [Test]
+    public void FieldAddNpcSingleStatOfAnotherStatReadsThreeU32()
+    {
+        // stat 35 is not a percent stat: three u32 values, set on that stat; the health rows stay unset
+        var n = FieldAddNpc.Read(new ByteReader(SingleStatNpc(35)), _ => default);
+        Assert.That(n.OneStat, Is.EqualTo((byte) 35));
+        Assert.That(n.OneStatValues, Is.EqualTo(new long[] { 1000, 900, 800 }));
+        Assert.That(n.Stats.Select(s => s.Health), Is.EqualTo(new long[] { 0, 0, 0 }));
+        Assert.That(n.Level, Is.EqualTo(40));
+    }
+
     [Test]
     public void Gms2FollowNpcReadsTheNpcId()
     {
@@ -92,7 +109,6 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.Long(p, "NpcId", "Id"), Is.EqualTo(378_468L));
     }
 
-    [Ignore("FollowNpc is not read yet")]
     [Test]
     public void KmsFollowNpcReadsTheNpcId()
     {
@@ -100,7 +116,6 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.Long(p, "NpcId", "Id"), Is.EqualTo(5_789_407L));
     }
 
-    [Ignore("NpcNotice is not read yet")]
     [Test]
     public void Gms2NpcNoticeReadsModeThree()
     {
@@ -125,7 +140,6 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.MemberAny<string>(full, "Text"), Has.Length.EqualTo(41));
     }
 
-    [Ignore("NpcNotice is not read yet")]
     [Test]
     public void Gms2NpcNoticeReadsTheModelAndScriptModes()
     {
@@ -141,7 +155,6 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.MemberAny<string>(script, "Script"), Is.EqualTo("xyzw"));
     }
 
-    [Ignore("the live name tag is not read yet")]
     [Test]
     public void Gms2NametagReadsTheSymbol()
     {
@@ -155,6 +168,79 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.Long(shown, "ObjectId"), Is.EqualTo(567_614L));
         Assert.That(RcLane.Int(shown, "Symbol"), Is.EqualTo(50));
         Assert.That(RcLane.Bool(shown, "Shown", "Show"), Is.True);
+    }
+
+    [Test]
+    public void Gms2NpcNoticeReadsTheAnnounceMode()
+    {
+        var p = RcLane.Read("NpcNotice", Gms2NpcNoticeAnnounce);
+        Assert.That(RcLane.Int(p, "Mode"), Is.EqualTo(0));
+        Assert.That(RcLane.MemberAny<string>(p, "Text"), Is.EqualTo("$BullArmorRed_DashAttack$"));
+        Assert.That(RcLane.Int(p, "Duration"), Is.EqualTo(10_000));
+    }
+
+    [Test]
+    public void NpcNoticeOfAnotherModeReadsNoMore()
+    {
+        // the client's else branch is empty: the rest stays unread
+        var n = NpcNotice.Read(new ByteReader(RcLane.Bytes("07AABBCC")));
+        Assert.That(n.Mode, Is.EqualTo(7));
+    }
+
+    /// <summary>Every recorded FollowNpc, NpcNotice and Insignia packet of both corpora (KMS2 and GMS2 numbers) reads to its
+    /// end; a NpcNotice of an unknown mode is not in them.</summary>
+    [Test]
+    public void EveryRecordedFollowNoticeAndNametagReadsToTheEnd()
+    {
+        string root = Environment.GetEnvironmentVariable("MS2_SNIFFS");
+        if (string.IsNullOrEmpty(root)) Assert.Ignore("MS2_SNIFFS needed");
+        var seen = new Dictionary<string, int>();
+        foreach (var (dir, profile) in new[] { ("kms2-sniffs", ProtocolProfile.Kms2525), ("gms2-sniffs", ProtocolProfile.Gms2) })
+        {
+            var ops = new Dictionary<ushort, Func<ByteReader, object>>
+            {
+                [profile.Number(Inbound.FollowNpc)] = r => FollowNpc.Read(r),
+                [profile.Number(Inbound.NpcNotice)] = r => NpcNotice.Read(r),
+                [profile.Number(Inbound.Insignia)] = r => Nametag.Read(r),
+            };
+            foreach (var path in Directory.GetFiles(Path.Combine(root, dir), "*.msb", SearchOption.AllDirectories))
+            {
+                Ms2.Net.Replay.MsbFile f;
+                try { f = Ms2.Net.Replay.MsbFile.Read(path); } catch (Exception) { continue; }
+                // the KMS2 builds before 2520 number their ops apart (their 0xE8 is another packet), as in NpcSniffTests
+                if (dir == "kms2-sniffs" && f.Build < 2520) continue;
+                foreach (var pkt in f.Packets)
+                {
+                    if (!pkt.ServerToClient || !ops.TryGetValue(pkt.Opcode, out var read) || pkt.Data.Length == 0) continue;
+                    var r = new ByteReader(pkt.Data);
+                    var v = read(r);
+                    Assert.That(r.Available, Is.EqualTo(0), $"{Path.GetFileName(path)} op 0x{pkt.Opcode:X}");
+                    if (v is NpcNotice n) Assert.That(n.Mode, Is.LessThanOrEqualTo(NpcNotice.SidePopup), Path.GetFileName(path));
+                    string key = $"{dir} {v.GetType().Name}";
+                    seen[key] = seen.GetValueOrDefault(key) + 1;
+                }
+            }
+        }
+        TestContext.WriteLine(string.Join(", ", seen.Select(kv => $"{kv.Key} {kv.Value}")));
+        Assert.That(seen.Keys, Is.SupersetOf(new[] { "gms2-sniffs FollowNpc", "gms2-sniffs NpcNotice", "kms2-sniffs FollowNpc", "kms2-sniffs Nametag" }));
+    }
+
+    [Test]
+    public void TheOwnNametagSetsTheSymbolAndMarksTheRecordChanged()
+    {
+        // OnNametag (scenestategame.cpp:7314-7331): FindPCById, FUN_141661dc0(symbol, shown); the MyPC's dialog refresh
+        var me = new MyCharacter { ObjectId = 7 };
+        int changed = 0;
+        me.Changed += () => changed++;
+        Assert.That(me.Apply(new Nametag(8, 47, true)), Is.False, "another player's packet");
+        Assert.That(me.Insignia, Is.EqualTo(0));
+        Assert.That(changed, Is.EqualTo(0));
+        Assert.That(me.Apply(Nametag.Read(new ByteReader(RcLane.Bytes("07000000" + "3200" + "01")))), Is.True);
+        Assert.That(me.Insignia, Is.EqualTo(50));
+        Assert.That(me.InsigniaShown, Is.True);
+        Assert.That(changed, Is.EqualTo(1));
+        me.Apply(new Nametag(7, 50, false));
+        Assert.That(me.InsigniaShown, Is.False);
     }
 
     [Test]
@@ -173,16 +259,19 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.Member(p, "Direction"), Is.Not.Null);
     }
 
-    [Ignore("the new GMS2 opcode rows are not mapped")]
     [Test]
     public void Gms2OpcodeRowsAreAdded()
     {
         Assert.That(RcLane.Gms2Inbound(RcLane.EnumMember<Inbound>("FollowNpc")), Is.EqualTo(0x72));
         Assert.That(RcLane.Gms2Inbound(RcLane.EnumMember<Inbound>("NpcNotice")), Is.EqualTo(0xEA));
-        // the live name tag: the implementation may call the member Insignia or Nametag
+        // the live name tag: the implementation may call the member Insignia or Nametag. GMS2 0xB3 is the upstream server's
+        // SendOp.Insignia, next to WorldShareInfo 0xB2 (KMS 0xB0 and 0xB1); no GMS2 recording has the packet
         Inbound tag;
         if (!Enum.TryParse("Nametag", out tag) && !Enum.TryParse("Insignia", out tag))
             Assert.Fail("Ms2.Net.Inbound.Nametag / Insignia is not defined at origin/main");
-        Assert.That(RcLane.Gms2Inbound(tag), Is.EqualTo(0xB1));
+        Assert.That(RcLane.Gms2Inbound(tag), Is.EqualTo(0xB3));
+        Assert.That((ushort)RcLane.EnumMember<Inbound>("FollowNpc"), Is.EqualTo(0x70));
+        Assert.That((ushort)RcLane.EnumMember<Inbound>("NpcNotice"), Is.EqualTo(0xE8));
+        Assert.That((ushort)tag, Is.EqualTo(0xB1));
     }
 }

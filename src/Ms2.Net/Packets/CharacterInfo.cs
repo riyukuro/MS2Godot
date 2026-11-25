@@ -242,6 +242,8 @@ public sealed class MyCharacter {
     public int Title;
     /// <summary>The name tag symbol (PC::FUN_141661d40 = m_n10f8, read after the title in the own FieldAddUser).</summary>
     public ushort Insignia;
+    /// <summary>Whether the symbol is shown (PC m_n10fc, FUN_141661e20; the own FieldAddUser's flag after the insignia).</summary>
+    public bool InsigniaShown;
     public long HomeCommendMonth; public int HomeCommendMonthly, HomeCommendPoint;
     public readonly long[] Stats0 = new long[PcInfo.StatCount], Stats1 = new long[PcInfo.StatCount], Stats2 = new long[PcInfo.StatCount];
     /// <summary>The proxies' trophy triples by proxy id (ProxyGameObj AddPlayer, scenestategame.cpp:11358; removed by mode 4),
@@ -284,7 +286,7 @@ public sealed class MyCharacter {
     /// <summary>The own FieldAddUser: object id, user block, the title (PC::FUN_141661c00 = m_n10f4) and the architect score
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
     public void Apply(FieldAddUser u) {
-        ObjectId = u.ObjectId; User = u.User; Title = u.Title; Insignia = (ushort)u.Insignia;
+        ObjectId = u.ObjectId; User = u.User; Title = u.Title; Insignia = (ushort)u.Insignia; InsigniaShown = u.InsigniaShown;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         PremiumTime = u.PremiumTime; WeddingState = u.WeddingState;
@@ -296,6 +298,18 @@ public sealed class MyCharacter {
         MesoRevivalsUsed = 0;   // the own FieldAddUser makes a new MyPC (scenestategame.cpp:11117-11120), whose ctor zeroes m_n1644 (mypc.cpp:880)
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// The Insignia packet on the own player (CSceneStateGame::OnNametag, scenestategame.cpp:7314-7331): PC::FUN_141661dc0
+    /// sets the symbol and the shown flag; then, the actor being the local MyPC, the MyInfo dialog (0x2711) is marked changed
+    /// (UIMyInfoDialog::FUN_141a5a560), which <see cref="Changed"/> does here. False when it is another player's.
+    /// </summary>
+    public bool Apply(Nametag n) {
+        if (n.ObjectId != ObjectId || ObjectId < 0) return false;
+        Insignia = n.Symbol; InsigniaShown = n.Shown;
+        Changed?.Invoke();
+        return true;
     }
 
     long[] StatsOf(int kind) => kind == 0 ? Stats0 : kind == 1 ? Stats1 : Stats2;

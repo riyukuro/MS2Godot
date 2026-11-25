@@ -169,3 +169,59 @@ public sealed class NpcControl {
 public sealed record NpcSkillSpread(int ActorId, int SkillId, short Level, Vector3 Position, Vector3 Direction) {
     public static NpcSkillSpread Read(ByteReader r) => new(r.ReadInt(), r.ReadInt(), r.ReadShort(), r.ReadVec3(), r.ReadVec3());
 }
+
+/// <summary>
+/// Inbound FollowNpc (KMS 0x70, GMS2 0x72): CSceneStateGame::OnFollowNpc (@0x141723330, scenestategame.cpp:5862-5869) reads
+/// the npc's object id (i32) and enters the local player's StateTriggerFollowNpc (0x46) with it.
+/// </summary>
+public sealed record FollowNpc(int NpcId) {
+    public static FollowNpc Read(ByteReader r) {
+        var p = new FollowNpc(r.ReadInt());
+        r.ExpectEnd("FollowNpc");
+        return p;
+    }
+}
+
+/// <summary>
+/// Inbound NpcNotice (KMS 0xE8, GMS2 0xEA): CSceneStateGame::OnNpcNotice (@0x141738430, scenestategame.cpp:9145-9215), u8 mode:
+/// 0 a notice (unicode text, i32 duration), 1 an npc's owner effect (i32 object id, unicode model), 2 an npc's script
+/// (i32 object id, unicode script), 3 the side popup talk (u8 kind, i32 npc id, narrow name, icon, sound and script, unicode
+/// text). Another mode reads nothing more, as in the client.
+/// </summary>
+public sealed class NpcNotice {
+    public const byte Announce = 0, OwnerEffect = 1, NpcScript = 2, SidePopup = 3;
+    public byte Mode;
+    public int ObjectId, NpcId, Duration;
+    public byte Kind;
+    public string Text = "", Model = "", Script = "", Name = "", Icon = "", Sound = "";
+
+    public static NpcNotice Read(ByteReader r) {
+        var n = new NpcNotice { Mode = r.ReadByte() };
+        switch (n.Mode) {
+            case Announce: n.Text = r.ReadUnicodeString(); n.Duration = r.ReadInt(); break;
+            case OwnerEffect: n.ObjectId = r.ReadInt(); n.Model = r.ReadUnicodeString(); break;
+            case NpcScript: n.ObjectId = r.ReadInt(); n.Script = r.ReadUnicodeString(); break;
+            case SidePopup:
+                n.Kind = r.ReadByte(); n.NpcId = r.ReadInt();
+                n.Name = r.ReadString(); n.Icon = r.ReadString(); n.Sound = r.ReadString(); n.Script = r.ReadString();
+                n.Text = r.ReadUnicodeString();
+                break;
+            default: return n;      // the client reads no more of another mode
+        }
+        r.ExpectEnd("NpcNotice");
+        return n;
+    }
+}
+
+/// <summary>
+/// Inbound Insignia (KMS 0xB1, GMS2 0xB3): CSceneStateGame::OnNametag (@0x141733e40, scenestategame.cpp:7314-7331) reads the
+/// player's object id (i32), the name tag symbol (u16) and whether it is shown (u8), and sets them on that player
+/// (PC::FUN_141661dc0).
+/// </summary>
+public sealed record Nametag(int ObjectId, ushort Symbol, bool Shown) {
+    public static Nametag Read(ByteReader r) {
+        var p = new Nametag(r.ReadInt(), (ushort)r.ReadShort(), r.ReadByte() != 0);
+        r.ExpectEnd("Nametag");
+        return p;
+    }
+}
