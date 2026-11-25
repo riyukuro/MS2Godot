@@ -102,6 +102,8 @@ public partial class InteractDrawsCheck : Node
         public FieldInteractDraws Draws;
         public FieldFade Fade;
         public FieldProps Props;
+        /// <summary>The field's FieldProps clock (seconds), moved by hand.</summary>
+        public double Now;
         public void State(LiveInteractObject o, byte state) =>
             Live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = o.Name, State = state, Kind = o.Kind });
     }
@@ -113,6 +115,7 @@ public partial class InteractDrawsCheck : Node
         var packs = PackSet.Shared(Settings.DataDir);
         var b = new Built { Map = FieldMap.Load(packs, new FlatLibrary(packs), xblock) };
         b.Props = new FieldProps(builder);
+        b.Props.Clock = () => b.Now;
         b.Fb = new FieldBuilder(packs, AssetIndex.For(packs), builder) { DrawsInstance = b.Props.TakesModel };
         foreach (var _ in b.Fb.BuildSteps(b.Map)) { }
         AddChild(b.Fb.World);
@@ -135,10 +138,13 @@ public partial class InteractDrawsCheck : Node
     /// <summary>
     /// The animated models' swap: on each field, every object with a reactable model whose own model or reactable twin is a
     /// world/FieldProps node draws one model at a time, its nodes shown (and processed) only while drawn, and its collision
-    /// follows NifAsset.
+    /// follows NifAsset. A node shown again has its controllers where the time it was hidden puts them, as the client's fresh
+    /// clone of an APP_TIME model does (FieldProps.SetShown): the clock moves between the states and no frame runs, so each
+    /// shown node's animation position is its position when hidden plus that time (looped or held as its cycle is).
     /// </summary>
     void CheckDrawnApart()
     {
+        int timed = 0;
         foreach (var (xblock, wantCollision) in new[] { ("02000332_bf", false), ("02020301_bf", true), ("02000312_bf", true) })
         {
             var b = BuildField(xblock);
@@ -154,6 +160,7 @@ public partial class InteractDrawsCheck : Node
                 var e = o.Entity;
                 var twin = b.Draws.ReactableProp(e);
                 if (twin == null && !b.Fb.InteractReactableDraws.ContainsKey(e)) { fails.Add($"{o.Name} ({xblock}): no reactable twin"); continue; }
+                var since = new Dictionary<FieldEntity, (double Pos, double At, bool Shown)>();
                 void Want(string when, bool wantOwn, bool wantB, bool onB)
                 {
                     bool? ownShown = b.Draws.ShownOwn(e), bShown = b.Draws.ShownReactable(e);
@@ -167,17 +174,37 @@ public partial class InteractDrawsCheck : Node
                         bool processed = node.ProcessMode != ProcessModeEnum.Disabled;
                         if (node.Visible != want || processed != want)
                             fails.Add($"{o.Name} ({xblock}) {when}: its {who} model's node visible {node.Visible}, processed {processed}, want {want}");
+                        var player = node.GetNodeOrNull<AnimationPlayer>("Model/AnimationPlayer");
+                        if (player == null || !player.IsPlaying()) continue;   // no controllers, or frozen (a static entity)
+                        double pos = player.CurrentAnimationPosition;
+                        if (since.TryGetValue(ent, out var was) && !was.Shown && want)
+                        {
+                            var anim = player.GetAnimation(player.CurrentAnimation);
+                            double len = anim.Length, wantPos = was.Pos + (b.Now - was.At);
+                            if (anim.LoopMode == Godot.Animation.LoopModeEnum.Pingpong) { since[ent] = (pos, b.Now, want); continue; }
+                            wantPos = anim.LoopMode == Godot.Animation.LoopModeEnum.Linear ? Mathf.PosMod(wantPos, len) : Math.Min(wantPos, len);
+                            double off = Math.Abs(pos - wantPos);
+                            if (anim.LoopMode == Godot.Animation.LoopModeEnum.Linear) off = Math.Min(off, len - off);
+                            if (off > 1e-3)
+                                fails.Add($"{o.Name} ({xblock}) {when}: its {who} model's controllers at {pos:0.###} s, want {wantPos:0.###} s (at {was.Pos:0.###} s when hidden, {b.Now - was.At:0.###} s ago)");
+                            if (Math.Abs(wantPos - was.Pos) > 1e-3) timed++;
+                        }
+                        // a node hidden at the load has been hidden since the field was built, at clock 0
+                        if (!since.TryGetValue(ent, out was)) since[ent] = (pos, want ? b.Now : 0, want);
+                        else if (was.Shown || want) since[ent] = (pos, b.Now, want);
                     }
                     if (b.Draws.Collision(e) is { } col && (col.OnB != onB || col.A != null && col.A.Body.CollisionLayer > 0 == onB
                                                             || col.B != null && col.B.Body.CollisionLayer > 0 != onB))
                         fails.Add($"{o.Name} ({xblock}) {when}: the collision is not the {(onB ? "reactable" : "own")} model's (own in the world {col.A?.Body.CollisionLayer > 0}, reactable {col.B?.Body.CollisionLayer > 0})");
                 }
                 Want("at the load", true, false, false);
-                b.State(o, 1); Want("state 1", false, true, true);
-                b.State(o, 2); Want("state 2", false, false, true);
-                b.State(o, 0); Want("state 0", true, false, false);
+                b.Now += 0.37; b.State(o, 1); Want("state 1", false, true, true);
+                b.Now += 0.61; b.State(o, 2); Want("state 2", false, false, true);
+                b.Now += 0.29; b.State(o, 0); Want("state 0", true, false, false);
             }
         }
+        GD.Print($"interact draws check: {timed} animated models shown again with their controllers moved on by the time hidden");
+        if (timed == 0) fails.Add("no animated model shown again had its controllers moved on");
     }
 
     /// <summary>52020001_qd: an object whose reactable model does not load has no twin, so it keeps its own model's collision.</summary>

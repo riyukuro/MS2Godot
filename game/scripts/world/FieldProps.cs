@@ -28,6 +28,13 @@ public sealed class FieldProps
     float freezeAt;
     readonly Dictionary<FieldEntity, Node3D> nodes = new();
     readonly Dictionary<FieldEntity, bool> shown = new();
+    /// <summary>The players of the running (not frozen) nodes, and when each hidden one was hidden (<see cref="Clock"/>).</summary>
+    readonly Dictionary<FieldEntity, AnimationPlayer> players = new();
+    readonly Dictionary<FieldEntity, double> hiddenAt = new();
+
+    /// <summary>The time in seconds a hidden node's controllers keep running by (a check sets its own).</summary>
+    public Func<double> Clock { get; set; } = Seconds;
+    static double Seconds() => Time.GetTicksUsec() / 1e6;
 
     const float DefaultMaterialColor = 0.7058824f;
 
@@ -61,7 +68,7 @@ public sealed class FieldProps
                                 LightOff.TryGetValue(e, out var off) ? off : 0);
             node.Transform = ModelBuilder.ToGodot(e.Transform);
             nodes[e] = node;
-            if (shown.TryGetValue(e, out bool show)) Show(node, show);
+            if (shown.TryGetValue(e, out bool show) && !show) { Show(node, false); hiddenAt[e] = Clock(); }
             root.AddChild(node);
             Built++;
             var player = node.GetNode<AnimationPlayer>("Model/AnimationPlayer");
@@ -73,7 +80,7 @@ public sealed class FieldProps
                 if (delay > 0) player.Seek(rng.NextDouble() * Math.Min(delay, player.CurrentAnimationLength), true);
                 // a static entity is updated once when it is added (FieldBuilder.IsStatic): its nodes hold that pose
                 if (frozen) { player.Seek(player.CurrentAnimationPosition, true); player.Pause(); Frozen++; }
-                else Animated++;
+                else { Animated++; players[e] = player; }
             }
         }
         return root;
@@ -82,15 +89,25 @@ public sealed class FieldProps
     /// <summary>
     /// Shows or hides the entity's node (world/FieldInteractDraws: an interact mesh's own model or its reactable twin, by its
     /// NifAsset). Kept until <see cref="Build"/> makes the node when that comes later. A hidden node is not processed either
-    /// (its controllers and glow stop where they are).
-    /// STILL-OPEN: the client builds asset B's scene graph at the swap, so its controllers start from the scene's time then;
-    /// here a node shown again goes on from where it was hidden.
+    /// (its player does not advance), and shown again its controllers are advanced by the time it was hidden, so they are
+    /// where the scene's time puts them: the client's swap sets NifAsset (CInteractMeshObject::FUN_1413ff690,
+    /// interactobject.cpp:909-916) and the scene graph service attaches a fresh clone of the asset, whose controllers have
+    /// never been updated (NiTimeController::CopyMembers, NiTimeController.cpp:483-485). Their first update is then at the
+    /// game time clock (ms2scenegraphservice.cpp:304-306): an APP_TIME controller takes that time whole and an APP_INIT one
+    /// starts at 0 (ComputeScaledTime, NiTimeController.cpp:110-142). Every interact mesh model drawn here is APP_TIME on
+    /// both data sets. One <see cref="AnimationPlayer.Advance"/> per swap, nothing per frame while hidden.
     /// </summary>
     public void SetShown(FieldEntity e, bool show)
     {
         if (e == null) return;
+        bool was = Shown(e);
         shown[e] = show;
-        if (nodes.TryGetValue(e, out var node) && GodotObject.IsInstanceValid(node)) Show(node, show);
+        if (!nodes.TryGetValue(e, out var node) || !GodotObject.IsInstanceValid(node)) return;
+        Show(node, show);
+        if (show == was) return;
+        if (!show) hiddenAt[e] = Clock();
+        else if (hiddenAt.Remove(e, out double at) && players.TryGetValue(e, out var player) && GodotObject.IsInstanceValid(player))
+            player.Advance(Math.Max(0, Clock() - at));
     }
 
     /// <summary>Whether the entity's node is shown (as set, or as built: shown).</summary>
