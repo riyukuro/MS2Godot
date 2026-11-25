@@ -369,6 +369,7 @@ public partial class LiveSession
         BeautySales.Apply(m);
         MesoRevivals.Apply(m);
         MasteryReduce.Apply(m);
+        DungeonExtraRewards.Apply(m);
         GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
     }
 

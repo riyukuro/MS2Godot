@@ -252,6 +252,29 @@ public class GameEventPacketTests
     }
 
     [Test]
+    public void DungeonExtraRewardEventsKeepTheirRoomCounts()
+    {
+        // GameEventDungeonExtraReward::vfunc_4 (gameevent.cpp:1899-1905): id, the map's i32 n, each the key then the context
+        // (gameeventcontext.cpp:724-732: dungeon id, owner event id m_18, count)
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(2);
+            w.WriteUnicodeString("DungeonExtraReward"); w.WriteInt(60); w.WriteInt(2);
+            w.WriteInt(20000001); w.WriteInt(20000001); w.WriteInt(60); w.WriteInt(3);
+            w.WriteInt(20000002); w.WriteInt(20000002); w.WriteInt(61); w.WriteInt(5);
+            w.WriteUnicodeString("MasteryReduce"); w.WriteInt(50); w.WriteInt(20000);
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.DungeonExtraRewardEvents.Count, Is.EqualTo(1));
+        Assert.That(m.DungeonExtraRewardEvents[0].Id, Is.EqualTo(60));
+        Assert.That(m.DungeonExtraRewardEvents[0].Counts, Is.EqualTo(new[]
+        {
+            new DungeonExtraRewardCount(20000001, 60, 3), new DungeonExtraRewardCount(20000002, 61, 5),
+        }));
+        Assert.That(m.MasteryReduceEvents, Is.EqualTo(new[] { new MasteryReduceEvent(50, 20000) }), "the next entry is read after it");
+    }
+
+    [Test]
     public void ConstructionEventsKeepTheirListsInPacketOrder()
     {
         // GameEventMassiveConstructionEvent::vfunc_4 (gameevent.cpp:2926-2944): id, n x u32 field id, i32 channel,

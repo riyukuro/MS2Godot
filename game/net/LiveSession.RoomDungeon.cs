@@ -17,10 +17,15 @@ public partial class LiveSession
     /// The HUD gives it the room table.</summary>
     public readonly DungeonRecordBook DungeonRecords = new();
 
+    /// <summary>CGameRule's dungeon extra reward counts, which the game event list's DungeonExtraReward events fill and
+    /// <see cref="DungeonRecordBook.ExtraRewardEventCount"/> reads.</summary>
+    public readonly Ms2.Ui.DungeonExtraRewards DungeonExtraRewards = new();
+
     void InitDungeonRecords()
     {
         DungeonRecords.ServerTime = () => ServerTime;
         DungeonRecords.CharacterId = () => CharacterId;
+        DungeonRecords.ExtraRewardEventCount = DungeonExtraRewards.CountOf;
     }
 
     /// <summary>DungeonRecordManagerCli's record table: the record stored under a room id (null when no packet named it).</summary>

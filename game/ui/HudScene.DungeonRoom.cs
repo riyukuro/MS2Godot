@@ -37,10 +37,13 @@ public partial class HudScene
             dungeonRoom.OnRoomPacket53(msg.Mode);               // OnRoomPacket53 (the same 0x53 packet)
         };
         Action<int, int> roomPacket = (cmd, type) => { if (DungeonRoomOpen) dungeonRoom.OnRoomPacket(cmd, type); };
+        // GameEventDungeonExtraRewardCli::OnStart and vfunc_6 (gameeventcli.cpp:737-752): the open window's RefreshReward
+        Action extraReward = () => { if (DungeonRoomOpen) dungeonRoom.RefreshReward(); };
         var book = partyBook;
         if (book != null) book.Applied += applied;
         if (live != null)
         {
+            live.DungeonExtraRewards.Changed += extraReward;
             live.DungeonRoomPacket += roomPacket;
             // PortalAction::OpenDungeonRoomDialog (@0x140956290): OpenDungeonOrRoom(portalId); no room, no dialog (s_msg_preparing)
             live.OpenDungeonRoomDialog = portalId => OpenDungeonRoom(c => { c.SetPortalId(portalId); return c.OpenDungeonOrRoom((uint)portalId); });
@@ -57,6 +60,7 @@ public partial class HudScene
             if (live != null)
             {
                 live.DungeonRoomPacket -= roomPacket;
+                live.DungeonExtraRewards.Changed -= extraReward;
                 live.OpenDungeonRoomDialog = null; live.OpenDungeonRoomDialogWithMode = null;
                 live.OpenDungeonRoomDialogRoom = null; live.CloseDungeonRoomDialog = null;
             }

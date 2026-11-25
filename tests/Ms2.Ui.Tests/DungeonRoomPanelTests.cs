@@ -373,6 +373,30 @@ public class DungeonRoomPanelTests
         Assert.That(Visible(e, Child(e, "m_rewardIcon2")), Is.False);
     }
 
+    /// <summary>GameEventDungeonExtraRewardCli::OnStart and vfunc_6 (gameeventcli.cpp:737-752) call the open window's RefreshReward: the
+    /// reward text takes the extra reward event's count (GetWeeklyRewardCountText @0x140e14d70) when it starts and drops it when it ends.</summary>
+    [Test]
+    public void AnExtraRewardEventStartingAndEndingRefreshesTheRewardText()
+    {
+        var room = Room(r => r.GroupType > 0 && r.RewardCount > 0 && r.SubRewardCount == 0 && r.UnionRewardId == 0, "a weekly reward room");
+        var e = Make(room);
+        AddRecord(e, Rec(room.Id));
+        e.C.Refresh();
+        var events = new DungeonExtraRewards();
+        e.C.Records.ExtraRewardEventCount = events.CountOf;
+        string plain = Text(e, Child(e, "m_rewardText1"));
+        var start = new DungeonExtraRewardEvent(5, new[] { new DungeonExtraRewardCount(room.RewardRoomId, 5, 3) });
+        events.Apply(new GameEventMessage(1, Array.Empty<ShutdownInteractObjectEvent>(), Array.Empty<int>(), false) { DungeonExtraRewardEvents = new[] { start } });
+        Assert.That(Text(e, Child(e, "m_rewardText1")), Is.EqualTo(plain), "nothing refreshed yet");
+        e.C.RefreshReward();
+        string withEvent = Text(e, Child(e, "m_rewardText1"));
+        Assert.That(withEvent, Does.StartWith(plain));
+        Assert.That(withEvent.Length, Is.GreaterThan(plain.Length), "the event's count follows the record's");
+        events.Apply(new GameEventMessage(2, Array.Empty<ShutdownInteractObjectEvent>(), new[] { 5 }, false));
+        e.C.RefreshReward();
+        Assert.That(Text(e, Child(e, "m_rewardText1")), Is.EqualTo(plain));
+    }
+
     [Test]
     public void ARoomWithASubRewardShowsTheSecondRewardRow()
     {

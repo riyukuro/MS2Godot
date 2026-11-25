@@ -567,8 +567,8 @@ public sealed class DungeonRoomInfoPanel
         return "";
     }
 
-    /// <summary>RefreshReward (@0x1412b0d30): the round group's or the normal reward.</summary>
-    void RefreshReward()
+    /// <summary>RefreshReward (@0x1412b0d30, uidungeonroomdialog.cpp:866): the round group's or the normal reward.</summary>
+    public void RefreshReward()
     {
         if (Room == null) return;
         if (Room.HasRoundGroup) RefreshRoundReward(); else RefreshNormalReward();

@@ -28,6 +28,16 @@ public sealed record MesoRevivalEvent(int Id, bool Flag);
 /// OnStart (:3594) sets on CGameEventValueMasteryReduce (SetRate); vfunc_6 (:3598) sets it to 0.</summary>
 public sealed record MasteryReduceEvent(int Id, int Rate);
 
+/// <summary>One entry of a GameEventDungeonExtraReward's map (vfunc_4 @0x1403c0ce0, commonfiles/gameevent.cpp:1899-1905, the map's key then
+/// DungeonExtraRewardCountCtx's operator>> @0x1403fd7e0, gameeventcontext.cpp:724-732): <paramref name="Key"/> is the room id
+/// OnStart adds the context under (:1912), the context's own dungeon id is read and not used; <paramref name="EventId"/> is its m_18
+/// (the event that owns the count) and <paramref name="Count"/> its m_count.</summary>
+public sealed record DungeonExtraRewardCount(uint Key, int EventId, uint Count);
+
+/// <summary>One GameEventDungeonExtraReward (commonfiles/gameevent.cpp:1860-1928): the event id and the room counts it holds (m_d0, in
+/// packet order); OnStart (@0x1403c0d30, :1908) hands them to the game rule, vfunc_6 (@0x1403c0ea0, :1920) takes back the ones whose owner it is.</summary>
+public sealed record DungeonExtraRewardEvent(int Id, IReadOnlyList<DungeonExtraRewardCount> Counts);
+
 /// <summary>One GameEventMassiveConstructionEvent (commonfiles/gameevent.cpp:2926-2944): the event id, the field ids (m_d0),
 /// the channel (m_f0) and the account ids (m_f8) OnStart (:2946-2958) puts in the game rule.</summary>
 public sealed record MassiveConstructionEvent(int Id, IReadOnlyList<uint> FieldIds, int Channel, IReadOnlyList<long> AccountIds);
@@ -80,6 +90,9 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// <summary>The MasteryReduce events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<MasteryReduceEvent> MasteryReduceEvents { get; init; } = Array.Empty<MasteryReduceEvent>();
 
+    /// <summary>The DungeonExtraReward events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<DungeonExtraRewardEvent> DungeonExtraRewardEvents { get; init; } = Array.Empty<DungeonExtraRewardEvent>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
@@ -92,6 +105,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         var reactors = new List<ReactorEvent>();
         var mesoRevivals = new List<MesoRevivalEvent>();
         var masteryReduces = new List<MasteryReduceEvent>();
+        var extraRewards = new List<DungeonExtraRewardEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -103,7 +117,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals, masteryReduces))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals, masteryReduces, extraRewards))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -120,7 +134,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         }
         if (!truncated) r.ExpectEnd("GameEvent");
         return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction, BeautySaleEvents = beautySales,
-            ReactorEvents = reactors, MesoRevivalEvents = mesoRevivals, MasteryReduceEvents = masteryReduces };
+            ReactorEvents = reactors, MesoRevivalEvents = mesoRevivals, MasteryReduceEvents = masteryReduces,
+            DungeonExtraRewardEvents = extraRewards };
     }
 
     /// <summary>
@@ -133,7 +148,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                                   List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null,
                                   List<object> construction = null, List<BeautyShopSaleEvent> beautySales = null,
                                   List<ReactorEvent> reactors = null, List<MesoRevivalEvent> mesoRevivals = null,
-                                  List<MasteryReduceEvent> masteryReduces = null)
+                                  List<MasteryReduceEvent> masteryReduces = null, List<DungeonExtraRewardEvent> extraRewards = null)
     {
         switch (name)
         {
@@ -277,11 +292,19 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             case "GameMenuPopup":       // :1482: id, i16, W
                 r.ReadInt(); r.ReadShort(); W(r);
                 return true;
-            case "DungeonExtraReward":  // :1900: id, CAtlMap i32 n x (i32 key, I, I, I)
+            case "DungeonExtraReward":  // :1899-1905: id, CAtlMap i32 n x (i32 key, I, I, I)
             {
-                r.ReadInt();
+                int id = r.ReadInt();
                 uint n = (uint)r.ReadInt();
-                for (uint i = 0; i < n; i++) { r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadInt(); }
+                var counts = new List<DungeonExtraRewardCount>();
+                for (uint i = 0; i < n; i++)
+                {
+                    uint key = (uint)r.ReadInt();
+                    r.ReadInt();                         // the context's own dungeon id
+                    int owner = r.ReadInt();
+                    counts.Add(new DungeonExtraRewardCount(key, owner, (uint)r.ReadInt()));
+                }
+                extraRewards?.Add(new DungeonExtraRewardEvent(id, counts));
                 return true;
             }
             case "SaleSkillUpgrade":    // :2077: id, 3 x ReadStringA (unicode), W

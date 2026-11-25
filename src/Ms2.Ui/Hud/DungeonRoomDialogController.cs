@@ -309,6 +309,12 @@ public sealed class DungeonRoomDialogController : UiController
         RefreshSeasonSummary();
     }
 
+    /// <summary>
+    /// RefreshReward (@0x1412b9320, uidungeonroomdialog.cpp:2131): the room panel's, when it is built. GameEventDungeonExtraRewardCli calls it after
+    /// an extra reward event starts or ends (OnStart @0x140ce46f0, vfunc_6 @0x140ce4730, gameeventcli.cpp:737-752).
+    /// </summary>
+    public void RefreshReward() => Panel?.RefreshReward();
+
     /// <summary>RefreshSubTitle: s_dungeonRoom_subTitle with the room's group and its most users, in m_subTitle.</summary>
     void RefreshSubTitle()
     {
