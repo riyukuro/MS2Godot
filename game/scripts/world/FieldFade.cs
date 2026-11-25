@@ -69,6 +69,7 @@ public partial class FieldFade : Node
     readonly List<Target> targets = new();
     readonly Dictionary<int, List<Target>> groups = new();
     readonly Dictionary<FieldEntity, Target> byEntity = new();
+    readonly Dictionary<(MultiMesh, int), Target> byDraw = new();
     readonly Dictionary<Target, Element> fadeOut = new(), fadeIn = new();
     // each mesh to its triangles, made once. Keyed by the mesh: the split alpha path makes several MultiMeshes over one mesh,
     // which share one copy
@@ -91,6 +92,7 @@ public partial class FieldFade : Node
             bool first = true;
             foreach (var d in list)
             {
+                byDraw[(d.Mm, d.Index)] = t;
                 var b = d.Parent.GlobalTransform * d.Mm.GetInstanceTransform(d.Index) * d.Mm.Mesh.GetAabb();   // the instances are in the field's Z-up frame
                 box = first ? b : box.Merge(b);
                 first = false;
@@ -104,6 +106,34 @@ public partial class FieldFade : Node
                 g.Add(t);
             }
         }
+    }
+
+    public override void _EnterTree() => TriggerFade.Switched += OnSwitched;
+    public override void _ExitTree() => TriggerFade.Switched -= OnSwitched;
+
+    /// <summary>
+    /// A trigger, breakable, vibrate, liftable or interact switch set one of the draws a fade holds (TriggerFade.Switched): its
+    /// copy goes and the transform the switch wrote stays. An entity left with no copy leaves the fade, so the next test starts
+    /// it again from the instances as they are.
+    /// </summary>
+    void OnSwitched(MultiMesh mm, int index)
+    {
+        if (!byDraw.TryGetValue((mm, index), out var t)) return;
+        Drop(fadeOut, t, mm, index);
+        Drop(fadeIn, t, mm, index);
+    }
+
+    static void Drop(Dictionary<Target, Element> map, Target t, MultiMesh mm, int index)
+    {
+        if (!map.TryGetValue(t, out var el)) return;
+        for (int i = el.Parts.Count - 1; i >= 0; i--)
+        {
+            var p = el.Parts[i];
+            if (p.draw.Mm != mm || p.draw.Index != index) continue;
+            p.node.QueueFree();
+            el.Parts.RemoveAt(i);
+        }
+        if (el.Parts.Count == 0) map.Remove(t);
     }
 
     public override void _Process(double delta)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using Godot;
@@ -81,9 +82,17 @@ public sealed partial class TriggerFade : Node
             mm.SetInstanceTransform(i, show ? xf : new Transform3D(Zero, xf.Origin));
             var set = hidden.GetOrCreateValue(mm);
             if (show) set.Remove(i); else set.Add(i);
+            Switched?.Invoke(mm, i);
         }
         t.Shown = show;
     }
+
+    /// <summary>
+    /// Raised for each instance a <see cref="Switch"/> or a fade's start sets. The camera fade (world/FieldFade) holding the
+    /// instance in a copy of its own drops that copy, without putting its transform back: the switch decided what the instance
+    /// draws (else a hidden prop kept its faded copy, and a shown one drew in both).
+    /// </summary>
+    public static event Action<MultiMesh, int> Switched;
 
     // the instances a switch left hidden, by MultiMesh: what the slot holds without reading it back from the renderer (the
     // headless one keeps no instance transforms)
@@ -138,6 +147,7 @@ public sealed partial class TriggerFade : Node
             if (d.NotReceiving) node.SetInstanceShaderParameter(ReceiveParam, 0f);
             d.Parent.AddChild(node, forceReadableName: true);   // the name stays findable beside its siblings
             d.Mm.SetInstanceTransform(d.Index, new Transform3D(Zero, xf.Origin));
+            Switched?.Invoke(d.Mm, d.Index);
             var part = new Part { Draw = d, Node = node, Mat = mat };
             run.Parts.Add(part);
         }
