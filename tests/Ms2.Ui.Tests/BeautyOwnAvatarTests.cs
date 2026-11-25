@@ -52,6 +52,21 @@ public class BeautyOwnAvatarTests
         Assert.That(new BeautyOwnAvatar(me, Layer).IsRealItem(new EquipItem { Id = 101 }), Is.False);
     }
 
+    /// <summary>MyPC::vfunc_128 (mypc.cpp:4895-4905): an item with a model preset taken off is excluded from the auto-equip,
+    /// whether or not the take-off found it worn; one without a model preset is not.</summary>
+    [Test]
+    public void ATakeOffOfAnItemWithAModelPresetExcludesItFromTheAutoEquip()
+    {
+        var me = Me((100, 1, EquipSlot.HR), (200, 2, EquipSlot.CL));
+        var excluded = new List<long>();
+        var a = new BeautyOwnAvatar(me, id => id == 300 ? null : 0) { TakenOff = excluded.Add };
+        a.Unequip(new EquipItem { Id = 100, Uid = 1, Slot = EquipSlot.HR });
+        a.Unequip(new EquipItem { Id = 150, Uid = 5, Slot = EquipSlot.HR });    // not worn, a model preset
+        a.Unequip(new EquipItem { Id = 300, Uid = 3, Slot = EquipSlot.CL });    // no model preset
+        Assert.That(excluded, Is.EqualTo(new long[] { 1, 5 }));
+        Assert.That(me.Equips.Select(e => e.Uid), Is.EqualTo(new long[] { 2 }));
+    }
+
     [Test]
     public void SkinColoursComeFromTheUserBlockAndAreSettable()
     {
