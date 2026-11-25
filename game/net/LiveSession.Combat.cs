@@ -1102,7 +1102,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagyes, bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -1237,6 +1237,13 @@ public partial class LiveSession
                         var done = hud.ShownBoxScripted();      // the answer (mode 0xa): box 0x2a2, closed as its OK closes it
                         Check($"the expand's answer box shows: {done?.Msg}", done != null && done.Msg == hud.CommonText(0x2a2));
                         GD.Print($"live: combat bag expand answer: {(hud.BagBoxAnswerScripted(done, 0, done?.Extra ?? "") ? "answered" : "no box")}");
+                        await frames(30);
+                        break;
+                    }
+                    case "bagyes":      // bagyes: the message box shown now answered with its first button (a bind-on-equip box's yes)
+                    {
+                        var shown = hud.ShownBoxScripted();
+                        GD.Print($"live: combat bag yes \"{shown?.Extra}\": {(hud.BagBoxAnswerScripted(shown, 0, shown?.Extra ?? "") ? "answered" : "no box")}");
                         await frames(30);
                         break;
                     }
