@@ -815,6 +815,10 @@ public partial class LiveSession : Node
     public event Action<int, int> DropRefused;
     /// <summary>The field's drop of the object id: where it is, its state and its effects (<see cref="DropLayer.Shown"/>).</summary>
     public (Vector3 At, int State, bool Glow, bool BeEffect)? DropShown(int objectId) => drops?.Shown(objectId);
+    /// <summary>The constants of the field's drop of the object id, and whether they are the SP and EP orbs' (<see cref="DropLayer.SetOf"/>).</summary>
+    public (Ms2.Formats.World.DropConstants Set, bool SpepBall)? DropSet(int objectId) => drops?.SetOf(objectId);
+    /// <summary>An OnFieldPickupItem read for a drop of the field (picked or refused).</summary>
+    public event Action<FieldPickupItem> DropPickupRead;
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
     readonly Dictionary<int, (int Skill, short Level)> regionSkills = new();
@@ -2136,6 +2140,7 @@ public partial class LiveSession : Node
                 }
                 drops.OnPickupPacket(pick);
                 if (pick.DropKnown && !pick.Picked) DropRefused?.Invoke(pick.ObjectId, pick.Mode);
+                if (pick.DropKnown) DropPickupRead?.Invoke(pick);
                 if (!pick.DropKnown) { if (LogPackets) GD.Print($"live: pickup object {pick.ObjectId}: no drop of this field, the rest unread"); }
                 else if (LogPackets || (pick.Picked && LiveCheck)) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
             }

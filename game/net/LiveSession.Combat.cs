@@ -2276,7 +2276,7 @@ public partial class LiveSession
                 continue;
             }
             switch (step.StartsWith("lift:") ? "lift" : step.StartsWith("mobloot:") || step.StartsWith("mobmeso:") ? "mobloot"
-                : step.StartsWith("bagfull:") ? "bagfull" : step.StartsWith("unequip:") ? "unequip" : step.StartsWith("autoloot:") || step.StartsWith("autofull:") ? "autoloot" : step)
+                : step.StartsWith("bagfull:") ? "bagfull" : step.StartsWith("orbpick:") ? "orbpick" : step.StartsWith("unequip:") ? "unequip" : step.StartsWith("autoloot:") || step.StartsWith("autofull:") ? "autoloot" : step)
             {
                 case "attack":
                 {
@@ -2789,6 +2789,80 @@ public partial class LiveSession
                     if (items.FirstOrDefault() is { } shown && live.Inventory?.TabOfItem(shown.ItemId) is int tab)
                         GD.Print($"live: combat bag tab {tab} of item {shown.ItemId}: {(hud.InventoryTabScripted(tab) ? "shown" : "not shown")}");
                     await frames(60); Shot(tag + "_bag.png");
+                    break;
+                }
+                case "orbpick":
+                {
+                    // orbpick:<npc id>[:<orb id>]: an elite whose hits roll the SP and EP orb drop box (globalHitDropBoxId 100000) is
+                    // spawned and hit (again, up to three spawns) until a hit drops the orb (90000009 / 90000010, any orb without an id;
+                    // the GM item command gives a currency id straight to the player and cannot drop one), and the pickup key is held at
+                    // it. InitDrop gives the orb the DropSPEPBall constants (LoadSpepBallConstants, dropitem.cpp:269-270, :1093-1102), so
+                    // the key reaches it as far as DropSPEPBallMaxLength and the pickup flies it to DropSPEPBallTargetZPos above the
+                    // player; FUN_141190900 sends it with no bag-full refusal (:954-958), auto loot takes it whatever its switches (a special id, FUN_141261340), and the
+                    // server's pickup carries the EP gained for the EP orb (scenestategame.cpp:2438)
+                    string[] arg = step[8..].Split(':');
+                    int mob = int.Parse(arg[0]), want = arg.Length > 1 ? int.Parse(arg[1]) : 0;
+                    bool Wanted(int id) => want == 0 ? Ms2.Formats.World.DropPickup.IsSpepBallId(id) : id == want;
+                    var notices = new System.Collections.Generic.List<int>();
+                    var made = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
+                    var sets = new System.Collections.Generic.Dictionary<int, (Ms2.Formats.World.DropConstants Set, bool SpepBall)?>();
+                    var picks = new System.Collections.Generic.List<Ms2.Net.Packets.FieldPickupItem>();
+                    var autoAsked = new System.Collections.Generic.HashSet<int>();
+                    void Notice(int n) => notices.Add(n);
+                    void Made(Ms2.Net.Packets.FieldAddItem d, bool shown) { if (shown && Ms2.Formats.World.DropPickup.IsSpepBallId(d.ItemId)) { made.Add(d); sets[d.ObjectId] = live.DropSet(d.ObjectId); } }
+                    void Pick(Ms2.Net.Packets.FieldPickupItem x) => picks.Add(x);
+                    void Auto(int objectId) => autoAsked.Add(objectId);
+                    live.DropAdded += Made;
+                    live.DropPickupRead += Pick;
+                    live.DropAutoRequest += Auto;
+                    live.DropNotice += Notice;
+                    int press = 0, spawns = 0, presses = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "40"));
+                    for (; spawns < 3 && !made.Any(d => Wanted(d.ItemId)) && !live.Me.Dead; spawns++)
+                    {
+                        int added = npcs;
+                        hud.SubmitChatLine("/npc " + mob);
+                        await until(() => npcs > added, 60 * 15); await frames(60);
+                        var target = lastNpc;
+                        if (target == null || npcs == added) break;
+                        for (; press < presses && !made.Any(d => Wanted(d.ItemId)) && !live.Me.Dead && GodotObject.IsInstanceValid(target.Root) && !live.NpcDead(target.ObjectId); press++)
+                        { hud.FaceScripted(target.Position); await frames(20); hud.AttackScripted(); await frames(60); }
+                        await until(() => made.Any(d => Wanted(d.ItemId)), 60 * 2);
+                    }
+                    live.DropAdded -= Made;
+                    var drop = made.FirstOrDefault(d => Wanted(d.ItemId));
+                    int item = drop?.ItemId ?? want;
+                    GD.Print($"live: combat orbpick npc {mob}: {spawns} spawn(s), {press} press(es), orbs {string.Join(" ", made.Select(d => $"{d.ItemId}x{d.Amount}"))}{(live.Me.Dead ? ", the player died" : "")}");
+                    Check($"a hit on npc {mob} dropped the orb {(want == 0 ? "" : want.ToString())}", drop != null);
+                    if (drop != null)
+                    {
+                        var set = sets.GetValueOrDefault(drop.ObjectId);
+                        GD.Print($"live: combat orbpick {item}: range {set?.Set.MaxLength}, target z {set?.Set.TargetZ}, pickup vel {set?.Set.PickUpVel}, gravity {set?.Set.PickUpGravity}, hover {set?.Set.RotateTime}s x{set?.Set.RotateVel}");
+                        Check("the orb takes the SPEP ball constants", set?.SpepBall == true);
+                        if (live.DropShown(drop.ObjectId) != null) { await frames(10); Shot($"orb_{item}_ground.png"); }
+                        live.PickupKeyHeld = true;
+                        bool shot = false;
+                        for (int n = 0; n < 60 * 8 && !picks.Any(x => x.ObjectId == drop.ObjectId && x.Picked); n++)
+                        {
+                            if (live.DropShown(drop.ObjectId) is { } s && hud.DriveTowardScripted(s.At, false) < 50) hud.DriveEnd();
+                            await frames(1);
+                        }
+                        hud.DriveEnd();
+                        for (int n = 0; n < 60 && live.DropShown(drop.ObjectId) is { } s; n++)
+                        {
+                            if (!shot && s.State == Ms2.Formats.World.DropMotion.FlyToPicker) { shot = true; Shot($"orb_{item}_fly.png"); }
+                            await frames(1);
+                        }
+                        live.PickupKeyHeld = false;
+                        var got = picks.FirstOrDefault(x => x.ObjectId == drop.ObjectId && x.Picked);
+                        GD.Print($"live: combat orbpick {item}: picked {got != null} by {got?.PickerId} ({(autoAsked.Contains(drop.ObjectId) ? "auto loot" : "the key")}) ep +{got?.Ep} (ep ball {got?.EpBall}), notices {string.Join(" ", notices.Select(x => $"0x{x:x}"))}, the hud EP {Ms2Godot.Ui.StubHudData.Instance.EpCurrent}/{Ms2Godot.Ui.StubHudData.Instance.EpMax}");
+                        Check($"the orb {item} was picked up by the player", got != null && got.PickerId == live.SelfObjectId);
+                        Check("no bag-full refusal came", !notices.Contains(Ms2.Formats.World.DropPickup.BagFullNotice));
+                        if (item == Ms2.Net.Packets.FieldPickupItem.EpItemId) Check($"the EP orb's pickup carries the EP gained (+{got?.Ep})", got?.EpBall == true);
+                        await frames(60); Shot($"orb_{item}_after.png");
+                    }
+                    live.DropPickupRead -= Pick;
+                    live.DropAutoRequest -= Auto;
+                    live.DropNotice -= Notice;
                     break;
                 }
                 case "bagfull":
