@@ -347,7 +347,11 @@ public class EffectStripSweepTests
         var t = new SwooshTrail(60, 240, 1f / 30);
         double now = 0;
         Samples(t, ref now, 200);
-        Assert.That(Samples(t, ref now, 2000), Is.EqualTo(0));
+        // The JIT can tier Sample up (call counting, backpatching) inside a measured window on a busy run and charge its own
+        // bytes to this thread. A real allocation in Sample shows on every pass, so the least of five passes must be 0.
+        long least = long.MaxValue;
+        for (int pass = 0; pass < 5 && least != 0; pass++) least = Math.Min(least, Samples(t, ref now, 2000));
+        Assert.That(least, Is.EqualTo(0));
     }
 
     // fully optimized from the start: a Release build's tiered loop (on-stack replacement) allocates on its own
