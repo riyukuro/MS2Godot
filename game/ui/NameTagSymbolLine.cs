@@ -15,6 +15,9 @@ namespace Ms2Godot.Ui;
 /// - the same class as the mark: only its text; another class: the mark is replaced; the text is the level when the
 ///   symbol's name holds "level";
 /// - m_symbol shows per visibleSymbol (the Display Player Symbol option) at y -88 under a guild line, else -66.
+/// The inputs (the symbol, its shown flag, the levels, the guild line and the option) are the line's key: the PC's level and
+/// adventure level setters refresh the tag (PC::vfunc_131 / vfunc_140 -> FUN_141a60f00, pc.cpp), and the tag layers set it
+/// again when the option changed since (<see cref="OptionChanged"/>).
 /// STILL-OPEN: an enchant symbol (condition 2) needs the equipment's grade and rank (PC::FUN_141661e40) and is left out,
 /// as are the field-property symbols (FindFieldProperty(5)) and the PvP team symbols.
 /// </summary>
@@ -23,7 +26,22 @@ public sealed class NameTagSymbolLine
     const string Library = "commonNameTag";
     string markClass;
     ushort markSymbol;
-    (ushort, bool, int, int, bool)? last;
+    (ushort Id, bool Shown, int Level, int AdventureLevel, bool GuildLine, bool Visible)? last;
+
+    /// <summary>visibleSymbol: the Display Player Symbol option (on without the option store).</summary>
+    static bool OptionShown => GameOptions.Current?.StatusOption?.DisplayPlayerSymbol ?? true;
+
+    /// <summary>Whether the option changed since the line was last set.</summary>
+    public bool OptionChanged => last is { } k && k.Visible != OptionShown;
+
+    /// <summary>The line set again with its last inputs (after an option change).</summary>
+    public void Refresh(MovieClipNode node, UiMovie movie, double scale, NametagSymbols table)
+    {
+        if (last is { } k) Set(node, movie, scale, table, k.Id, k.Shown, k.Level, k.AdventureLevel, k.GuildLine);
+    }
+
+    /// <summary>The levels the line was last set with ((-1, -1) before any); the checks' view.</summary>
+    public (int Level, int AdventureLevel) SetLevels => last is { } k ? (k.Level, k.AdventureLevel) : (-1, -1);
 
     /// <summary>The symbol the line shows: the symbol its mark was built for while m_symbol is visible, else 0.</summary>
     public ushort Shown(MovieClipNode node) =>
@@ -33,7 +51,8 @@ public sealed class NameTagSymbolLine
     public void Set(MovieClipNode node, UiMovie movie, double scale, NametagSymbols table, ushort id, bool shown, int level,
                     int adventureLevel, bool guildLine)
     {
-        var key = (id, shown, level, adventureLevel, guildLine);
+        bool visible = OptionShown;
+        var key = (id, shown, level, adventureLevel, guildLine, visible);
         if (last == key || node == null) return;
         last = key;
         var symbol = node.FindClip("m_symbol");
@@ -67,7 +86,7 @@ public sealed class NameTagSymbolLine
                 markClass = cls; markSymbol = id;
             }
         }
-        node.SetNamedVisible("m_symbol", GameOptions.Current?.StatusOption?.DisplayPlayerSymbol ?? true);
+        node.SetNamedVisible("m_symbol", visible);
         symbol.Position = new Vector2(symbol.Position.X, guildLine ? -88 : -66);
     }
 }

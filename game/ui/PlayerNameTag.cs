@@ -112,6 +112,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
     public override void _Process(double delta)
     {
         if (node == null) return;
+        if (symbol.OptionChanged) symbol.Refresh(node, movie, u, Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).NametagSymbols);
         if (player == null || field == null)
         {
             field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;

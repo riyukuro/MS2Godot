@@ -11,6 +11,8 @@ namespace Ms2Godot.Tests;
 /// - a player added with no symbol shown shows none; a symbol shown builds that symbol's mark;
 /// - another symbol replaces the mark (the old one goes); the symbol hidden hides m_symbol and keeps the mark, and shown again
 ///   shows the same mark (NameTag.setSymbol);
+/// - the player's level up and adventure level up (PC::vfunc_131 / vfunc_140's tag refresh) set the symbol line again with them;
+/// - the Display Player Symbol option turned off hides m_symbol on the next refresh, and turned on shows it again;
 /// - an npc's tag and a root with no tag are not changed (false).
 /// The two symbols are the first two of the table that are not enchant symbols and have an icon; their classes are commonNameTag's. Quits with 0 when all hold, else 1.
 /// </summary>
@@ -51,8 +53,34 @@ public partial class NameTagSymbolCheck : Node3D
             Check(tags.MarkCount(root) == 1, $"setSymbol with no symbol only hides m_symbol, the mark stays: {tags.MarkCount(root)}");
             Check(tags.SetSymbol(root, ids[1], true) && tags.ShownSymbol(root) == ids[1] && tags.MarkCount(root) == 1, "the same symbol again");
         }
+        // the player's level and adventure level changes set the symbol line again with them (PC::vfunc_131 / vfunc_140 refresh
+        // the tag). No symbol of either data set shows the level: the one level symbol's icon is the bare "level", and
+        // commonNameTag has no nametag_mark_level class (setSymbol leaves the mark as it is), so the line's inputs are checked
+        if (ids.Count > 0) tags.SetSymbol(root, ids[0], true);
+        Check(tags.SymbolLevels(root) == (50, 10), $"the line's levels before: {tags.SymbolLevels(root)}");
+        Check(tags.SetLevels(root, 51, 12) && tags.SymbolLevels(root) == (51, 12), $"the line's levels after the level up: {tags.SymbolLevels(root)}, want (51, 12)");
+        ushort levelId = 0;
+        for (int id = 1; id < 1000 && levelId == 0; id++)
+            if (table.Get((ushort)id) is { Condition: Ms2.Ui.NametagSymbols.Condition.Level }) levelId = (ushort)id;
+        // the Display Player Symbol option
+        var status = GameOptions.Current?.StatusOption;
+        Check(status != null, "no option store");
+        if (status != null && ids.Count == 2)
+        {
+            bool was = status.DisplayPlayerSymbol;
+            tags.SetSymbol(root, ids[0], true);
+            status.DisplayPlayerSymbol = false;
+            tags.RefreshSymbols();
+            Check(tags.ShownSymbol(root) == 0, $"the option off still shows symbol {tags.ShownSymbol(root)}");
+            status.DisplayPlayerSymbol = true;
+            tags.RefreshSymbols();
+            Check(tags.ShownSymbol(root) == ids[0], $"the option on again shows {tags.ShownSymbol(root)}, want {ids[0]}");
+            status.DisplayPlayerSymbol = was;
+            tags.RefreshSymbols();
+        }
         Check(!tags.SetSymbol(new Node3D(), 1, true), "a root with no tag was changed");
-        GD.Print($"name tag symbol: symbols {string.Join(",", ids)}");
+        Check(!tags.SetLevels(new Node3D(), 1, 1), "a root with no tag took a level");
+        GD.Print($"name tag symbol: symbols {string.Join(",", ids)}, level symbol {levelId}");
         GD.Print($"name tag symbol: {(fails.Count == 0 ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }

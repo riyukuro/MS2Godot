@@ -131,6 +131,7 @@ public sealed partial class RemoteLayer
         int old = r.Level;
         r.Level = (short)level;
         r.WornAbilities = null;
+        tags.SetLevels(r.Root, r.Level, r.AdventureLevel);     // vfunc_131 refreshes the name tag (FUN_141a60f00)
         return old;
     }
 
@@ -141,6 +142,7 @@ public sealed partial class RemoteLayer
         if (!users.TryGetValue(objectId, out var r)) return null;
         int old = r.AdventureLevel;
         r.AdventureLevel = level;
+        tags.SetLevels(r.Root, r.Level, r.AdventureLevel);     // vfunc_140 refreshes the name tag (FUN_141a60f00)
         return old;
     }
 

@@ -158,6 +158,29 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         return true;
     }
 
+    /// <summary>
+    /// Another PC's level or adventure level changed (OnLevelUp -> PC::vfunc_131, OnPrestige kind 2 -> vfunc_140, pc.cpp): each
+    /// refreshes its UINameTag entity (FUN_141a60f00), so a level symbol's text follows. False when the player has no tag.
+    /// </summary>
+    public bool SetLevels(Node3D root, int level, int adventureLevel)
+    {
+        if (root == null || !tags.TryGetValue(root, out var t) || t.Row != null) return false;
+        t.Level = level; t.PrestigeLevel = adventureLevel;
+        Symbol(t);
+        return true;
+    }
+
+    /// <summary>The players' symbol lines set again when the Display Player Symbol option changed since they were set.</summary>
+    public void RefreshSymbols()
+    {
+        foreach (var t in tags.Values)
+            if (t.Row == null && t.Symbol.OptionChanged) t.Symbol.Refresh(t.Node, movie, u, tables.NametagSymbols);
+    }
+
+    /// <summary>The levels a player's symbol line was last set with; (-1, -1) without a tag. The test's view.</summary>
+    public (int Level, int AdventureLevel) SymbolLevels(Node3D root) =>
+        root != null && tags.TryGetValue(root, out var t) ? t.Symbol.SetLevels : (-1, -1);
+
     /// <summary>The symbol the player's tag shows (the test's view); 0 when none or no tag.</summary>
     public ushort ShownSymbol(Node3D root) => root != null && tags.TryGetValue(root, out var t) ? t.Symbol.Shown(t.Node) : (ushort)0;
 
@@ -218,6 +241,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
 
     public override void _Process(double delta)
     {
+        RefreshSymbols();
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
         field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
