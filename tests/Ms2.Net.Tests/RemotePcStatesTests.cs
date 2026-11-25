@@ -1326,6 +1326,42 @@ public class RemotePcStatesTests {
         }
     }
 
+    [Test] public void LeavingTheCoupleStateKeepsTheFacingUnlessTheStateIsEnteredAgain() {
+        // StateCoupleEmotion::vfunc_5(n) (@0x140b80d10, statecoupleemotion.cpp:474-478): the angles vfunc_4 saved come back
+        // (SetRotationAndTargetYaw) only when n is 0x3a, a forced record; leaving into another state keeps the facing the
+        // couple path turned the PC to. A record in 0x3a corrects no rotation (FUN_1417dc4c0's IsPositionCorrectionAllowed).
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        var tail = new byte[33];
+        sm.Push(Rec(RemotePcStates.StateCoupleEmotion, 0x93, Vector3.Zero, Vector2.Zero, 0f, yaw: 30, skill: 90220001, tail: tail));
+        Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateCoupleEmotion));
+        Assert.That(b.RotationZ, Is.EqualTo(30f).Within(1e-3f));
+        b.RotationZ = 90;                                   // SyncWithPartner turned it to the path's angles
+        float atChange = float.NaN;
+        sm.StateChanged = st => { if (st == RemotePcStates.StateIdle) atChange = b.RotationZ; };
+        sm.Push(Rec(RemotePcStates.StateIdle, 1, Vector3.Zero, Vector2.Zero, 0f, yaw: 120)); Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        Assert.That(atChange, Is.EqualTo(90f).Within(1e-3f), "into StateIdle the facing stays");
+
+        sm.Push(Rec(RemotePcStates.StateCoupleEmotion, 0x93, Vector3.Zero, Vector2.Zero, 0f, yaw: 45, skill: 90220001, tail: tail));
+        Run(sm, 0.1f);
+        b.RotationZ = 90;
+        sm.Push(Rec(RemotePcStates.StateCoupleEmotion, 0x95, Vector3.Zero, Vector2.Zero, 0f, yaw: 200, skill: 90220001, tail: tail));
+        Run(sm, 0.1f);
+        Assert.That((sm.Cur, sm.Sub), Is.EqualTo((RemotePcStates.StateCoupleEmotion, 0x95)));
+        Assert.That(b.RotationZ, Is.EqualTo(45f).Within(1e-3f), "entered again: the saved angles");
+        Assert.That(sm.TargetYaw, Is.EqualTo(45f).Within(1e-3f));
+
+        b.RotationZ = 10;
+        sm.SaveCoupleAngles();                              // EndOfSequence of the last animation (:645-649)
+        b.RotationZ = 90;
+        sm.Push(Rec(RemotePcStates.StateCoupleEmotion, 0x96, Vector3.Zero, Vector2.Zero, 0f, skill: 90220001, tail: tail));
+        Run(sm, 0.1f);
+        Assert.That(b.RotationZ, Is.EqualTo(10f).Within(1e-3f), "the angles the last animation's end saved");
+    }
+
     [Test] public void AnEmotionRecordPlaysTheAnimThenTheIdleAnimAndItsBoreSubs() {
         // the record's m_n64 is StateEmotionData's emotion (vfunc_2); StateEmotion::vfunc_4 plays the face, the offsets and
         // the anim forced; its EndOfSequence goes to StateEmotionIdle (no face rest between), whose vfunc_9 plays the sub's

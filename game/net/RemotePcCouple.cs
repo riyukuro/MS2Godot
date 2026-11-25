@@ -32,7 +32,6 @@ public sealed partial class RemotePc
     double coupleNifStart, coupleLeft = -1, couplePeriod = -1;
     int coupleAni = -1;
     string coupleSeq;
-    float coupleSavedRotZ;
 
     /// <summary>The couple state's hooks on this PC's state machine.</summary>
     public void HookCouple()
@@ -54,7 +53,6 @@ public sealed partial class RemotePc
         coupleData = CoupleEmotionState.ReadTail(unchecked((uint)States.CoupleEmotion), States.CoupleTail, out int ani);
         if (coupleData == null) { States.ChangeState(RemotePcStates.StateIdle); return; }
         coupleAni = ani;
-        coupleSavedRotZ = RotationZ;
         if (CouplePartnerOf?.Invoke(coupleData.PartnerId) == null) return;
         var row = CoupleSkillRow?.Invoke(coupleData.Emotion);
         if (row == null || row.MainType != EmotionCast.MainTypeCouple) return;
@@ -66,12 +64,11 @@ public sealed partial class RemotePc
         if (States.Sub == CoupleEmotionState.Playing) PlayCoupleAni(coupleAni);
     }
 
-    /// <summary>vfunc_5 @0x140b80d10 (:453-484): the name tag offset back to 0; the saved angles only when 0x3a is entered
-    /// again (a forced record), which the next vfunc_4 saves anew.</summary>
+    /// <summary>vfunc_5 @0x140b80d10 (:453-484): the name tag offset back to 0 (the saved angles are the state machine's,
+    /// <see cref="RemotePcStates.CoupleLeft"/>).</summary>
     void CoupleExit()
     {
         NameTagOffset?.Invoke(0f);
-        if (coupleData != null) RotationZ = coupleSavedRotZ;
         coupleData = null; coupleInfo = null; couplePath = null; coupleSeq = null; coupleLeft = -1; coupleAni = -1;
     }
 
@@ -123,6 +120,7 @@ public sealed partial class RemotePc
                 coupleLeft = couplePeriod > 0 ? Math.Max(coupleLeft + couplePeriod, 1e-3) : -1;
                 if (coupleInfo != null && (coupleInfo.Loop || coupleAni < coupleInfo.LastAni))
                     PlayCoupleAni(Math.Min(coupleAni + 1, coupleInfo.LastAni));
+                else if (coupleInfo != null) States.SaveCoupleAngles();
             }
         }
     }

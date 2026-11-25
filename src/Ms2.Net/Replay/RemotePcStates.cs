@@ -371,6 +371,13 @@ public sealed class RemotePcStates
     public string HoldNode { get; private set; } = "";
     // the data the next entry of StateHold takes (vfunc_59's pData), and StateHold::m_kDir (the rotation before the hold)
     int pendingHoldId; string pendingHoldNode = ""; float holdDir;
+    /// <summary>StateCoupleEmotion's m_posSaved (vfunc_4 @0x140b808a0, statecoupleemotion.cpp:428; EndOfSequence :647): kept
+    /// over the state's exits, as the client's state object keeps it.</summary>
+    float coupleSavedRotZ;
+
+    /// <summary>StateCoupleEmotion::EndOfSequence @0x140b81670 (:645-649): the last animation's end saves the angles of now
+    /// (then Stop, which is MyPC's).</summary>
+    public void SaveCoupleAngles() => coupleSavedRotZ = pc.RotationZ;
 
     // StateWalk (statewalk.h:29-33: m_fSpeed1/m_fSpeed2 store vfunc_96/vfunc_97; m_n50 is only set by MyPC's vfunc_8)
     float walkSpeed1, walkSpeed2; int walkRun = 1; readonly int walkChanged = 0;
@@ -1195,7 +1202,10 @@ public sealed class RemotePcStates
                 EmotionIdleEnter();
                 break;
             case StateCoupleEmotion:
+                // vfunc_4 saves the angles once the record has its data (:428); one without goes to StateIdle at once
+                // (:422-427), whose exit never restores them, so saving them first changes nothing
                 pc.AnimSpeed = 1f;
+                coupleSavedRotZ = pc.RotationZ;
                 CoupleEntered?.Invoke();
                 break;
         }
@@ -1243,7 +1253,10 @@ public sealed class RemotePcStates
                 Emotion?.Offsets(0, 0);
                 break;
             case StateCoupleEmotion:
-                CoupleLeft?.Invoke();                         // StateCoupleEmotion::vfunc_5 @0x140b80d10
+                // StateCoupleEmotion::vfunc_5(n) @0x140b80d10: the saved angles only when n is 0x3a again (a forced
+                // record, :474-478, SetRotationAndTargetYaw); into any other state the PC keeps its facing
+                CoupleLeft?.Invoke();
+                if (next == StateCoupleEmotion) { pc.RotationZ = coupleSavedRotZ; TargetYaw = coupleSavedRotZ; }
                 break;
             case StateHold:
                 // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
