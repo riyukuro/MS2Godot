@@ -341,6 +341,12 @@ public sealed class GameTables
     /// <summary>CFameTable's fameDef.xml part (the officer npcs' alliance symbols); empty without data.</summary>
     public FameTable Fame { get; } = FameTable.Empty;
 
+    DungeonRoomTable dungeonRooms;
+    /// <summary>The dungeon room tables (CDungeonRoomTable: dungeonroom.cpp, dungeonrewardcoupon.cpp), read on the first use; empty without data.</summary>
+    public DungeonRoomTable DungeonRooms => dungeonRooms ??= packs == null
+        ? new DungeonRoomTable(_ => null, null, null, null)
+        : new DungeonRoomTable(packs, FeatureElements.Constants(packs));
+
     /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown; names
     /// holding "$" get the object words (e.g. "$map:02000302$ Treasure Key"), as CStringTable::Load @0x141810f70 does for
     /// every table at load (stringtable.cpp:640).</summary>

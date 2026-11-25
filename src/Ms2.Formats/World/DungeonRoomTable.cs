@@ -227,6 +227,13 @@ public sealed class DungeonRoomTable
         return rooms.Where(kv => kv.Key >= from && kv.Key <= to).Select(kv => kv.Value);
     }
 
+    /// <summary>GetFirstRoom (@0x140320870): GetRoomIndices of the dungeon (the rooms of ids MakeDungeonRoomId(d,1)..(d,999), in id order), then the room of
+    /// the first index; null when the dungeon has none.</summary>
+    public DungeonRoomData GetFirstRoom(uint dungeonId) => GetRoomsOfDungeon(dungeonId).FirstOrDefault();
+
+    /// <summary>GetLastRoom: the same with the last index; null when the dungeon has none.</summary>
+    public DungeonRoomData GetLastRoom(uint dungeonId) => GetRoomsOfDungeon(dungeonId).LastOrDefault();
+
     /// <summary>GetCoupon (@0x140322260): the coupon of an id, null for 0 or an unknown id.</summary>
     public DungeonRewardCoupon GetCoupon(uint id) => id != 0 && coupons.TryGetValue(id, out var c) ? c : null;
     /// <summary>GetRoundGroup (@0x1403222f0): null when unknown.</summary>

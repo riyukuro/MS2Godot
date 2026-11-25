@@ -48,6 +48,17 @@ public class DungeonRoomTableTests
     }
 
     [Test]
+    public void TheFirstAndLastRoomOfADungeonAreByRoomIndex()
+    {
+        var t = Rooms(Room(11003003, 3) + Room(11003001, 3) + Room(11003002, 3) + Room(11004001, 3));
+        Assert.That(t.GetFirstRoom(11003)?.Id, Is.EqualTo(11003001u));
+        Assert.That(t.GetLastRoom(11003)?.Id, Is.EqualTo(11003003u));
+        Assert.That(t.GetFirstRoom(11004)?.Id, Is.EqualTo(11004001u));
+        Assert.That(t.GetFirstRoom(11005), Is.Null, "a dungeon without rooms has no first room");
+        Assert.That(t.GetLastRoom(11005), Is.Null);
+    }
+
+    [Test]
     public void IdHelpersAndTheRankTableByGroup()
     {
         var t = Rooms(Room(11003002, 3, extra: "unionRewardID='11003001'") + Room(21001001, 12) + Room(31001001, 8) + Room(41001001, 9, extra: "rankTableID='4'"));
