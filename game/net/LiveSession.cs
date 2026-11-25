@@ -3597,7 +3597,7 @@ public partial class LiveSession : Node
                     if (boxed) await Frames(120);                       // the box movie loads before its buttons take a click
                     if (boxed && !string.IsNullOrEmpty(emoteShots))
                         flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}_box.png"));
-                    int groups = Instance?.ChatEmoticons.Groups.Count ?? 0;
+                    int groups = Instance?.ChatEmoticons.Groups.Count ?? 0, learned = Instance?.Emotions.All.Count ?? 0;
                     if (boxed && Instance?.Inventory is { } bag)
                     {
                         var send = bag.RequestUse;
@@ -3609,7 +3609,8 @@ public partial class LiveSession : Node
                         GD.Print($"live: emote useitem {n}: yes clicked, box {(MessageBoxLayer.Instance?.Shown == true ? "still shown" : "closed")}, {sent}");
                     }
                     await Until(() => (Instance?.ChatEmoticons.Groups.Count ?? 0) > groups, 60 * 5);
-                    GD.Print($"live: emote useitem {n}: sticker groups {groups} -> {Instance?.ChatEmoticons.Groups.Count ?? 0}");
+                    GD.Print($"live: emote useitem {n}: sticker groups {groups} -> {Instance?.ChatEmoticons.Groups.Count ?? 0}, "
+                        + $"emotions {learned} -> {Instance?.Emotions.All.Count ?? 0}");
                     await Frames(60);
                 }
                 if (!string.IsNullOrEmpty(emoteShots))
