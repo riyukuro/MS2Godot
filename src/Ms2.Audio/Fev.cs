@@ -135,6 +135,10 @@ public sealed class FevEvent
     public float MinDistance, MaxDistance;   // 3D attenuation (0 when the record has none)
     public List<int> Defs = new();
     public List<float> DefVolumes = new();   // the sound's own volume (parallel to Defs)
+    /// <summary>The client's category slot of <see cref="Category"/> (<see cref="SoundCategories.TryResolve"/>), resolved
+    /// at the event's first play: -2 until then, -1 for none.</summary>
+    internal int CategorySlot = -2;
+    internal float CategoryBelowTop = 1f;
 }
 
 /// <summary>

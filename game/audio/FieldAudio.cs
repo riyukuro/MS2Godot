@@ -97,20 +97,6 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         GD.Print($"audio: music volume {MusicVolume:F2}");
     }
 
-    /// <summary>The window's focus (WM_ACTIVATEAPP, windowservice.cpp:801-831): the categories mute or come back unless
-    /// "play in the background" is on (<see cref="Ms2.Formats.Options.SoundMix.AppActivated"/>).</summary>
-    public override void _Notification(int what)
-    {
-        if (what != NotificationApplicationFocusIn && what != NotificationApplicationFocusOut) return;
-        var mix = Ms2.Formats.Options.SoundMix.Shared;
-        bool active = what == NotificationApplicationFocusIn;
-        if (active == mix.AppActive) return;   // every FieldAudio in the tree hears it; the first one applies it
-        var options = GameOptions.Current?.SoundOption;
-        if (active) mix.AppActivated(options); else mix.AppDeactivated(options);
-        SoundBuses.Sync();
-        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: app {(active ? "active" : "inactive")}: {SoundBuses.Describe()}");
-    }
-
     public int BgmCue { get; private set; }
     public string BgmName => bgmName;
     public bool MusicPlaying => (musicPlayers[0]?.Playing ?? false) || (musicPlayers[1]?.Playing ?? false);

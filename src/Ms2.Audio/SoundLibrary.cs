@@ -187,12 +187,7 @@ public sealed class SoundLibrary
         var clip = FromWave(waves[rng.Next(waves.Count)]);
         if (clip == null) return null;
         clip.Volume = ev.Volume * ev.DefVolumes[0];
-        // the event's category: the options set the top-level one's volume, the authored sub-category volumes stay
-        if (SoundCategories.TryResolve(Fev, ev.Category, out int slot, out float belowTop))
-        {
-            clip.Category = slot;
-            clip.Volume *= belowTop;
-        }
+        TakeCategory(ev, clip);
         clip.MinDistance = ev.MinDistance;
         clip.MaxDistance = ev.MaxDistance;
         return clip;
@@ -251,12 +246,26 @@ public sealed class SoundLibrary
     {
         if (string.IsNullOrEmpty(tag) || !VoiceTags().TryGetValue(tag, out var hit)) return null;
         var clip = Clip(hit.Bank, hit.Sample, 1f);
-        if (SoundCategories.TryResolve(Fev, Fev.FindEvent(TriggerVoiceEvent, TriggerVoiceGroup)?.Category, out int slot, out float belowTop))
-        {
-            clip.Category = slot;
-            clip.Volume *= belowTop;
-        }
+        triggerVoice ??= Fev.FindEvent(TriggerVoiceEvent, TriggerVoiceGroup);
+        if (triggerVoice != null) TakeCategory(triggerVoice, clip);
         return clip;
+    }
+
+    FevEvent triggerVoice;
+
+    /// <summary>The event's category on its clip: the options set the top-level category's volume (the clip's bus), the
+    /// authored sub-category volumes stay in the clip's own volume. Resolved once per event.</summary>
+    void TakeCategory(FevEvent ev, SoundClip clip)
+    {
+        int slot = System.Threading.Volatile.Read(ref ev.CategorySlot);
+        if (slot == -2)
+        {
+            slot = SoundCategories.TryResolve(Fev, ev.Category, out int s, out float belowTop) ? s : -1;
+            ev.CategoryBelowTop = belowTop;
+            System.Threading.Volatile.Write(ref ev.CategorySlot, slot);
+        }
+        clip.Category = slot;
+        if (slot >= 0) clip.Volume *= ev.CategoryBelowTop;
     }
 
     /// <summary>The programmer-sound event PlayTriggerVoice plays a voice tag through (effectservice.cpp:1438).</summary>

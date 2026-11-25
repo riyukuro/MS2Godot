@@ -200,6 +200,8 @@ public partial class GameFlow : Node
         {
             DisplayNative.RestoreDisplayMode();
         }
+        else if (what == NotificationApplicationFocusIn || what == NotificationApplicationFocusOut)
+            SoundBuses.AppFocus(what == NotificationApplicationFocusIn);   // WM_ACTIVATEAPP's sound side (windowservice.cpp:801-831)
     }
 
     public override void _ExitTree()
