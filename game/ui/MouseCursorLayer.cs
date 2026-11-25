@@ -27,6 +27,8 @@ public partial class MouseCursorLayer : CanvasLayer
 
     public static MouseCursorLayer Instance => instance;
     public MouseCursorController Controller => controller;
+    /// <summary>The cursor movie (for checks).</summary>
+    public MovieDialog Movie => movie;
 
     /// <summary>The cursor movie's controller once its cursor clip is known, else null.</summary>
     public static MouseCursorController Cursor =>
@@ -60,12 +62,32 @@ public partial class MouseCursorLayer : CanvasLayer
     {
         sizeSource = GetViewport();
         sizeSource.SizeChanged += Relayout;
+        GetTree().NodeAdded += KeepLast;
         Relayout();
+    }
+
+    /// <summary>
+    /// GFxManager::HandleWindowMessage (gfxmanager.cpp:942-956) hands every window message to the movies from the last loaded
+    /// one back, and the cursor movie, the last, answers WM_MOUSEMOVE first (GFxMovieMouseCursor::vfunc_14 @0x1422f2bd0); the
+    /// stop after a taken message (FUN_1422be3a0) applies only to movie 2. Input goes through the root's children from the
+    /// last back, so the layer stays the root's last child: a scene added later, or the message box layer (which takes the
+    /// mouse inside a shown box and stops it), would otherwise see the motion first and the cursor would freeze under a box.
+    /// </summary>
+    void KeepLast(Node n)
+    {
+        if (n.GetParent() == GetParent() && n != this) CallDeferred(MethodName.MoveLast);
+    }
+
+    /// <summary>Moves the layer after every other child of the root (the message box layer calls this after it moves itself).</summary>
+    public void MoveLast()
+    {
+        if (GetParent() is { } p && GetIndex() != p.GetChildCount() - 1) p.MoveChild(this, -1);
     }
 
     public override void _ExitTree()
     {
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
+        GetTree().NodeAdded -= KeepLast;
         if (UiHost.MouseCursor == controller) UiHost.MouseCursor = null;
         if (instance == this) instance = null;
         Input.MouseMode = Input.MouseModeEnum.Visible;

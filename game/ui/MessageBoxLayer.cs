@@ -109,6 +109,7 @@ public partial class MessageBoxLayer : CanvasLayer
     void MoveLast()
     {
         if (GetParent() is { } p) p.MoveChild(this, -1);
+        MouseCursorLayer.Instance?.MoveLast();   // the cursor movie stays last: it sees every mouse motion before the box can take it
     }
 
     public override void _ExitTree()
