@@ -11,7 +11,9 @@ namespace Ms2Godot.Tests;
 /// Headless check (res://tests/player_follow_npc.tscn) of the own pc's StateTriggerFollowNpc (0x46, PlayerTriggerFollowNpc.cs),
 /// entered as the FollowNpc packet enters it:
 /// - the pc stands where the npc is and is turned as it is, frame after frame as the npc moves; the move keys do nothing;
-/// - an npc sequence key plays the pc body's sequence of that key (a jump key Jump_Down_A), once per new key;
+/// - an npc sequence key plays the pc body's sequence of that key (a jump key Jump_Down_A), once per new key, with the kf's own
+///   cycle: a looping kf keeps playing past its length even when another caller loaded the clip clamped before;
+/// - on a mount the pc still goes where the npc is, and the rider keeps its riding pose (the ridee's sequence is not ported);
 /// - its sync records carry state 0x46 with the npc id as the state data; the held item is let go on entry;
 /// - the same npc again keeps the state, the npc's leaving goes back to idle, an npc not here never holds it, a dead pc does
 ///   not enter it.
@@ -66,7 +68,7 @@ public partial class PlayerFollowNpcCheck : Node3D
     public override void _Process(double delta)
     {
         if (++frames != 5) return;
-        try { Follow(); Leaves(); }
+        try { Follow(); Leaves(); Mounted(); }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); }
         SetProcess(false);
         GD.Print($"player follow npc: {(fails.Count == 0 ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
@@ -81,6 +83,20 @@ public partial class PlayerFollowNpcCheck : Node3D
             if (pc.Anims.SequenceName(id) is { } name && pc.Anims.Sequence(name, false) != null && !found.Exists(f => f.Item2 == name)) found.Add((id, name));
         Expect(found.Count == 2, $"the body has {found.Count} sequences by key");
         return found.Count == 2 ? (found[0].Item1, found[0].Item2, found[1].Item1, found[1].Item2) : ((short)0, "", (short)0, "");
+    }
+
+    /// <summary>A body sequence by key whose kf loops (cycle 0), other than the two given, loaded clamped first as another caller
+    /// (an action list) may have loaded it.</summary>
+    (short, string) LoopingSequence(string not1, string not2)
+    {
+        for (short id = 1; id < 2000; id++)
+        {
+            if (pc.Anims.SequenceName(id) is not { } name || name == not1 || name == not2) continue;
+            var key = pc.Anims.Sequence(name, false);
+            if (key != null && pc.Anims.Kf.TryGetValue(key, out var kf) && kf.Cycle == 0 && pc.Anim.GetAnimation(key).Length > 0.2f) return (id, name);
+        }
+        Expect(false, "the body has no looping sequence by key");
+        return (0, "");
     }
 
     static Vector3 Godot(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
@@ -116,6 +132,16 @@ public partial class PlayerFollowNpcCheck : Node3D
         npc = (npc.Value.Pos, npc.Value.RotZ, -2);
         Steps(1);
         Expect(pc.CurrentAnim == "jump_down_a", $"key -2: playing {pc.CurrentAnim}, want jump_down_a");
+        // a looping kf loops: past its length it still plays, and the body's one clip keeps the kf's cycle
+        var (kl, nl) = LoopingSequence(n1, n2);
+        string keyL = nl.ToLowerInvariant();
+        npc = (npc.Value.Pos, npc.Value.RotZ, kl);
+        Steps(1);
+        Expect(pc.CurrentAnim == keyL, $"key {kl}: playing {pc.CurrentAnim}, want {nl}");
+        float len = pc.Anim.HasAnimation(keyL) ? (float)pc.Anim.GetAnimation(keyL).Length : 0f;
+        Steps((int)(len / Dt) + 20);
+        Expect(pc.Anim.IsPlaying() && pc.Anim.CurrentAnimation == keyL, $"looping {nl} ({len:F2} s) stopped after its length: playing {pc.Anim.IsPlaying()} '{pc.Anim.CurrentAnimation}'");
+        Expect(pc.Anim.HasAnimation(keyL) && pc.Anim.GetAnimation(keyL).LoopMode == Animation.LoopModeEnum.Linear, $"looping {nl}: the clip's loop mode is {(pc.Anim.HasAnimation(keyL) ? pc.Anim.GetAnimation(keyL).LoopMode : "none")}");
         pc.Input2 = Vector2.Zero;
         Steps(30);
         Expect(sent.Exists(r => r.State == 0x46 && r.Flag1Value == NpcId), $"sync: {string.Join(",", sent.ConvertAll(r => $"{r.State:x}/{r.Flag1Value}"))}");
@@ -123,7 +149,7 @@ public partial class PlayerFollowNpcCheck : Node3D
         held.Clear();
         pc.EnterTriggerFollowNpc(NpcId);
         Expect(held.Count == 0 && pc.State == Player.MoveState.TriggerFollowNpc, $"same npc entered the state again ({held.Count})");
-        GD.Print($"player follow npc: followed through keys {k1} {n1}, {k2} {n2} and -2; {sent.Count} sync records");
+        GD.Print($"player follow npc: followed through keys {k1} {n1}, {k2} {n2}, -2 and the looping {kl} {nl}; {sent.Count} sync records");
     }
 
     void Leaves()
@@ -139,5 +165,30 @@ public partial class PlayerFollowNpcCheck : Node3D
         Expect(pc.State != Player.MoveState.TriggerFollowNpc, "a dead pc entered the state");
         pc.DeadFlag = false;
         GD.Print("player follow npc: idle when the npc left; an npc not here and a dead pc do not enter");
+    }
+
+    void Mounted()
+    {
+        var (k1, n1, k2, n2) = TwoSequences();
+        pc.RideOn(new Mount { Data = new RideData { Id = 1, RunSpeed = 5 }, Visual = new Node3D() });
+        Steps(5);
+        npc = (new System.Numerics.Vector3(-200, 80, 30), 120f, k1);
+        pc.EnterTriggerFollowNpc(NpcId);
+        Expect(pc.State == Player.MoveState.TriggerFollowNpc, $"mounted: state {pc.State}");
+        Steps(30);      // past the riding pose's blend in (0.1 s), so it runs
+        Expect(pc.GlobalPosition.DistanceTo(Godot(npc.Value.Pos)) < 0.01f, $"mounted: pc at {pc.GlobalPosition}, npc at {Godot(npc.Value.Pos)}");
+        Expect(Mathf.Abs(pc.FacingRotZ - 120f) < 0.5f, $"mounted: turned to {pc.FacingRotZ}, want 120");
+        Expect(pc.CurrentAnim != n1.ToLowerInvariant(), $"mounted: the rider plays the npc's {n1} in place of its riding pose");
+        // a new npc key leaves the riding pose running (not played over and started again)
+        string ride = pc.CurrentAnim;
+        double at = pc.Anim.CurrentAnimationPosition;
+        npc = (npc.Value.Pos, npc.Value.RotZ, k2);
+        Steps(1);
+        Expect(pc.CurrentAnim == ride && pc.Anim.CurrentAnimationPosition > at,
+            $"mounted: key {k2} ({n2}) broke the riding pose {ride}: now {pc.CurrentAnim} at {pc.Anim.CurrentAnimationPosition:F3} s, was {at:F3} s");
+        npc = null;
+        Steps(1);
+        pc.RideOff();
+        GD.Print($"player follow npc: mounted, the pc went to the npc and kept its riding pose ({pc.CurrentAnim})");
     }
 }

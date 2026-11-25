@@ -249,6 +249,21 @@ public sealed class ActionAnims
         return key;
     }
 
+    /// <summary>
+    /// A sequence by its name played as PCBase::PlayAnimation(name, speed, bForce, false) plays it: with the kf's own cycle
+    /// (0 a loop, 1 back and forth, 2 clamped), not a caller's loop flag. The cycle is set on the body's one clip, so a clip an
+    /// earlier caller loaded with another loop mode plays its kf's cycle again from here. Null when the body has none.
+    /// </summary>
+    public string SequenceOwnCycle(string seq)
+    {
+        string key = Sequence(seq, false);
+        if (key == null) return null;
+        Kf.TryGetValue(key, out var kf);
+        lib.GetAnimation(key).LoopMode = kf == null || kf.Cycle == 0 ? Animation.LoopModeEnum.Linear
+            : kf.Cycle == 1 ? Animation.LoopModeEnum.Pingpong : Animation.LoopModeEnum.None;
+        return key;
+    }
+
     /// <summary>Time of a text key ("begin", "end", ...) in a sequence, or -1.</summary>
     public float TextKey(string anim, string text)
     {
