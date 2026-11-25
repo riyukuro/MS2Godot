@@ -99,6 +99,8 @@ public sealed class GameTables
         CharacterAbilityResetMerat = (int)k.Float("CharacterAbilityResetMerat", CharacterAbilityResetMerat);
         CharacterAbilityOpenQuestID = (uint)k.Float("CharacterAbilityOpenQuestID", CharacterAbilityOpenQuestID);
         MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
+        foreach (var (key, i) in new[] { ("str", 0), ("dex", 1), ("int", 2), ("luk", 3), ("hp", 4), ("cap", 0x11) })
+            StatPointLimit[i] = k.Int("StatPointLimit_" + key, StatPointLimit[i]);
         PetMaxLevel = (uint)k.Float("PetMaxLevel", PetMaxLevel);
         PartyVoteReadyTagExpireSeconds = (int)k.Float("PartyVoteReadyTagExpireSeconds", PartyVoteReadyTagExpireSeconds);
         PCBangItemDefaultPeriod = (uint)k.Float("PCBangItemDefaultPeriod", PCBangItemDefaultPeriod);
@@ -460,6 +462,17 @@ public sealed class GameTables
     public uint CharacterAbilityDefaultPoint = 10, CharacterAbilityResetCoolTimeMinute = 120, CharacterAbilityOpenQuestID = 90000060;
     public long CharacterAbilityResetMeso = 2500;
     public int CharacterAbilityResetMerat = 100;
+    /// <summary>Client::Constants StatPointLimit[35] (+0x9100, clientconstants.h:553), the cap of the points put into each stat:
+    /// zeroed, then GetOr (int) of StatPointLimit_str, _dex, _int, _luk, _hp and _cap into keys 0-4 and 0x11 with the defaults
+    /// 100, 100, 100, 100, 50 and 50 (unit_1402ab440_constantsblocks.cpp:1147-1153).</summary>
+    public readonly int[] StatPointLimit = DefaultStatPointLimit();
+    static int[] DefaultStatPointLimit()
+    {
+        var a = new int[35];
+        a[0] = a[1] = a[2] = a[3] = 100;
+        a[4] = a[0x11] = 50;
+        return a;
+    }
     /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
     public int MaxChatLength = 50;

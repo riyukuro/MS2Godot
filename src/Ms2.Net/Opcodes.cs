@@ -293,6 +293,7 @@ public enum Outbound : ushort {
     CharacterAbility = 0x89,    // SendOp CharacterAbility (commonfiles/opcodes.h): the character ability dialog's sends
     Trade = 0x49,           // SendOp Trade (commonfiles/opcodes.h): CTradeManagerEx's SendTradeMode*
     Mastery = 0x92,             // SendOp Mastery (commonfiles/opcodes.h): the mastery dialog's sends
+    AttributePoint = 0x99,      // SendOp AttributePoint (commonfiles/opcodes.h:456): CStatPointManager::RequestAdd / RequestReset
     // SendOp (commonfiles/opcodes.h): the guide system's sends
     Trigger = 0x2F,
     GuideRecord = 0x57,

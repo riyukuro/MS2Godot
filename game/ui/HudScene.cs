@@ -3387,7 +3387,8 @@ public partial class HudScene : Node, IUiStageHost
     /// Opens the character window over the live session's own character (FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand) or, with no live session, a fixture in those packets' shapes (<see cref="UiFixture.Character"/>). Before
     /// the own FieldAddUser there is no record and, as UIMyInfoDialog::vfunc_65 without a local player, nothing opens.
-    /// Nothing is sent: the stat point, motto, title, profile and screenshot requests are only logged.
+    /// The stat point requests go to the live session (offline nothing is sent); the motto, title and screenshot requests are
+    /// only logged.
     /// </summary>
     void OpenMyInfo()
     {
@@ -3405,7 +3406,11 @@ public partial class HudScene : Node, IUiStageHost
             SymbolId = () => me.Insignia, GmGrade = () => me.User?.GmGrade ?? 0,
             AchieveTally = () => live?.AchieveSum ?? 0,   // the fixture: an empty trophy book
             LocalPlayerDead = () => me.Dead,              // PCBase::IsDead (FieldAddUser, UserState 12 / DeadUser, Revival)
+            InBattle = () => live?.SelfInBattle ?? false,
+            FieldKnown = () => live?.FieldDataKnown ?? false,
+            FieldLimitsStatPoints = () => live?.FieldHasLimitContent(0x10) ?? false,    // uimyinfodialog.cpp:896
         };
+        if (live != null) c.Send = live.SendAttributePoint;
         c.SystemNotice += SystemNotice;
         c.ItemSound += item => PlayItemSound(item?.Data);
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
@@ -3420,12 +3425,13 @@ public partial class HudScene : Node, IUiStageHost
         BindBoxAnswers();
         void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
         void EquipChanged() => c.MarkDirty((long)Time.GetTicksMsec());
-        me.Changed += Changed; me.StatPoints.Changed += Changed; me.EquipChanged += EquipChanged;
+        void OtherStatsChanged() => c.OtherStatsChanged((long)Time.GetTicksMsec());
+        me.Changed += Changed; me.StatPoints.Changed += Changed; me.EquipChanged += EquipChanged; me.OtherStatsChanged += OtherStatsChanged;
         if (live != null) live.AchievesChanged += Changed;
         var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
-            me.Changed -= Changed; me.StatPoints.Changed -= Changed; me.EquipChanged -= EquipChanged;
+            me.Changed -= Changed; me.StatPoints.Changed -= Changed; me.EquipChanged -= EquipChanged; me.OtherStatsChanged -= OtherStatsChanged;
             if (live != null) live.AchievesChanged -= Changed;
             m.Host.Unload();
             m.QueueFree();

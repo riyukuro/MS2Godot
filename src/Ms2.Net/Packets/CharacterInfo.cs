@@ -1,4 +1,5 @@
 using Maple2.PacketLib.Tools;
+using Ms2.Net.Wire;
 
 namespace Ms2.Net.Packets;
 
@@ -34,7 +35,7 @@ public abstract record AttributePointMessage {
 
 /// <summary>
 /// CStatPointManager (client/ms2/statpointmanager.cpp), the local player's attribute points as the packets leave them.
-/// Its requests (RequestAdd / RequestReset, SendOp::AttributePoint modes 2 and 3) are not here: nothing is sent.
+/// Its requests are <see cref="RequestAdd"/> and <see cref="RequestReset"/> (SendOp::AttributePoint modes 2 and 3).
 /// </summary>
 public sealed class StatPointBook {
     readonly Dictionary<int, int> points = new();
@@ -72,6 +73,45 @@ public sealed class StatPointBook {
 
     /// <summary>GetCostIds (unit_140837660_idcosttable.cpp:59): the stats with a point cost (InitCosts, :28), in key order.</summary>
     public static readonly int[] CostIds = { 0, 1, 2, 3, 4, 0x11 };
+
+    /// <summary>FUN_140837770 (unit_140837660_idcosttable.cpp:49): what <paramref name="count"/> points add to the stat, the
+    /// stat's cost (InitCosts :28: 1 for str, dex, int and luk, 10 for health, 3 for 0x11) times the count; 0 for a stat
+    /// without a cost.</summary>
+    public static ulong PointValue(int stat, uint count) => stat switch
+    {
+        0 or 1 or 2 or 3 => count,
+        4 => 10UL * count,
+        0x11 => 3UL * count,
+        _ => 0,
+    };
+
+    /// <summary>
+    /// RequestAdd @0x140caa280 (statpointmanager.cpp:124): nothing with no points remaining; when the stat's points plus
+    /// <paramref name="amount"/> pass its cap <paramref name="limit"/> (Client::Constants StatPointLimit[stat], both unsigned)
+    /// no request and <paramref name="overLimit"/> (the caller's system notice s_char_info_limit_stat_point); else mode 2.
+    /// </summary>
+    public IOutPacket RequestAdd(int stat, int amount, int limit, out bool overLimit) {
+        overLimit = false;
+        if (Remaining == 0) return null;
+        if ((uint)(GetStatPoints(stat) + amount) > (uint)limit) { overLimit = true; return null; }
+        return new AttributePointAddRequest((byte)stat, amount);
+    }
+
+    /// <summary>RequestReset @0x140caa3b0 (statpointmanager.cpp:144): nothing with no points used; else mode 3.</summary>
+    public IOutPacket RequestReset() => Used == 0 ? null : new AttributePointResetRequest();
+}
+
+/// <summary>Outbound AttributePoint (SendOp 0x99) mode 2, CStatPointManager::RequestAdd (statpointmanager.cpp:134-137): u8 2,
+/// u8 the stat key, i32 the points.</summary>
+public sealed record AttributePointAddRequest(byte Stat, int Amount) : IOutPacket {
+    public Outbound Op => Outbound.AttributePoint;
+    public void Write(ByteWriter w) { w.WriteByte(2); w.WriteByte(Stat); w.WriteInt(Amount); }
+}
+
+/// <summary>Outbound AttributePoint (SendOp 0x99) mode 3, CStatPointManager::RequestReset (statpointmanager.cpp:148-150): u8 3.</summary>
+public sealed record AttributePointResetRequest : IOutPacket {
+    public Outbound Op => Outbound.AttributePoint;
+    public void Write(ByteWriter w) => w.WriteByte(3);
 }
 
 /// <summary>
@@ -269,6 +309,9 @@ public sealed class MyCharacter {
     public EquipItem EquipByUid(long uid) => (Equips ?? Array.Empty<EquipItem>()).Concat(Outfit2 ?? Array.Empty<EquipItem>()).FirstOrDefault(e => e.Uid == uid);
     public readonly StatPointBook StatPoints = new();
     public event Action Changed;
+    /// <summary>CSceneStateGame::OnStat (scenestategame.cpp:9446-9491): the own Stat changed a stat other than health, spirit and
+    /// stamina (bOther), so UIStatusEventDispatcher::FUN_141b0e050 calls each listener's vfunc_oa0_2.</summary>
+    public event Action OtherStatsChanged;
     /// <summary>A put-on / put-off changed the equip lists (before <see cref="Changed"/>): the item event dispatcher's
     /// put-on / put-off (Unk_SSGItemHub vfunc_20 / vfunc_21, scenestategame.cpp:3117 / 3162).</summary>
     public event Action EquipChanged;
@@ -664,11 +707,15 @@ public sealed class MyCharacter {
     }
 
     public void Apply(PlayerStat s) {
+        bool other = false;
         foreach (var (stat, v) in s.Values) {
             if (stat >= PcInfo.StatCount) continue;
+            if (stat is not (PlayerStat.Health or PlayerStat.Spirit or PlayerStat.Stamina)
+                && (Stats0[stat] != v[0] || Stats1[stat] != v[1] || Stats2[stat] != v[2])) other = true;
             Stats0[stat] = v[0]; Stats1[stat] = v[1]; Stats2[stat] = v[2];
         }
         Changed?.Invoke();
+        if (other) OtherStatsChanged?.Invoke();
     }
 
     /// <summary>OnStateConsumeEp (scenestategame.cpp:5799-5810): SetCurrentStat(10, ep), the value taken as absolute and clamped to

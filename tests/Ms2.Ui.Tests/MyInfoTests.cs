@@ -105,6 +105,131 @@ public class MyInfoTests
             Assert.That(Rt.ToString(h.Get(h.FindNamed("value", (AsDisplayObject)h.Child("m_defenseInfo")), "text")), Is.EqualTo("41"));
     }
 
+    sealed class StatPointProbe
+    {
+        public bool Battle, Known = true, Limited;
+        public readonly List<Ms2.Net.Wire.IOutPacket> Sent = new();
+        public readonly List<MessageBoxData> Boxes = new();
+        public readonly List<string> Notices = new();
+        public void Hook(MyInfoController c)
+        {
+            c.InBattle = () => Battle;
+            c.FieldKnown = () => Known;
+            c.FieldLimitsStatPoints = () => Limited;
+            c.Send = p => { Sent.Add(p); return true; };
+            c.ShowBox = Boxes.Add;
+            c.SystemNotice += Notices.Add;
+        }
+    }
+
+    [Test]
+    public void StatPointButtonsRefuseInBattleAndInAFieldThatLimitsThem()
+    {
+        // vfunc_93 (uimyinfodialog.cpp:883-902) before the plus button (vfunc_91) and the reset box (uipcinfodialog.cpp:706):
+        // the battle box, nothing without the field's data, the field box with limitContent 0x10; each sends nothing
+        Packs();
+        var probe = new StatPointProbe();
+        var (_, c, _, errors) = Load(probe.Hook);
+        Assert.That(errors, Is.Empty);
+        string battle = c.Model.Tables.Common("s_msg_skillbook_set_disable_battle"), field = c.Model.Tables.Common("s_msg_skillbook_set_disable_field");
+        Assert.That(battle, Is.Not.Empty); Assert.That(field, Is.Not.Empty);
+
+        probe.Limited = true;
+        Assert.That(c.OnCallback("onAddStatPoint", new object[] { 2 }), Is.True);
+        Assert.That(c.OnCallback("onResetStatPoint", new object[0]), Is.True);
+        Assert.That(c.OnCallback("onAddStatPointRepeat", new object[] { 2 }), Is.False);
+        Assert.That(probe.Boxes.Select(b => (b.Type, b.Msg)), Is.EqualTo(Enumerable.Repeat((0, field), 3)));
+        Assert.That(probe.Sent, Is.Empty);
+
+        probe.Boxes.Clear(); probe.Battle = true;                       // battle is checked first
+        c.OnCallback("onAddStatPoint", new object[] { 2 });
+        Assert.That(probe.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { battle }));
+
+        probe.Boxes.Clear(); probe.Battle = false; probe.Limited = false; probe.Known = false;
+        c.OnCallback("onAddStatPoint", new object[] { 2 });
+        c.OnCallback("onResetStatPoint", new object[0]);
+        Assert.That(probe.Boxes, Is.Empty, "no field data: no box");
+        Assert.That(probe.Sent, Is.Empty);
+
+        probe.Known = true;                                             // allowed: RequestAdd(dex, 1)
+        c.OnCallback("onAddStatPoint", new object[] { 2 });
+        Assert.That(probe.Sent, Is.EqualTo(new[] { new AttributePointAddRequest(1, 1) }));
+        c.OnCallback("onAddStatPoint", new object[] { 0 });             // row 0 (one less: -1) is not in the list
+        c.OnCallback("onAddStatPoint", new object[] { 7 });
+        Assert.That(probe.Sent, Has.Count.EqualTo(1));
+        c.OnCallback("onResetStatPoint", new object[0]);                // the yes / no box first
+        Assert.That(probe.Sent, Has.Count.EqualTo(1));
+        var box = probe.Boxes.Single();
+        Assert.That((box.Type, box.Msg), Is.EqualTo((1, c.Model.Tables.Common("s_char_info_reset_stat_point"))));
+        Assert.That(box.InvokeCallback(1, null), Is.True);              // no: nothing
+        Assert.That(probe.Sent, Has.Count.EqualTo(1));
+        probe.Limited = true;                                           // vfunc_92 asks vfunc_93 again at the answer
+        box.InvokeCallback(0, null);
+        Assert.That(probe.Sent, Has.Count.EqualTo(1));
+        Assert.That(probe.Boxes.Last().Msg, Is.EqualTo(field));
+        probe.Limited = false;
+        box.InvokeCallback(0, null);
+        Assert.That(probe.Sent.Last(), Is.TypeOf<AttributePointResetRequest>());
+    }
+
+    [Test]
+    public void HeldPlusButtonAddsOnTheRowAndSendsTheHeldPoints()
+    {
+        // OnAddStatPointRepeat (uimyinfodialog.cpp:819): m_250 grows and the row shows it (UpdateStatPointRow); the release
+        // (FUN_141a5cf30) or the last remaining point sends RequestAdd(stat, m_250) once, and the rows wait (m_254) for the
+        // own Stat's other-stats change (vfunc_oa0_2)
+        Packs();
+        var probe = new StatPointProbe();
+        var (h, c, me, errors) = Load(probe.Hook);
+        Assert.That(errors, Is.Empty);
+        var row1 = (AsDisplayObject)h.Child("m_statPoint1");
+        var remain = h.FindNamed("m_remainStatPoint", (AsDisplayObject)h.Child("m_remainPoint"));
+        Assert.That(Rt.ToString(h.Get(remain, "text")), Is.EqualTo("3"));
+        c.OnCallback("onAddStatPointRepeat", new object[] { 1 });
+        c.OnCallback("onAddStatPointRepeat", new object[] { 1 });
+        Assert.That(probe.Sent, Is.Empty);
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("m_point", row1), "text")), Is.EqualTo("50"), "48 + 2 points of cost 1");
+        Assert.That(Rt.ToString(h.Get(remain, "text")), Is.EqualTo("1"));
+        c.OnCallback("onAddStatPointStop", new object[] { 1 });
+        Assert.That(probe.Sent, Is.EqualTo(new[] { new AttributePointAddRequest(0, 2) }));
+        c.OnCallback("onAddStatPointStop", new object[] { 1 });         // nothing held: nothing
+        c.OnCallback("onAddStatPointRepeat", new object[] { 1 });       // m_254: no more held points
+        c.MarkChanged(0); c.Process(0); c.Process(1000);                // nor a row rebuild
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("m_point", row1), "text")), Is.EqualTo("50"));
+        Assert.That(probe.Sent, Has.Count.EqualTo(1));
+
+        c.OtherStatsChanged(2000); c.Process(2000); c.Process(3000);    // the server's Stat: the rows are the record's again
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("m_point", row1), "text")), Is.EqualTo("48"));
+        Assert.That(Rt.ToString(h.Get(remain, "text")), Is.EqualTo("3"));
+        var row5 = (AsDisplayObject)h.Child("m_statPoint5");            // health: cost 10 a point
+        for (int i = 0; i < 3; i++) c.OnCallback("onAddStatPointRepeat", new object[] { 5 });
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("m_point", row5), "text")), Is.EqualTo("2130"));
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_plus", row5), "enabled")), Is.False, "none remaining");
+        Assert.That(probe.Sent, Has.Count.EqualTo(1));
+        c.OnCallback("onAddStatPointRepeat", new object[] { 5 });       // the remaining 3 are held: they go out
+        Assert.That(probe.Sent.Last(), Is.EqualTo(new AttributePointAddRequest(4, 3)));
+    }
+
+    [Test]
+    public void PlusButtonOverTheStatsCapSendsNothing()
+    {
+        // CStatPointManager::RequestAdd (statpointmanager.cpp:128-131): past StatPointLimit[stat] the system notice
+        // s_char_info_limit_stat_point and no request
+        Packs();
+        var probe = new StatPointProbe();
+        var (_, c, _, _) = Load(probe.Hook);
+        int cap = c.Model.Tables.StatPointLimit[0];
+        Assert.That(cap, Is.GreaterThan(5), "the data's str cap is above the fixture's 5 points");
+        c.Model.Tables.StatPointLimit[0] = 5;
+        try
+        {
+            c.OnCallback("onAddStatPoint", new object[] { 1 });
+            Assert.That(probe.Notices, Is.EqualTo(new[] { "s_char_info_limit_stat_point" }));
+            Assert.That(probe.Sent, Is.Empty);
+        }
+        finally { c.Model.Tables.StatPointLimit[0] = cap; }
+    }
+
     [Test]
     public void TrophyCountIsTheAchieveTally()
     {
@@ -225,8 +350,9 @@ public class MyInfoTests
     }
 
     [Test]
-    public void RequestsAreOnlyRaised()
+    public void RequestsNotPortedAreOnlyRaised()
     {
+        // the stat point buttons are the dialog's own (StatPointButtonsRefuseInBattleAndInAFieldThatLimitsThem), not raised
         Packs();
         var (_, c, _, _) = Load();
         var raised = new List<string>(); var toggled = new List<int>();
@@ -235,7 +361,7 @@ public class MyInfoTests
         Assert.That(c.OnCallback("OnResetStatPoint", Array.Empty<object>()), Is.True);
         Assert.That(c.OnCallback("OnTitleChange", new object[] { 0 }), Is.False);
         Assert.That(c.OnCallback("onSymbolClick", Array.Empty<object>()), Is.False);
-        Assert.That(raised, Is.EqualTo(new[] { "OnAddStatPoint", "OnResetStatPoint", "OnTitleChange" }));
+        Assert.That(raised, Is.EqualTo(new[] { "OnTitleChange" }));
         Assert.That(toggled, Is.EqualTo(new[] { 0x4ed5 }));
     }
 

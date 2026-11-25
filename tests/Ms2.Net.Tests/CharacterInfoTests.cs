@@ -22,6 +22,43 @@ public class CharacterInfoTests {
         Assert.That(StatPointBook.CostIds, Is.EqualTo(new[] { 0, 1, 2, 3, 4, 0x11 }));
     }
 
+    static byte[] Bytes(Ms2.Net.Wire.IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+
+    [Test] public void StatPointRequestsAreTheStatPointManagersSends() {
+        // RequestAdd / RequestReset (statpointmanager.cpp:124-151): SendOp AttributePoint, mode 2 u8 stat i32 amount, mode 3 alone
+        Assert.That(ProtocolProfile.Gms2.Number(Outbound.AttributePoint), Is.EqualTo((ushort)0x9A));
+        Assert.That(ProtocolProfile.Kms2525.Number(Outbound.AttributePoint), Is.EqualTo((ushort)0x99));
+        var b = new StatPointBook();
+        Assert.That(b.RequestAdd(0, 1, 100, out bool over), Is.Null, "no points remaining: nothing");
+        Assert.That(over, Is.False);
+        Assert.That(b.RequestReset(), Is.Null, "no points used: nothing");
+        b.Apply(new AttributePointMessage.Stats(15, new (byte, int)[] { (0, 5), (0x11, 7) }));
+        var add = b.RequestAdd(0x11, 2, 50, out over);
+        Assert.That(over, Is.False);
+        Assert.That(add.Op, Is.EqualTo(Outbound.AttributePoint));
+        Assert.That(Bytes(add), Is.EqualTo(new byte[] { 2, 0x11, 2, 0, 0, 0 }));
+        Assert.That(b.RequestAdd(0, 1, 6, out over), Is.Not.Null, "5 + 1 is not above the cap 6");
+        Assert.That(b.RequestAdd(0, 2, 6, out over), Is.Null, "5 + 2 is above the cap 6");
+        Assert.That(over, Is.True);
+        Assert.That(b.RequestAdd(1, 1, 0, out over), Is.Null, "a stat without a cap");
+        Assert.That(over, Is.True);
+        Assert.That(Bytes(b.RequestReset()), Is.EqualTo(new byte[] { 3 }));
+        Assert.That(StatPointBook.CostIds.Select(id => StatPointBook.PointValue(id, 2)), Is.EqualTo(new ulong[] { 2, 2, 2, 2, 20, 6 }));
+        Assert.That(StatPointBook.PointValue(5, 2), Is.Zero);
+    }
+
+    [Test] public void OwnStatRaisesOtherStatsOnlyForStatsOtherThanHealthSpiritStamina() {
+        // CSceneStateGame::OnStat (scenestategame.cpp:9446-9491): bOther, the listeners' vfunc_oa0_2, only when a stat other
+        // than 4, 7 and 10 changed one of its three values
+        var me = new MyCharacter(); int other = 0; me.OtherStatsChanged += () => other++;
+        me.Apply(new PlayerStat(1, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 100, 90, 80 }, [PlayerStat.Spirit] = new long[] { 1, 1, 1 }, [PlayerStat.Stamina] = new long[] { 2, 2, 2 } }));
+        Assert.That(other, Is.Zero);
+        me.Apply(new PlayerStat(1, new Dictionary<byte, long[]> { [0] = new long[] { 10, 0, 10 } }));
+        Assert.That(other, Is.EqualTo(1));
+        me.Apply(new PlayerStat(1, new Dictionary<byte, long[]> { [0] = new long[] { 10, 0, 10 } }));
+        Assert.That(other, Is.EqualTo(1), "the same values: no change");
+    }
+
     [Test] public void UserEnvTitleModesAndHomeCommend() {
         Assert.That(UserEnvMessage.Read(R(w => { w.WriteByte(0); w.WriteInt(10000001); })), Is.EqualTo(new UserEnvMessage.TitleAdded(10000001)));
         Assert.That(UserEnvMessage.Read(R(w => { w.WriteByte(1); w.WriteInt(9); w.WriteInt(10000002); })), Is.EqualTo(new UserEnvMessage.TitleChanged(9, 10000002)));

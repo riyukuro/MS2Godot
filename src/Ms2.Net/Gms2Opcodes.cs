@@ -289,6 +289,7 @@ static class Gms2Opcodes {
         [Outbound.CharacterAbility] = 0x8A,
         [Outbound.Trade] = 0x4A,
         [Outbound.Mastery] = 0x93,
+        [Outbound.AttributePoint] = 0x9A,     // upstream RecvOp AttributePoint
         [Outbound.Trigger] = 0x2F,
         [Outbound.GuideRecord] = 0x58,
         [Outbound.Tutorial] = 0x8B,

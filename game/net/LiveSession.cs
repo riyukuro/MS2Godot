@@ -547,6 +547,9 @@ public partial class LiveSession : Node
     public event Action SkillPointsChanged;
     /// <summary>RequestSkillBookTree mode 0 (UISkillBookTreeDialog::OnLoadComplete): a read request for the saved tabs.</summary>
     public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
+    /// <summary>The character window's stat point requests (CStatPointManager::RequestAdd / RequestReset, FUN_140710590): as
+    /// <see cref="SendSkillBook"/>, false when the packet went nowhere.</summary>
+    public bool SendAttributePoint(Ms2.Net.Wire.IOutPacket packet) => SendSkillBook(packet);
     /// <summary>The skill window's own requests (FUN_140710590): the tab save (RequestSkillBookTree mode 1) and Job.</summary>
     /// <summary>False when the packet went nowhere (no game connection, or the profile has no number for it): the window must not
     /// wait for an answer then.</summary>

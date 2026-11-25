@@ -102,12 +102,22 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
     public Ms2.Net.Packets.InventoryView Inventory;
     /// <summary>CInputKeyHandler::IsActionKeyDown(action, 0, 0): 0x49406, MS2DragSlot::vfunc_19's preview key.</summary>
     public Func<int, bool> ActionKeyDown = _ => false;
+    /// <summary>The local PC's battle stance (PCBase::vfunc_65), for <see cref="CanChangeStatPoints"/>.</summary>
+    public Func<bool> InBattle = () => false;
+    /// <summary>WorldService::GetFieldData is set (the current field's data is known).</summary>
+    public Func<bool> FieldKnown = () => false;
+    /// <summary>CFieldDataCli::HasLimitContent(0x10) of the current field (uimyinfodialog.cpp:896).</summary>
+    public Func<bool> FieldLimitsStatPoints = () => false;
+    /// <summary>FUN_140710590 of the stat point requests; false when the packet went nowhere. Null: nothing is sent.</summary>
+    public Func<Ms2.Net.Wire.IOutPacket, bool> Send;
 
     PcInfo info;           // m_spInfo
     int tab;               // m_nTab
     bool dirty;            // m_208 (profile at the next vfunc_15)
     bool bagDirty;         // m_20c (and the bag with it)
     long statsDueMs = -1;  // m_218 (the stat lists 100 ms later)
+    int pendingPoints;     // m_250: the points a held plus button added, not sent yet
+    bool heldPointsSent;   // m_254: the held points went out; the stat point rows wait for the status change
 
     public PcInfo Info => info;
     public int Tab => tab;
@@ -654,6 +664,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
     /// </summary>
     void StatPointRows()
     {
+        if (heldPointsSent) return;                         // UIMyInfoDialog::vfunc_87 (@0x141a5d060): m_254 set, nothing
         int remaining = 0, used = 0;
         if (info.IsLocal)
         {
@@ -693,6 +704,154 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
             SetExternalTooltipFunction(remainClip, RemainTooltip);
             RegisterMouseEvent(remainClip);
         }
+    }
+
+    // ---- the stat point buttons: vfunc_91, OnAddStatPointRepeat, FUN_141a5cf30, the reset box and vfunc_92 ---------------
+
+    /// <summary>
+    /// vfunc_93 (@0x141a5b470, uimyinfodialog.cpp:883): may the stat points change now. Not without a local player; in battle
+    /// (PCBase::vfunc_65) the box s_msg_skillbook_set_disable_battle; not without the field's data; in a field whose
+    /// limitContent has 0x10 (HasLimitContent(0x10)) the box s_msg_skillbook_set_disable_field. Each refusal is false.
+    /// </summary>
+    bool CanChangeStatPoints()
+    {
+        if (Model == null || !Model.HasLocalPlayer) return false;
+        if (InBattle()) { ShowBox(MessageBoxQueue.Create(0, Common("s_msg_skillbook_set_disable_battle"), null, "")); return false; }
+        if (!FieldKnown()) return false;
+        if (FieldLimitsStatPoints()) { ShowBox(MessageBoxQueue.Create(0, Common("s_msg_skillbook_set_disable_field"), null, "")); return false; }
+        return true;
+    }
+
+    /// <summary>The stat key of row <paramref name="row"/> (GetCostIds); null outside the list.</summary>
+    static int? CostId(int row) => row >= 0 && row < StatPointBook.CostIds.Length ? StatPointBook.CostIds[row] : null;
+
+    /// <summary>CStatPointManager::RequestAdd through <see cref="Send"/>; over the stat's cap the system notice
+    /// s_char_info_limit_stat_point (ShowSystemNotice(text, 1, 1)).</summary>
+    void RequestAdd(int stat, int amount)
+    {
+        if (StatPoints == null) return;
+        var packet = StatPoints.RequestAdd(stat, amount, Model.Tables.StatPointLimit[stat], out bool overLimit);
+        if (overLimit) SystemNotice?.Invoke("s_char_info_limit_stat_point");
+        if (packet != null) Send?.Invoke(packet);
+    }
+
+    /// <summary>vfunc_91 (@0x141a5af10, uimyinfodialog.cpp:798), the plus button's OnAddStatPoint with the row's number less one:
+    /// with a local player, the record and the movie, <see cref="CanChangeStatPoints"/>, a row in the list, RequestAdd(stat, 1)
+    /// and m_250 = 0.</summary>
+    void AddStatPoint(int row)
+    {
+        if (Model == null || !Model.HasLocalPlayer || info == null || Host.Entity == null) return;
+        if (!CanChangeStatPoints()) return;
+        if (CostId(row) is not int stat) return;
+        RequestAdd(stat, 1);
+        pendingPoints = 0;
+    }
+
+    /// <summary>
+    /// OnAddStatPointRepeat (@0x141a5b080, uimyinfodialog.cpp:819), the held plus button: the same checks as
+    /// <see cref="AddStatPoint"/>; when the remaining points (unsigned) are not above m_250, or the stat's cap is not above its
+    /// points plus m_250, the held points go out (<see cref="SendHeldPoints"/>); otherwise, while m_254 is clear, m_250 grows by
+    /// one and the row shows it (<see cref="UpdateStatPointRow"/>).
+    /// </summary>
+    void AddStatPointRepeat(int row)
+    {
+        if (Model == null || !Model.HasLocalPlayer || info == null || Host.Entity == null || StatPoints == null) return;
+        if (!CanChangeStatPoints()) return;
+        if (CostId(row) is not int stat) return;
+        uint total = (uint)(StatPoints.GetStatPoints(stat) + pendingPoints);
+        uint remaining = (uint)StatPoints.Remaining;
+        if (remaining <= (uint)pendingPoints || (uint)Model.Tables.StatPointLimit[stat] <= total)
+        {
+            SendHeldPoints(row);
+            return;
+        }
+        if (!heldPointsSent)
+        {
+            pendingPoints++;
+            UpdateStatPointRow(row);
+        }
+    }
+
+    /// <summary>FUN_141a5cf30 (@0x141a5cf30, uimyinfodialog.cpp:1174), the plus button let go (OnAddStatPointStop): with a local
+    /// player and m_250 above 0, RequestAdd(stat, m_250), m_250 = 0 and m_254 set. The client's row check lets the row one past
+    /// the list through (GetCount() &lt; row) and reads past the array; here that row does nothing.</summary>
+    void SendHeldPoints(int row)
+    {
+        if (Model == null || !Model.HasLocalPlayer) return;
+        if ((uint)pendingPoints == 0) return;
+        if (CostId(row) is not int stat) return;
+        RequestAdd(stat, pendingPoints);
+        pendingPoints = 0;
+        heldPointsSent = true;
+    }
+
+    /// <summary>
+    /// UpdateStatPointRow (@0x141a5c7c0, uimyinfodialog.cpp:1114), the local record only: the remaining less m_250 and the used
+    /// plus m_250; row m_statPoint{row+1}'s m_point the stat (Stats0 for health, else Stats2) plus FUN_140837770(stat, m_250),
+    /// orange with points put in or held, its m_plus disabled with none remaining or the cap reached (it is never enabled
+    /// here); m_resetStatPoint enabled with points used; m_remainStatPoint the remaining, orange when any.
+    /// </summary>
+    void UpdateStatPointRow(int row)
+    {
+        if (info == null || !info.IsLocal || StatPoints == null || CostId(row) is not int stat) return;
+        uint remaining = (uint)StatPoints.Remaining - (uint)pendingPoints;
+        uint used = (uint)StatPoints.Used + (uint)pendingPoints;
+        if (Child("m_statPoint" + (row + 1).ToString(CultureInfo.InvariantCulture)) is AsDisplayObject r)
+        {
+            long v = (stat == 4 ? info.Stats0[stat] : info.Stats2[stat]) + (long)StatPointBook.PointValue(stat, (uint)pendingPoints);
+            Host.SetChildText("m_point", v.ToString(CultureInfo.InvariantCulture), r);
+            uint spent = (uint)StatPoints.GetStatPoints(stat);
+            if (Host.FindNamed("m_point", r) is { } point)
+                Host.Set(point, "textColor", spent > 0 || (uint)pendingPoints > 0 ? 0xffa200u : 0xffffffu);
+            if (Host.Child("m_plus", r) is { } plus
+                && (remaining == 0 || (uint)Model.Tables.StatPointLimit[stat] <= spent + (uint)pendingPoints))
+                Host.Set(plus, "enabled", false);
+        }
+        if (Child("m_resetStatPoint") is { } reset) Host.Set(reset, "enabled", used > 0);
+        if (Child("m_remainPoint") is AsDisplayObject remain && Host.FindNamed("m_remainStatPoint", remain) is { } text)
+        {
+            Host.Set(text, "text", remaining.ToString(CultureInfo.InvariantCulture));
+            Host.Set(text, "textColor", remaining > 0 ? 0xffa200u : 0xffffffu);
+        }
+    }
+
+    /// <summary>UIPCInfoDialog::vfunc_28's OnResetStatPoint (uipcinfodialog.cpp:706): when <see cref="CanChangeStatPoints"/>, the
+    /// yes / no box s_char_info_reset_stat_point answered by <see cref="OnResetStatPointsAnswer"/>.</summary>
+    void ResetStatPointsBox()
+    {
+        if (!CanChangeStatPoints()) return;
+        var box = MessageBoxQueue.Create(1, Common("s_char_info_reset_stat_point"), null, "");
+        box.Callback = OnResetStatPointsAnswer;
+        ShowBox(box);
+    }
+
+    /// <summary>OnResetStatPointsAnswer (@0x14132ee90, uipcinfodialog.cpp:743): yes (0) runs <see cref="ResetStatPoints"/>; the
+    /// box closes (FUN_14151f200).</summary>
+    bool OnResetStatPointsAnswer(int result, MessageBoxData box)
+    {
+        if (result == 0) ResetStatPoints();
+        MessageBoxQueue.Next();
+        return true;
+    }
+
+    /// <summary>vfunc_92 (@0x141a5b2c0, uimyinfodialog.cpp:850): with the record and the movie, <see cref="CanChangeStatPoints"/>
+    /// again and a local player, m_250 = 0, m_254 cleared and RequestReset.</summary>
+    void ResetStatPoints()
+    {
+        if (info == null || Host.Entity == null) return;
+        if (!CanChangeStatPoints()) return;
+        if (Model == null || !Model.HasLocalPlayer || StatPoints == null) return;
+        pendingPoints = 0;
+        heldPointsSent = false;
+        if (StatPoints.RequestReset() is { } packet) Send?.Invoke(packet);
+    }
+
+    /// <summary>vfunc_oa0_2 (@0x141a599a0, uimyinfodialog.cpp:443): the own Stat changed a stat other than health, spirit and
+    /// stamina; m_254 cleared, then <see cref="MarkChanged"/>.</summary>
+    public void OtherStatsChanged(long nowMs)
+    {
+        heldPointsSent = false;
+        MarkChanged(nowMs);
     }
 
     // ---- vfunc_88: the equipment bag -------------------------------------------------------------------------------
@@ -1048,14 +1207,22 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
                 if (args.Length > 0) ChangeTab(Arg(0));
                 return false;
             case "ondetailinfo": Stats(); return true;
-            case "onaddstatpoint":                                                  // vfunc_91 -> RequestAdd: a request
-            case "onresetstatpoint":                                                // the reset box, then RequestReset: a request
+            case "onaddstatpoint":                                                  // UIPCInfoDialog::vfunc_28 (uipcinfodialog.cpp:697)
+                if (args.Length > 0) AddStatPoint(Arg(0) - 1);
+                return true;
+            case "onresetstatpoint": ResetStatPointsBox(); return true;             // (uipcinfodialog.cpp:706)
+            case "onaddstatpointrepeat":                                            // (uimyinfodialog.cpp:421)
+                if (args.Length > 0) AddStatPointRepeat(Arg(0) - 1);
+                break;
+            case "onaddstatpointstop":                                              // (uimyinfodialog.cpp:429)
+                if (args.Length > 0) SendHeldPoints(Arg(0) - 1);
+                break;
             case "onchangeprofile":                                                 // CUgcManager::OpenProfileUpload
             case "onchangetodaymemo":                                               // the input box, then SendOp::MyInfo
                 Button?.Invoke(name); return true;
             case "onconfig": OpenDialog?.Invoke(0x4e75); Button?.Invoke(name); return false;
             case "ontitlechange":                                                   // SendOp::RequestUserEnv mode 1
-            case "onscreenshot": case "onaddstatpointrepeat": case "onaddstatpointstop":
+            case "onscreenshot":
                 Button?.Invoke(name); return false;
             case "onsymbolclick": ToggleDialog?.Invoke(0x4ed5); return false;
             case "onwedding": ToggleDialog?.Invoke(0x4f8c); return false;
