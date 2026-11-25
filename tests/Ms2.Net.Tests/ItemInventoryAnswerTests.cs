@@ -43,12 +43,62 @@ public class ItemInventoryAnswerTests {
         }
     }
 
+    /// <summary>The GMS2 wire numbers 0-16: survival (14) is the book's tab 15; pet equipment (8) has no client tab.</summary>
     [Test]
-    public void Gms2TabsSkipTheWireNumbers8And14() {
-        var wire = Enumerable.Range(0, 15).Select(Gms2InventoryTab.ToWire).ToArray();
-        Assert.That(wire, Is.EqualTo(new[] { 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16 }));
-        for (int t = 0; t < 15; t++) Assert.That(Gms2InventoryTab.FromWire(Gms2InventoryTab.ToWire(t)), Is.EqualTo(t));
-        foreach (int w in new[] { 8, 14, 17, -1 }) Assert.That(Gms2InventoryTab.FromWire(w), Is.EqualTo(-1));
+    public void Gms2TabsSkipWire8AndKeepSurvivalAsTab15() {
+        Assert.That(ItemBook.Tabs, Is.EqualTo(16));
+        var wire = Enumerable.Range(0, ItemBook.Tabs).Select(Gms2InventoryTab.ToWire).ToArray();
+        Assert.That(wire, Is.EqualTo(new[] { 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 15, 16, 14 }));
+        for (int t = 0; t < ItemBook.Tabs; t++) Assert.That(Gms2InventoryTab.FromWire(Gms2InventoryTab.ToWire(t)), Is.EqualTo(t));
+        Assert.That(Gms2InventoryTab.FromWire(14), Is.EqualTo(ItemBook.SurvivalTab));
+        foreach (int w in new[] { 8, 17, -1 }) Assert.That(Gms2InventoryTab.FromWire(w), Is.EqualTo(-1));
+    }
+
+    static ItemBook SurvivalBook() {
+        // 30001102 a survival item (tab 15), 30001200 an item of no client tab (-1), 20210002 a misc item (7)
+        var book = new ItemBook { TabOf = id => id switch { 30001102 => ItemBook.SurvivalTab, 30001200 => -1, _ => 7 },
+            BaseSlots = tab => BagSlots.Base(tab, true, _ => null) };
+        book.Apply(new ItemMessage.Add(new EquipItem { Id = 30001102, Uid = 1, InventorySlot = 0 }));
+        book.Apply(new ItemMessage.Add(new EquipItem { Id = 30001200, Uid = 2, InventorySlot = 0 }));
+        book.Apply(new ItemMessage.Add(new EquipItem { Id = 20210002, Uid = 3, InventorySlot = 0 }));
+        return book;
+    }
+
+    static ItemMessage Gms2Reset(int wire) {
+        var w = new ByteWriter(); w.WriteByte(13); w.WriteInt(wire);
+        return ItemMessage.Read(new ByteReader(w.ToArray()), _ => null, ProtocolProfile.Gms2);
+    }
+
+    /// <summary>The GMS2 Reset of wire 8 (a category no item reaches) leaves the survival items and the tab-less ones; RemoveItemsInCategory's
+    /// GetItemsInCategory (inventory.cpp:987) finds nothing outside the categories.</summary>
+    [Test]
+    public void AGms2ResetOfWire8KeepsTheSurvivalItems() {
+        var book = SurvivalBook();
+        Assert.That(book.All.Select(i => i.Uid), Is.EquivalentTo(new long[] { 1, 2, 3 }));
+        book.Apply(Gms2Reset(8));
+        Assert.That(book.All.Select(i => i.Uid), Is.EquivalentTo(new long[] { 1, 2, 3 }));
+        book.Apply(Gms2Reset(14));
+        Assert.That(book.All.Select(i => i.Uid), Is.EquivalentTo(new long[] { 2, 3 }), "wire 14 empties the survival tab");
+    }
+
+    /// <summary>A KMS2 Reset or ExpandCount of a number outside the client's 15 categories names no tab (the book's 15 is GMS2's).</summary>
+    [Test]
+    public void AKmsTabOutsideTheCategoriesNamesNoTab() {
+        var w = new ByteWriter(); w.WriteByte(11); w.WriteInt(15);
+        Assert.That(ItemMessage.Read(new ByteReader(w.ToArray()), _ => null, ProtocolProfile.Kms2525), Is.EqualTo(new ItemMessage.Reset(-1)));
+        w = new ByteWriter(); w.WriteByte(12); w.WriteByte(15); w.WriteInt(3);
+        Assert.That(ItemMessage.Read(new ByteReader(w.ToArray()), _ => null, ProtocolProfile.Kms2525), Is.EqualTo(new ItemMessage.ExpandCount(-1, 3)));
+        var book = SurvivalBook();
+        book.Apply(new ItemMessage.Reset(-1));
+        Assert.That(book.All.Select(i => i.Uid), Is.EquivalentTo(new long[] { 1, 2, 3 }));
+    }
+
+    /// <summary>The survival tab's slot count: the GMS2 switch @0x140333bb0 reads bagSlotTabSurvivalCount, else 48.</summary>
+    [Test]
+    public void TheSurvivalTabHas48SlotsWithoutItsConstant() {
+        Assert.That(BagSlots.Keys[ItemBook.SurvivalTab], Is.EqualTo("bagSlotTabSurvivalCount"));
+        Assert.That(BagSlots.Base(ItemBook.SurvivalTab, true, _ => null), Is.EqualTo(48));
+        Assert.That(BagSlots.Base(ItemBook.SurvivalTab, true, k => k == "bagSlotTabSurvivalCount" ? new[] { 24, 36 } : null), Is.EqualTo(24));
     }
 
     [Test]

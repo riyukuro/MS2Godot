@@ -8,11 +8,14 @@ namespace Ms2.Net.Packets;
 public static class BagSlots {
     public const int Default = 48;
 
-    /// <summary>The constants.xml key of each tab 0-14, in the order of the switch at 0x140a66510 (fields bagLimit0.. of Client::Constants at +0x74d8, 0x80 apart).</summary>
+    /// <summary>The constants.xml key of each tab 0-14, in the order of the switch at 0x140a66510 (fields bagLimit0.. of Client::Constants at +0x74d8, 0x80 apart),
+    /// then the GMS2 survival tab (<see cref="ItemBook.SurvivalTab"/>): the GMS2 switch @0x140333bb0, over the wire's tabs 0-16, reads
+    /// bagSlotTabSurvivalCount for 14 (+0x81e0) and returns the first value, else 48. Neither data set has that row, so it is 48.</summary>
     public static readonly string[] Keys = {
         "bagSlotTabGameCount", "bagSlotTabSkinCount", "bagSlotTabSummonCount", "bagSlotTabMaterialCount", "bagSlotTabLifeCount",
         "bagSlotTabQuestCount", "bagSlotTabGemCount", "bagSlotTabMiscCount", "bagSlotTabMasteryCount", "bagSlotTabPetCount",
         "bagSlotTabActiveSkillCount", "bagSlotTabCoinCount", "bagSlotTabBadgeCount", "bagSlotTabLapenShardCount", "bagSlotTabPieceCount",
+        "bagSlotTabSurvivalCount",
     };
 
     /// <summary>The count for a tab; <paramref name="bagRenewal"/> is IsFeatureEnabled(116), <paramref name="values"/> the entry's values by key (null = absent).</summary>

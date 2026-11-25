@@ -45,7 +45,7 @@ public class Gms2InventoryTabDataTests {
             items++;
             if (Int("survival") != 0) {
                 survival++;
-                Assert.That(tab, Is.EqualTo(-1), $"{id}: the survival tab (wire 14) has no tab here");
+                Assert.That(tab, Is.EqualTo(ItemBook.SurvivalTab), $"{id}: the survival tab (wire 14)");
                 continue;
             }
             if (type == 2 && subtype == 14) { emotion++; Assert.That(tab, Is.EqualTo(7), $"emotion item {id}"); }

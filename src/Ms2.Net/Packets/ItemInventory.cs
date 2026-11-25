@@ -30,6 +30,10 @@ public abstract record ItemMessage {
     /// 16 UpdateItem (14); 0 to 3 are the same. Item bodies read through the GMS2 item layout, and Add carries a unicode
     /// equip slot after the rarity. Any other GMS2 command is <see cref="Other"/>.
     /// </summary>
+    /// <summary>A KMS2 wire tab as the client's 15 categories take it: GetItemsInCategory (inventory.cpp:987) and SetExtraSlots
+    /// do nothing for one outside 0-14, so it is -1 here (the book's tab 15 is the GMS2 survival tab).</summary>
+    static int KmsTab(int tab) => (uint) tab < 15 ? tab : -1;
+
     public static ItemMessage Read(ByteReader r, Func<long, EquipItem> find, ProtocolProfile profile) {
         int mode = r.ReadByte();
         bool gms2 = profile.IsGms2;
@@ -43,8 +47,8 @@ public abstract record ItemMessage {
             case 7: { long uid = r.ReadLong(); int arg = r.ReadInt(); return new NotifyNew(uid, arg, r.ReadUnicodeString()); }
             case 8: { int tab = r.ReadInt(); if (tab < 0) { r.ReadShort(); return new LoadTab(tab, new List<EquipItem>()); } var l = ItemList(r, profile); return new LoadTab(gms2 ? Gms2InventoryTab.FromWire(tab) : tab, l); } // FUN_141715860 returns on a negative tab without reading records
             case 10: return new ExpandComplete();
-            case 11: { int tab = r.ReadInt(); return new Reset(gms2 ? Gms2InventoryTab.FromWire(tab) : tab); }
-            case 12: { int tab = r.ReadByte(); int n = r.ReadInt(); return new ExpandCount(gms2 ? Gms2InventoryTab.FromWire(tab) : tab, n); }
+            case 11: { int tab = r.ReadInt(); return new Reset(gms2 ? Gms2InventoryTab.FromWire(tab) : KmsTab(tab)); }
+            case 12: { int tab = r.ReadByte(); int n = r.ReadInt(); return new ExpandCount(gms2 ? Gms2InventoryTab.FromWire(tab) : KmsTab(tab), n); }
             case 13: {
                 int code = r.ReadInt();
                 // GMS2: upstream ItemInventoryPacket.Error writes the code alone; no recorded error carries 40/41
@@ -129,19 +133,24 @@ public readonly record struct ItemInventoryAnswer(ItemAnswerKind Kind, int Strin
 /// Reset and ExpandCount packets run over every number 0-16 (695 logins each); the KMS2 ones over 0-14.
 /// </summary>
 public static class Gms2InventoryTab {
-    /// <summary>The client tab of a GMS2 wire tab; -1 for 8, 14 and any number outside 0-16 (no client tab: SetExtraSlots and
-    /// RemoveItemsInCategory ignore it).</summary>
+    /// <summary>The client tab of a GMS2 wire tab: survival (14) is the book's <see cref="ItemBook.SurvivalTab"/>; -1 for pet
+    /// equipment (8) and any number outside 0-16. The GMS2 client keeps a category 8 (its base slot count @0x140333bb0 reads
+    /// bagSlotTabPetEquipCount) but no item reaches it on the GMS2 data (no item file has type 17, the type the tab rule
+    /// @0x140344be0 files there) and its tab list (@0x140d87010) has no button for it, so here SetExtraSlots and
+    /// RemoveItemsInCategory ignore it.</summary>
     public static int FromWire(int tab) => tab switch {
         >= 0 and <= 7 => tab,
         >= 9 and <= 13 => tab - 1,
+        14 => ItemBook.SurvivalTab,
         15 or 16 => tab - 2,
         _ => -1,
     };
 
-    /// <summary>The GMS2 wire tab of a client tab 0-14; a number outside them goes as it is.</summary>
+    /// <summary>The GMS2 wire tab of a client tab 0-15; a number outside them goes as it is.</summary>
     public static int ToWire(int tab) => tab switch {
         >= 8 and <= 12 => tab + 1,
         13 or 14 => tab + 2,
+        ItemBook.SurvivalTab => 14,
         _ => tab,
     };
 }
@@ -203,7 +212,11 @@ public sealed class ItemBook {
     public Func<int, uint> MaxStackOf { get; set; }
     /// <summary>The base slot count of a tab (FUN_140a66510). Without it the slot range and the shrink of SetExtraSlots are not enforced.</summary>
     public Func<int, int> BaseSlots { get; set; }
-    public const int Tabs = 15;
+    /// <summary>The tabs: the KMS2 client's 15 categories (0-14) and the GMS2 survival tab (<see cref="SurvivalTab"/>).</summary>
+    public const int Tabs = 16;
+    /// <summary>The GMS2 survival tab (wire 14, the tab rule's property@survival items, @0x140344be0); the KMS2 client has no
+    /// such category, and no KMS2 item is filed there.</summary>
+    public const int SurvivalTab = 15;
     /// <summary>After a message that changed the book: the item uid, or 0 when many changed.</summary>
     public event Action<long> Changed;
     public event Action<int, int, int> ErrorReceived;   // code, item id, value
@@ -229,7 +242,8 @@ public sealed class ItemBook {
             }
             case ItemMessage.Update x: if (x.Item != null) { items[x.Item.Uid] = x.Item; Changed?.Invoke(x.Uid); } break;
             case ItemMessage.Reset x:
-                if (TabOf != null) foreach (var i in items.Values.Where(i => TabOf(i.Id) == x.Tab).ToList()) items.Remove(i.Uid);
+                // RemoveItemsInCategory: GetItemsInCategory (inventory.cpp:987) finds nothing for a tab outside the categories
+                if (TabOf != null && (uint) x.Tab < Tabs) foreach (var i in items.Values.Where(i => TabOf(i.Id) == x.Tab).ToList()) items.Remove(i.Uid);
                 Changed?.Invoke(0); break;
             case ItemMessage.ExpandCount x: SetExtraSlots(x.Tab, x.Count); Changed?.Invoke(0); ExtraSlotsSet?.Invoke(x.Tab); break;
             case ItemMessage.ExpandComplete: ExpandCompleted?.Invoke(); break;
@@ -247,7 +261,7 @@ public sealed class ItemBook {
     /// <summary>Unk_Inventory::AddItem (0x140a5d120): 0 added; 17 duplicate uid or occupied slot; 29 slot out of range. The old item stays on a refusal.</summary>
     public int TryAdd(EquipItem it) {
         if (items.ContainsKey(it.Uid)) return 17;
-        // a tab outside 0-14 (a GMS2 tab this inventory has none of, Gms2InventoryTab) has no cells to check: the item is only kept
+        // a tab outside 0-15 (no client tab, Gms2InventoryTab.FromWire) has no cells to check: the item is only kept
         if (TabOf != null && it.InventorySlot != -1 && (uint) TabOf(it.Id) < Tabs) {
             int tab = TabOf(it.Id);
             if (BaseSlots != null && (it.InventorySlot < 0 || it.InventorySlot >= BaseSlots(tab) + (extra.TryGetValue(tab, out var e) ? e : 0))) return 29;
@@ -257,7 +271,7 @@ public sealed class ItemBook {
         return 0;
     }
 
-    /// <summary>Unk_Inventory::SetExtraSlots (0x140a5cb80): tabs outside 0-14 are ignored; a smaller capacity removes the items past it.</summary>
+    /// <summary>Unk_Inventory::SetExtraSlots (0x140a5cb80): tabs outside the categories are ignored; a smaller capacity removes the items past it.</summary>
     void SetExtraSlots(int tab, int count) {
         if (tab < 0 || tab >= Tabs) return;
         if (BaseSlots != null && TabOf != null) {

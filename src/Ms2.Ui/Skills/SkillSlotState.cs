@@ -115,7 +115,7 @@ public sealed class SlotWorld
     public bool CanUse(EquipItem item) => CanUseItem?.Invoke(item) ?? CanUseItemDefault(item, DateTimeOffset.UtcNow);
 
     /// <summary>Unk_Inventory::FUN_140a5f180 (inventory.cpp:782) with rarity 0: the amounts of the usable items of the id in
-    /// its tab; 0 for id 0, no player, no item data or a tab outside 0-14.</summary>
+    /// its tab; 0 for id 0, no player, no item data or a tab outside the book (0-14, and the GMS2 survival tab 15).</summary>
     public int CountById(int itemId)
     {
         if (itemId == 0 || !HasPc || ItemData(itemId) == null) return 0;

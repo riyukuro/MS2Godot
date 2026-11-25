@@ -1149,7 +1149,7 @@ public class MyInfoTests
         // FUN_140a5f180(id, 0): the usable items of the id in its tab (an expired one is not usable)
         Assert.That(w.CountById(33000014), Is.EqualTo(12));
         Assert.That(w.CountById(0), Is.EqualTo(0));
-        w.TabOf = _ => 15;
+        w.TabOf = _ => Ms2.Net.Packets.ItemBook.Tabs;
         Assert.That(w.CountById(33000014), Is.EqualTo(0), "no tab");
         w.TabOf = _ => 3;
         w.HasPc = false;

@@ -521,6 +521,13 @@ public partial class HudScene : Node, IUiStageHost
     /// The system menu's field facts, read with the HUD: the map type (the leave entry) and the channel group (the channel
     /// rows' prefix; none when the client country is 2, DAT_143ab0248).
     /// </summary>
+    /// <summary>The current field's CFieldData::m_nMapType; null when the field has no field data.</summary>
+    int? CurrentFieldMapType()
+    {
+        try { return FieldData.FindByXBlock(assets.Packs, xblock)?.MapType; }
+        catch (Exception ex) { GD.PushWarning("field data: " + ex.Message); return null; }
+    }
+
     void SystemMenuFacts()
     {
         if (commonStrings == null)
@@ -3668,6 +3675,8 @@ public partial class HudScene : Node, IUiStageHost
             ActionKeyDown = ActionKeyDown,
             SlotWorld = QuickSlotWorld,
             LinkItem = ChatLog.LinkItem,                  // InvenSlot::vfunc_15: Shift+click links the item into the chat input
+            // the GMS2 client's tab list puts survival first on a mapType 15/16 field (@0x140d87010); the KMS2 client has no such tab
+            Gms2SurvivalField = Ms2.Ui.LobbyFeatures.LocaleOf(assets.Packs) == "NA" ? () => CurrentFieldMapType() is 15 or 16 : null,
         };
         c.ToggleDialog += id =>
         {

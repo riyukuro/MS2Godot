@@ -123,6 +123,7 @@ public class ItemInventoryTests {
         Assert.That(BagSlots.Max(9, true, k => xml.GetValueOrDefault(k)), Is.EqualTo(78));
         Assert.That(BagSlots.Base(1, false, k => xml.GetValueOrDefault(k)), Is.EqualTo(48));      // BagRenewal01 off
         Assert.That(BagSlots.Base(1, true, k => null), Is.EqualTo(48));                           // entry absent
-        Assert.Throws<System.ArgumentOutOfRangeException>(() => BagSlots.Base(15, true, k => null));
+        Assert.That(BagSlots.Base(ItemBook.SurvivalTab, true, k => xml.GetValueOrDefault(k)), Is.EqualTo(48));   // GMS2 survival: no row
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => BagSlots.Base(ItemBook.Tabs, true, k => null));
     }
 }

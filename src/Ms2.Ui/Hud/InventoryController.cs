@@ -132,10 +132,25 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (Host.Child("m_meso") is { } t) Host.Set(t, "text", NumberText.Group(mesos.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
-    /// <summary>BuildTabList @0x14199d1c0: the tabs in button order; piece with feature 0xed, gem 0x2e, pet 0x8c, lapenshard 0xd3.</summary>
+    /// <summary>The GMS2 client's tab list (@0x140d87010) only, null on the KMS2 client: the current field's mapType is 15 or 16
+    /// (CFieldData::m_nMapType +0x4c, the test @0x1402a00c0 on the field data the list reads first; the 82000000 survival fields).</summary>
+    public Func<bool> Gms2SurvivalField;
+
+    /// <summary>
+    /// BuildTabList @0x14199d1c0: the tabs in button order; piece with feature 0xed, gem 0x2e, pet 0x8c, lapenshard 0xd3. The
+    /// GMS2 client's (@0x140d87010, its only caller the tab bar's build @0x140d868b0) is the same list by the same feature
+    /// names (0x104, 0x3b, 0x9c, 0xe8 there) with survival in front: on a survival field (<see cref="Gms2SurvivalField"/>) the
+    /// survival tab comes first and becomes the selected one (m_194 = 14); elsewhere a selected survival tab goes back to 0.
+    /// Neither list has a button for the GMS2 pet equipment tab (wire 8, s_inventory_tab_petequip unused).
+    /// </summary>
     void BuildTabList()
     {
         tabs.Clear();
+        if (Gms2SurvivalField != null && View != null)
+        {
+            if (Gms2SurvivalField()) { tabs.Add(("survival", ItemBook.SurvivalTab)); View.SelectTab(ItemBook.SurvivalTab); }
+            else if (View.Tab == ItemBook.SurvivalTab) View.SelectTab(0);
+        }
         tabs.Add(("equip", 0)); tabs.Add(("skin", 1)); tabs.Add(("summon", 2)); tabs.Add(("material", 3));
         if (Feature(0xed)) tabs.Add(("piece", 14));
         tabs.Add(("mastery", 8)); tabs.Add(("life", 4)); tabs.Add(("quest", 5));
@@ -145,7 +160,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         tabs.Add(("activeskill", 10)); tabs.Add(("coin", 11)); tabs.Add(("badge", 12)); tabs.Add(("misc", 7));
     }
 
-    /// <summary>m_1a8: the button index of each of the 15 tabs, -1 for a tab without a button.</summary>
+    /// <summary>m_1a8: the button index of each tab, -1 for a tab without a button.</summary>
     int[] TabButtons()
     {
         var a = Enumerable.Repeat(-1, ItemBook.Tabs).ToArray();

@@ -56,7 +56,7 @@ public class InventoryViewTests {
         Assert.That(v.Cells(2)[0].Uid, Is.EqualTo(2)); Assert.That(v.ExpandLabel(2), Is.EqualTo("2/10")); Assert.That(v.ExpandLabel(3), Is.EqualTo("0/10"));
         b.Apply(new ItemMessage.ExpandCount(2, 6));
         Assert.That(v.Capacity(2), Is.EqualTo(16)); Assert.That(v.Cells(2).Count, Is.EqualTo(16)); Assert.That(v.ExpandLabel(2), Is.EqualTo("2/16"));
-        Assert.That(v.Capacity(15), Is.EqualTo(0));
+        Assert.That(v.Capacity(ItemBook.Tabs), Is.EqualTo(0));
     }
 
     [Test] public void IncomingSlotIsZeroWithStackRoomElseTheFirstEmptyCell() {
@@ -69,7 +69,7 @@ public class InventoryViewTests {
         Assert.That(v.SlotForIncoming(2, It(20000001, 9, 0), 3), Is.EqualTo(2), "does not fit: the empty cell");
         b.MaxStackOf = _ => 1;
         Assert.That(v.StackRoom(2, It(20000001, 9, 0)), Is.EqualTo(0));
-        Assert.That(v.FindEmptySlot(15), Is.EqualTo(-1));
+        Assert.That(v.FindEmptySlot(ItemBook.Tabs), Is.EqualTo(-1));
     }
 
     [Test] public void NewFlagIsSetByNotifyNewAndClearedByTheClientPaths() {
@@ -141,7 +141,7 @@ public class InventoryViewTests {
         Assert.That(v.HasEmptyCell(3), Is.True);
         b.Apply(new ItemMessage.Add(It(30000001, 1, 0))); b.Apply(new ItemMessage.Add(It(30000002, 2, 2)));
         Assert.That(v.HasEmptyCell(3), Is.False, "three cells: the middle one is not looked at");
-        Assert.That((v.HasEmptyCell(-1), v.HasEmptyCell(15)), Is.EqualTo((false, false)));
+        Assert.That((v.HasEmptyCell(-1), v.HasEmptyCell(ItemBook.Tabs)), Is.EqualTo((false, false)));
         Assert.That(v.TabOfItem(30000001), Is.EqualTo(3));
     }
 
