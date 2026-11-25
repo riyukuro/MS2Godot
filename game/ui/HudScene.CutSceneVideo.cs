@@ -10,7 +10,8 @@ namespace Ms2Godot.Ui;
 /// <see cref="Ms2.Ui.Hud.CutSceneMovie.AskExitOnEsc"/>; its OK runs Exit).
 /// The movie's sound is the usm's ADX stream, played at <c>MuteAll ? 0 : GetMovieVolume()</c> (:397, <see cref="Ms2.Formats.Options.GameOption.Sound.EffectiveMovieVolume"/>),
 /// set before Play as the client does (see <see cref="VideoPlayerNode"/>).
-/// STILL-OPEN: the exit button's widget, the start offset (Seek(m_68), :402-404). The swf movies are <see cref="HudScene.TickCutSceneSwf"/>.
+/// The start offset (Seek(m_68), :399) is <see cref="Ms2.Ui.Hud.CutSceneMovie.StartSeconds"/>: every client caller passes 0.0f, so playing from the start is the seek.
+/// STILL-OPEN: the exit button's widget, a start time above 0 (the player has no seek; no caller sends one). The swf movies are <see cref="HudScene.TickCutSceneSwf"/>.
 /// </summary>
 public partial class HudScene
 {
@@ -36,6 +37,7 @@ public partial class HudScene
             {
                 EnsureCutSceneLayer();
                 cutSceneVideo.SoundVolume = GameOptions.Current.SoundOption.EffectiveMovieVolume;      // SetVolume before Play (:397)
+                if (movie.StartSeconds != 0f) GD.Print($"cut scene movie {movie.CutSceneId}: start at {movie.StartSeconds}s is not supported, plays from the start");      // Seek(m_68) (:399)
                 if (cutSceneVideo.Play(assets.Packs, path, false)) { cutSceneLayer.Visible = true; GD.Print($"cut scene movie {movie.CutSceneId}: {path} plays"); }
                 else { GD.Print($"cut scene movie {movie.CutSceneId}: {path} cannot be read, stopped"); movie.Stop(); cutScenePath = null; return true; }   // vfunc_30
             }

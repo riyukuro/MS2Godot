@@ -64,13 +64,20 @@ public sealed class CutSceneMovie
         SoundFaded = fade;
     }
 
+    /// <summary>m_68: vfunc_52's second argument (uicutscenemovie.cpp:78-81, named fVolume there), the time PlayUsm seeks to after Play
+    /// (:399, ASVideoPlayer::Seek @0x1422E9690, an Invoke("seek", fTime)). The three callers, FUN_141863b70 (triggerservice.cpp:973),
+    /// PlayDefaultScene (:452) and PlayPendingScene (:462), all pass 0.0f, so the seek is to the start of a movie that has just begun.</summary>
+    public float StartSeconds { get; private set; }
+
     /// <summary>FUN_141863b70: a movie that plays is stopped first, then the id is stored and the path starts. vfunc_52
-    /// (@0x14190ec00, :80-86) stores the path and returns at an empty one, else SetSoundFade(true).</summary>
-    public void Start(string path, int cutSceneId)
+    /// (@0x14190ec00, :80-86) stores the path and the seek time (m_68) and returns at an empty path, else SetSoundFade(true).
+    /// STILL-OPEN: no client caller passes a start time other than 0, and the host's player has no seek, so the host plays from the start.</summary>
+    public void Start(string path, int cutSceneId, float startSeconds = 0f)
     {
         if (IsPlaying) Stop();
         CutSceneId = cutSceneId;
         Path = path;
+        StartSeconds = startSeconds;
         ExitShown = !IsIntroStory(path);
         if (!string.IsNullOrEmpty(path)) SetSoundFade(true);
     }
