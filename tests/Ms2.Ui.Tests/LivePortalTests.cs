@@ -49,13 +49,14 @@ public class LivePortalTests
         public void CloseDungeonRoomDialog() => Dungeon.Add("close");
     }
 
-    static FieldEntity Xblock(int id, string maskIds = null, string maskStates = null, bool enabled = true)
+    static FieldEntity Xblock(int id, string maskIds = null, string maskStates = null, bool enabled = true, bool visible = true)
     {
         var raw = new XEntity { Id = "e" + id, ModelName = "PortalModel", Name = "portal" + id };
         raw.Props["PortalID"] = id.ToString();
         raw.Props["Position"] = "0, 0, 0";
         raw.Props["PortalDimension"] = "200, 200, 250";
         raw.Props["PortalEnable"] = enabled ? "True" : "False";
+        if (!visible) raw.Props["IsVisible"] = "False";
         if (maskIds != null) { raw.Props["MaskQuestID"] = maskIds; raw.Props["MaskQuestState"] = maskStates; }
         var flat = new FlatModel { Name = "PortalModel" };
         flat.Mixins.Add("Portal");
@@ -142,6 +143,66 @@ public class LivePortalTests
         portals.RefreshMasks();
         Enter(action);
         Assert.That(host.Sent, Has.Count.EqualTo(1));
+    }
+
+    // CPortal sets its entity's IsVisible on the register, each mask run and mode 2 (portal.cpp:420-464): the field's draw follows
+    // it, not the xblock's load IsVisible. Shapes from Lith 2000062: 13 is masked and visible in the xblock, 3 is masked and
+    // hidden in it; 8 stands for a portal hidden in the xblock that the server opens with mode 2.
+    [Test]
+    public void PortalDrawsFollowTheShownFlagAfterTheLoad()
+    {
+        var quests = new Dictionary<int, QuestMaskTable.QuestStatus>();
+        var portals = new LivePortals(1000, NoTable(), null, q => quests.GetValueOrDefault(q));
+        FieldEntity p13 = Xblock(13, "100,200", "1,3"), p3 = Xblock(3, "200,200", "1,2", visible: false), p8 = Xblock(8, visible: false, enabled: false);
+        portals.Attach(new[] { p13, p3, p8 });
+        // the field's draws start at the load's IsVisible, as the build leaves them
+        var drawn = new Dictionary<FieldEntity, bool> { [p13] = true, [p3] = false, [p8] = false };
+        int calls = 0;
+        var draws = new PortalDraws((e, shown) => { drawn[e] = shown; calls++; });
+        portals.Apply(Add(13));
+        portals.Apply(Add(3));
+        portals.Apply(Add(8, visible: false, enabled: false));
+        draws.Bind(portals);
+        Assert.That(drawn[p13], Is.False, "13: its mask is closed, so the register hid it");
+        Assert.That(drawn[p3] || drawn[p8], Is.False);
+
+        quests[100] = QuestMaskTable.QuestStatus.Active;
+        portals.RefreshMasks();
+        Assert.That(drawn[p13], Is.True, "13 opens with quest 100 taken");
+        Assert.That(drawn[p3], Is.False);
+        quests[200] = QuestMaskTable.QuestStatus.Active;
+        portals.RefreshMasks();
+        Assert.That(drawn[p3], Is.True, "3, hidden in the xblock, opens with quest 200 taken");
+
+        int before = calls;
+        portals.RefreshMasks();
+        Assert.That(calls, Is.EqualTo(before), "a mask run that changes nothing redraws nothing");
+
+        portals.Apply(new FieldPortalMessage { Mode = 2, Id = 8, Visible = true, Enabled = true });
+        Assert.That(drawn[p8], Is.True, "mode 2 shows 8");
+        portals.Apply(new FieldPortalMessage { Mode = 2, Id = 8, Visible = false, Enabled = false });
+        Assert.That(drawn[p8], Is.False, "mode 2 hides 8");
+
+        quests[200] = QuestMaskTable.QuestStatus.Rewarded;
+        portals.RefreshMasks();
+        Assert.That(drawn[p3], Is.False, "3 closes once quest 200 is rewarded");
+
+        // a portal registered after the bind is drawn by its flag too
+        var late = Xblock(5, "300,300", "1,2");
+        var portals2 = new LivePortals(1000, NoTable(), null, q => quests.GetValueOrDefault(q));
+        portals2.Attach(new[] { late });
+        drawn[late] = true;
+        draws.Bind(portals2);
+        portals2.Apply(Add(5));
+        Assert.That(drawn[late], Is.False, "5 registers with its mask closed");
+
+        // the old field's portals no longer reach the draw after a new bind, nor after Detach
+        portals.Apply(new FieldPortalMessage { Mode = 2, Id = 8, Visible = true, Enabled = true });
+        Assert.That(drawn[p8], Is.False);
+        draws.Detach();
+        quests[300] = QuestMaskTable.QuestStatus.Active;
+        portals2.RefreshMasks();
+        Assert.That(drawn[late], Is.False);
     }
 
     [Test]

@@ -142,8 +142,12 @@ public sealed class FieldEntity
     /// Its particle systems run on the dynamic-model particle path (the game's FieldBuilder.ParticleEntities), at the entity's
     /// transform. STILL-OPEN: there they do not follow the skinned bones, and no such model has been checked against the client.
     /// </summary>
-    public bool PlaysAsEffect(string archive, ModelData model) =>
-        Bool("IsVisible", true) && HasMixin("EffectMesh")
+    public bool PlaysAsEffect(string archive, ModelData model) => Bool("IsVisible", true) && IsEffectModel(archive, model);
+
+    /// <summary>An EffectMesh entity whose model plays through the effect runtime when drawn (<see cref="PlaysAsEffect"/>
+    /// without the IsVisible check: a portal's entity is built hidden and shown by its CPortal).</summary>
+    public bool IsEffectModel(string archive, ModelData model) =>
+        HasMixin("EffectMesh")
         && (string.Equals(archive, EffectArchive, StringComparison.OrdinalIgnoreCase) || (archive != null && model != null && !model.Meshes.Any(m => m.Skinned)));
 
     /// <summary>

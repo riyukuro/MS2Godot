@@ -302,7 +302,7 @@ public partial class LiveSession
             {
                 int id = int.Parse(step[12..]);
                 var p = live.Portals?.All.FirstOrDefault(x => x.Id == id);
-                GD.Print($"live: combat portal {id} in map {live.Portals?.FieldId}: {(p == null ? "none" : $"shown {p.Shown} glow {p.Glow} target {p.TargetMap}")}");
+                GD.Print($"live: combat portal {id} in map {live.Portals?.FieldId}: {(p == null ? "none" : $"shown {p.Shown} glow {p.Glow} target {p.TargetMap}, drawn {Field.Active?.PortalDrawn(p.Entity)?.ToString() ?? "no effect"}")}");
                 continue;
             }
             if (step.StartsWith("shot:"))      // shot:<name>: a shot of the frame as it is

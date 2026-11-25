@@ -63,6 +63,12 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     public World.FieldInteractDraws Interacts { get; private set; }
     /// <summary>The field lifts' fades and removals (live only).</summary>
     public World.FieldLiftables Liftables { get; private set; }
+    /// <summary>The portal entities' effects, by entity; <see cref="PortalDraws"/> shows them by their CPortal's flag.</summary>
+    readonly Dictionary<Ms2.Formats.World.FieldEntity, Node3D> portalEffects = new();
+    Ms2.Ui.PortalDraws portalDraws;
+    /// <summary>The live check: whether a portal entity's effect is drawn; null when the entity has none.</summary>
+    public bool? PortalDrawn(Ms2.Formats.World.FieldEntity e) =>
+        e != null && portalEffects.TryGetValue(e, out var fx) && IsInstanceValid(fx) ? fx.Visible : null;
     /// <summary>The lift target boxes' quest markers (CLiftableTarget's effect).</summary>
     public World.LiftTargetMarkers LiftMarkers { get; private set; }
     Ms2.Ui.BreakableObjects devBreakables;    // offline only, with MS2_BREAKABLE_STATE
@@ -228,7 +234,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         foreach (var (e, off) in fb.LightOffElsewhere) contents.Props.LightOff[e] = off;
-        AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
+        AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities, portalEffects));
+        if (fb.PortalsNotFollowing > 0) GD.Print($"MS2Godot portals: {fb.PortalsNotFollowing} without an effect model, drawn by their load IsVisible");
         AddChild(World.FieldEffects.BuildParticles(builder, fb.ParticleEntities, fb.StaticParticleModels));
         if (World.FieldWeather.Create(packs, builder, fd?.MapEffectId) is { } weather) AddChild(weather);
         if (taxis.Count > 0) AddChild(World.TaxiStations.Start(packs, builder, taxis, taxiField));
@@ -261,6 +268,13 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
         Triggers.Bind(contents.TriggerActors);   // the actor trigger objects' drawn actors
+        // the portal entities' draws: live, the registered portals' shown flags (contents.Start attached them), then each change;
+        // offline, the sandbox's list (its quest masks for a fresh character)
+        portalDraws = new Ms2.Ui.PortalDraws((e, shown) => { if (portalEffects.TryGetValue(e, out var fx)) World.FieldEffects.Show(fx, shown); });
+        if (Net.LiveSession.Active) portalDraws.Bind(Net.LiveSession.Instance?.Portals);
+        else if (contents.Portals != null)
+            foreach (var p in contents.Portals.All)
+                if (portalEffects.TryGetValue(p.Entity, out var fx)) World.FieldEffects.Show(fx, p.Visible);
         Breakables.BindActors(contents.BreakableActors);   // the breakable actors, at their markers' states
         if (Net.LiveSession.Instance is { } lsInteract)   // the objects contents.Start attached, then each state change
         {
@@ -431,6 +445,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         }
         Liftables?.Detach();
         LiftMarkers?.Detach();
+        portalDraws?.Detach();
         FieldLights.Clear(lightSet);
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();

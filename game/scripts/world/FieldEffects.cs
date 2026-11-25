@@ -14,7 +14,10 @@ namespace Ms2Godot.World;
 /// </summary>
 public static class FieldEffects
 {
-    public static Node3D Build(PackSet packs, ModelBuilder builder, List<(FieldEntity entity, string archive, string entry)> list)
+    /// <param name="portals">Filled with each portal entity's effect (Ms2.Ui.PortalDraws shows and hides it). A portal hidden
+    /// at the load starts hidden and not processing.</param>
+    public static Node3D Build(PackSet packs, ModelBuilder builder, List<(FieldEntity entity, string archive, string entry)> list,
+        Dictionary<FieldEntity, Node3D> portals = null)
     {
         var root = new Node3D { Name = "FieldEffects" };
         var scenes = new Dictionary<string, EffectScene>();
@@ -28,6 +31,11 @@ public static class FieldEffects
                 // the entity's full rotation R = Rx * Ry * Rz and scale (FieldEntity.EffectSpace, XBlock.cs), as the field props
                 // take it; the position goes on the node
                 var fx = new EffectInstance(scene, builder, 1e7f, n) { Name = "Effect_" + n, Position = FieldBuilder.ToGodotPoint(e.Position), FileSpace = ModelBuilder.ToGodot(e.EffectSpace) };
+                if (e.HasMixin("Portal"))
+                {
+                    portals?.TryAdd(e, fx);
+                    Show(fx, e.Bool("IsVisible", true));
+                }
                 root.AddChild(fx);
                 n++;
             }
@@ -35,6 +43,14 @@ public static class FieldEffects
         }
         GD.Print($"field effects: {n} of {list.Count}: " + string.Join(", ", list.GroupBy(x => x.entity.ModelName).Select(g => g.Key + " x" + g.Count())));
         return root;
+    }
+
+    /// <summary>An effect shown or hidden: a hidden one is not drawn and not run.</summary>
+    public static void Show(Node3D fx, bool shown)
+    {
+        if (!GodotObject.IsInstanceValid(fx)) return;
+        fx.Visible = shown;
+        fx.ProcessMode = shown ? Node.ProcessModeEnum.Inherit : Node.ProcessModeEnum.Disabled;
     }
 
     /// <summary>

@@ -63,8 +63,12 @@ public sealed class FieldBuilder
     public readonly Dictionary<FieldEntity, uint> LightOffElsewhere = new();
     /// <summary>Draws given a light mask (ms2_light_off != 0).</summary>
     public int LightMaskedDraws;
-    /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
+    /// <summary>Visible EffectMesh entities (fountains' effect models) and every portal entity with an effect model, hidden at
+    /// the load or not (portals: Ms2.Ui.PortalDraws): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
+    /// <summary>Portal entities whose model is not an effect model: drawn (or not) by their load IsVisible alone.
+    /// STILL-OPEN: their draws do not follow the CPortal's shown flag.</summary>
+    public int PortalsNotFollowing;
     /// <summary>Visible dynamic Mesh entities whose model holds particle systems, with the model's particles-only effect
     /// scene: world/FieldEffects runs them, as the field's meshes draw the rest of the model.</summary>
     public readonly List<(FieldEntity entity, EffectScene particles)> ParticleEntities = new();
@@ -671,7 +675,10 @@ public sealed class FieldBuilder
                 // plays through the effect runtime (PlaysAsEffect) runs them there, so a skinned EffectMesh map model, which
                 // stays on the prop path, runs them here
                 var (ea, ee) = assets.Resolve(llid);
-                bool asEffect = ea != null && ee != null && e.PlaysAsEffect(ea, me.Data);
+                // a portal's entity is built whatever its load IsVisible: its CPortal shows and hides it (Ms2.Ui.PortalDraws)
+                bool portal = e.HasMixin("Portal");
+                bool asEffect = ea != null && ee != null && (portal ? e.IsEffectModel(ea, me.Data) : e.PlaysAsEffect(ea, me.Data));
+                if (portal && !asEffect) PortalsNotFollowing++;
                 bool shown = e.Bool("IsVisible", true) || stateShown.Contains(e);
                 if (me.Particles != null && shown && !asEffect)
                 {
