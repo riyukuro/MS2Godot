@@ -1,7 +1,11 @@
 using System;
+using System.Text.Json.Nodes;
 using Maple2.PacketLib.Tools;
+using Ms2.Avm2;
+using Ms2.Avm2.Flash;
 using Ms2.Net;
 using Ms2.Net.Packets;
+using Ms2.Ui;
 using Ms2.Ui.Shop;
 using NUnit.Framework;
 
@@ -102,7 +106,19 @@ public class ShopRecordedTests
         var p8 = DecodeAll(Gms2Cmd8Remove, ProtocolProfile.Gms2);
         Assert.That(p8.Command, Is.EqualTo(8));
         Assert.That(p8.RemoveSerial, Is.EqualTo(1));
+
+        // Seed a repurchase item with serial 1 so cmd 8 proves removal from group 1.
+        _ = new UiHost(new Player(new Runtime(), new JsonObject { ["movie"] = "shop" }), ctrl, new UiModel(null));
+        ctrl.ReadRepurchaseStart(1);
+        ctrl.ReadRepurchaseAdd(new[]
+        {
+            new ShopProduct { Serial = 1, ItemId = 50_200_868, Rarity = 1, Price = 100, Count = 1 },
+        });
+        Assert.That(ctrl.Products(1).ContainsKey(1), Is.True);
+
         ctrl.OnShopPacket(p8);
+        Assert.That(ctrl.Products(1).ContainsKey(1), Is.False);
+        Assert.That(ctrl.Products(1), Is.Empty);
         Assert.That(ctrl.ShopEnabled, Is.True);
     }
 }

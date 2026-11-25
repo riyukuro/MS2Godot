@@ -49,7 +49,9 @@ public class RequestClientTickSyncRecordedTests
 
         var io = new DuplexStream(inbound);
         var session = new ClientSession(new MapleChannel(io));
+        int elapsedBefore = session.ElapsedMs;
         Assert.ThrowsAsync<EndOfStreamException>(() => session.RunAsync());
+        int elapsedAfter = session.ElapsedMs;
 
         Assert.That(session.OpcodeCounts[0x13], Is.EqualTo(1));
 
@@ -68,7 +70,7 @@ public class RequestClientTickSyncRecordedTests
 
         var reply = ResponseClientTickSync.Read(new ByteReader(sent[1].Body));
         Assert.That(reply.ServerTick, Is.EqualTo(expectedTick));
-        Assert.That(reply.ClientTick, Is.GreaterThanOrEqualTo(0));
+        Assert.That(reply.ClientTick, Is.InRange(elapsedBefore, elapsedAfter));
     }
 
     [Test]

@@ -31,6 +31,14 @@ public class KeyTableRecordedTests
         "070000009D5FA900000000000000000000000000" +
         "0000000000000000");
 
+    // gms2: 0x71 mode 7, 77 bytes (currentPage 0, 3 pages, 3 skill quick slots on page 0: slots 4, 5, 6)
+    static readonly byte[] Gms2Mode7AltPages = Convert.FromHexString(
+        "070000030003000000" +
+        "040000003F52A600000000000000000000000000" +
+        "05000000B752A600000000000000000000000000" +
+        "060000005352A600000000000000000000000000" +
+        "0000000000000000");
+
     // gms2: 0x71 mode 9, 1 byte (ignored mode returns 9 without altering pages)
     static readonly byte[] Gms2Mode9Ignored = Convert.FromHexString("09");
 
@@ -84,7 +92,18 @@ public class KeyTableRecordedTests
 
         // Locked KeyTable skips mode 7 updates without modifying stored slots.
         table.Locked = true;
-        Assert.That(table.Apply(new ByteReader(KmsMode7Pages)), Is.EqualTo(7));
+        Assert.That(table.Apply(new ByteReader(Gms2Mode7AltPages)), Is.EqualTo(7));
+        Assert.That(table.Entry(0, 4), Is.EqualTo(new QuickSlotEntry(11_100_011, 0, 0)));
         Assert.That(table.Entry(0, 7), Is.EqualTo(new QuickSlotEntry(11_100_061, 0, 0)));
+
+        // Once unlocked, the second recorded GMS2 mode 7 packet replaces the page entries.
+        table.Locked = false;
+        var rAlt = new ByteReader(Gms2Mode7AltPages);
+        Assert.That(table.Apply(rAlt), Is.EqualTo(7));
+        Assert.That(rAlt.Available, Is.EqualTo(0));
+        Assert.That(table.Entry(0, 4), Is.EqualTo(new QuickSlotEntry(10_900_031, 0, 0)));
+        Assert.That(table.Entry(0, 5), Is.EqualTo(new QuickSlotEntry(10_900_151, 0, 0)));
+        Assert.That(table.Entry(0, 6), Is.EqualTo(new QuickSlotEntry(10_900_051, 0, 0)));
+        Assert.That(table.Entry(0, 7).IsEmpty, Is.True);
     }
 }
