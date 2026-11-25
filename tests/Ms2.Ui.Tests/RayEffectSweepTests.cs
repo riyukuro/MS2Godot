@@ -9,11 +9,14 @@ namespace Ms2.Ui.Tests;
 /// <summary>
 /// The whole lists behind the path segment effects, on each data set:
 /// - every attack that lays them (<see cref="SkillAttackData.RaySegments"/>: KMS attackMethodType 2, GMS2 a set effectRay on an
-///   attack that is no arrow record): its effect (<see cref="SkillAttackData.RayEffect"/>) is there and has a lightning part
-///   the service makes (but the four known beam / nif ones), its magic path row is there, and its rayType is 0, 1 or 2;
+///   attack that is no arrow record): its effect (<see cref="SkillAttackData.RayEffect"/>) is there and has a lightning or a
+///   beam part the service makes (but the known nif one), its magic path row is there, and its rayType is 0, 1 or 2;
 /// - every lightning part of every effect xml: three non-empty texture lists, each texture in the Effect archive, and its strip
 ///   from a deterministic walk: the start and end kept, at most 101 points, every step at most jointLen in x / y, the rows
-///   width apart (camera straight down), 0 B per rebuild.
+///   width apart (camera straight down), 0 B per rebuild;
+/// - every beam part of every effect xml: a non-empty texture list, each texture in the Effect archive, a beamInfo curve and a
+///   quality the strip holds, and its strip from a walk: 2 * quality points from the start, the rows at most width apart,
+///   0 B per rebuild.
 /// </summary>
 public class RayEffectSweepTests
 {
@@ -21,7 +24,7 @@ public class RayEffectSweepTests
 
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
-    public void EveryRayAttackPlaysALightningAndEveryLightningLaysItsStrip(string env)
+    public void EveryRayAttackPlaysALightningOrBeamAndEveryStripIsLaid(string env)
     {
         var dir = Environment.GetEnvironmentVariable(env);
         if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) Assert.Ignore($"{env} not set");
@@ -57,7 +60,8 @@ public class RayEffectSweepTests
                         if (!files.Add(file)) continue;
                         var parts = effects.Get(file);
                         if (parts == null) { missingFile.Add($"{s.Id} {file}"); continue; }
-                        if (!parts.Any(p => p.TypeId == EffectSkipTable.TypeLightning && p.Strip != null && EffectRandom.ParamMade(parts, p)))
+                        if (!parts.Any(p => (p.TypeId == EffectSkipTable.TypeLightning && p.Strip != null
+                                || p.TypeId == EffectSkipTable.TypeBeam && p.Strip is { TexturesA.Length: > 0 }) && EffectRandom.ParamMade(parts, p)))
                         {
                             var types = string.Join(",", parts.Select(p => p.Type));
                             noLightning.Add($"{s.Id} {file}: {types}");
@@ -66,7 +70,10 @@ public class RayEffectSweepTests
                     }
 
         // every lightning part of every effect xml
-        int xmls = 0, lightnings = 0, textures = 0, walks = 0;
+        int xmls = 0, lightnings = 0, beams = 0, textures = 0, walks = 0;
+        var badBeam = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var beamNotRay = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var beamParams = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var emptyLists = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var missingTex = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         var badWalk = new List<string>();
@@ -83,6 +90,37 @@ public class RayEffectSweepTests
             if (parts == null) continue;
             foreach (var p in parts)
             {
+                if (p.TypeId == EffectSkipTable.TypeBeam && p.Strip != null)
+                {
+                    beams++;
+                    if (!files.Contains(file)) beamNotRay.Add(file);
+                    var q = p.Strip;
+                    if (files.Contains(file))
+                        beamParams.Add($"{file}: curve {q.BeamCurve} point {q.PassThroughPoint} rates {q.DirectionRate}/{q.LengthRate} width {q.Width} quality {q.Quality} textures {string.Join(",", q.TexturesA)}");
+                    if (q.TexturesA.Length == 0) emptyLists.Add($"{file} beam");
+                    foreach (var t in q.TexturesA)
+                    {
+                        textures++;
+                        var e = EffectStripParam.TextureEntry(t);
+                        if (e == null || !packs.Exists(EffectArchive, e)) missingTex.Add($"{file}: {t}");
+                    }
+                    if (q.BeamCurve is not (1 or 2) || BeamStrip.Samples(q) == 0) { badBeam.Add($"{file}: curve {q.BeamCurve} quality {q.Quality}"); continue; }
+                    var strip = new BeamStrip(q);
+                    foreach (float len in new[] { 120f, 400f, 900f })
+                    {
+                        var a = new Vector3(10, 20, 30);
+                        var b = a + new Vector3(len * 0.6f, -len * 0.8f, 40);
+                        long least = long.MaxValue;
+                        for (int k = 0; k < 3 && least != 0; k++) least = Math.Min(least, BeamBytes(strip, a, b));
+                        bytes += least;
+                        walks++;
+                        bool ok = strip.Count == BeamStrip.Samples(q) && strip.Curve[0] == a;
+                        for (int i = 0; ok && i < strip.Count; i++)
+                            ok = Vector3.Distance(strip.Left[i], strip.Right[i]) <= q.Width * (1 + 1e-3f) + 1e-3f;
+                        if (!ok) badWalk.Add($"{file} beam length {len}");
+                    }
+                    continue;
+                }
                 if (p.TypeId != EffectSkipTable.TypeLightning || p.Strip == null) continue;
                 lightnings++;
                 if (!files.Contains(file)) notRay.Add(file);
@@ -124,33 +162,42 @@ public class RayEffectSweepTests
 
         TestContext.Progress.WriteLine($"{env}: {attacks} attacks, {rays} lay ray segments ({gmsRows} GMS2 rows) in {skills.Count} skills, "
             + $"rayType {string.Join(" ", rayTypes.Select(kv => $"{kv.Key}:{kv.Value}"))}, {files.Count} effect files");
-        TestContext.Progress.WriteLine($"{env}: {xmls} effect xmls, {lightnings} lightning parts, {textures} textures, {walks} walks, {bytes} B");
+        TestContext.Progress.WriteLine($"{env}: {xmls} effect xmls, {lightnings} lightning parts, {beams} beam parts, {textures} textures, {walks} walks, {bytes} B");
         foreach (var x in missingFile) TestContext.Progress.WriteLine($"  missing effect: {x}");
         foreach (var x in noLightning) TestContext.Progress.WriteLine($"  no lightning: {x}");
         foreach (var x in noPath) TestContext.Progress.WriteLine($"  no path row: {x}");
         foreach (var x in emptyLists) TestContext.Progress.WriteLine($"  empty texture list: {x}");
         foreach (var x in missingTex) TestContext.Progress.WriteLine($"  missing texture: {x}");
         foreach (var x in notRay) TestContext.Progress.WriteLine($"  lightning outside the ray effects: {x}");
+        foreach (var x in beamNotRay) TestContext.Progress.WriteLine($"  beam outside the ray effects: {x}");
+        foreach (var x in beamParams) TestContext.Progress.WriteLine($"  ray beam: {x}");
+        foreach (var x in badBeam) TestContext.Progress.WriteLine($"  beam with no curve: {x}");
 
         Assert.That(rays, Is.GreaterThan(0));
         Assert.That(badRayType, Is.Empty);
         Assert.That(noPath, Is.Empty);
         Assert.That(missingFile, Is.Empty);
-        // The ray effects with no lightning part, the same on both data sets. Their segments play the effect all the same
-        // (the slots turn on and each part plays on the segment's request):
-        // - three lay beams (type 0x15, BeamEffect, which reads the same point list); STILL-OPEN: the beam part is not made;
-        // - the scar burst item's ray effect is a nif and a sound, played at the segment's node.
+        // The ray effect with neither a lightning nor a beam part, the same on both data sets: the scar burst item's is a nif
+        // and a sound, played at the segment's node (its slot turns on and each part plays on the segment's request).
         Assert.That(noLightningSkills, Is.EqualTo(new SortedDictionary<uint, string>
         {
-            [10300181] = "beam,beam",
-            [10600171] = "beam,beam",
-            [11100242] = "beam,beam,beam",
             [90000558] = "nif,soundEvent",
-        }), "the ray effects without a lightning part");
+        }), "the ray effects without a lightning or beam part");
+        Assert.That(beams, Is.GreaterThan(0));
+        Assert.That(badBeam, Is.Empty);
         Assert.That(emptyLists, Is.Empty);
         Assert.That(missingTex, Is.Empty);
         Assert.That(badWalk, Is.Empty);
         Assert.That(bytes, Is.EqualTo(0), "a rebuild allocates nothing");
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
+    static long BeamBytes(BeamStrip strip, Vector3 a, Vector3 b)
+    {
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        // the scene node facing +x, the camera straight down
+        strip.Rebuild(a, b, new Vector3(0, 1, 0), new Vector3(-1, 0, 0), Vector3.UnitZ, new Vector3(0, 0, -1));
+        return GC.GetAllocatedBytesForCurrentThread() - before;
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]

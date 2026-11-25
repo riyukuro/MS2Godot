@@ -373,6 +373,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             { PartsOutOfView++; continue; }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh && (actor == null || SwooshOutOfView(part, actor, casterKind, eye))) continue;
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeLightning && (actor == null || !LightningEffect.Makes(all, part, points))) continue;
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeBeam && (actor == null || !BeamEffect.Makes(all, part, points))) continue;
             made++;
         }
         if (made == 0 && all.Count > 0) return null;
@@ -429,6 +430,17 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 if (actor == null || LightningEffect.Make(all, part, points, builder) is not { } le) continue;
                 actor.AddChild(le);
                 if (keep) nodes.Add(le);
+                if (keep && part.Loop) looping.Add(handle);
+                Spawned++;
+                continue;
+            }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeBeam)
+            {
+                // the strip in the world on the request's points, bent by the scene node's rotation (the actor here: a
+                // path segment's holder posed at the magic's scene); without the node the client makes none (vfunc_3)
+                if (actor == null || BeamEffect.Make(all, part, points, actor, builder) is not { } be) continue;
+                actor.AddChild(be);
+                if (keep) nodes.Add(be);
                 if (keep && part.Loop) looping.Add(handle);
                 Spawned++;
                 continue;

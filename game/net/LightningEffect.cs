@@ -22,8 +22,7 @@ public sealed class LightningPoints
 ///   emissive; blended by alphaMode (SWOOSH src alpha / one, STANDARD src alpha / inverse src alpha, ADD one / one); fog off,
 ///   both sides, no z write. The swoosh's materials are the same (<see cref="SwooshEffect.MaterialFor"/>).
 /// - vfunc_9 (:261): an app-culled root (FUN_1411a68f0 hidden) lays nothing.
-/// STILL-OPEN: the beam part (type 0x15, beameffect.cpp) reads the same point list; three ray effects lay only beams
-/// (Handy Lightning, Plasma Chain, Harmony of Soul), so those segments draw nothing yet.
+/// - The beam part (type 0x15, <see cref="BeamEffect"/>) reads the same point list.
 /// STILL-OPEN: the NiSortAdjustNode's sortingMode (OFF or INHERIT) is not followed; the strip sorts as any transparent mesh.
 /// </summary>
 public sealed partial class LightningEffect : MeshInstance3D
