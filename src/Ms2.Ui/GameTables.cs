@@ -983,7 +983,7 @@ public sealed class GameTables
 
     readonly Dictionary<int, (bool StateChange, bool TriggerControl)> objectCubeRights = new();
     /// <summary>
-    /// GetObjectData(objCode) (@0x140704ec0: Object/%08d.xml, &lt;ms2&gt;, &lt;FunctionCube&gt;) as read by
+    /// GetObjectData(objCode) (@0x140704ec0, <see cref="Ms2.Formats.World.ObjectData"/>) as read by
     /// HasStateChangePermission (objectdata.cpp:541: StateChangeActionPermissionType == 1) and IsTriggerControlEnabled
     /// (:523: enableTriggerControl != 0); both false for id 0, with no file or no FunctionCube. Cached by id.
     /// </summary>
@@ -994,10 +994,8 @@ public sealed class GameTables
         {
             if (objectCubeRights.TryGetValue(objCode, out var known)) return known;
             var r = default((bool, bool));
-            if (Xml(string.Format(CultureInfo.InvariantCulture, "object/{0:D8}.xml", (uint)objCode))?.Root is { Name.LocalName: "ms2" } root
-                && root.Element("FunctionCube") is { } cube)
-                r = (Ms2.Formats.World.ReservedWords.Atoi((string)cube.Attribute("StateChangeActionPermissionType") ?? "") == 1,
-                     Ms2.Formats.World.ReservedWords.Atoi((string)cube.Attribute("enableTriggerControl") ?? "") != 0);
+            if (Ms2.Formats.World.ObjectData.Load(packs, (uint)objCode)?.Cube is { Enabled: true } cube)
+                r = (cube.StateChangePermission == 1, cube.EnableTriggerControl != 0);
             objectCubeRights[objCode] = r;
             return r;
         }
