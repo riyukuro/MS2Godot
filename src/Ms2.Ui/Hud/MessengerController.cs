@@ -1051,7 +1051,8 @@ public sealed class MessengerController : UiController
     /// astooltip.cpp:159: "closeButton" true) and SetEnablePreview; nothing when the uid links none or the fill fails.
     /// "whisper": a whisper to the argument's name (FUN_141a14bb0, <see cref="WhisperTo"/>), nothing returned.
     /// "hyperLinkLeft": a click on a party link, <see cref="PartyLinks.Handle(string)"/> (nothing without the browser's links).
-    /// STILL-OPEN: "itemPreview" (ItemPreviewMgr's OpenPreview while IsHudOn), "getAchieve", "menu",
+    /// "getAchieve": a click on a trophy link, <see cref="Achieve"/>.
+    /// STILL-OPEN: "itemPreview" (ItemPreviewMgr's OpenPreview while IsHudOn), "menu",
     /// "moveToHome", "billDialog", "searchFromMeratmarket", "itemSelect" and the rest are not ported and
     /// answer nothing.
     /// </summary>
@@ -1064,6 +1065,7 @@ public sealed class MessengerController : UiController
             Browser.PartyLinks?.Handle(args.Length > 0 ? Rt.ToString(args[0]) : "");
             return null;
         }
+        if (name == "getAchieve") return Achieve(args);
         if (name != "getTooltip") return null;
         var item = Browser.LinkedItem(NumberText.ParseInt64W(args.Length > 0 ? Rt.ToString(args[0]) : ""));
         if (item == null) return null;
@@ -1077,6 +1079,24 @@ public sealed class MessengerController : UiController
         tip.Data["closeButton"] = true;
         tip.SetEnablePreview(item);
         return tip.Data;
+    }
+
+    /// <summary>
+    /// getAchieve (:4653), from the movie's click on an 'event:achieveTooltip,id,4,grade,text,date' link (its fields 1, 3, 4
+    /// and 5): the achieve tooltip of the trophy and grade (atoi of each; ASTooltip of the local player with flags 2,
+    /// <see cref="MessengerBrowser.AchieveTooltip"/>), with its close button (ShowCloseButton) and state the link's text,
+    /// with the date in brackets ("{0} ({1})") when the date is not empty; nothing without the trophy's data.
+    /// </summary>
+    AsTooltip Achieve(object[] args)
+    {
+        string Arg(int i) => args.Length > i ? Rt.ToString(args[i]) : "";
+        var tip = Browser.AchieveTooltip(Formats.World.ReservedWords.Atoi(Arg(0)), Formats.World.ReservedWords.Atoi(Arg(1)));
+        if (tip == null) return null;
+        tip["closeButton"] = true;
+        string state = Arg(2), date = Arg(3);
+        if (date.Length != 0) state = Quest.ClientFormat.Format("{0} ({1})", state, date);
+        tip["state"] = state;
+        return tip;
     }
 
     /// <summary>vfunc_28 (:3943), the window's calls after UIDialog's.</summary>

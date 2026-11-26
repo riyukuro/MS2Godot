@@ -13,7 +13,7 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// STILL-OPEN (each answered by a delegate that defaults to "none"): the game events of CheckRequire and the category
 /// filters (GameEventManagerCli); the collection marks of reqCondition (DAT_143ab30e0 items, CFishingManager, CPetManager,
-/// the dungeon record); IsDebugMode (CInputKeyHandler); the getTooltipAchieve tooltip (ASTooltip::SetAchieveTooltip); OnUseLink (FUN_140d2cca0, raised as <see cref="UseLink"/>); vfunc_80, the platform's late search answer
+/// the dungeon record); IsDebugMode (CInputKeyHandler); OnUseLink (FUN_140d2cca0, raised as <see cref="UseLink"/>); vfunc_80, the platform's late search answer
 /// (KR's vfunc_37 answers at once, so it is not reached).
 /// </para>
 /// </summary>
@@ -283,7 +283,20 @@ public sealed class AchieveController : UiController
             return !kinds.TryGetValue(k, out int v) || v != 0;
         }
         if (string.Equals(name, "getTooltipColor", StringComparison.OrdinalIgnoreCase)) return TooltipColor(args);
+        if (string.Equals(name, "getTooltipAchieve", StringComparison.OrdinalIgnoreCase)) return TooltipAchieve(args);
         return null;
+    }
+
+    /// <summary>getTooltipAchieve (:536), a trophy slot's tooltip: two uints, the trophy and its grade; the achieve tooltip
+    /// (<see cref="AchieveTexts.Tooltip"/>, ASTooltip of the local player with flags 2) with the comment
+    /// s_achieve_tooltip_comment (0x781); no value without the trophy's data.</summary>
+    AsTooltip TooltipAchieve(object[] args)
+    {
+        uint id = args is { Length: > 0 } ? Rt.ToUint32(args[0]) : 0;
+        uint grade = args is { Length: > 1 } ? Rt.ToUint32(args[1]) : 0;
+        if (Texts.Tooltip((int)id, (int)grade) is not { } t) return null;
+        t["comment"] = Texts.Common(0x781);
+        return t;
     }
 
     /// <summary>

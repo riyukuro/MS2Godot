@@ -2679,6 +2679,46 @@ public partial class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// getUserData "getAchieve" (uimessenger.cpp:4653), what the movie's link handler asks for on a left click of a trophy
+    /// link: the text after "event:" split on ",", fields 1 (id), 3 (grade), 4 (the sender's state text) and 5 (the date).
+    /// The trophy's achieve tooltip with its close button and the link's state, the date in brackets when there is one;
+    /// nothing for an unknown trophy or without a local player.
+    /// </summary>
+    [Test]
+    public void MessengerTrophyLinkGivesTheAchieveTooltip()
+    {
+        var (c, h, m, sent, _) = ChatWindow();
+        var asked = new List<(int, int)>();
+        c.Browser.AchieveTooltip = (id, grade) =>
+        {
+            asked.Add((id, grade));
+            return id == 21100012 ? new AsTooltip { ["tooltip"] = "export_common_tooltip_kindsAchieve", ["grade"] = grade, ["state"] = "own" } : null;
+        };
+        object[] Fields(string eventText)
+        {
+            var f = eventText.Split(',');
+            return new object[] { f[1], f[3], f[4], f[5] };
+        }
+        var tip = c.GetUserData("getAchieve", Fields("achieveTooltip,21100012,4,2,Sender: done,2026-01-01"));
+        Assert.That(asked, Is.EqualTo(new[] { (21100012, 2) }));
+        Assert.That(tip, Is.Not.Null);
+        Assert.That((tip["closeButton"], tip["grade"], tip["state"]),
+            Is.EqualTo(((object)true, (object)2, (object)Ms2.Quest.ClientFormat.Format("{0} ({1})", "Sender: done", "2026-01-01"))));
+        // no date: the state text as it is; no state text either: an empty state
+        Assert.That(c.GetUserData("getAchieve", Fields("achieveTooltip,21100012,4,1,Sender: going,"))["state"], Is.EqualTo("Sender: going"));
+        Assert.That(c.GetUserData("getAchieve", Fields("achieveTooltip,21100012,4,1,,"))["state"], Is.EqualTo(""));
+        Assert.That(c.GetUserData("getAchieve", Fields("achieveTooltip,1,4,1,x,y")), Is.Null, "unknown trophy");
+        Assert.That(c.GetUserData("getAchieve", Array.Empty<object>()), Is.Null, "no fields: trophy 0");
+        Assert.That(asked[^1], Is.EqualTo((0, 0)));
+        m.HasLocalPlayer = false;
+        int calls = asked.Count;
+        Assert.That(c.GetUserData("getAchieve", Fields("achieveTooltip,21100012,4,2,a,b")), Is.Null);
+        Assert.That(asked.Count, Is.EqualTo(calls), "without a local player nothing is asked");
+        Assert.That(sent, Is.Empty);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void MessengerItemLinkIntoTheInputIsSentAsHtml()
     {

@@ -213,6 +213,68 @@ public class AchieveDataTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// ASTooltip::SetAchieveTooltip (astooltip.cpp:4937) over every grade of every trophy: the achieve tooltip class, align
+    /// 7, the grade, name, requirement, reward and medal icon, and the state of the player's trophy (complete with the
+    /// grade's date when the grade has a clear time, else in progress; none when the player lacks it). The trophy window's
+    /// slot asks for it through its own getTooltipData (getTooltipAchieve, uiachievedialog.cpp:536) and gets the comment too.
+    /// </summary>
+    [Test]
+    public void EveryTrophyGradeGivesItsAchieveTooltip()
+    {
+        var m = Model();
+        var (book, texts) = Book(m);
+        texts.FeatureOn = _ => true;
+        int tips = 0, complete = 0, progress = 0;
+        foreach (var d in book.GetListFromTable(0, 0, false, false).Select(a => a.Data).Where(d => d != null))
+            foreach (int g in d.GradeConditions.Keys.OrderBy(k => k))
+            {
+                var t = texts.Tooltip(d.Id, g);
+                Assert.That(t, Is.Not.Null, $"{d.Id} grade {g}");
+                Assert.That((t["tooltip"], t["tooltipAlign"], t["grade"], t["title"], t["desc"], t["reward"], t["imgPath"]),
+                    Is.EqualTo(((object)"export_common_tooltip_kindsAchieve", (object)7, (object)g, (object)texts.Name(d.Id),
+                                (object)texts.RequirementText(d.Id, g, false), (object)texts.RewardText(d.Id, g), (object)d.IconPath)));
+                var a = book.Find(d.Id);
+                int value = (int)a.GetValue(g);
+                Assert.That(t["state"], Is.EqualTo(value != 0
+                    ? Ms2.Quest.ClientFormat.Format("{0} ({1})", texts.Common(0x780), AchieveTexts.RecordedDate(a, g))
+                    : texts.Common(0x77f)), $"{d.Id} grade {g}");
+                tips++;
+                if (value != 0) complete++; else progress++;
+            }
+        TestContext.Progress.WriteLine($"achieve tooltips: {tips} grades, {complete} complete, {progress} in progress");
+        Assert.That(complete, Is.GreaterThan(100));
+        Assert.That(progress, Is.GreaterThan(100));
+        Assert.That(texts.Tooltip(1, 1), Is.Null, "no such trophy");
+        int some = book.GetListFromTable(0, 0, false, false).First(a => a.Data != null).Id;
+        var find = texts.Find;
+        texts.Find = _ => null;
+        Assert.That(texts.Tooltip(some, 1)?.ContainsKey("state"), Is.False, "not the player's trophy: no state");
+        texts.Find = find;
+
+        // the trophy window: its slot class's getTooltipData asks getTooltipAchieve(m_id, m_grade)
+        var c = new AchieveController(book, texts, AchieveCategory.Load(packs));
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 50_000_000);
+        p.StageW = 1920; p.StageH = 1080;
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        var (done, doneGrade) = book.GetListFromTable(0, 0, false, false).Where(a => a.Data != null)
+            .SelectMany(a => a.Data.GradeConditions.Keys.Select(g => (a, g))).First(x => x.a.GetValue(x.g) != 0);
+        var slot = h.RT.Construct(h.RT.GetClass("achieve_detail_slot"), Array.Empty<object>());
+        h.Invoke(h.Entity, "addChild", slot);
+        h.Invoke(slot, "setData", h.ToAs(new Dictionary<string, object> { ["id"] = (uint)done.Id, ["grade"] = doneGrade, ["complete"] = true }));
+        var tip = h.Invoke(slot, "getTooltipData");
+        var want = texts.Tooltip(done.Id, doneGrade);
+        foreach (var k in new[] { "tooltip", "title", "desc", "reward", "imgPath", "state" })
+            Assert.That(Rt.ToString(h.Get(tip, k)), Is.EqualTo(want[k].ToString()), k);
+        Assert.That(Rt.ToNumber(h.Get(tip, "grade")), Is.EqualTo(doneGrade));
+        Assert.That(Rt.ToString(h.Get(tip, "comment")), Is.EqualTo(texts.Common(0x781)));
+        Assert.That(texts.Common(0x781), Is.Not.Empty, "s_achieve_tooltip_comment");
+        Assert.That(c.GetUserValue("GETTOOLTIPACHIEVE", new object[] { (double)done.Id, 1.0 }), Is.Not.Null, "compared without case");
+        Assert.That(c.GetUserValue("getTooltipAchieve", new object[] { 1.0, 1.0 }), Is.Null, "no such trophy");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
     sealed class Count : IAchieveToasts
     {
         public readonly List<string> Log = new();

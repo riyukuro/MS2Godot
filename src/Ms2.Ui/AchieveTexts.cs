@@ -328,6 +328,35 @@ public sealed class AchieveTexts
     /// <summary>FUN_1409404f0: FUN_14083cb20(FUN_140719a00(n)), the digits grouped.</summary>
     public static string Group(long n) => NumberText.Group(n.ToString(CultureInfo.InvariantCulture));
 
+    /// <summary>
+    /// ASTooltip::SetAchieveTooltip (@0x1409e21a0, astooltip.cpp:4937): null without the trophy's data (GetAchieveData);
+    /// else the achieve tooltip class export_common_tooltip_kindsAchieve, aligned 7, with the grade, title (<see cref="Name"/>),
+    /// desc (<see cref="RequirementText"/>, tags stripped), reward (<see cref="RewardText"/>) and imgPath (GetAchieveName,
+    /// the medal icon path). When the player has the trophy (CAchieveManager::Find) also state: s_achieve_state_complete
+    /// (0x780) with the grade's recorded date in brackets ("{0} ({1})") when the grade has a value (GetValue), else
+    /// s_achieve_state_progress (0x77f).
+    /// </summary>
+    public AsTooltip Tooltip(int id, int grade)
+    {
+        var data = Data(id);
+        if (data == null) return null;
+        var t = new AsTooltip { ["tooltip"] = "export_common_tooltip_kindsAchieve" };
+        t.SetTooltipAlign(7);
+        t["grade"] = grade;
+        t["title"] = Name(id);
+        t["desc"] = RequirementText(id, grade, false);
+        t["reward"] = RewardText(id, grade);
+        t["imgPath"] = data.IconPath;
+        if (Find(id) is { } a)
+        {
+            int value = (int)a.GetValue(grade);
+            string state = value != 0 ? Common(0x780) : Common(0x77f);
+            if (value != 0) state = ClientFormat.Format("{0} ({1})", state, RecordedDate(a, grade));
+            t["state"] = state;
+        }
+        return t;
+    }
+
     /// <summary>GetRecordedDateText (@0x14093e330): the date the trophy recorded for the key, "" when 0.</summary>
     public static string RecordedDate(Achieve a, int key)
     {

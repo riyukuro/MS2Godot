@@ -1212,6 +1212,13 @@ public partial class HudScene : Node, IUiStageHost
         };
         ChatLog.SystemSound = key => GD.Print($"chat: system sound {key} is not played");
         ChatLog.LocalCharacterId = () => live.CharacterId;
+        ChatLog.AchieveTooltip = (id, grade) =>       // a trophy link's tooltip (SetAchieveTooltip over the session's trophies)
+        {
+            var tip = AchieveTextsFor(live.Achieves).Tooltip(id, grade);
+            if (Ms2Godot.Net.LiveSession.LiveCheck)
+                GD.Print($"live: achieve link tooltip {id} grade {grade}: {(tip == null ? "none" : $"{tip["title"]} | {tip["desc"]} | {tip["reward"]} | {(tip.TryGetValue("state", out var st) ? st : "-")}")}");
+            return tip;
+        };
         ChatLog.FieldChatLimited = () => live.FieldHasLimitContent(0x100);     // the field data's HasLimitContent(0x100)
         // ShowChatBalloon (:2940): the line over its speaker, through the live field's balloon layer
         ChatLog.ChatBalloon = (name, text, type) => Ms2Godot.World.NpcEmoticons.Live?.Speakers?.Show(name, text, type);

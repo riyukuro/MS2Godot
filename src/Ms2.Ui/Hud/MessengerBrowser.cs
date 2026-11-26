@@ -403,6 +403,10 @@ public sealed class MessengerBrowser
     /// </summary>
     public Func<long, Item> FindHeldItem = _ => null;
 
+    /// <summary>ASTooltip::SetAchieveTooltip of a trophy and grade (<see cref="AchieveTexts.Tooltip"/>) for a trophy link's
+    /// tooltip; null without the trophy's data, or while the trophy texts are not wired.</summary>
+    public Func<int, int, AsTooltip> AchieveTooltip = (_, _) => null;
+
     /// <summary>FUN_140d2cfc0 (:578): an item's link (its id, rarity and uid) put in the input; nothing for null.</summary>
     public void LinkItem(Item item)
     {
