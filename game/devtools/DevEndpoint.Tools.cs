@@ -152,7 +152,8 @@ public partial class DevEndpoint
     // ---- input ----------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// input {key|mouse|action, pressed, ...}: key "A" / "Enter" (pressed omitted = press and release); mouse "move" | "left" |
+    /// input {key|text|mouse|action, pressed, ...}: key "A" / "Enter" (pressed omitted = press and release); text types each
+    /// character as a key press and release that carries it (a focused text field takes it as typed); mouse "move" | "left" |
     /// "right" | "middle" | "wheel_up" | "wheel_down" with x, y (pressed omitted = click); action name with pressed, strength.
     /// </summary>
     JsonNode Input(Request r)
@@ -165,6 +166,16 @@ public partial class DevEndpoint
             foreach (bool down in pressed is { } one ? new[] { one } : new[] { true, false })
                 Godot.Input.ParseInputEvent(new InputEventKey { Keycode = code, PhysicalKeycode = code, Pressed = down, ShiftPressed = r.GetBool("shift"), CtrlPressed = r.GetBool("ctrl"), AltPressed = r.GetBool("alt") });
             return new JsonObject { ["sent"] = "key " + code };
+        }
+        if (r.GetString("text") is { } typed)
+        {
+            foreach (char c in typed)
+            {
+                var kc = c < 128 && char.IsLetterOrDigit(c) ? (Key)char.ToUpperInvariant(c) : c == ' ' ? Key.Space : c == '/' ? Key.Slash : c == '-' ? Key.Minus : Key.None;
+                foreach (bool down in new[] { true, false })
+                    Godot.Input.ParseInputEvent(new InputEventKey { Keycode = kc, Unicode = c, Pressed = down });
+            }
+            return new JsonObject { ["sent"] = "text " + typed.Length };
         }
         if (r.GetString("mouse") is { } what)
         {

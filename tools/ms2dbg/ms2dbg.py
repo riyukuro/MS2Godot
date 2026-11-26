@@ -39,7 +39,7 @@ COMMANDS = {
     "monitors": ("Godot Performance monitors plus managed GC counts and bytes.", {
         "names": ("l", "monitor enum names; none = all")}),
     "input": ("Send a key, mouse or action event (the only command that changes the game).", {
-        "key": ("s", "key name, e.g. Space, Enter, A"), "mouse": ("s", "move|left|right|middle|wheel_up|wheel_down"),
+        "key": ("s", "key name, e.g. Space, Enter, A"), "text": ("s", "typed characters (each a key press and release carrying its character, as a keyboard sends them)"), "mouse": ("s", "move|left|right|middle|wheel_up|wheel_down"),
         "action": ("s", "InputMap action"), "x": ("n", "mouse x"), "y": ("n", "mouse y"),
         "pressed": ("b", "omit = press and release / click"), "strength": ("n", "action strength"),
         "shift": ("b", "shift held"), "ctrl": ("b", "ctrl held"), "alt": ("b", "alt held")}),
