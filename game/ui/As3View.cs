@@ -1024,6 +1024,7 @@ public partial class As3View : Node2D
             }
             case InputEventMouseButton mb:
             {
+                bool over = HitsShapesAt(mb.Position);   // before the dispatch, which can take this view out of the tree
                 var p = StagePoint(mb.Position);
                 Player.MouseMove(p.X, p.Y);
                 if (mb.ButtonIndex == MouseButton.Left) Player.MouseButton(mb.Pressed);
@@ -1032,7 +1033,10 @@ public partial class As3View : Node2D
                 // INFERRED: 3 lines per notch (the Windows default); the client's background movie sends 1 per notch (gfxmoviebackground.cpp:614), no source gives the UI movies' step
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp) Player.Wheel(3);
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown) Player.Wheel(-3);
-                if (!MouseOverUi) return;   // the click goes on to the game
+                // `over`: whether the press is on this movie's shapes is asked at the press, not read from the 50 ms sample: the client's
+                // dialogs are clips of one movie, whose hit test finds the entity under the press, so a press next to a dialog the cursor
+                // left a moment ago reaches the dialog under it. (MouseOverUi stays the client's sampled flag the game reads.)
+                if (!over) return;   // the click goes on to the views below and the game
                 if (mb.Pressed && mb.ButtonIndex == MouseButton.Left) ClearOtherFocus();
                 break;
             }
