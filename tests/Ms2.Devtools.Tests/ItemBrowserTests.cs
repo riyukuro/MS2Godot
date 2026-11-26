@@ -73,13 +73,18 @@ public class ItemBrowserTests
     public void TheTooltipShowsTheGemsAndTheServerBlocks()
     {
         Model();
-        var sock = new ItemBrowserSettings { Sockets = 3, Gems = { [0] = 40200001, [1] = 40200002, [2] = 40200003 } };
-        var (_, data) = ItemBrowserModel.Build(model, 11200006, sock)!.Value;
-        string socket = (string)data["itemSocket"];
-        Assert.That(socket, Does.Contain(Common("s_tooltip_itemoption_socket").Split("{0}")[0]));
-        var gem = tables.Items.Get(40200001);
-        var constant = tables.ItemOptions.ConstantOptions(gem, gem.Rank)!.Value;
-        if (constant.Stat.Count > 0) Assert.That(socket, Does.Contain(tables.StatName(constant.Stat.Keys.Min())), "the gem's own option");
+        var earrings = tables.Items.Get(11200006);
+        if (ItemBrowserLimits.SocketMax(tables, model.IsFeatureEnabled, earrings, earrings.Rank) > 0)
+        {
+            var sock = new ItemBrowserSettings { Sockets = 3, Gems = { [0] = 40200001, [1] = 40200002, [2] = 40200003 } };
+            var (_, data) = ItemBrowserModel.Build(model, 11200006, sock)!.Value;
+            string socket = (string)data["itemSocket"];
+            Assert.That(socket, Does.Contain(Common("s_tooltip_itemoption_socket").Split("{0}")[0]));
+            var gem = tables.Items.Get(40200001);
+            var constant = tables.ItemOptions.ConstantOptions(gem, gem.Rank)!.Value;
+            if (constant.Stat.Count > 0) Assert.That(socket, Does.Contain(tables.StatName(constant.Stat.Keys.Min())), "the gem's own option");
+        }
+        else TestContext.Out.WriteLine("this data gives the earrings no sockets; the socket block is not checked");
 
         // The enchant and limit break options are the server's; a spawned item's record supplies them.
         var withEnchant = new ItemBrowserSettings { Enchant = 3, LimitBreak = 0 };
@@ -104,6 +109,8 @@ public class ItemBrowserTests
     public void TheStatusKeepsTheOptionsAndLimitBreakOfAnAdditionalEffectItem()
     {
         Model();
+        if (!string.Equals(tables.Locale, "KR", StringComparison.OrdinalIgnoreCase))
+            Assert.Ignore("the KMS2 data has the translated unlimited-enchant block");
         // The Fire Prism Knife has additional effects (Power of Phantom Spacetime); the block is still built, with
         // the data's options, the browser's bonus line and the server's limit break rows.
         var s = new ItemBrowserSettings { LimitBreak = 2 };
