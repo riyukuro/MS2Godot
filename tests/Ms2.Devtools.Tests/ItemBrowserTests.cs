@@ -74,7 +74,10 @@ public class ItemBrowserTests
     {
         Model();
         var earrings = tables.Items.Get(11200006);
-        if (ItemBrowserLimits.SocketMax(tables, model.IsFeatureEnabled, earrings, earrings.Rank) > 0)
+        int earringSockets = ItemBrowserLimits.SocketMax(tables, model.IsFeatureEnabled, earrings, earrings.Rank);
+        if (string.Equals(tables.Locale, "KR", StringComparison.OrdinalIgnoreCase))
+            Assert.That(earringSockets, Is.GreaterThan(0), "the KMS2 earrings have sockets");
+        if (earringSockets > 0)
         {
             var sock = new ItemBrowserSettings { Sockets = 3, Gems = { [0] = 40200001, [1] = 40200002, [2] = 40200003 } };
             var (_, data) = ItemBrowserModel.Build(model, 11200006, sock)!.Value;
@@ -84,7 +87,11 @@ public class ItemBrowserTests
             var constant = tables.ItemOptions.ConstantOptions(gem, gem.Rank)!.Value;
             if (constant.Stat.Count > 0) Assert.That(socket, Does.Contain(tables.StatName(constant.Stat.Keys.Min())), "the gem's own option");
         }
-        else TestContext.Out.WriteLine("this data gives the earrings no sockets; the socket block is not checked");
+        else
+        {
+            Assert.That(tables.Locale, Is.Not.EqualTo("KR"), "only the GMS2 data has no earring sockets");
+            TestContext.Out.WriteLine("the GMS2 data gives these earrings no sockets; the socket block is not checked");
+        }
 
         // The enchant and limit break options are the server's; a spawned item's record supplies them.
         var withEnchant = new ItemBrowserSettings { Enchant = 3, LimitBreak = 0 };
@@ -106,11 +113,35 @@ public class ItemBrowserTests
     }
 
     [Test]
+    public void TheTooltipShowsTheFifteenEnchantOfALimitBreakItem()
+    {
+        Model();
+        // The game's limit-broken item keeps its +15 enchant object with Enchants 0 (ItemEnchantManager.LimitBreakEnchant):
+        // the tooltip shows those +15 options together with the limit break block.
+        var s = new ItemBrowserSettings { LimitBreak = 2 };
+        var server = new EquipItem { Id = 11400016, Rarity = tables.Items.Get(11400016).Rank };
+        server.Enchant.Level = 0;
+        server.Enchant.Version = 1;
+        server.Enchant.Options[20] = 16;
+        server.LimitBreak.Level = 2;
+        server.LimitBreak.Stat[31] = 30;
+        var (_, data) = ItemBrowserModel.Build(model, 11400016, s, server)!.Value;
+        string status = (string)data["itemStatus"];
+        Assert.Multiple(() => {
+            Assert.That(status, Does.Contain(Common("s_tooltip_itemoption_enchant").Split("{0}")[0]), "the enchant block");
+            Assert.That(status, Does.Contain(tables.StatName(20)), "the +15 enchant option is shown at level 0");
+            Assert.That(status, Does.Contain(Common("s_tooltip_itemoption_unlimited").Split("{0}")[0]), "the limit break block");
+            if (string.Equals(tables.Locale, "KR", StringComparison.OrdinalIgnoreCase))
+                Assert.That(status, Does.Contain(tables.StatName(31)), "the limit break row");
+        });
+    }
+
+    [Test]
     public void TheStatusKeepsTheOptionsAndLimitBreakOfAnAdditionalEffectItem()
     {
         Model();
         if (!string.Equals(tables.Locale, "KR", StringComparison.OrdinalIgnoreCase))
-            Assert.Ignore("the KMS2 data has the translated unlimited-enchant block");
+            Assert.Ignore("the GMS2 data has no translated unlimited-enchant block");
         // The Fire Prism Knife has additional effects (Power of Phantom Spacetime); the block is still built, with
         // the data's options, the browser's bonus line and the server's limit break rows.
         var s = new ItemBrowserSettings { LimitBreak = 2 };
@@ -219,6 +250,19 @@ public class ItemBrowserTests
         var none = ItemCommandSupport.Parse(upstream);
         Assert.That(none.Any, Is.False);
         Assert.That(ItemCommandSupport.Parse("").Any, Is.False);
+        // Whole option tokens: a --stats, --status, --gemstone or --specialized row is not --stat, --gem or --special.
+        string falseFriends = "Usage:\n  item <id> [options]\n\nOptions:\n  --stats <stats>\n  --status\n  --gemstone <gem>\n  --specialized <x>\n";
+        Assert.That(ItemCommandSupport.Parse(falseFriends).Any, Is.False);
+        Assert.Multiple(() => {
+            Assert.That(ItemCommandSupport.IsHelpLine("Usage: item <id> [options]"), Is.True);
+            Assert.That(ItemCommandSupport.IsHelpLine("Options:"), Is.True);
+            Assert.That(ItemCommandSupport.IsHelpLine("  --limit-break <limit-break>  Limit break level."), Is.True);
+            Assert.That(ItemCommandSupport.IsHelpLine("  -a, --amount <amount>  Amount of the item."), Is.True);
+            Assert.That(ItemCommandSupport.IsHelpLine("  <id>  Id of item to spawn."), Is.True);
+            Assert.That(ItemCommandSupport.IsHelpLine("--enchant 3 is not possible for item 11400016"), Is.False);
+            Assert.That(ItemCommandSupport.IsHelpLine("Welcome to Tria!"), Is.False);
+            Assert.That(ItemCommandSupport.IsHelpLine(""), Is.False);
+        });
     }
 
     static string Common(string key) => tables.Common(key) ?? "";

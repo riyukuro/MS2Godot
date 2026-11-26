@@ -36,7 +36,10 @@ public static class ItemBrowserModel
         item.EnchantLevel = Math.Max(0, s.Enchant);
         item.UnlimitedEnchantLevel = Math.Max(0, s.LimitBreak);
 
-        if (server != null && (server.Enchant?.Level ?? 0) == item.EnchantLevel && item.EnchantLevel > 0)
+        // A limit-broken item keeps its +15 enchant object with Enchants 0 (ItemEnchantManager.LimitBreakEnchant), so
+        // its options are copied at level 0 too; a plain item's empty level-0 block is not.
+        if (server != null && (server.Enchant?.Level ?? 0) == item.EnchantLevel
+            && (item.EnchantLevel > 0 || (server.Enchant?.Options.Count ?? 0) > 0))
         {
             rec.Enchant.Level = item.EnchantLevel;
             rec.Enchant.Version = server.Enchant.Version;

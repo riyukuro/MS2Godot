@@ -405,13 +405,18 @@ public partial class CreativeMenu
         GetTree().CreateTimer(1.2).Timeout += () => { if (ask == helpAsk) FinishHelp(); };
     }
 
-    /// <summary>One notice while the help is awaited: the reply comes as console notices, possibly several, and is parsed
-    /// once <see cref="FinishHelp"/> has them all.</summary>
+    /// <summary>
+    /// One notice while the help is awaited: only the reply's own lines (the usage, the headers, the option rows and the
+    /// argument row) are gathered; any other notice passes through to the status (<see cref="OnNotice"/>), so a spawn
+    /// error inside the wait is still shown.
+    /// </summary>
     bool TakeHelp(Ms2.Net.Packets.NoticeMessage n)
     {
         if (!awaitingHelp) return false;
         string text = n.Text.Formatted ? ClientFormat.Format(tables.Common(n.Text.Id), n.Text.Args) : n.Text.Text ?? "";
-        helpText.Append(System.Net.WebUtility.HtmlDecode(StripTags(text))).Append('\n');
+        text = System.Net.WebUtility.HtmlDecode(StripTags(text));
+        if (!ItemCommandSupport.IsHelpLine(text)) return false;
+        helpText.Append(text).Append('\n');
         return true;
     }
 

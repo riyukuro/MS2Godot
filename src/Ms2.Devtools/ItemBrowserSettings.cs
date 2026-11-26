@@ -112,18 +112,56 @@ public sealed class ItemCommandSupport
     /// <summary>Every enhancement option (the fork's item command).</summary>
     public static ItemCommandSupport Fork => new() { Enchant = true, LimitBreak = true, Socket = true, Gem = true, Stat = true, Special = true };
 
-    /// <summary>The options a help reply names, by token; false when the reply names none of them.</summary>
+    /// <summary>The options a help reply names, as whole option tokens; false when the reply names none of them.</summary>
     public static ItemCommandSupport Parse(string help)
     {
         var s = new ItemCommandSupport();
         if (string.IsNullOrEmpty(help)) return s;
-        s.Enchant = help.Contains("--enchant", StringComparison.Ordinal);
-        s.LimitBreak = help.Contains("--limit-break", StringComparison.Ordinal);
-        s.Socket = help.Contains("--socket", StringComparison.Ordinal);
-        s.Gem = help.Contains("--gem", StringComparison.Ordinal);
-        s.Stat = help.Contains("--stat", StringComparison.Ordinal);
-        s.Special = help.Contains("--special", StringComparison.Ordinal);
+        s.Enchant = HasToken(help, "--enchant");
+        s.LimitBreak = HasToken(help, "--limit-break");
+        s.Socket = HasToken(help, "--socket");
+        s.Gem = HasToken(help, "--gem");
+        s.Stat = HasToken(help, "--stat");
+        s.Special = HasToken(help, "--special");
         return s;
+    }
+
+    /// <summary>
+    /// Whether the text names the option as a whole token, so a help row for --stats, --status or --gemstone does not
+    /// count as --stat or --gem. An option is bounded by whitespace or punctuation (or the text's ends); a name
+    /// character (a letter, a digit, '-' or '_') on either side means it is part of a longer name.
+    /// </summary>
+    static bool HasToken(string help, string option)
+    {
+        int i = 0;
+        while ((i = help.IndexOf(option, i, StringComparison.Ordinal)) >= 0)
+        {
+            int end = i + option.Length;
+            bool left = i == 0 || !IsNameChar(help[i - 1]);
+            bool right = end == help.Length || !IsNameChar(help[end]);
+            if (left && right) return true;
+            i = end;
+        }
+        return false;
+    }
+
+    static bool IsNameChar(char c) => char.IsLetterOrDigit(c) || c == '-' || c == '_';
+
+    /// <summary>
+    /// Whether a notice is one of the /item --help reply's lines: the usage line, the section headers, an option row
+    /// (two spaces and a dash) or the argument row (two spaces and &lt;id&gt;). Any other notice (a spawn error, a
+    /// server message) is not help and passes through to the window's status.
+    /// </summary>
+    public static bool IsHelpLine(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+        if (text.Contains("Usage:", StringComparison.Ordinal)) return true;
+        string trimmed = text.TrimStart();
+        if (trimmed.StartsWith("Options:", StringComparison.Ordinal) || trimmed.StartsWith("Arguments:", StringComparison.Ordinal)) return true;
+        if (!text.StartsWith("  ", StringComparison.Ordinal)) return false;
+        return trimmed.StartsWith("-", StringComparison.Ordinal)
+            || trimmed.Contains("<id>", StringComparison.Ordinal)
+            || trimmed.StartsWith("item ", StringComparison.Ordinal);
     }
 
     public bool Any => Enchant || LimitBreak || Socket || Gem || Stat || Special;
