@@ -22,6 +22,25 @@ public static class EventFadeIn
     public static float Gain(int frame, int fadeFrames) => frame >= fadeFrames ? 1f : (float)frame / fadeFrames;
 
     /// <summary>
+    /// Where a loop baked by <see cref="Bytes"/> (looping over [<paramref name="loopBegin"/>, <paramref name="loopEnd"/>) frames
+    /// at <paramref name="rate"/>) is <paramref name="elapsed"/> seconds after its start (s): the first pass, fade-in and all,
+    /// then the loop range over and over. A loop stopped while the listener is past its silent distance plays again from
+    /// here, since FMOD's event kept its time while it could not be heard. The FMOD probe's renders show it: with 4 software
+    /// channels and 4 louder loops started, AMB/11100071 went virtual for 3.0 s while its channel's position ran on (1924 to
+    /// 4883 ms), then came back in one step at its full level with no fade-in, its first 20 ms matching the uninterrupted
+    /// render of the same loop 29 ms on (a residual of 0.000); a loop out of its range stays real at volume 0 and plays on,
+    /// back at its full level the same way.
+    /// </summary>
+    public static double LoopPosition(double elapsed, int loopBegin, int loopEnd, int rate)
+    {
+        if (rate <= 0 || elapsed <= 0) return 0;
+        double e = elapsed * rate;
+        int span = loopEnd - loopBegin;
+        if (e < loopEnd || span <= 0) return Math.Min(e, Math.Max(loopEnd, 0)) / rate;
+        return (loopBegin + (e - loopBegin) % span) / rate;
+    }
+
+    /// <summary>
     /// The 16-bit little-endian PCM bytes of <paramref name="pcm"/> with a fade-in of <paramref name="fadeInMs"/>, and the loop
     /// range in frames. Without a fade these are the plain bytes, and a loop runs over the whole sound. A one-shot is faded
     /// in place. A loop gets the faded first pass plus one more unfaded pass: its first n frames are faded, then the loop runs

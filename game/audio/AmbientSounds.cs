@@ -37,7 +37,8 @@ public partial class AmbientSounds : Node3D
         public System.Numerics.Vector3 At;
         public float OldMin, OldMax;   // the inverse-distance range a clip without a curve plays with
         public StereoChannels Stereo = StereoChannels.Mono;   // the decoded clip's channels (Player3DOutput.Channels; Mono: mono or not yet decoded)
-        public float LoopFrom;   // where the loop plays again from when the listener comes back (s), past the fade-in
+        public int LoopBegin, LoopEnd, Rate;   // the loop's range in frames and its rate (0: not decoded yet)
+        public double StartedAt;   // when its event started (clock): a loop coming back plays where the event is by then
     }
 
     readonly List<Sound> rolled = new();
@@ -56,7 +57,9 @@ public partial class AmbientSounds : Node3D
             {
                 // a loop: stopped while silent, played again on the way back
                 if (past) s.Player.Stop();
-                else if (s.On && s.Player.Stream != null) s.Player.Play(s.LoopFrom);   // FMOD's event kept running: no new fade-in
+                // FMOD's event kept running while virtual: back where it is by now, at its full level (EventFadeIn.LoopPosition)
+                else if (s.On && s.Player.Stream != null)
+                    s.Player.Play((float)EventFadeIn.LoopPosition(clock - s.StartedAt, s.LoopBegin, s.LoopEnd, s.Rate));
             }
         }
     }
@@ -103,6 +106,7 @@ public partial class AmbientSounds : Node3D
             if (on) Create(e);
             return;
         }
+        if (on && !s.On) s.StartedAt = clock;   // the event starts again
         s.On = on;
         if (s.Clip.Rolloff is { } curve)
         {
@@ -182,8 +186,12 @@ public partial class AmbientSounds : Node3D
         Count = 0;
     }
 
+    /// <summary>The seconds this node has processed, for where a loop's event is (<see cref="Sound.StartedAt"/>).</summary>
+    double clock;
+
     public override void _Process(double delta)
     {
+        clock += delta;
         while (started.TryDequeue(out var start)) start();
     }
 
@@ -207,7 +215,7 @@ public partial class AmbientSounds : Node3D
         var p = s.Player;
         if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
         s.Stereo = stereo;
-        s.LoopFrom = pcm.Rate > 0 ? (float)loopBegin / pcm.Rate : 0;
+        (s.LoopBegin, s.LoopEnd, s.Rate, s.StartedAt) = (loopBegin, loopEnd, pcm.Rate, clock);
         if (s.Clip.Rolloff != null && !float.IsNaN(stereo.Correlation) && gains.Has(s.Index)) { gains.SetStereo(s.Index, stereo.Correlation, stereo.LeftShare); Place(s); }
         p.Stream = new AudioStreamWav
         {

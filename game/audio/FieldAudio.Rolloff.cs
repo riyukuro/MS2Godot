@@ -12,8 +12,12 @@ namespace Ms2Godot;
 /// FMOD's linear, linear square or inverse model on its range otherwise. The players with one have Godot's attenuation off,
 /// a max distance of 0 and no attenuation filter, since Godot 4.7 fades by 1 - d / max distance and shelves the highs with any
 /// model (<see cref="Player3DOutput"/>), and take that gain each frame, set only when it moves (<see cref="RolloffGains"/>). A
-/// looping one is stopped while the listener is past its curve's silent distance and played again as it comes back; a
-/// one-shot there plays on at the silent volume, keeping its time as FMOD's virtual voice does. A clip without one keeps Godot's inverse distance from the event's range.
+/// looping one is stopped while the listener is past its curve's silent distance and played again as it comes back, at the
+/// time FMOD's event has reached by then and at its full level, as the FMOD probe renders a virtual voice coming back
+/// (<see cref="EventFadeIn.LoopPosition"/>); a one-shot there plays on at the silent volume, keeping its time the same way.
+/// Godot pans by the source's azimuth in the listener's own plane, leaving out its part along the listener's up, where FMOD
+/// pans by the direction's side component alone, so the listener here is level with the camera's right
+/// (<see cref="Player3DOutput.PanBasis"/>). A clip without one keeps Godot's inverse distance from the event's range.
 /// </summary>
 public partial class FieldAudio
 {
@@ -21,9 +25,12 @@ public partial class FieldAudio
     /// <summary>Whether the voice's sound has started (its start delay is over), so a loop stopped past its silent distance
     /// plays again on the way back.</summary>
     readonly bool[] started3d = new bool[EffectVoiceSlots.ClientChannels];
-    /// <summary>Where a voice's loop plays again from when the listener comes back (s): its loop start, past the event's
-    /// fade-in, since FMOD's event kept running while out of range (<see cref="EventFadeIn"/>).</summary>
-    readonly float[] loopFrom3d = new float[EffectVoiceSlots.ClientChannels];
+    /// <summary>A voice's loop range in frames and its rate, and when its sound started (<see cref="audioClock"/>): a loop
+    /// stopped past its silent distance plays again from where FMOD's event would be by then, with no new fade-in
+    /// (<see cref="EventFadeIn.LoopPosition"/>).</summary>
+    readonly int[] loopBegin3d = new int[EffectVoiceSlots.ClientChannels], loopEnd3d = new int[EffectVoiceSlots.ClientChannels],
+        rate3d = new int[EffectVoiceSlots.ClientChannels];
+    readonly double[] startedAt3d = new double[EffectVoiceSlots.ClientChannels];
     AudioListener3D listener;
     bool listenerOn;
 
@@ -41,7 +48,7 @@ public partial class FieldAudio
         if (Viewer?.Invoke() is { } eye)
         {
             if (listener == null) AddChild(listener = new AudioListener3D { Name = "Listener" });
-            var t = new Transform3D(cam != null ? cam.GlobalBasis : Basis.Identity, eye);
+            var t = new Transform3D(cam != null ? LevelBasis(cam.GlobalBasis) : Basis.Identity, eye);
             if (!listenerOn || t != lastListener) { listener.GlobalTransform = t; lastListener = t; }
             if (!listenerOn) { listener.MakeCurrent(); listenerOn = true; }
             ListenerAt = eye;
@@ -54,6 +61,11 @@ public partial class FieldAudio
         if (cam != null) { ListenerAt = cam.GlobalPosition; ListenerRight = cam.GlobalBasis.X.Normalized(); }
     }
     Transform3D lastListener;
+
+    /// <summary>The camera's basis made level for Godot's pan (<see cref="Player3DOutput.PanBasis"/>).</summary>
+    static Basis LevelBasis(Basis cam) =>
+        Player3DOutput.PanBasis(ToNumerics(cam.X), out var r, out var u, out var b)
+            ? new Basis(new Vector3(r.X, r.Y, r.Z), new Vector3(u.X, u.Y, u.Z), new Vector3(b.X, b.Y, b.Z)) : cam;
 
     /// <summary>Each frame: the listener, then the rolloff gain of every 3D voice and ambient player that has a curve.</summary>
     void RollOff()
@@ -69,7 +81,7 @@ public partial class FieldAudio
             if (gains3d.PastSilentChanged(i, out bool past))
             {
                 if (past) voices3d[i].Stop();
-                else if (started3d[i]) voices3d[i].Play(loopFrom3d[i]);
+                else if (started3d[i]) voices3d[i].Play((float)EventFadeIn.LoopPosition(audioClock - startedAt3d[i], loopBegin3d[i], loopEnd3d[i], rate3d[i]));
             }
         }
         Ambient?.RollOff(l, r);
@@ -82,7 +94,9 @@ public partial class FieldAudio
     void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position, StereoChannels stereo)
     {
         started3d[slot] = false;
-        loopFrom3d[slot] = v.Stream is AudioStreamWav w && w.MixRate > 0 ? (float)w.LoopBegin / w.MixRate : 0;
+        if (v.Stream is AudioStreamWav w && w.LoopMode == AudioStreamWav.LoopModeEnum.Forward)
+            (loopBegin3d[slot], loopEnd3d[slot], rate3d[slot]) = (w.LoopBegin, w.LoopEnd, w.MixRate);
+        else (loopBegin3d[slot], loopEnd3d[slot], rate3d[slot]) = (0, 0, 0);
         if (clip.Rolloff is { } c)
         {
             v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
@@ -108,6 +122,7 @@ public partial class FieldAudio
     void Start3d(AudioStreamPlayer3D v, int slot)
     {
         started3d[slot] = true;
+        startedAt3d[slot] = audioClock;
         if (!gains3d.IsPast(slot)) v.Play();
     }
 

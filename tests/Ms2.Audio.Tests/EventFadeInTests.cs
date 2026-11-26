@@ -115,6 +115,36 @@ public class EventFadeInTests
         return s;
     }
 
+    /// <summary>
+    /// A loop that went virtual (stopped past its silent distance) comes back where FMOD's channel has run on to, as the
+    /// probe renders AMB/11100071 (virtual from 1924 to 4883 ms, back in one step at its full level, its first 20 ms the
+    /// uninterrupted render's 29 ms on): <see cref="EventFadeIn.LoopPosition"/> is the frame a forward loop over
+    /// <see cref="EventFadeIn.Bytes"/>'s range reaches by then, stepped frame by frame, with and without a baked fade-in.
+    /// The old resume (the loop's start every time) is the stepped position only by chance.
+    /// </summary>
+    [TestCase(0, false)]
+    [TestCase(5, true)]
+    [TestCase(500, true)]
+    public void LoopComesBackWhereTheEventRanOnTo(int fadeInMs, bool fades)
+    {
+        const int rate = 22050, frames = 9000;
+        EventFadeIn.Bytes(Constant(rate, 1, 1000, frames), fadeInMs, true, out int begin, out int end);
+        Assert.That((begin > 0, end - begin), Is.EqualTo((fades, frames)));
+        int pos = 0, off = 0, checkedAt = 0;
+        for (int n = 1; n <= 6 * (begin + frames); n++)
+        {
+            if (++pos >= end) pos = begin;
+            if (n % 97 != 0) continue;
+            double got = EventFadeIn.LoopPosition((n + 0.25) / rate, begin, end, rate) * rate;
+            Assert.That(got, Is.EqualTo(pos + 0.25).Within(1e-3), $"frame {n}");
+            if (Math.Abs(pos - begin) > 1) off++;
+            checkedAt++;
+        }
+        Assert.That(off, Is.GreaterThan(checkedAt * 9 / 10), "the loop start alone");
+        Assert.That(EventFadeIn.LoopPosition(0, begin, end, rate), Is.EqualTo(0));
+        Assert.That(EventFadeIn.LoopPosition(1, begin, end, 0), Is.EqualTo(0));
+    }
+
     static Pcm16 Constant(int rate, int ch, short v, int frames) =>
         new() { Rate = rate, Channels = ch, Samples = Enumerable.Repeat(v, frames * ch).ToArray() };
 

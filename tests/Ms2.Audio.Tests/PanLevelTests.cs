@@ -468,4 +468,42 @@ public class PanLevelTests
         if (!File.Exists(f)) Assert.Ignore($"{variable} has no Sound/MS2Sound.fev");
         return d;
     }
+
+    /// <summary>
+    /// FMOD pans by the direction's side component alone (<see cref="Player3DOutput.Side"/>), so a sound on the ground at 45
+    /// degrees has the same left share at every camera pitch in the probe's renders (0.7199 at 500); Godot pans by the
+    /// azimuth in the listener's plane (<see cref="Player3DOutput.GodotPanSide"/>), which a pitched listener turns up
+    /// (recorded 0.7237, 0.7390, 0.7582, 0.7829 at pitches 0, 30, 45, 60). With the level basis
+    /// (<see cref="Player3DOutput.PanBasis"/>) Godot's side is FMOD's at every pitch and yaw; a sound above or below the
+    /// listener still pans by its azimuth in Godot (0.707 at 45 degrees and 30 up, FMOD 0.612).
+    /// </summary>
+    [TestCase(0f, 0.7071f)]
+    [TestCase(30f, 0.7559f)]
+    [TestCase(45f, 0.8165f)]
+    [TestCase(60f, 0.8944f)]
+    public void LevelListenerPansAsFmodAtEveryPitch(float pitchDeg, float pitchedSide)
+    {
+        foreach (float yawDeg in new[] { 0f, 30f, -135f })
+        {
+            var rot = Quaternion.CreateFromYawPitchRoll(yawDeg * MathF.PI / 180, -pitchDeg * MathF.PI / 180, 0);
+            Vector3 right = Vector3.Transform(Vector3.UnitX, rot), up = Vector3.Transform(Vector3.UnitY, rot);
+            var eye = new Vector3(10, 120, -40);
+            float az = 45 * MathF.PI / 180, yaw = yawDeg * MathF.PI / 180;
+            // on the ground plane of the eye, 45 degrees right of the camera's level facing
+            var flatFwd = new Vector3(-MathF.Sin(yaw), 0, -MathF.Cos(yaw));
+            var flatRight = new Vector3(MathF.Cos(yaw), 0, -MathF.Sin(yaw));
+            var src = eye + 500 * (MathF.Cos(az) * flatFwd + MathF.Sin(az) * flatRight);
+            float fmod = Player3DOutput.Side(src, eye, right);
+            Assert.That(fmod, Is.EqualTo(0.7071f).Within(1e-4f), $"yaw {yawDeg}");
+            Assert.That(Player3DOutput.GodotPanSide(src, eye, right, up), Is.EqualTo(pitchedSide).Within(1e-4f), "pitched");
+            Assert.That(Player3DOutput.PanBasis(right, out var r, out var u, out var b), Is.True);
+            Assert.That((Vector3.Dot(r, u), Vector3.Dot(r, b), Vector3.Dot(u, b), b.Length()), Is.EqualTo((0f, 0f, 0f, 1f)).Using<(float, float, float, float)>(
+                (x, y) => MathF.Abs(x.Item1 - y.Item1) + MathF.Abs(x.Item2 - y.Item2) + MathF.Abs(x.Item3 - y.Item3) + MathF.Abs(x.Item4 - y.Item4) < 1e-5f));
+            Assert.That(Player3DOutput.GodotPanSide(src, eye, r, u), Is.EqualTo(fmod).Within(1e-5f), "level");
+            var above = eye + 500 * (MathF.Cos(MathF.PI / 6) * (MathF.Cos(az) * flatFwd + MathF.Sin(az) * flatRight) + MathF.Sin(MathF.PI / 6) * Vector3.UnitY);
+            Assert.That((Player3DOutput.GodotPanSide(above, eye, r, u), Player3DOutput.Side(above, eye, right)),
+                Is.EqualTo((0.7071f, 0.6124f)).Using<(float, float)>((x, y) => MathF.Abs(x.Item1 - y.Item1) + MathF.Abs(x.Item2 - y.Item2) < 2e-4f));
+        }
+        Assert.That(Player3DOutput.PanBasis(Vector3.UnitY, out _, out _, out _), Is.False);
+    }
 }

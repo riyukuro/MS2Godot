@@ -394,7 +394,11 @@ public static class Player3DOutput
     /// at 600) and Godot recordings: side 2.095 / 2.010, 60 degrees 1.833 / 1.786, 45 degrees 1.603 / 1.578, 30 degrees
     /// 1.377 / 1.366, in front and behind 1 / 1 (FMOD, Godot at 1); Godot's side far / near at strengths 0, 0.25, 0.5, 1,
     /// 1.25, 1.5, 1.75 and 2: 1, 0.874, 0.749, 0.498, 0.371, 0.246, 0.120 and 0, with the power the same at every one. So
-    /// s = L / 0.5. FMOD reads only the direction's side component; Godot pans an elevated source at the side's ratio.
+    /// s = L / 0.5. FMOD reads only the direction's side component (<see cref="Side"/>), whatever the listener's pitch; Godot
+    /// pans by the azimuth in the listener's own plane (<see cref="GodotPanSide"/>), so a listener pitched as MS2's camera is
+    /// over-pans a sound on the ground: the meso pickup's left share at 45 degrees and 500 is 0.7199 in FMOD's render at
+    /// every pitch, and 0.7237, 0.7390, 0.7582 and 0.7829 in Godot's recordings at pitches 0, 30, 45 and 60, which a level
+    /// listener (<see cref="PanBasis"/>) takes back to 0.7237.
     /// </summary>
     public static float PanningStrength(float panLevel) => Math.Clamp(panLevel, 0f, 1f) / GlobalPanningStrength;
 
@@ -480,6 +484,32 @@ public static class Player3DOutput
         var to = source - listener;
         float d = to.Length();
         return right == Vector3.Zero || d <= 1e-3f ? float.NaN : Vector3.Dot(to, right) / d;
+    }
+
+    /// <summary>The side Godot 4.7 pans a source by: the sine of its azimuth in the plane of the listener's
+    /// <paramref name="right"/> and back, its part along the listener's <paramref name="up"/> left out (NaN: the sound on
+    /// the listener's up axis or at the listener). FMOD's is <see cref="Side"/>; the two agree when the source is level with
+    /// a listener whose up is the world's.</summary>
+    public static float GodotPanSide(Vector3 source, Vector3 listener, Vector3 right, Vector3 up)
+    {
+        var to = source - listener;
+        float x = Vector3.Dot(to, right), y = Vector3.Dot(to, up), h = to.LengthSquared() - y * y;
+        return h <= 1e-6f ? float.NaN : x / MathF.Sqrt(h);
+    }
+
+    /// <summary>The listener basis Godot is given: the camera's <paramref name="cameraRight"/> made level, the world's up,
+    /// and back = right x up, so Godot's in-plane pan (<see cref="GodotPanSide"/>) is FMOD's side component
+    /// (<see cref="Side"/>) for a sound at the listener's height whatever the camera's pitch. False when the camera's right
+    /// is (nearly) vertical, and the camera's own basis is kept.</summary>
+    public static bool PanBasis(Vector3 cameraRight, out Vector3 right, out Vector3 up, out Vector3 back)
+    {
+        var h = new Vector3(cameraRight.X, 0, cameraRight.Z);
+        float n = h.Length();
+        up = Vector3.UnitY;
+        if (n < 1e-3f) { right = back = default; return false; }
+        right = h / n;
+        back = Vector3.Cross(right, up);
+        return true;
     }
 
     /// <summary>The correlation of a stereo clip's two channels (sum l r / sqrt(sum l^2 sum r^2), 0 when either is silent);
