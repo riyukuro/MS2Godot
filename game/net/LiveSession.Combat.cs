@@ -2824,7 +2824,11 @@ public partial class LiveSession
                             Shot("scroll_closed.png");
                             break;
                         }
-                        case "scrollwarp":      // scrollwarp:<map>: a field change with the window open; the window goes with the HUD (vfunc_67), so the next scrolluse opens it again
+                        // scrollwarp:<map>: a field change with the window open. The client keeps its dialogs over a field move
+                        // (WorldService FUN_141bbc580: CUIService FUN_141adc3d0 closes only 0x4f38, uiservice.cpp:1568; FUN_141adb900
+                        // only disables the movies, :1215), and so does this port (ChangeField swaps the field under the HUD), so the
+                        // window stays open and the next scrolluse updates it
+                        case "scrollwarp":
                         {
                             bool open0 = hud.EnchantScrollStateScripted().Open && book.IsOpen;
                             int entered = 0; void Entered(int map, long ms) => entered++;
@@ -2833,8 +2837,34 @@ public partial class LiveSession
                             await until(() => entered > 0, 60 * 90); await frames(240);
                             live.FieldEntered -= Entered;
                             if (flow.GetTree().CurrentScene is Ui.HudScene next) hud = next;
-                            Check($"scroll warp {arg}: the window was open, the field entered (map {live.CurrentEntry?.MapId}), the window closed with the HUD (book open {book.IsOpen})",
-                                open0 && entered > 0 && !book.IsOpen && !hud.EnchantScrollStateScripted().Open);
+                            Check($"scroll warp {arg}: the window was open, the field entered (map {live.CurrentEntry?.MapId}), the window stayed open (book open {book.IsOpen})",
+                                open0 && entered > 0 && book.IsOpen && hud.EnchantScrollStateScripted().Open);
+                            break;
+                        }
+                        // scrollrelog: the system menu's character select with the window open, then the same character entered again.
+                        // The game UI scene goes (the HUD leaves the tree, its teardown closes the window, vfunc_67) while the session and
+                        // its book stay, so the book is closed at character select and the next scrolluse opens the window again
+                        // (FUN_140f3b920's OpenDialog only when IsDialogOpen(0x4ee0) is false, uienchantscrolldialog.cpp:199)
+                        case "scrollrelog":
+                        {
+                            bool open0 = hud.EnchantScrollStateScripted().Open && book.IsOpen;
+                            long id = live.Me.User?.CharacterId ?? 0;
+                            bool listed = false; void Listed() => listed = true;
+                            live.CharacterListReturned += Listed;
+                            live.SendRequestQuit();
+                            GD.Print($"live: combat scroll relog (window open {open0}, character {id}): quit sent");
+                            await until(() => listed && flow.Current == GameFlow.State.Lobby, 60 * 60);
+                            live.CharacterListReturned -= Listed;
+                            bool lobby = listed && flow.Current == GameFlow.State.Lobby;
+                            bool closedAtList = !book.IsOpen;
+                            await until(() => flow.GetTree().CurrentScene is Ui.CharacterListScene { Controller: { Host.Entity: not null } d } && d.InputOn, 60 * 30);
+                            Ui.UiBridge.Raise(Ui.Contracts.UICharacterListDialogContract.Movie, Ui.Contracts.UICharacterListDialogContract.ToHost.OnGameStart, id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                            await until(() => flow.Current == GameFlow.State.Game && flow.GetTree().CurrentScene is Ui.HudScene && live.Me.User?.CharacterId == id && live.OwnPlayer != null, 60 * 90);
+                            await frames(240);
+                            bool back = flow.GetTree().CurrentScene is Ui.HudScene next && next != hud;
+                            if (back) hud = (Ui.HudScene) flow.GetTree().CurrentScene;
+                            Check($"scroll relog: the window was open, character select came ({lobby}) with the book closed ({closedAtList}), the character entered again on a new HUD ({back}) with the window closed",
+                                open0 && lobby && closedAtList && back && !book.IsOpen && !hud.EnchantScrollStateScripted().Open);
                             break;
                         }
                         case "scrollclose":
