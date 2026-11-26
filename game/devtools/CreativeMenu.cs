@@ -301,7 +301,7 @@ public partial class CreativeMenu : Control
             tabText[t] = tabCounts[t] > 0 ? $"{ItemCatalog.TabName(tables, t)} ({tabCounts[t]} items)" : null;
         int rows = (matches.Count + Columns - 1) / Columns;
         grid.CustomMinimumSize = new Vector2(Columns * CellW, rows * CellH);
-        if (reset) { scroll.ScrollVertical = 0; firstRow = -1; shownTab = -1; }
+        if (reset) { scroll.ScrollVertical = 0; firstRow = -1; shownTab = -1; foreach (var c in cells) c.AbsRow = -1; }   // the item at a row can change
         PlaceCells();
         status.Text = $"{matches.Count} of {catalog.Count} items";
     }
