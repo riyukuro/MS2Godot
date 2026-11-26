@@ -37,7 +37,56 @@ public sealed class EffectNode
     public bool Billboard;
     public int BillboardMode = -1;               // an NiBillboardNode's face mode (BillboardFace.ModeOf), -1 for other nodes
     public bool Culled;                          // NiAVObject APP_CULLED flag
+    /// <summary>An NiVisController on the node: at each update the node is culled where the track is false
+    /// (SetAppCulled(!bValue), NiVisController::Update, NiVisController.cpp:42-61); a culled node hides its subtree.</summary>
+    public BoolTrack Vis; public TimeCtl VisCtl;
     public KfChannel Anim; public TimeCtl AnimCtl;
+}
+
+/// <summary>
+/// An NiBoolInterpolator's value (NiBoolInterpolator::Update, NiBoolInterpolator.cpp:185-218): the keys of its NiBoolData,
+/// or without keys the pose value. The keys are step keys (NiStepBoolKey::Interpolate, NiStepBoolKey.cpp:40-49): between
+/// two keys the earlier one's value, the later one's from its time on (NiBoolKey::GenInterp, NiBoolKey.cpp:43-88, searches
+/// the first key at or after the time); before the first key the first one's value, after the last the last one's.
+/// </summary>
+public sealed class BoolTrack
+{
+    public double[] Times = Array.Empty<double>(); public bool[] Values = Array.Empty<bool>();
+    public bool Pose;
+    /// <summary>The keys' interpolation type (NiAnimationKey::KeyType; 5 STEPKEY), 0 without keys.</summary>
+    public int KeyType;
+
+    public bool At(double t)
+    {
+        int n = Times.Length;
+        if (n == 0) return Pose;
+        if (n == 1) return Values[0];
+        for (int j = 1; j < n; j++)
+            if (t <= Times[j]) return t < Times[j] ? Values[j - 1] : Values[j];
+        return Values[n - 1];
+    }
+
+    /// <summary>The track of NiBoolInterpolator block <paramref name="interp"/>, null when it gives no value: no keys and the
+    /// INVALID_BOOL pose (2, NiInterpolator.cpp:26), for which Update returns false and the controller sets nothing.</summary>
+    public static BoolTrack Of(NifFile n, long interp)
+    {
+        if (interp < 0 || interp >= n.Blocks.Count) return null;
+        var e = n.Blocks[(int)interp];
+        if (e.Type != "NiBoolInterpolator") return null;
+        static long Num(object o) => o switch { bool b => b ? 1 : 0, null => 2, _ => Convert.ToInt64(o) };
+        long pose = e.TryGetValue("Value", out var pv) ? Num(pv) : 2;
+        var tr = new BoolTrack { Pose = pose == 1 };
+        long di = e.IntOr("Data", -1);
+        if (di >= 0 && n.Blocks[(int)di].TryGetValue("Data", out var g) && g is NifStruct grp && grp.IntOr("Num Keys", 0) > 0)
+        {
+            var keys = grp.Structs("Keys").ToList();
+            tr.Times = keys.Select(k => (double)k.Float("Time")).ToArray();
+            tr.Values = keys.Select(k => Num(k["Value"]) != 0).ToArray();
+            tr.KeyType = (int)grp.IntOr("Interpolation", 0);
+            return tr;
+        }
+        return pose == 2 ? null : tr;
+    }
 }
 
 /// <summary>An NiTextureTransformController on a mesh's texturing property: the value replaces one component (operation 0
@@ -583,6 +632,11 @@ public sealed class ParticleSystemDef
     public bool Additive => AlphaFlags >= 0 && ((AlphaFlags >> 5) & 15) == 0 && (AlphaFlags & 1) != 0;
     public int MaxParticles = 100; public bool WorldSpace;
     public bool PreRpi = true;                   // "Pre RPI": the emitters' direction method (EmitterDef.Direction)
+    /// <summary>An NiPSResetOnLoopCtlr on the system: its time always loops (it sets the LOOP cycle at each update), and when
+    /// it wraps the system is reset, every particle gone (NiPSResetOnLoopCtlr::Update, NiPSResetOnLoopCtlr.cpp;
+    /// NiPSParticleSystem::ResetParticleSystem, NiPSParticleSystem.cpp:217-234; a mesh system's clones go back to their
+    /// pools, NiPSMeshParticleSystem.cpp:174-201). Null without one, or when it is inactive (DontDoUpdate).</summary>
+    public TimeCtl ResetCtl;
     public int Colliders, Spawners;
     /// <summary>The colliders of the system's NiPSSimulatorCollidersStep, in its order (ParticleColliders).</summary>
     public List<ColliderDef> ColliderList = new();
@@ -845,12 +899,15 @@ public sealed class EffectScene
         return sc;
     }
 
+    /// <summary>NiTimeController's MANAGERCONTROLLED_MASK flag.</summary>
+    public const int ManagerControlled = 0x20;
+
     static readonly HashSet<string> KnownPs = new()
     {
         "NiPSParticleSystem", "NiPSSimulator", "NiPSSimulatorGeneralStep", "NiPSSimulatorForcesStep", "NiPSSimulatorCollidersStep", "NiPSSimulatorFinalStep",
         "NiPSSimulatorMeshAlignStep", "NiPSMeshEmitter", "NiPSBoxEmitter", "NiPSSphereEmitter", "NiPSCylinderEmitter", "NiPSAlignedQuadGenerator",
         "NiPSFacingQuadGenerator", "NiPSBoundUpdater", "NiPSBombForce", "NiPSGravityForce", "NiPSDragForce", "NiPSEmitParticlesCtlr", "NiPSForceActiveCtlr",
-        "NiPSGravityStrengthCtlr", "NiPSPlanarCollider", "NiPSSphericalCollider",
+        "NiPSGravityStrengthCtlr", "NiPSPlanarCollider", "NiPSSphericalCollider", "NiPSResetOnLoopCtlr",
     };
 
     /// <summary>The NiPSEmitterFloatCtlr types and the emitter value each sets (each one's SetTargetFloatValue, line 40 of its .cpp).</summary>
@@ -939,6 +996,15 @@ public sealed class EffectScene
                 foreach (var m in meshesWithProperty((int)target)) m.Flip = new FlipAnim { Sources = src, Curve = Curve(n, interp), Ctl = ctl };
                 break;
             }
+            case "NiVisController":
+                // a manager-controlled one takes its value from a sequence (UpdateValue) and does nothing on its own; an
+                // inactive one does not update (DontDoUpdate; a bool interpolator is not AlwaysUpdate)
+                if (NodeOfBlock.TryGetValue((int)target, out int vn) && (c.IntOr("Flags", 0) & ManagerControlled) == 0 && ctl.Active && BoolTrack.Of(n, interp) is { } vis)
+                { Nodes[vn].Vis = vis; Nodes[vn].VisCtl = ctl; }
+                break;
+            case "NiPSResetOnLoopCtlr":
+                if (systems.TryGetValue((int)target, out var rs) && ctl.Active) { ctl.Cycle = 0; rs.ResetCtl = ctl; }
+                break;
             case "NiPSEmitParticlesCtlr":
                 if (systems.TryGetValue((int)target, out var ps))
                 {

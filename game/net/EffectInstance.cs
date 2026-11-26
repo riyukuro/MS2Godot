@@ -31,6 +31,7 @@ public sealed partial class EffectInstance : Node3D
         public ShaderMaterial Glow;                              // its glow-mask twin's material (GlowTwin), or null; per-frame parameters go to both
         public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
         public bool NotFinite;                                   // hidden for a non-finite world transform (Place)
+        public bool Shown;                                       // Node.Visible as last set (Show)
         public string BaseKey; public TexMap BaseMap, GlowMap, DetailMap, NormalMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the drawn maps
         public TexTransform BaseT, GlowT, DetailT, NormalT;       // working transforms the uv controllers write each frame
         public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
@@ -61,6 +62,8 @@ public sealed partial class EffectInstance : Node3D
         public Clone[] Clones; public System.Numerics.Vector3[] RotAxis;
         public int[][] ParentSlot, MeshSlot; public ShaderMaterial[][] SharedMat;
         public bool ClonesOk;                                     // the kernel that ran is ported (SetupClones)
+        public bool Refused, Shown = true;                        // the quads' generator refuses the system; Node.Visible as last set
+        public double LastScaled = double.NegativeInfinity;      // the reset controller's last scaled time (ParticleSystemDef.ResetCtl)
     }
 
     /// <summary>One particle's clone of a master particle (NiPSMeshParticleSystem::InitializeParticle,
@@ -79,6 +82,9 @@ public sealed partial class EffectInstance : Node3D
     // each node's file transform in Godot form, with its orthonormal basis and X scale (the animated pose's rest parts)
     readonly Transform3D[] rest; readonly Basis[] restBasis; readonly float[] restScale;
     readonly int[] dynNodes;             // the nodes whose world transform changes over time (an animated or billboard node on the way to the root)
+    // each node's hidden state on this frame (Hidden) and whether it is worked out yet; visDyn: a node has a vis track, so
+    // the states are worked out again each frame (else once)
+    readonly bool[] hidden, hidDone; readonly bool visDyn;
     readonly bool needCam;               // a billboard node or a particle system reads the camera
     readonly bool needAxes;              // a system has NiPSAlignedQuadGenerator quads, or is a world-space mesh-particle system
     readonly bool useLighting;           // the part's <attachInfo useLighting> (the constructor's)
@@ -632,6 +638,7 @@ void fragment() {
         emitUntil = duration > 0 ? duration : (float)scene.Duration;
         life = emitUntil;
         world = new Transform3D[scene.Nodes.Count]; done = new bool[scene.Nodes.Count];
+        hidden = new bool[scene.Nodes.Count]; hidDone = new bool[scene.Nodes.Count]; visDyn = scene.Nodes.Any(n => n.Vis != null);
         rest = new Transform3D[scene.Nodes.Count]; restBasis = new Basis[scene.Nodes.Count]; restScale = new float[scene.Nodes.Count];
         for (int i = 0; i < scene.Nodes.Count; i++)
         {
@@ -650,7 +657,7 @@ void fragment() {
             if (em.Master) continue;
             var ms = BuildMeshState(em, null);
             ms.Static = !Dyn(em.Node);
-            ms.Node.Visible = !scene.Nodes[em.Node].Culled;
+            ms.Node.Visible = false;              // shown by the first Place
             z.AddChild(ms.Node);
             GlowTwin(ms);
             meshes.Add(ms);
@@ -726,7 +733,7 @@ void fragment() {
             ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = 0, VisibleInstanceCount = 0,
                 Mesh = new QuadMesh { Size = new Vector2(2, 2), Material = mat } };
             ps.Node = new MultiMeshInstance3D { Multimesh = ps.MM, Name = d.Name ?? "particles", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-            if (d.Aligned && !AlignedQuad.ScaleValid(d)) ps.Node.Visible = false;     // the generator refuses it (AlignedQuad.ScaleValid)
+            ps.Refused = d.Aligned && !AlignedQuad.ScaleValid(d);     // the generator refuses it (AlignedQuad.ScaleValid)
             z.AddChild(ps.Node);
             systems.Add(ps);
         }
@@ -992,14 +999,47 @@ void fragment() {
     /// a NaN key value on: the Wizard's Magic Claw cast effect (eff_wizard_magicclaw_cast_01_a.nif, KMS and GMS2 alike) has a
     /// NaN scale key at 0.7 s on its sphere, so from its first key (0.333 s) the node's and its children's world transforms are
     /// NaN there and their vertices draw nothing. Here such a mesh is hidden and keeps its last transform, as the renderer
-    /// takes no non-finite transform; it shows again when the transform is finite (a culled mesh stays hidden).
+    /// takes no non-finite transform; it shows again when the transform is finite and <paramref name="hide"/> is not set (a
+    /// hidden mesh stays hidden: Hidden, CloneHidden).
     /// </summary>
-    /// With <paramref name="show"/> its visibility is set whatever it was (a clone shown again, DrawClones).
-    void Place(MeshState ms, in Transform3D w, bool show = false)
+    void Place(MeshState ms, in Transform3D w, bool hide)
     {
         bool finite = w.IsFinite();
         if (finite) ms.Node.Transform = w;
-        if (show || finite == ms.NotFinite) { ms.NotFinite = !finite; ms.Node.Visible = finite && !scene.Nodes[ms.Def.Node].Culled; }
+        ms.NotFinite = !finite;
+        Show(ms, finite && !hide);
+    }
+
+    static void Show(MeshState ms, bool on) { if (on != ms.Shown) { ms.Shown = on; ms.Node.Visible = on; } }
+
+    /// <summary>
+    /// Whether node i is hidden on this frame: it or a node above it is culled. A node with an NiVisController takes the
+    /// track's value at the controller's time in place of its file flag (SetAppCulled(!bValue), NiVisController::Update,
+    /// NiVisController.cpp:42-61), else its APP_CULLED flag; a culled node hides its subtree from drawing. A hidden system
+    /// still simulates: the client updates a culled object and only leaves it out of the draw.
+    /// </summary>
+    bool Hidden(int i)
+    {
+        if (i < 0) return false;
+        if (hidDone[i]) return hidden[i];
+        var n = scene.Nodes[i];
+        bool h = (n.Vis != null ? !n.Vis.At(n.VisCtl.Local(t)) : n.Culled) || Hidden(n.Parent);
+        hidden[i] = h; hidDone[i] = true;
+        return h;
+    }
+
+    /// <summary>Whether a clone's master node k (a slot in MasterNodes, with its parent slots par) is hidden at the particle's
+    /// age: culled by its vis track or its flag, or under such a node up to the master root. The root's own flag is not read:
+    /// the clone's root is unculled when its particle is added (NiPSMeshParticleSystem::ResolveAddedParticles,
+    /// NiPSMeshParticleSystem.cpp:360-372).</summary>
+    bool CloneHidden(int[] nodes, int[] par, int k, float age)
+    {
+        for (; k >= 0; k = par[k])
+        {
+            var n = scene.Nodes[nodes[k]];
+            if (n.Vis != null ? !n.Vis.At(n.VisCtl.Local(age)) : par[k] >= 0 && n.Culled) return true;
+        }
+        return false;
     }
 
     Transform3D World(int i, float t, Vector3 camLocal)
@@ -1029,6 +1069,20 @@ void fragment() {
         var (c0, c1, c2) = BillboardFace.Face(scene.Nodes[i].BillboardMode, N(inv * (camLocal - w.Origin)), N(inv * camDirFx), N(inv * camUpFx),
                                               N(inv * camRightFx), s);
         return new Transform3D(w.Basis * new Basis(G(c0), G(c1), G(c2)), w.Origin);
+    }
+
+    /// <summary>The live particles of the mesh-particle systems, and how many of them have their clone (StartClone); read by
+    /// the checks.</summary>
+    public int MeshParticleCount(out int cloned)
+    {
+        int n = 0; cloned = 0;
+        foreach (var ps in systems)
+        {
+            if (ps.Clones == null) continue;
+            n += ps.Count;
+            for (int i = 0; i < ps.Count; i++) if (ps.Clones[i] != null) cloned++;
+        }
+        return n;
     }
 
     /// <summary>The index of the scene's node named <paramref name="name"/> (NiAVObject::GetObjectByName: the exact name), -1
@@ -1084,11 +1138,14 @@ void fragment() {
         }
         // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
         foreach (int i in dynNodes) done[i] = false;
+        if (visDyn) Array.Clear(hidDone);
         long q1 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
 
         foreach (var ms in meshes)
         {
-            if (!ms.Static || !ms.Placed) { Place(ms, World(ms.Def.Node, t, camLocal)); ms.Placed = true; }
+            bool hide = Hidden(ms.Def.Node);
+            if (!ms.Static || !ms.Placed) { Place(ms, World(ms.Def.Node, t, camLocal), hide); ms.Placed = true; }
+            else Show(ms, !ms.NotFinite && !hide);
             Animate(ms, t, false);
         }
 
@@ -1103,7 +1160,20 @@ void fragment() {
                 if (sm.Def.Colors.Count > 0) Shade(sm, t, false);
                 if (sm.Def.Alpha != null) { float a = (float)sm.Def.Opacity(t); if (a != sm.LastAlpha) sm.Mat.SetShaderParameter(FxParam.Alpha, sm.LastAlpha = a); }
             }
-            Step(ps, dt, camLocal, camRight, camUp);
+            // NiPSResetOnLoopCtlr::Update (NiPSResetOnLoopCtlr.cpp:29-50): when its scaled time goes back (the loop wrapped)
+            // the system is reset before it updates: no particle is left (ResetParticleSystem, NiPSParticleSystem.cpp:
+            // 217-234) and a mesh system's clones go back to the pool (NiPSMeshParticleSystem.cpp:174-201; here they stay in
+            // their slots and DrawClones hides them); its first update only takes the time. STILL-OPEN: the emitters'
+            // ResetTransformation has nothing to reset here, as the emitters keep no last transform.
+            if (ps.Def.ResetCtl is { } rc)
+            {
+                double s = rc.Local(t);
+                if (ps.LastScaled > s) ps.Count = 0;
+                ps.LastScaled = s;
+            }
+            bool hide = Hidden(ps.Def.Node);
+            if (ps.Node != null) { bool on = !hide && !ps.Refused; if (on != ps.Shown) { ps.Shown = on; ps.Node.Visible = on; } }
+            Step(ps, dt, hide, camLocal, camRight, camUp);
         }
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
@@ -1219,7 +1289,7 @@ void fragment() {
     /// <summary>The gravity, bomb and drag forces on this step, in the effect's space (see Step).</summary>
     readonly List<ParticleForces.Step> forcesNow = new();
 
-    void Step(PSys ps, float dt, Vector3 camLocal, Vector3 camRight, Vector3 camUp)
+    void Step(PSys ps, float dt, bool hide, Vector3 camLocal, Vector3 camRight, Vector3 camUp)
     {
         var d = ps.Def;
         // The particles live in the system's model space and the system's world transform, its scale too, is applied when
@@ -1336,7 +1406,7 @@ void fragment() {
                 }
                 if (ps.Count >= ps.Pos.Length) ps.Accum[ei] = 0;
             }
-        if (ps.Clones != null) { DrawClones(ps, sysWorld, psScale, camLocal); return; }
+        if (ps.Clones != null) { DrawClones(ps, sysWorld, psScale, hide, camLocal); return; }
         long qd = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         // draw
         // The MultiMesh holds Cap instances, not the system's full capacity: multimesh_set_buffer takes exactly Cap * 20 floats
@@ -1558,13 +1628,12 @@ void fragment() {
     /// 337-346, :388; in local space as they are, :427-458), and unitized with UNIT_X and UNIT_Z. Positions here are in the
     /// effect's space, the client's times the system's scale, so the scale is multiplied by it. A clone whose particle died is
     /// hidden (the client detaches it, RemoveParticle :326-340, and keeps it pooled).
-    /// STILL-OPEN: clones are drawn one node per mesh, not batched. Three paths that occur in neither data set (0 cases in
-    /// MeshParticleDataTests' files): a culled master root stays hidden here (Place), where the client unculls each added clone
-    /// root (ResolveAddedParticles) and keeps only inner culled nodes hidden; a transform controller on a master root would
+    /// STILL-OPEN: clones are drawn one node per mesh, not batched. Two paths that occur in neither data set (0 cases in
+    /// MeshParticleDataTests' files): a transform controller on a master root would
     /// override the particle transform in the client's UpdateDownwardPass(age), where the particle transform always wins
     /// here; and with an unported kernel (!ClonesOk) StartClone still builds the clones that are never placed.
     /// </summary>
-    void DrawClones(PSys ps, in Transform3D sysWorld, float psScale, Vector3 camLocal)
+    void DrawClones(PSys ps, in Transform3D sysWorld, float psScale, bool hide, Vector3 camLocal)
     {
         var d = ps.Def;
         if (ps.ClonesOk)
@@ -1602,11 +1671,11 @@ void fragment() {
                     if (scene.Nodes[nodes[k]].Billboard) w = Face(nodes[k], w, camLocal);
                     wd[k] = w;
                 }
-                bool show = !cl.Shown;
                 for (int j = 0; j < cl.Meshes.Length; j++)
                 {
                     var ms = cl.Meshes[j];
-                    Place(ms, slot[j] >= 0 ? wd[slot[j]] : wd[0], show);
+                    int at = slot[j] >= 0 ? slot[j] : 0;
+                    Place(ms, wd[at], hide || CloneHidden(nodes, par, at, age));
                     Animate(ms, age, true);
                 }
                 cl.Shown = true;
@@ -1617,7 +1686,7 @@ void fragment() {
         {
             var cl = ps.Clones[i];
             if (cl == null || !cl.Shown) continue;
-            foreach (var ms in cl.Meshes) ms.Node.Visible = false;
+            foreach (var ms in cl.Meshes) Show(ms, false);
             cl.Shown = false;
         }
         ps.LastCount = ps.Count;
