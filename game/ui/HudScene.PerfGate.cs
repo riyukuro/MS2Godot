@@ -196,7 +196,12 @@ public partial class HudScene
         }
         t -= GateDialogs.Length * GatePer;
         if (t == 0) { ToggleInventory(); ToggleMyInfo(); ToggleSkillBook(); }
-        else if (t == 100 - GateQuiet) GateCollect();
+        else if (t == 100 - GateQuiet)
+        {
+            // the window's guide arrow lookups (GateStep) run once before it, so their first JIT is not counted as idle cost
+            FindGuideDialogOf(0x4e2d);
+            GateCollect();
+        }
         else if (t == 100)
         {
             GateIdleStart("idle_3_open");
