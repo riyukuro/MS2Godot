@@ -176,7 +176,9 @@ public sealed class GuildInviteInfo {
 /// <item>0x4f FUN_1413c4e20 (:2780): u8 the kind, u8 the error code, i32 the argument (ShowGuildError).</item>
 /// <item>0x44 FUN_1413bf2a0 (guildmanager.cpp:1855): u8 the propensity focus, i32 its value (CGuildInfo f154 / f158).</item>
 /// </list>
-/// The other types are not read here (STILL-OPEN).
+/// Every other type of the switch is read in ReadBody, one case per handler with its guildmanager.cpp line; each ends with
+/// the end check. Type 0x7a is read for its two guilds although the dialog that shows them (UIPvPGuildTeamResultDialog
+/// 0x4ec7) is not ported.
 /// </summary>
 public sealed record GuildMessage(byte Type) {
     /// <summary>Type 0: the guild id; types 0x52/0x53 and 0x54: an id.</summary>
@@ -261,6 +263,30 @@ public sealed record GuildMessage(byte Type) {
     public int AchieveId { get; init; }
     public int Grade { get; init; }
     public int Kind { get; init; }
+    /// <summary>Types 0xc and 0x19: the second name (the new name, the new master).</summary>
+    public string NewName { get; init; } = "";
+    /// <summary>Types 0x14 (the expeller) and 0x15 (the changer): who did it.</summary>
+    public string By { get; init; } = "";
+    /// <summary>Types 0x43 and 0x1d: the grade as sent (CGuildGrade::ReadPacket); <see cref="Grade"/> is its index.</summary>
+    public GuildGrade GradeEntry { get; init; }
+    /// <summary>Types 0x36 and 0x37: the skill state as sent (CGuildSkill::Read); <see cref="Name"/> is the user.</summary>
+    public GuildSkillState Skill { get; init; }
+    /// <summary>Type 0x61: the exp is <see cref="Value"/>, the fund this. Type 0x35: the gained contribution is <see cref="Value"/>,
+    /// the weekly and total contributions <see cref="Weekly"/> and <see cref="Total"/>.</summary>
+    public int Value2 { get; init; }
+    public int Weekly { get; init; }
+    public int Total { get; init; }
+    /// <summary>Type 0x24: the member's contribution (i64, the member's fd8).</summary>
+    public long Contribution { get; init; }
+    /// <summary>Type 0x26: per member the name and the two values (fe0, fe4).</summary>
+    public IReadOnlyList<(string Name, int Fe0, int Fe4)> MemberValues { get; init; } = Array.Empty<(string, int, int)>();
+    /// <summary>Type 0x4c: the offline members that were removed, with the reason and the time.</summary>
+    public IReadOnlyList<(string Name, string Reason, long Time)> Expelled { get; init; } = Array.Empty<(string, string, long)>();
+    /// <summary>Type 0x7a: the two guilds of the vs game result (Unk_PgtrGuild::FUN_141340810: i64 id, name, mark, i32 score).</summary>
+    public IReadOnlyList<(long GuildId, string Name, string Mark, int Score)> VsGameGuilds { get; init; } = Array.Empty<(long, string, string, int)>();
+    /// <summary>Type 0x50: the begin and end times; <see cref="Kind"/> is the i32 kind, <see cref="Name"/> the string.</summary>
+    public long Begin { get; init; }
+    public long End { get; init; }
 
     public static GuildMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
 
@@ -425,6 +451,90 @@ public sealed record GuildMessage(byte Type) {
             case 0x32: case 0x33: case 0x34: return Done(new(t) { Value = r.ReadInt() }, r);
             // FUN_1413c4e20 (@0x1413c4e20, :2780): u8 the kind, u8 the code, i32 the argument, then ShowGuildError
             case 0x4f: return Done(new(t) { ErrorKind = r.ReadByte(), ErrorCode = r.ReadByte(), ErrorArg = r.ReadInt() }, r);
+            // The rest of the switch FUN_1413b6370, in the order of guildmanager.cpp. The GMS2 case of each reads the same
+            // fields (GuildModes.Gms2Receive). The names are the handlers'.
+            // FUN_1413be400 (:1667), FUN_1413be460 (:1676), FUN_1413be670 (:1698), FUN_1413bee70 (:1799): the name
+            case 0x8: case 0x9: case 0xb: case 0x3f: return Done(new(t) { Name = r.ReadUnicodeString() }, r);
+            // FUN_1413be7e0 (:1716): the name, u8 the grade (read and dropped)
+            case 0xa: return Done(new(t) { Name = r.ReadUnicodeString(), Grade = r.ReadByte() }, r);
+            // OnPacketMemberRenamed (:1726): the old name, the new name
+            case 0xc: return Done(new(t) { Name = r.ReadUnicodeString(), NewName = r.ReadUnicodeString() }, r);
+            // FUN_1413beed0 (:1808): u8 the result, the name
+            case 0x40: return Done(new(t) { Result = r.ReadByte(), Name = r.ReadUnicodeString() }, r);
+            // OnPacketExpandCapacity (:1831): i32 the capacity
+            case 0x42: return Done(new(t) { Value = r.ReadInt() }, r);
+            // OnPacketGradeChanged (:1842): u8 the index, CGuildGrade::ReadPacket
+            case 0x43: return Done(new(t) { Grade = r.ReadByte(), GradeEntry = GuildGrade.Read(r) }, r);
+            // FUN_1413bf340 (:1867), FUN_1413bf540 (:1880): i32 the skill id
+            case 0x5a: case 0x5b: return Done(new(t) { Value = r.ReadInt() }, r);
+            // OnPacketGainExpFund (:1895): i32 the exp, i32 the fund
+            case 0x61: return Done(new(t) { Value = r.ReadInt(), Value2 = r.ReadInt() }, r);
+            // OnPacketOpenEvent (:1911): i32 the event id
+            case 0x63: return Done(new(t) { EventId = r.ReadInt() }, r);
+            // OnPacketMemberExpelled (:1977): the expeller, the member
+            case 0x14: return Done(new(t) { By = r.ReadUnicodeString(), Name = r.ReadUnicodeString() }, r);
+            // FUN_1413c0250 (:1998), FUN_1413c0430 (:2018): the member
+            case 0x21: case 0x17: return Done(new(t) { Name = r.ReadUnicodeString() }, r);
+            // OnPacketMemberGradeChanged (:2060): the changer, the member, u8 the grade index
+            case 0x15: return Done(new(t) { By = r.ReadUnicodeString(), Name = r.ReadUnicodeString(), Grade = r.ReadByte() }, r);
+            // OnPacketSetMemberMessage (:2088): the member, the message
+            case 0x16: return Done(new(t) { Name = r.ReadUnicodeString(), Text = r.ReadUnicodeString() }, r);
+            // OnPacketMemberContribution (:2103): the member, i64 the contribution
+            case 0x24: return Done(new(t) { Name = r.ReadUnicodeString(), Contribution = r.ReadLong() }, r);
+            // OnPacketMasterChanged (:2136): the old master, the new master
+            case 0x19: return Done(new(t) { Name = r.ReadUnicodeString(), NewName = r.ReadUnicodeString() }, r);
+            // OnPacketNoticeChanged (:2166): the member, u8 the kind (0 the tag, 1 the notice), the text
+            case 0x1a: return Done(new(t) { Name = r.ReadUnicodeString(), Kind = r.ReadByte(), Text = r.ReadUnicodeString() }, r);
+            // OnPacketGuildRenamed (:2200): the guild name
+            case 0x22: return Done(new(t) { Name = r.ReadUnicodeString() }, r);
+            // FUN_1413c1840 (:2216): the member, i32 the capacity
+            case 0x1c: return Done(new(t) { Name = r.ReadUnicodeString(), Value = r.ReadInt() }, r);
+            // OnPacketGradeUpdated (:2232): StringIdInterface(packet), u8 the index, CGuildGrade::ReadPacket
+            case 0x1d: return Done(new(t) { Changer = StringIdText.Read(r), Grade = r.ReadByte(), GradeEntry = GuildGrade.Read(r) }, r);
+            // FUN_1413c1c50 (:2253): the member, u8 the focus, i32 the value
+            case 0x1e: return Done(new(t) { Name = r.ReadUnicodeString(), Focus = r.ReadByte(), Value = r.ReadInt() }, r);
+            // FUN_1413c23d0 (:2329): i32 count, per member the name and two i32. The client reads it only with the dialog open.
+            case 0x26:
+            {
+                int n = r.ReadInt(); var list = new List<(string, int, int)>();
+                for (int i = 0; i < n; i++) list.Add((r.ReadUnicodeString(), r.ReadInt(), r.ReadInt()));
+                return Done(new(t) { MemberValues = list }, r);
+            }
+            // FUN_1413c2590 (:2351): the member, i32 gained, weekly, total. The client reads it only with the dialog open.
+            case 0x35: return Done(new(t) { Name = r.ReadUnicodeString(), Value = r.ReadInt(), Weekly = r.ReadInt(), Total = r.ReadInt() }, r);
+            // FUN_1413c28e0 (:2383): u8 matched
+            case 0x28: return Done(new(t) { Accepted = r.ReadByte() != 0 }, r);
+            // OnPacketBattleResult (:2441): u8 won, the other guild's name
+            case 0x2a: return Done(new(t) { Accepted = r.ReadByte() != 0, Name = r.ReadUnicodeString() }, r);
+            // OnPacketBattleApplied (:2457), OnPacketGuildBattleNotice (:2467): the guild name
+            case 0x2b: case 0x2c: return Done(new(t) { Name = r.ReadUnicodeString() }, r);
+            // FUN_1413c3110 (:2476): i32 (FUN_1404d3600, the guild's f358)
+            case 0x6b: return Done(new(t) { Value = r.ReadInt() }, r);
+            // FUN_1413c3170 (:2485), FUN_1413c3460 (:2508): the user, CGuildSkill::Read (i32 id, i32 level, i64 time)
+            case 0x36: case 0x37: return Done(new(t) { Name = r.ReadUnicodeString(), Skill = GuildSkillState.Read(r) }, r);
+            // FUN_1413c4870 (:2698): UIPvPGuildTeamResultDialog::SetVsGameResult reads the two guilds
+            case 0x7a:
+            {
+                var list = new List<(long, string, string, int)>();
+                for (int i = 0; i < 2; i++) list.Add((r.ReadLong(), r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadInt()));
+                return Done(new(t) { VsGameGuilds = list }, r);
+            }
+            // OnPacketVsGameReward (:2707): u8 the kind (1 exp, 2 fund), i32 the amount
+            case 0x7b: return Done(new(t) { Kind = r.ReadByte(), Value = r.ReadInt() }, r);
+            // OnPacketExpelledOfflineMembers (:2758): i32 count, per member the name, the reason, i64 the time
+            case 0x4c:
+            {
+                int n = r.ReadInt(); var list = new List<(string, string, long)>();
+                for (int i = 0; i < n; i++) list.Add((r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadLong()));
+                return Done(new(t) { Expelled = list }, r);
+            }
+            // FUN_1413c4dd0 (:2773): no body
+            case 0x47: return Done(new(t), r);
+            // OnRemainTimeNotice (:2791): i32 the kind, i64 begin, i64 end, the name
+            case 0x50: return Done(new(t) { Kind = r.ReadInt(), Begin = r.ReadLong(), End = r.ReadLong(), Name = r.ReadUnicodeString() }, r);
+            // FUN_1413c7700 (:3108): the player, the guild name; FUN_1413c7810 (:3121): the player
+            case 0x4d: return Done(new(t) { Name = r.ReadUnicodeString(), Text = r.ReadUnicodeString() }, r);
+            case 0x4e: return Done(new(t) { Name = r.ReadUnicodeString() }, r);
             default: return new(t);
         }
     }

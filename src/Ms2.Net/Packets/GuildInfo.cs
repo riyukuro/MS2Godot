@@ -76,6 +76,10 @@ public sealed class GuildInfo {
     public long MasterFirstId, MasterCharId; public string MasterName = ""; public long CreateTime;
     public int PvpState; public int[] Counters = Array.Empty<int>();   // v6..v13 (8 i32)
     public int B3, V14, Exp, Fund, EventFund; public bool F354; public int F350;
+    /// <summary>f358 (FUN_1404d3600, read back by FUN_1404d3620): the guild's own trophy count, which GetTotalTrophy (@0x1404d0c00,
+    /// guilddef_1.cpp:1682) adds to the members'. KMS CGuildInfo::Read sets it from v13 (the last of <see cref="Counters"/>); type
+    /// 0x6b sets it alone. STILL-OPEN: which GMS2 info field holds it (the GMS2 type 104 setter is 0x1403179d0), so GMS2 starts at 0.</summary>
+    public int F358;
     public List<GuildMember> Members = new();
     public List<GuildGrade> Grades = new();
     public List<GuildSkillState> Skills = new();
@@ -137,6 +141,7 @@ public sealed class GuildInfo {
         g.MasterFirstId = r.ReadLong(); g.MasterCharId = r.ReadLong(); g.MasterName = r.ReadUnicodeString(); g.CreateTime = r.ReadLong();
         g.PvpState = r.ReadByte();
         g.Counters = new int[8]; for (int i = 0; i < 8; i++) g.Counters[i] = r.ReadInt();
+        g.F358 = g.Counters[7];   // v13: FUN_1404d3600(v13) (guilddef_1.cpp:1262)
         g.B3 = r.ReadByte(); g.V14 = r.ReadInt(); int v15 = r.ReadInt(), v16 = r.ReadInt(), v17 = r.ReadInt();
         g.Exp = v15; g.Fund = v16; g.EventFund = v17;
         g.F354 = r.ReadBool(); g.F350 = r.ReadInt();

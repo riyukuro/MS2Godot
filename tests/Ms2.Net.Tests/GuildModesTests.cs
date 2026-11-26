@@ -214,4 +214,84 @@ public class GuildModesTests {
         }
         TestContext.Out.WriteLine($"recorded GMS2 guild types: {string.Join(",", types)} in {all.Count()} packets");
     }
+
+    // The modes read since the unread list: the KMS body of each (guildmanager.cpp handler), read on both regions.
+    static readonly (byte Kms, Action<ByteWriter> Body, Func<GuildMessage, object> Got, object Want)[] Unread = {
+        (0x8, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+        (0x9, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+        (0xa, w => { w.WriteUnicodeString("a"); w.WriteByte(2); }, m => (m.Name, m.Grade), ("a", 2)),
+        (0xb, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+        (0xc, w => { w.WriteUnicodeString("a"); w.WriteUnicodeString("b"); }, m => (m.Name, m.NewName), ("a", "b")),
+        (0x3f, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+        (0x40, w => { w.WriteByte(1); w.WriteUnicodeString("a"); }, m => (m.Result, m.Name), (1, "a")),
+        (0x42, w => w.WriteInt(60), m => m.Value, 60),
+        (0x43, w => { w.WriteByte(1); WriteGrade(w); }, m => (m.Grade, m.GradeEntry.Name, m.GradeEntry.Permissions), (1, "Gr", 9)),
+        (0x5a, w => w.WriteInt(5), m => m.Value, 5),
+        (0x5b, w => w.WriteInt(5), m => m.Value, 5),
+        (0x61, w => { w.WriteInt(80); w.WriteInt(10000); }, m => (m.Value, m.Value2), (80, 10000)),
+        (0x63, w => w.WriteInt(3), m => m.EventId, 3),
+        (0x14, w => { w.WriteUnicodeString("a"); w.WriteUnicodeString("b"); }, m => (m.By, m.Name), ("a", "b")),
+        (0x21, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+        (0x17, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+        (0x15, w => { w.WriteUnicodeString("a"); w.WriteUnicodeString("b"); w.WriteByte(2); }, m => (m.By, m.Name, m.Grade), ("a", "b", 2)),
+        (0x16, w => { w.WriteUnicodeString("a"); w.WriteUnicodeString("hi"); }, m => (m.Name, m.Text), ("a", "hi")),
+        (0x24, w => { w.WriteUnicodeString("a"); w.WriteLong(1L << 40); }, m => (m.Name, m.Contribution), ("a", 1L << 40)),
+        (0x19, w => { w.WriteUnicodeString("a"); w.WriteUnicodeString("b"); }, m => (m.Name, m.NewName), ("a", "b")),
+        (0x1a, w => { w.WriteUnicodeString("a"); w.WriteByte(1); w.WriteUnicodeString("n"); }, m => (m.Name, m.Kind, m.Text), ("a", 1, "n")),
+        (0x22, w => w.WriteUnicodeString("G"), m => m.Name, "G"),
+        (0x1c, w => { w.WriteUnicodeString("a"); w.WriteInt(70); }, m => (m.Name, m.Value), ("a", 70)),
+        (0x1d, w => { WriteIdText(w); w.WriteByte(1); WriteGrade(w); }, m => (m.Changer.Text, m.Grade, m.GradeEntry.Name), ("a", 1, "Gr")),
+        (0x1e, w => { w.WriteUnicodeString("a"); w.WriteByte(3); w.WriteInt(9); }, m => (m.Name, m.Focus, m.Value), ("a", 3, 9)),
+        (0x26, w => { w.WriteInt(2); w.WriteUnicodeString("a"); w.WriteInt(1); w.WriteInt(2); w.WriteUnicodeString("b"); w.WriteInt(3); w.WriteInt(4); },
+            m => string.Join(";", m.MemberValues), "(a, 1, 2);(b, 3, 4)"),
+        (0x35, w => { w.WriteUnicodeString("a"); w.WriteInt(1); w.WriteInt(2); w.WriteInt(3); }, m => (m.Name, m.Value, m.Weekly, m.Total), ("a", 1, 2, 3)),
+        (0x28, w => w.WriteByte(1), m => m.Accepted, true),
+        (0x2a, w => { w.WriteByte(1); w.WriteUnicodeString("G"); }, m => (m.Accepted, m.Name), (true, "G")),
+        (0x2b, w => w.WriteUnicodeString("G"), m => m.Name, "G"),
+        (0x2c, w => w.WriteUnicodeString("G"), m => m.Name, "G"),
+        (0x6b, w => w.WriteInt(1234), m => m.Value, 1234),
+        (0x36, w => { w.WriteUnicodeString("a"); w.WriteInt(5); w.WriteInt(2); w.WriteLong(77); }, m => (m.Name, m.Skill), ("a", new GuildSkillState(5, 2, 77))),
+        (0x37, w => { w.WriteUnicodeString("a"); w.WriteInt(5); w.WriteInt(3); w.WriteLong(0); }, m => (m.Name, m.Skill), ("a", new GuildSkillState(5, 3, 0))),
+        (0x7a, w => { for (int i = 0; i < 2; i++) { w.WriteLong(i + 1); w.WriteUnicodeString("G" + i); w.WriteUnicodeString("m" + i); w.WriteInt(10 * i); } },
+            m => string.Join(";", m.VsGameGuilds), "(1, G0, m0, 0);(2, G1, m1, 10)"),
+        (0x7b, w => { w.WriteByte(2); w.WriteInt(8); }, m => (m.Kind, m.Value), (2, 8)),
+        (0x4c, w => { w.WriteInt(1); w.WriteUnicodeString("a"); w.WriteUnicodeString("expeled"); w.WriteLong(5); },
+            m => string.Join(";", m.Expelled), "(a, expeled, 5)"),
+        (0x47, w => { }, m => m.Type, (byte) 0x47),
+        (0x50, w => { w.WriteInt(1); w.WriteLong(2); w.WriteLong(3); w.WriteUnicodeString("a"); }, m => (m.Kind, m.Begin, m.End, m.Name), (1, 2L, 3L, "a")),
+        (0x4d, w => { w.WriteUnicodeString("a"); w.WriteUnicodeString("G"); }, m => (m.Name, m.Text), ("a", "G")),
+        (0x4e, w => w.WriteUnicodeString("a"), m => m.Name, "a"),
+    };
+
+    static void WriteGrade(ByteWriter w) { w.WriteByte(1); w.WriteUnicodeString("Gr"); w.WriteInt(9); }
+    static void WriteIdText(ByteWriter w) { w.WriteBool(false); w.WriteInt(0); w.WriteUnicodeString("a"); }
+
+    /// <summary>Each mode of the unread list reads its handler's fields and nothing past them, on KMS (its own type) and on GMS2
+    /// (the GMS2 type of GuildModes.Gms2Receive).</summary>
+    [Test]
+    public void TheUnreadModesReadTheirFieldsOnBothRegions() {
+        var gmsOf = GuildModes.Gms2Receive.ToDictionary(p => p.Value, p => p.Key);
+        foreach (var (kms, body, got, want) in Unread)
+            foreach (var (profile, wire) in new[] { (ProtocolProfile.Kms2525, kms), (ProtocolProfile.Gms2, gmsOf[kms]) }) {
+                var r = R(w => { w.WriteByte(wire); body(w); });
+                var m = GuildMessage.Read(r, profile);
+                Assert.That((m.Type, got(m)), Is.EqualTo((kms, want)), $"0x{kms:x} on {profile.Name}");
+                Assert.That(r.Available, Is.EqualTo(0), $"0x{kms:x} on {profile.Name} read whole");
+                Assert.That(() => GuildMessage.Read(R(w => { w.WriteByte(wire); body(w); w.WriteByte(0); }), profile),
+                    Throws.InstanceOf<PacketLayoutException>(), $"0x{kms:x} on {profile.Name}: nothing after");
+            }
+        Assert.That(Unread.Length, Is.EqualTo(41));
+    }
+
+    /// <summary>Every KMS case of the switch (FUN_1413b6370) now reads past its type: no mode the GMS2 map lists falls to the
+    /// default.</summary>
+    [Test]
+    public void NoGuildReceiveModeIsLeftUnread() {
+        foreach (byte kms in GuildModes.Gms2Receive.Values) {
+            var r = R(w => w.WriteByte(kms));
+            try { GuildMessage.Read(r, ProtocolProfile.Kms2525); }
+            catch (Exception) { continue; }   // a body was asked for: the mode is read
+            Assert.That(kms, Is.AnyOf((byte) 7, (byte) 0xf, (byte) 0x47, (byte) 0x75, (byte) 0x3d, (byte) 0x3e), $"0x{kms:x} read nothing");
+        }
+    }
 }

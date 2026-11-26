@@ -37,6 +37,10 @@ public partial class HudScene
         book.NameLengthMin = t.GuildNameLengthMin;
         book.CreateMinLevel = t.GuildCreateMinLevel;
         book.HasOwnEffect = (id, level) => ownBuffs?.HasAny(id, level) == true;
+        book.DialogOpen = () => GuildOpen;
+        book.EffectName = (id, level) => t.AdditionalDescription(id, level, "name");
+        book.IdText = x => Notices?.Text(x) ?? x?.Text ?? "";
+        book.IsBuddy = name => CommunityBook().FindByName(name) != null;     // CBuddyManager::FindByName
         book.Level = () => hudModel.HasLocalPlayer ? hudModel.Player.Level : null;
         book.PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null;
         book.ServerTime = GuildServerTime;
@@ -71,11 +75,16 @@ public partial class HudScene
         var book = GuildState();
         void Notice(string text, int type, bool log)
         {
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: guild notice type {type}: {text}");
             if (string.IsNullOrEmpty(text) || SystemText == null) return;
             SystemText.ShowMessage(text, type, 0);
             if (log) ChatLog.AddSystemLine(text, TalkKind.SystemNotice);
         }
-        void Chat(string text, int kind) => ChatLog.AddSystemLine(text, kind);
+        void Chat(string text, int kind)
+        {
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: guild chat kind {kind}: {text}");
+            ChatLog.AddSystemLine(text, kind);
+        }
         void Box(string text) => MessageBoxQueue.ShowMessageBox(text, 0, null, "");
         void Sound(string key) => FieldAudio.Instance?.PlayUi(key);
         void CloseDialog() { if (GuildOpen) guild.Close(); }
@@ -86,10 +95,16 @@ public partial class HudScene
         void InviteBox(Ms2.Net.Packets.GuildInviteInfo invite) => GuildInviteBox.Show(invite);
         book.DialogClose += CloseDialog;
         book.InviteBox += InviteBox;
+        void MenuCount() => gameMenu?.UpdateNotifyCount(0x4e4f);   // UIGameMenuDialog::FUN_1419381c0
+        void OwnEffect(int id, int level) => book.OwnEffectAdded(id, level);
+        var buffs = ownBuffs;
+        book.GameMenuGuildRefresh += MenuCount;
+        if (buffs != null) buffs.OwnEffectAdded += OwnEffect;
         unwatchGuild = () =>
         {
             book.Notice -= Notice; book.ChatLine -= Chat; book.Box -= Box; book.Sound -= Sound; book.DialogClose -= CloseDialog;
-            book.InviteBox -= InviteBox;
+            book.InviteBox -= InviteBox; book.GameMenuGuildRefresh -= MenuCount;
+            if (buffs != null) buffs.OwnEffectAdded -= OwnEffect;
             guildWatched = false;
         };
     }

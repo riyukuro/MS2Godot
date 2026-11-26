@@ -1004,4 +1004,55 @@ public class GuildDialogTests
         if (c.Host.Child("m_guildEventFund", c.SkillPage) is { } eventFund && !Rt.IsNullish(eventFund))
             Assert.That(c.Host.Get(eventFund, "text")?.ToString(), Is.EqualTo("g55"));
     }
+
+    /// <summary>The unread modes' dialog calls: OnPacketGuildRenamed (0x22) SetGuildName, FUN_1413c15b0 (0x1b) SetGuildMarkFromCode with
+    /// FUN_141029590's path, OnPacketGradeUpdated (0x1d) RefreshMembersOfGrade (SetGradeInfo and the grade's rows), OnPacketMemberExpelled
+    /// (0x14) the guild skill page, OnPacketMemberContribution (0x24) of the player UpdateAttendBackground. Closed, none of them runs.</summary>
+    [Test]
+    public void TheUnreadModesRedrawTheOpenDialog()
+    {
+        var b = InGuild();
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "bo", CharId = 13, Level = 20, Triple = (0, 0, 0) });
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        b.Mesos = () => 0;
+        b.Level = () => 50;
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 0));
+        var c = Load(b);
+        var marks = new List<(long, string)>();
+        c.GuildMarkPath = (id, code) => { marks.Add((id, code)); return "mark/" + code + ".png"; };
+        c.EffectIcon = (_, _) => "icon.png";
+        int built = 0;
+        c.EffectText = (_, _, _) => { built++; return "n"; };
+        c.OpenCategoryPage("Info");
+        string Text(string child, object page) => c.Host.Get(c.Host.Child(child, page), "text")?.ToString();
+
+        b.Apply(new GuildMessage((byte) 0x22) { Name = "Renamed" });
+        Assert.That(Text("m_guildNameText", c.InfoPage), Is.EqualTo("Renamed"), "setGuildName");
+
+        b.Apply(new GuildMessage((byte) 0x1b) { Code = "mk", Changer = new StringIdText(false, 0, 0, Array.Empty<string>(), "bo") });
+        Assert.That(marks, Is.EqualTo(new[] { (7L, "mk") }), "SetGuildMark(code, 1) with the guild id");
+
+        c.OpenCategoryPage("Member");
+        var rows = new List<string>();
+        c.MemberRowDrawn += rows.Add;
+        b.Apply(new GuildMessage((byte) 0x1d) { Grade = 1, GradeEntry = new GuildGrade(1, "Elder", 8), Changer = new StringIdText(false, 0, 0, Array.Empty<string>(), "Ma") });
+        Assert.That(rows, Is.EqualTo(new[] { "bo" }), "only the grade's members are redrawn");
+
+        c.OpenCategoryPage("Skill");
+        int afterOpen = built;
+        b.Apply(new GuildMessage((byte) 0x14) { By = "Ma", Name = "bo" });
+        Assert.That(built, Is.GreaterThan(afterOpen), "the skill page is redrawn");
+
+        var attend = c.Host.Child("m_attendBG");
+        c.Host.SetVisible(attend, false);
+        b.Apply(new GuildMessage((byte) 0x24) { Name = "Ma", Contribution = 0 });
+        Assert.That(Rt.ToBoolean(c.Host.Get(attend, "visible")), Is.EqualTo(b.CanAttend).And.True, "UpdateAttendBackground after the own check-in time");
+
+        c.Close();
+        rows.Clear(); marks.Clear(); built = 0;
+        b.Apply(new GuildMessage((byte) 0x1b) { Code = "m2" });
+        b.Apply(new GuildMessage((byte) 0x1d) { Grade = 1, GradeEntry = new GuildGrade(1, "E2", 8) });
+        b.Apply(new GuildMessage((byte) 0x21) { Name = "Ma" });
+        Assert.That((marks.Count, rows.Count, built), Is.EqualTo((0, 0, 0)), "closed: nothing");
+    }
 }

@@ -133,7 +133,7 @@ public static class GuildModes {
         [74] = 0x4c,    // OnPacketExpelledOfflineMembers
         [69] = 0x47,    // FUN_1413c4dd0, up SendMail
         [77] = 0x4f,    // FUN_1413c4e20, up Error
-        [78] = 0x50,    // FUN_1413c7700 (KMS shares it with 0x4d; GMS2 has its own body)
+        [78] = 0x50,    // OnRemainTimeNotice @0x1413c4ed0 (GMS2 case: i32, i64, i64, string, as KMS)
         [75] = 0x4d,    // FUN_1413c7700, up AddTag
         [76] = 0x4e,    // FUN_1413c7810, up RemoveTag
         [35] = 0x23,    // OnPacketMemberAchievement, up Achievement

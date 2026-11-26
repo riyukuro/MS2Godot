@@ -16,10 +16,9 @@ public readonly record struct GuildProperty(long FundMax, int DonationMax);
 /// join requests sent to the guild (m_joinRequestsForGuild), the members and the propensity (type 0x44); the member
 /// sends (invite, expel, grade, master, notice, memo, propensity); the invite received (m_invite) and its answer; attend
 /// and donate. STILL-OPEN: SendPacketThrottled's delay on the attend and donate sends (its body is not in the source, so
-/// they go out at once); the other sends (the grade edit, the PvP, the house) and the rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
-/// a player), which the server also sends after a leave or disband to clear the own tag — not read, so the own tag keeps
-/// the guild name until a relogin; the game menu's guild badge (UIGameMenuDialog::FUN_1419381c0, the notify count of
-/// GetGuildNotificationCount: the check-in and the requests for the guild).
+/// they go out at once); the other sends (the grade edit, the PvP, the house); the guild name tag (s2c 0x4d / 0x4e,
+/// FUN_1413c7700 guildmanager.cpp:3108: the name shown over a player) is read and raised as <see cref="HeadGuildName"/>, but
+/// the name tags take the guild line only from FieldAddUser, so a tag keeps its guild name until the player is added again.
 /// </summary>
 public sealed class GuildBook
 {
@@ -118,6 +117,40 @@ public sealed class GuildBook
     public event Action<bool> ExpRefresh;
     /// <summary>Modes 0x33 (the fund) and 0x34 (the event fund): the open guild dialog's FUN_14196e2c0 (uiguilddialog.cpp:2081).</summary>
     public event Action FundRefresh;
+    /// <summary>The open guild dialog's FUN_14196e590 (the guild skill page) after a member left or was expelled (modes 0x14,
+    /// 0x21) or a guild skill changed (0x36, 0x37).</summary>
+    public event Action SkillsRefresh;
+    /// <summary>The open guild dialog's FUN_14196f830 (the personal skill page) after a personal skill was upgraded (0x37) or
+    /// a pending skill use's effect came (<see cref="OwnEffectAdded"/>).</summary>
+    public event Action PersonalSkillsRefresh;
+    /// <summary>The open guild dialog's UpdateAttendBackground after the player's own contribution time (mode 0x24).</summary>
+    public event Action AttendRefresh;
+    /// <summary>The own contribution time (mode 0x24) also calls the game menu's FUN_1419381c0 (its guild entry's count).</summary>
+    public event Action GameMenuGuildRefresh;
+    /// <summary>The open guild dialog's SetGuildName (@0x141974190) after the guild was renamed (mode 0x22).</summary>
+    public event Action<string> GuildNameRefresh;
+    /// <summary>The open guild dialog's RefreshMembersOfGrade (@0x141973f60) after a grade was set (mode 0x1d).</summary>
+    public event Action<int> GradeRefresh;
+    /// <summary>The open guild dialog's SetGuildMarkFromCode (@0x141974120) after the mark changed (mode 0x1b).</summary>
+    public event Action<string> MarkRefresh;
+    /// <summary>PC::vfunc_129 (the guild name over a player's head) of the player of the name: modes 0x4d (set) and 0x4e (cleared,
+    /// ""), and 0x22 for the local player.</summary>
+    public event Action<string, string> HeadGuildName;
+    /// <summary>The buddy list's FindByName: a buddy gets the buddy's own login notice, so the guild line is not printed (modes
+    /// 0x17, 0x18).</summary>
+    public Func<string, bool> IsBuddy = _ => false;
+    /// <summary>CUIService::IsDialogOpen(0x4e4f) / FindGuildDialog(0x4e4f): the guild dialog is open (modes 0x5b, 0x26, 0x35).</summary>
+    public Func<bool> DialogOpen = () => false;
+    /// <summary>CStringTable::FUN_141812290(effectId, level, "name"): an additional effect's name (the guild skill lines).</summary>
+    public Func<uint, ushort, string> EffectName = (_, _) => "";
+    /// <summary>StringIdInterface's text (the notice texts): a changer as sent (modes 0x1b, 0x1d).</summary>
+    public Func<StringIdText, string> IdText = t => t?.Text ?? "";
+    /// <summary>FUN_140763e10: a number with the thousands separators.</summary>
+    public Func<long, string> GroupText = n => NumberText.Group(n.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    /// <summary>CGuildManager m_470: the (effect id, effect level) of the skill uses sent with the dialog open (mode 0x5b) and
+    /// not yet seen as an own effect.</summary>
+    readonly HashSet<(int Id, int Level)> pendingSkillEffects = new();
+    public IReadOnlyCollection<(int Id, int Level)> PendingSkillEffects => pendingSkillEffects;
     /// <summary>The open guild dialog's UpdateStorageHistory (@0x1419729d0) after the history came (mode 0x70) or was asked for again.</summary>
     public event Action StorageHistoryRefresh;
     /// <summary>CGuildStorage's history deque (f38, at most 0x32 lines, the oldest dropped first) and m_400: the history was received.</summary>
@@ -296,7 +329,7 @@ public sealed class GuildBook
     public bool HasMemberPermission(string name, int mask) => (MemberPermissions(name) & mask) != 0;
 
     /// <summary>GetTotalTrophy, GetTotalItemLevel and the character level total (FUN_1404d0d00) over the members.</summary>
-    public int TotalTrophy => Info?.Members.Sum(m => m.TrophyTotal) ?? 0;
+    public int TotalTrophy => Info == null ? 0 : Info.Members.Sum(m => m.TrophyTotal) + Info.F358;   // GetTotalTrophy adds f358
     public int TotalItemLevel => Info?.Members.Sum(m => m.ItemLevel) ?? 0;
     public int TotalCharLevel => Info?.Members.Sum(m => (int)(ushort)m.Level) ?? 0;
 
@@ -351,6 +384,10 @@ public sealed class GuildBook
 
     /// <summary>CanAttend (@0x1413b8460): in a guild, a member, and the last attendance (fd8) on another day.</summary>
     public bool CanAttend => InGuild && Me is { } m && IsNotRecentDayChange(m.Fd8) != 0;
+
+    /// <summary>GetGuildNotificationCount (@0x1413bd560, guildmanager.cpp:1471): the game menu's guild count, 1 for CanAttend
+    /// plus the join requests sent to the guild.</summary>
+    public int NotificationCount => (CanAttend ? 1 : 0) + requests.Count;
 
     /// <summary>SendGuildMode15 (@0x1413b8230, guildmanager.cpp:617): attend. Joined today (fc8) is the notice
     /// s_guild_err_can_next_day; attended today is s_guild_err_attend_already.</summary>
@@ -953,7 +990,380 @@ public sealed class GuildBook
                 ChatLine?.Invoke(ClientFormat.Format(Common(m.Accepted ? 0x3bd : 0x3be), m.Name, m.Applicant), 0xd);
                 break;
             }
+            case 0x8:
+            case 0x3f:
+            case 0x41:
+            case 0xa:
+                // FUN_1413be400 (:1667), FUN_1413bee70 (:1799), FUN_1413beff0 (:1822) and FUN_1413be7e0 (:1716): in a guild, the
+                // body read and nothing else done.
+                break;
+            case 0x9:
+                // FUN_1413be460 (:1676): the guild is gone; an empty name is the line 0x3aa, else FormatStringId(0x3ab, name),
+                // kind 0xd; then Reset and CloseDialog(0x4e4f).
+                if (!InGuild) break;
+                ChatLine?.Invoke(m.Name.Length == 0 ? Common(0x3aa) : ClientFormat.Format(Common(0x3ab), m.Name), 0xd);
+                ResetGuild();
+                DialogClose?.Invoke();
+                break;
+            case 0xb:
+            {
+                // FUN_1413be670 (:1698): the member of the name is removed (vfunc_1), with no line and no dialog call.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } gone) Info.Members.Remove(gone);
+                break;
+            }
+            case 0xc:
+            {
+                // OnPacketMemberRenamed (:1726): a member of the old name is renamed (RenameMember); else the first join
+                // request for the guild of the old name is. The open dialog removes the old row and draws the new one, or
+                // draws the request list again.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } member)
+                {
+                    member.Name = m.NewName;
+                    MemberRemoved?.Invoke(m.Name);
+                    MemberRefresh?.Invoke(m.NewName);
+                    break;
+                }
+                int i = requests.FindIndex(r => r?.Name == m.Name);
+                if (i >= 0) { requests[i].Name = m.NewName; RequestsForGuildRefresh?.Invoke(); }
+                break;
+            }
+            case 0x40:
+                // FUN_1413beed0 (:1808): result 1 is the box 0x397.
+                if (!InGuild) break;
+                if (m.Result == 1) Box?.Invoke(Common(0x397));
+                break;
+            case 0x42:
+                // OnPacketExpandCapacity (:1831): SetMaxMemberCount, then the box FormatStringId(0x39f, capacity).
+                if (!InGuild || Info == null) break;
+                Info.MaxMembers = m.Value;
+                Box?.Invoke(ClientFormat.Format(Common(0x39f), m.Value));
+                break;
+            case 0x43:
+                // OnPacketGradeChanged (:1842): the grade read but not stored; the box FormatStringId(0x398, GetGradeName(index)).
+                if (!InGuild) break;
+                Box?.Invoke(ClientFormat.Format(Common(0x398), GetGrade(m.Grade)?.Name ?? ""));
+                break;
+            case 0x5a:
+            {
+                // FUN_1413bf340 (:1867): the skill's row at the guild's level; the line s_guild_skill_use_skill with the
+                // additional effect's name (FUN_141812290(f34, f38, "name")).
+                if (!InGuild) break;
+                if (SkillTable?.Get(m.Value, SkillLevel(m.Value)) is not { } s) break;
+                ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_skill_use_skill"), EffectName((uint) s.AdditionalEffectId, (ushort) s.AdditionalEffectLevel)), 0xd);
+                break;
+            }
+            case 0x5b:
+            {
+                // FUN_1413bf540 (:1880): with the guild dialog open, the skill's (effect id, effect level) is kept in m_470
+                // until the effect comes to the player (FUN_1413bce40, OwnEffectAdded).
+                if (!InGuild || !DialogOpen()) break;
+                if (SkillTable?.Get(m.Value, SkillLevel(m.Value)) is not { } s) break;
+                pendingSkillEffects.Add((s.AdditionalEffectId, s.AdditionalEffectLevel));
+                break;
+            }
+            case 0x61:
+                // OnPacketGainExpFund (:1895): s_guild_gain_exp_fund, s_guild_gain_exp or s_guild_gain_fund with the numbers
+                // grouped (FUN_140763e10), kind 0xd.
+                if (!InGuild) break;
+                if (m.Value > 0 && m.Value2 > 0) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_gain_exp_fund"), GroupText(m.Value), GroupText(m.Value2)), 0xd);
+                else if (m.Value > 0) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_gain_exp"), GroupText(m.Value)), 0xd);
+                else if (m.Value2 > 0) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_gain_fund"), GroupText(m.Value2)), 0xd);
+                break;
+            case 0x63:
+            {
+                // OnPacketOpenEvent (:1911): the event's map name (string table 3) in s_guild_open_event.
+                if (!InGuild) break;
+                if (Events?.Get(m.EventId) is not { } ev) break;
+                ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_open_event"), StringTableText(3, ev.MapCode)), 0xd);
+                break;
+            }
+            case 0x14:
+            case 0x21:
+            {
+                // OnPacketMemberExpelled (:1977) / FUN_1413c0250 (:1998): a member of the name is removed with the line
+                // FormatStringId(0x3a9, expeller, name) / (0x3a6, name); the open dialog's UpdateGuildInfo, RemoveMember and
+                // the guild skill page (FUN_14196e590) run whatever was found.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } gone)
+                {
+                    Info.Members.Remove(gone);
+                    ChatLine?.Invoke(m.Type == 0x14 ? ClientFormat.Format(Common(0x3a9), m.By, m.Name) : ClientFormat.Format(Common(0x3a6), m.Name), 0xd);
+                }
+                GuildInfoRefresh?.Invoke();
+                MemberRemoved?.Invoke(m.Name);
+                SkillsRefresh?.Invoke();
+                break;
+            }
+            case 0x17:
+            case 0x18:
+            {
+                // FUN_1413c0430 (:2018) online, FUN_1413c0630 (:2038) offline with the login time: f158 0 / 1 (and fd0); a
+                // non-buddy is the line 0x3ac / 0x3ad (buddies get the buddy list's own notice); then the member's row.
+                if (!InGuild || FindMemberByName(m.Name) is not { } member) break;
+                member.Offline = m.Type == 0x17 ? 0 : 1;
+                if (m.Type == 0x18) member.LastSeen = m.Time;
+                if (!IsBuddy(m.Name)) ChatLine?.Invoke(ClientFormat.Format(Common(m.Type == 0x17 ? 0x3ac : 0x3ad), m.Name), 0xd);
+                MemberRefresh?.Invoke(m.Name);
+                break;
+            }
+            case 0x15:
+            {
+                // OnPacketMemberGradeChanged (:2060): the member's grade (fb4); with the grade known, the line 0x3af (own, and
+                // SendGuildMode85 when the own grade may see the requests and none are kept) or 0x3ae (another member).
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } member)
+                {
+                    member.Grade = m.Grade;
+                    if (GetGrade(m.Grade) is { } grade)
+                    {
+                        if (string.Equals(m.Name, PlayerName(), StringComparison.OrdinalIgnoreCase))
+                        {
+                            ChatLine?.Invoke(ClientFormat.Format(Common(0x3af), grade.Name), 0xd);
+                            if (HasMemberPermission(PlayerName(), 2) && requests.Count == 0) ListRequests();
+                        }
+                        else ChatLine?.Invoke(ClientFormat.Format(Common(0x3ae), m.Name, grade.Name), 0xd);
+                    }
+                }
+                MemberRefresh?.Invoke(m.Name);
+                break;
+            }
+            case 0x16:
+                // OnPacketSetMemberMessage (:2088): the member's memo (fb8), then the row.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } memoMember) memoMember.Memo = m.Text;
+                MemberRefresh?.Invoke(m.Name);
+                break;
+            case 0x24:
+                // OnPacketMemberContribution (:2103): SetMemberContribution (fd8, the last check-in time CanAttend reads); for
+                // the player, the game menu's FUN_1419381c0 and the dialog's UpdateAttendBackground.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } attendMember) attendMember.Fd8 = m.Contribution;
+                if (PlayerName() == m.Name)
+                {
+                    GameMenuGuildRefresh?.Invoke();
+                    AttendRefresh?.Invoke();
+                }
+                break;
+            case 0x19:
+            {
+                // OnPacketMasterChanged (:2136): both members must be; old grade 1, new grade 0, SetMaster with the new one's
+                // ids and name; the line 0x3b1 (the player is the master) or FormatStringId(0x3b0, new); the dialog's
+                // UpdateGuildInfo and both rows.
+                if (!InGuild || FindMemberByName(m.Name) is not { } oldMaster || FindMemberByName(m.NewName) is not { } newMaster) break;
+                oldMaster.Grade = 1;
+                newMaster.Grade = 0;
+                Info.MasterFirstId = newMaster.FirstId; Info.MasterCharId = newMaster.CharId; Info.MasterName = newMaster.Name;
+                ChatLine?.Invoke(string.Equals(m.NewName, PlayerName(), StringComparison.OrdinalIgnoreCase) ? Common(0x3b1) : ClientFormat.Format(Common(0x3b0), m.NewName), 0xd);
+                GuildInfoRefresh?.Invoke();
+                MemberRefresh?.Invoke(m.NewName);
+                MemberRefresh?.Invoke(m.Name);
+                break;
+            }
+            case 0x1a:
+                // OnPacketNoticeChanged (:2166): kind 0 the tag line (f58, FUN_1404cd030); kind 1 the notice (SetNotice), the
+                // dialog's UpdateGuildInfo and FormatStringId(0x3b2, name).
+                if (!InGuild || Info == null) break;
+                if (m.Kind == 0) Info.Tag = m.Text;
+                else if (m.Kind == 1)
+                {
+                    Info.Notice = m.Text;
+                    GuildInfoRefresh?.Invoke();
+                    ChatLine?.Invoke(ClientFormat.Format(Common(0x3b2), m.Name), 0xd);
+                }
+                break;
+            case 0x22:
+                // OnPacketGuildRenamed (:2200): SetGuildName, FormatStringId(0x3b4, name), the dialog's SetGuildName and the
+                // name over the local player's head (PC::vfunc_129).
+                if (!InGuild || Info == null) break;
+                Info.Name = m.Name;
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x3b4), m.Name), 0xd);
+                GuildNameRefresh?.Invoke(m.Name);
+                if (PlayerName() is { } own) HeadGuildName?.Invoke(own, m.Name);
+                break;
+            case 0x1c:
+                // FUN_1413c1840 (:2216): SetMaxMemberCount, the dialog's UpdateGuildInfo and FUN_14196e2c0, the line
+                // FormatStringId(0x3b5, value).
+                if (!InGuild || Info == null) break;
+                Info.MaxMembers = m.Value;
+                GuildInfoRefresh?.Invoke();
+                FundRefresh?.Invoke();
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x3b5), m.Value), 0xd);
+                break;
+            case 0x1d:
+            {
+                // OnPacketGradeUpdated (:2232): the grade at the index must be; it takes the read grade's fields, the dialog
+                // draws the members of the grade (RefreshMembersOfGrade) and the player of that grade gets the line 0x3a7.
+                if (!InGuild || Info == null) break;
+                int i = Info.Grades.FindIndex(g => g.Grade == m.Grade);
+                if (i < 0 || m.GradeEntry == null) break;
+                Info.Grades[i] = m.GradeEntry;
+                GradeRefresh?.Invoke(m.Grade);
+                if (Me is { } me && me.Grade == m.Grade) ChatLine?.Invoke(ClientFormat.Format(Common(0x3a7), me.Name), 0xd);
+                break;
+            }
+            case 0x1e:
+                // FUN_1413c1c50 (:2253): FUN_1404d17e0(focus, value), the propensity.
+                if (!InGuild || Info == null) break;
+                Info.B3 = m.Focus;
+                Info.V14 = m.Value;
+                break;
+            case 0x1b:
+                // FUN_1413c15b0 (:2185): the mark code (f48), FormatStringId(0x3b3, changer's StringIdInterface text) and the dialog's SetGuildMarkFromCode.
+                if (!InGuild || Info == null) break;
+                Info.Code = m.Code;
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x3b3), m.Changer == null ? "" : IdText(m.Changer)), 0xd);
+                MarkRefresh?.Invoke(m.Code);
+                break;
+            case 0x6b:
+                // FUN_1413c3110 (:2476): FUN_1404d3600, the guild's own trophies (f358). No in-guild check.
+                if (Info == null) break;
+                Info.F358 = m.Value;
+                GuildInfoRefresh?.Invoke();
+                break;
+            case 0xe:
+                // FUN_1413beb10 (:1761): the member's data f20 (the item level); no dialog call.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } levelMember) levelMember.ItemLevel = m.Value;
+                break;
+            case 0x1f:
+            {
+                // OnPacketMemberDataChanged (:2287): the member's data f24 (the map), then the row.
+                if (!InGuild || FindMemberByName(m.Name) is not { } member) break;
+                member.MapId = m.Value;
+                MemberRefresh?.Invoke(m.Name);
+                break;
+            }
+            case 0x20:
+            {
+                // FUN_1413c1d30 (:2266): the member's data replaced; a changed trophy triple also runs UpdateGuildInfo.
+                if (!InGuild || m.Member == null || FindMemberByName(m.Name) is not { } member) break;
+                bool changed = member.Triple != m.Member.Triple;
+                CopyMemberData(m.Member, member);
+                if (changed) GuildInfoRefresh?.Invoke();
+                MemberRefresh?.Invoke(m.Name);
+                break;
+            }
+            case 0x28:
+            {
+                // FUN_1413c28e0 (:2383): the matching sounds (s_strGuildBattleMatchingSuccess / ...Notice / ...Fail, :94-97), then ShowSystemNotice(0x3bf matched / 0x3c0 not, 1, 1). The arena
+                // join prompt (the option m_promptArenaJoin) is STILL-OPEN. No in-guild check.
+                if (m.Accepted) { Sound?.Invoke("guildBattle_MatchingSuccess"); Sound?.Invoke("system_notice_GuildBattleMatching01"); }
+                else Sound?.Invoke("guildBattle_MatchingFail");
+                Notice?.Invoke(Common(m.Accepted ? 0x3bf : 0x3c0), 1, true);
+                break;
+            }
+            case 0x2a:
+                // OnPacketBattleResult (:2441): FormatStringId(0x3bb won / 0x3bc lost, guild), an empty name "Unknown".
+                ChatLine?.Invoke(ClientFormat.Format(Common(m.Accepted ? 0x3bb : 0x3bc), m.Name.Length < 1 ? "Unknown" : m.Name), 0xd);
+                break;
+            case 0x2b:
+                // OnPacketBattleApplied (:2457): FormatStringId(0x3b9, guild) and the apply sound.
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x3b9), m.Name), 0xd);
+                Sound?.Invoke("guildBattle_Apply");
+                break;
+            case 0x2c:
+                // OnPacketGuildBattleNotice (:2467): FormatStringId(0x3ba, guild).
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x3ba), m.Name), 0xd);
+                break;
+            case 0x36:
+            case 0x37:
+            {
+                // FUN_1413c3170 (:2485) a skill used / FUN_1413c3460 (:2508) a skill upgraded: the kept skill of the id
+                // (FUN_1404d2640) takes the read one, or nothing happens. 0x36: the guild skill page, then with a user the
+                // line s_guild_notify_use_skill_user. 0x37: with the skill's row, the guild or personal page and the line
+                // s_guild_notify_upgrade_skill(user, name, level). No in-guild check.
+                if (Info == null || m.Skill == null) break;
+                int i = Info.Skills.FindIndex(s => s.Id == m.Skill.Id);
+                if (i < 0) break;
+                Info.Skills[i] = m.Skill;
+                var row = SkillTable?.Get(m.Skill.Id, m.Skill.Level);
+                if (m.Type == 0x36)
+                {
+                    SkillsRefresh?.Invoke();
+                    if (m.Name.Length > 0 && row != null)
+                        ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_use_skill_user"), m.Name, EffectName((uint) row.AdditionalEffectId, (ushort) row.AdditionalEffectLevel)), 0xd);
+                    break;
+                }
+                if (row == null) break;
+                if (row.IsGuild) SkillsRefresh?.Invoke();
+                else if (row.IsPersonal) PersonalSkillsRefresh?.Invoke();
+                ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_upgrade_skill"), m.Name, EffectName((uint) row.AdditionalEffectId, (ushort) row.AdditionalEffectLevel), m.Skill.Level), 0xd);
+                break;
+            }
+            case 0x7a:
+                // FUN_1413c4870 (:2698): only UIPvPGuildTeamResultDialog (0x4ec7)'s SetVsGameResult reads it; that dialog is
+                // not ported (STILL-OPEN), so the read guilds are not shown.
+                break;
+            case 0x7b:
+                // OnPacketVsGameReward (:2707): kind 1 s_guild_notify_vsGame_reward_exp, kind 2 ..._fund, grouped, chat kind 3.
+                if (m.Kind == 1) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_vsGame_reward_exp"), GroupText(m.Value)), 3);
+                else if (m.Kind == 2) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_vsGame_reward_fund"), GroupText(m.Value)), 3);
+                break;
+            case 0x4c:
+                // OnPacketExpelledOfflineMembers (:2758): each entry of the reason "expeled" is FormatStringId(0x3ab, name).
+                foreach (var e in m.Expelled)
+                    if (e.Reason == "expeled") ChatLine?.Invoke(ClientFormat.Format(Common(0x3ab), e.Name), 0xd);
+                break;
+            case 0x47:
+                // FUN_1413c4dd0 (:2773): FUN_140d73bc0(0x228), the box of the common string 0x228.
+                Box?.Invoke(Common(0x228));
+                break;
+            case 0x50:
+                // OnRemainTimeNotice (:2791): the system notice 0x421 (FUN_141275260(0x421, 1, 1)); the remaining time line
+                // (FUN_140a2fcd0(begin, end)) is STILL-OPEN, its body is not in the source.
+                Notice?.Invoke(Common(0x421), 1, true);
+                break;
+            case 0x4d:
+            case 0x4e:
+                // FUN_1413c7700 (:3108) / FUN_1413c7810 (:3121): the guild name over the head of the player of the name, or "".
+                HeadGuildName?.Invoke(m.Name, m.Type == 0x4d ? m.Text : "");
+                break;
+            case 0x26:
+                // FUN_1413c23d0 (:2329): only with the dialog open; each member's fe0 / fe4, then its row.
+                if (!DialogOpen()) break;
+                foreach (var v in m.MemberValues)
+                    if (FindMemberByName(v.Name) is { } vm) { vm.Fe0 = v.Fe0; vm.Fe4 = v.Fe4; MemberRefresh?.Invoke(v.Name); }
+                break;
+            case 0x35:
+                // FUN_1413c2590 (:2351): only with the dialog open; the member's weekly (fe8) and total (fec) contribution and
+                // its row; a gain of the player's is the line s_guild_gain_contribution.
+                if (!DialogOpen()) break;
+                if (FindMemberByName(m.Name) is { } cm) { cm.Contribution = m.Weekly; cm.TotalContribution = m.Total; MemberRefresh?.Invoke(m.Name); }
+                if (m.Value > 0 && string.Equals(m.Name, PlayerName(), StringComparison.OrdinalIgnoreCase))
+                    ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_gain_contribution"), m.Value), 0xd);
+                break;
+            case 0x3a:
+                // FUN_1413c3c40 (:2576): i64 the character, the user, i32 the poster, the text; vfunc_2 keeps them and
+                // UpdateGuildPoster(poster, 1) draws the guild house's poster (both STILL-OPEN: no guild house poster in the
+                // port). A named user is the line s_guild_notify_change_poster, kind 0xd. No in-guild check.
+                if (m.Name.Length > 0) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_change_poster"), m.Name), 0xd);
+                break;
+            case 0x23:
+                // OnPacketMemberAchievement (:2303): the line 0x3b6 / 0x3b7 with FUN_140d2d8a0(achieve, grade, text, date),
+                // whose body is not in the source (STILL-OPEN), so nothing is shown.
+                break;
         }
+    }
+
+    /// <summary>Unk_GuildMemberData's copy (mode 0x20, FUN_1413c1d30): the fields <see cref="GuildMember.ReadData"/> reads.</summary>
+    static void CopyMemberData(GuildMember from, GuildMember to)
+    {
+        to.FirstId = from.FirstId; to.CharId = from.CharId; to.Name = from.Name; to.F10 = from.F10; to.F14 = from.F14;
+        to.JobCode = from.JobCode; to.Level = from.Level; to.ItemLevel = from.ItemLevel; to.MapId = from.MapId; to.Channel = from.Channel;
+        to.Code = from.Code; to.F38 = from.F38; to.F3C = from.F3C; to.F40 = from.F40; to.F48 = from.F48; to.Triple = from.Triple;
+    }
+
+    /// <summary>FUN_1413bce40 (additionalcli_2.cpp:216, :301): an additional effect came to the player. In a guild, an effect
+    /// kept by mode 0x5b is dropped from m_470 and is the line s_guild_skill_use_skill with the effect's name (kind 0xd), and the
+    /// open dialog redraws its personal skill page (FUN_14196f830). Returns whether the effect was a kept one.</summary>
+    public bool OwnEffectAdded(int effectId, int level)
+    {
+        if (!InGuild || !pendingSkillEffects.Remove((effectId, level))) return false;
+        ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_skill_use_skill"), EffectName((uint) effectId, (ushort) level)), 0xd);
+        PersonalSkillsRefresh?.Invoke();
+        return true;
     }
 
     /// <summary>FUN_1413b5f90 (@0x1413b5f90, guildmanager.cpp:236-255), which the game UI scene's leave calls (UISceneGame::vfunc_49,

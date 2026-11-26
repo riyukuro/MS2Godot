@@ -910,4 +910,289 @@ public class GuildBookTests {
         none.Apply(new GuildMessage((byte) 0x33) { Value = 5 });
         Assert.That((exp.Count, funds), Is.EqualTo((2, 2)), "no guild info: no event");
     }
+
+    /// <summary>A book in a guild (Ma the master and the player, grade 0; bo grade 1) with every UI call logged by name.</summary>
+    sealed class Rig {
+        public readonly GuildBook B;
+        public readonly List<(string Text, int Kind)> Lines = new();
+        public readonly List<string> Calls = new();
+        public bool Open;
+        public Rig() {
+            B = new GuildBook { Common = id => $"c{id:x}({{0}},{{1}})", CommonByKey = k => k + "({0},{1},{2})", Send = Sent.Add, Level = () => 10 };
+            B.PlayerName = () => "Ma";
+            B.DialogOpen = () => Open;
+            B.GroupText = n => $"#{n}";
+            B.EffectName = (id, level) => $"e{id}.{level}";
+            B.IdText = t => t.Text;
+            B.ChatLine += (t, k) => Lines.Add((t, k));
+            B.Box += t => Calls.Add("box " + t);
+            B.Notice += (t, type, log) => Calls.Add($"notice {t} {type} {log}");
+            B.Sound += s => Calls.Add("sound " + s);
+            B.DialogClose += () => Calls.Add("close");
+            B.GuildInfoRefresh += () => Calls.Add("info");
+            B.FundRefresh += () => Calls.Add("fund");
+            B.MemberRefresh += n => Calls.Add("row " + n);
+            B.MemberRemoved += n => Calls.Add("remove " + n);
+            B.RequestsForGuildRefresh += () => Calls.Add("requests");
+            B.SkillsRefresh += () => Calls.Add("skills");
+            B.PersonalSkillsRefresh += () => Calls.Add("personal");
+            B.AttendRefresh += () => Calls.Add("attend");
+            B.GameMenuGuildRefresh += () => Calls.Add("menu");
+            B.GuildNameRefresh += n => Calls.Add("name " + n);
+            B.GradeRefresh += g => Calls.Add("grade " + g);
+            B.MarkRefresh += c => Calls.Add("mark " + c);
+            B.HeadGuildName += (who, g) => Calls.Add($"head {who} {g}");
+            var info = new GuildInfo { Id = 7, Name = "Gd", MaxMembers = 50, MasterCharId = 12, MasterName = "Ma" };
+            info.Members.Add(Member("bo", 13, 1, 20, 200, 1, 2, 3));
+            info.Members.Add(Member("Ma", 12, 0, 40, 100, 4));
+            info.Grades.Add(new GuildGrade(0, "Master", 4095));
+            info.Grades.Add(new GuildGrade(1, "Member", 8));
+            info.Skills.Add(new GuildSkillState(5, 2, 0));
+            info.Skills.Add(new GuildSkillState(10001, 1, 0));
+            B.Apply(new GuildMessage((byte) 0) { GuildId = 7, Info = info });
+            B.SkillTable = new GuildSkillTable(System.Xml.Linq.XDocument.Parse(
+                "<ms2><guildBuff id='5' level='2' additionalEffectId='70' additionalEffectLevel='3'/>"
+                + "<guildBuff id='5' level='3' additionalEffectId='70' additionalEffectLevel='4'/>"
+                + "<guildBuff id='10001' level='2' additionalEffectId='80' additionalEffectLevel='2'/></ms2>"));
+            B.Events = new GuildEventTable(System.Xml.Linq.XDocument.Parse("<ms2><guildEvent id='3' mapCode='2000001'/></ms2>"));
+            B.StringTableText = (table, id) => $"t{table}.{id}";
+            Calls.Clear();
+        }
+        public readonly List<IOutPacket> Sent = new();
+        public void Apply(byte type, Func<GuildMessage, GuildMessage> fill = null) => B.Apply(fill == null ? new GuildMessage(type) : fill(new GuildMessage(type)));
+        public GuildMember M(string name) => B.FindMemberByName(name);
+    }
+
+    /// <summary>The modes the client only reads in a guild (FUN_1413be400 0x8, FUN_1413be7e0 0xa, FUN_1413bee70 0x3f,
+    /// FUN_1413beff0 0x41) change nothing; FUN_1413be460 (0x9) ends the guild with 0x3aa (no name) or 0x3ab, then
+    /// CloseDialog; FUN_1413be670 (0xb) drops the member with no line.</summary>
+    [Test]
+    public void TheLeaveAndReadOnlyModesFollowTheClient() {
+        var r = new Rig();
+        foreach (byte t in new byte[] { 0x8, 0xa, 0x3f, 0x41 }) r.Apply(t, m => m with { Name = "bo" });
+        Assert.That((r.Lines.Count, r.Calls.Count, r.B.Info.Members.Count), Is.EqualTo((0, 0, 2)));
+        r.Apply(0xb, m => m with { Name = "bo" });
+        Assert.That((r.M("bo"), r.Lines.Count, r.Calls.Count), Is.EqualTo(((GuildMember) null, 0, 0)));
+        r.Apply(0x9, m => m with { Name = "bo" });
+        Assert.That((r.B.InGuild, r.Lines.Single(), r.Calls.Single()), Is.EqualTo((false, ("c3ab(bo,{1})", 0xd), "close")));
+        var s = new Rig();
+        s.Apply(0x9);
+        Assert.That(s.Lines.Single(), Is.EqualTo(("c3aa({0},{1})", 0xd)));
+    }
+
+    /// <summary>OnPacketMemberRenamed (0xc): a member of the old name is renamed (old row removed, new row drawn), else the
+    /// first request for the guild of the old name is.</summary>
+    [Test]
+    public void ARenameRenamesTheMemberElseTheRequest() {
+        var r = new Rig();
+        r.Apply(0xc, m => m with { Name = "bo", NewName = "bi" });
+        Assert.That((r.M("bi")?.CharId, r.Calls), Is.EqualTo(((long?) 13, new[] { "remove bo", "row bi" })));
+        r.Calls.Clear();
+        r.Apply(0x55, m => m with { GuildRequests = new[] { new GuildJoinRequestForGuild { Id = 4, Name = "zz" } } });
+        r.Calls.Clear();
+        r.Apply(0xc, m => m with { Name = "zz", NewName = "zy" });
+        Assert.That((r.B.RequestsForGuild.Single().Name, r.Calls.Single()), Is.EqualTo(("zy", "requests")));
+    }
+
+    /// <summary>The boxes: 0x40 result 1 (0x397), OnPacketExpandCapacity 0x42 (keeps the capacity, 0x39f), OnPacketGradeChanged
+    /// 0x43 (0x398 with the grade's name), FUN_1413c4dd0 0x47 (0x228).</summary>
+    [Test]
+    public void TheBoxModesShowTheirCommonText() {
+        var r = new Rig();
+        r.Apply(0x40, m => m with { Result = 0 });
+        r.Apply(0x40, m => m with { Result = 1 });
+        r.Apply(0x42, m => m with { Value = 60 });
+        r.Apply(0x43, m => m with { Grade = 1 });
+        r.Apply(0x47);
+        Assert.That(r.Calls, Is.EqualTo(new[] { "box c397({0},{1})", "box c39f(60,{1})", "box c398(Member,{1})", "box c228({0},{1})" }));
+        Assert.That(r.B.Info.MaxMembers, Is.EqualTo(60));
+    }
+
+    /// <summary>The member list: OnPacketMemberExpelled 0x14 (0x3a9 expeller, name) and FUN_1413c0250 0x21 (0x3a6) remove the
+    /// member; the dialog's info, row removal and skill page run either way. Online 0x17 / offline 0x18 (0x3ac / 0x3ad unless a
+    /// buddy, the login time kept), the grade 0x15 (0x3ae another, 0x3af own), the memo 0x16, the item level 0xe (no row), the map
+    /// 0x1f and the data 0x20 (a changed trophy triple redraws the info).</summary>
+    [Test]
+    public void TheMemberModesChangeTheMemberAndTellTheDialog() {
+        var r = new Rig();
+        r.Apply(0x18, m => m with { Name = "bo", Time = 99 });
+        Assert.That((r.M("bo").Offline, r.M("bo").LastSeen, r.Lines.Last(), r.Calls.Last()), Is.EqualTo((1, 99L, ("c3ad(bo,{1})", 0xd), "row bo")));
+        r.Apply(0x17, m => m with { Name = "bo" });
+        Assert.That((r.M("bo").Offline, r.Lines.Last()), Is.EqualTo((0, ("c3ac(bo,{1})", 0xd))));
+        r.B.IsBuddy = n => n == "bo";
+        r.Lines.Clear();
+        r.Apply(0x18, m => m with { Name = "bo", Time = 5 });
+        Assert.That(r.Lines, Is.Empty, "a buddy gets the buddy list's notice instead");
+        r.Apply(0x15, m => m with { Name = "bo", Grade = 0 });
+        Assert.That((r.M("bo").Grade, r.Lines.Last()), Is.EqualTo((0, ("c3ae(bo,Master)", 0xd))));
+        r.Apply(0x15, m => m with { Name = "Ma", Grade = 1 });
+        Assert.That(r.Lines.Last(), Is.EqualTo(("c3af(Member,{1})", 0xd)));
+        r.Apply(0x16, m => m with { Name = "bo", Text = "hi" });
+        r.Apply(0xe, m => m with { Name = "bo", Value = 777 });
+        r.Apply(0x1f, m => m with { Name = "bo", Value = 2000001 });
+        Assert.That((r.M("bo").Memo, r.M("bo").ItemLevel, r.M("bo").MapId), Is.EqualTo(("hi", 777, 2000001)));
+        r.Calls.Clear();
+        var data = Member("bo", 13, 9, 21, 300, 1, 2, 3);
+        r.Apply(0x20, m => m with { Name = "bo", Member = data });
+        Assert.That((r.M("bo").Level, r.M("bo").Grade, r.Calls), Is.EqualTo((21, 0, new[] { "row bo" })), "the grade is not member data");
+        r.Calls.Clear();
+        r.Apply(0x20, m => m with { Name = "bo", Member = Member("bo", 13, 9, 21, 300, 5, 5, 5) });
+        Assert.That(r.Calls, Is.EqualTo(new[] { "info", "row bo" }));
+
+        r.Calls.Clear(); r.Lines.Clear();
+        r.Apply(0x14, m => m with { Name = "bo", By = "Ma" });
+        Assert.That((r.M("bo"), r.Lines.Single(), r.Calls), Is.EqualTo(((GuildMember) null, ("c3a9(Ma,bo)", 0xd), new[] { "info", "remove bo", "skills" })));
+        r.Lines.Clear();
+        r.Apply(0x21, m => m with { Name = "nobody" });
+        Assert.That(r.Lines, Is.Empty, "no member: no line, the dialog still redraws");
+    }
+
+    /// <summary>OnPacketMemberContribution 0x24 keeps the check-in time (fd8); the player's also redraws the game menu and the
+    /// attend button. FUN_1413c23d0 0x26 and FUN_1413c2590 0x35 only with the dialog open; a gain of the player's is the line
+    /// s_guild_gain_contribution.</summary>
+    [Test]
+    public void TheContributionModesFollowTheDialog() {
+        var r = new Rig();
+        r.Apply(0x24, m => m with { Name = "bo", Contribution = 50 });
+        r.Apply(0x24, m => m with { Name = "Ma", Contribution = 60 });
+        Assert.That((r.M("bo").Fd8, r.M("Ma").Fd8, r.Calls), Is.EqualTo((50L, 60L, new[] { "menu", "attend" })));
+        r.Calls.Clear();
+        r.Apply(0x26, m => m with { MemberValues = new[] { ("bo", 1, 2) } });
+        r.Apply(0x35, m => m with { Name = "Ma", Weekly = 3, Total = 4, Value = 1 });
+        Assert.That((r.M("bo").Fe0, r.M("Ma").Contribution, r.Calls.Count, r.Lines.Count), Is.EqualTo((0, 0, 0, 0)), "dialog closed");
+        r.Open = true;
+        r.Apply(0x26, m => m with { MemberValues = new[] { ("bo", 1, 2) } });
+        r.Apply(0x35, m => m with { Name = "Ma", Weekly = 3, Total = 4, Value = 1 });
+        r.Apply(0x35, m => m with { Name = "bo", Weekly = 5, Total = 6, Value = 1 });
+        Assert.That((r.M("bo").Fe0, r.M("bo").Fe4, r.M("Ma").Contribution, r.M("Ma").TotalContribution), Is.EqualTo((1, 2, 3, 4)));
+        Assert.That(r.Calls, Is.EqualTo(new[] { "row bo", "row Ma", "row bo" }));
+        Assert.That(r.Lines.Single(), Is.EqualTo(("s_guild_gain_contribution(1,{1},{2})", 0xd)));
+    }
+
+    /// <summary>The guild's own fields: the master 0x19, the tag / notice 0x1a, the name 0x22, the capacity 0x1c, the grade
+    /// 0x1d, the propensity 0x1e, the mark 0x1b and the guild trophies 0x6b.</summary>
+    [Test]
+    public void TheGuildHeaderModesChangeTheGuild() {
+        var r = new Rig();
+        r.Apply(0x19, m => m with { Name = "Ma", NewName = "bo" });
+        Assert.That((r.M("Ma").Grade, r.M("bo").Grade, r.B.Info.MasterCharId, r.B.Info.MasterName), Is.EqualTo((1, 0, 13L, "bo")));
+        Assert.That((r.Lines.Last(), r.Calls), Is.EqualTo((("c3b0(bo,{1})", 0xd), new[] { "info", "row bo", "row Ma" })));
+        r.Apply(0x19, m => m with { Name = "bo", NewName = "Ma" });
+        Assert.That(r.Lines.Last(), Is.EqualTo(("c3b1({0},{1})", 0xd)));
+        r.Calls.Clear(); r.Lines.Clear();
+        r.Apply(0x1a, m => m with { Kind = 0, Text = "tag" });
+        Assert.That((r.B.Info.Tag, r.Calls.Count, r.Lines.Count), Is.EqualTo(("tag", 0, 0)));
+        r.Apply(0x1a, m => m with { Kind = 1, Text = "note", Name = "bo" });
+        Assert.That((r.B.Info.Notice, r.Calls.Single(), r.Lines.Single()), Is.EqualTo(("note", "info", ("c3b2(bo,{1})", 0xd))));
+        r.Calls.Clear(); r.Lines.Clear();
+        r.Apply(0x22, m => m with { Name = "Gn" });
+        Assert.That((r.B.Info.Name, r.Lines.Single(), r.Calls), Is.EqualTo(("Gn", ("c3b4(Gn,{1})", 0xd), new[] { "name Gn", "head Ma Gn" })));
+        r.Calls.Clear(); r.Lines.Clear();
+        r.Apply(0x1c, m => m with { Value = 70 });
+        Assert.That((r.B.Info.MaxMembers, r.Calls, r.Lines.Single()), Is.EqualTo((70, new[] { "info", "fund" }, ("c3b5(70,{1})", 0xd))));
+        r.Calls.Clear(); r.Lines.Clear();
+        r.Apply(0x1d, m => m with { Grade = 0, GradeEntry = new GuildGrade(0, "Boss", 4095) });
+        Assert.That((r.B.GetGrade(0).Name, r.Calls.Single(), r.Lines.Single()), Is.EqualTo(("Boss", "grade 0", ("c3a7(Ma,{1})", 0xd))));
+        r.Apply(0x1d, m => m with { Grade = 4, GradeEntry = new GuildGrade(4, "X", 0) });
+        Assert.That((r.B.GetGrade(4), r.Calls.Count), Is.EqualTo(((GuildGrade) null, 1)), "a grade not kept is not added");
+        r.Apply(0x1e, m => m with { Focus = 3, Value = 9 });
+        Assert.That((r.B.Info.B3, r.B.Info.V14), Is.EqualTo((3, 9)));
+        r.Calls.Clear(); r.Lines.Clear();
+        r.Apply(0x1b, m => m with { Code = "mk", Changer = new StringIdText(false, 0, 0, Array.Empty<string>(), "bo") });
+        Assert.That((r.B.Info.Code, r.Lines.Single(), r.Calls.Single()), Is.EqualTo(("mk", ("c3b3(bo,{1})", 0xd), "mark mk")));
+        r.Apply(0x6b, m => m with { Value = 1234 });
+        Assert.That(r.B.Info.F358, Is.EqualTo(1234));
+    }
+
+    /// <summary>The guild skill notices: FUN_1413bf340 0x5a (s_guild_skill_use_skill with the effect of the guild's level),
+    /// FUN_1413bf540 0x5b (kept until the effect comes, only with the dialog open; FUN_1413bce40 then shows the line once), the
+    /// used 0x36 and upgraded 0x37 skills (the kept skill replaced; guild or personal page by the row's id).</summary>
+    [Test]
+    public void TheSkillModesKeepTheSkillAndShowTheirLines() {
+        var r = new Rig();
+        r.Apply(0x5a, m => m with { Value = 5 });
+        Assert.That(r.Lines.Single(), Is.EqualTo(("s_guild_skill_use_skill(e70.3,{1},{2})", 0xd)));
+        r.Lines.Clear();
+        r.Apply(0x5b, m => m with { Value = 5 });
+        Assert.That(r.B.PendingSkillEffects, Is.Empty, "dialog closed");
+        r.Open = true;
+        r.Apply(0x5b, m => m with { Value = 5 });
+        Assert.That(r.B.PendingSkillEffects, Is.EqualTo(new[] { (70, 3) }));
+        Assert.That(r.B.OwnEffectAdded(70, 2), Is.False);
+        Assert.That(r.B.OwnEffectAdded(70, 3), Is.True);
+        Assert.That(r.B.OwnEffectAdded(70, 3), Is.False, "once");
+        Assert.That((r.Lines.Single(), r.Calls.Single()), Is.EqualTo((("s_guild_skill_use_skill(e70.3,{1},{2})", 0xd), "personal")));
+        r.Lines.Clear(); r.Calls.Clear();
+        r.Apply(0x36, m => m with { Name = "bo", Skill = new GuildSkillState(5, 2, 77) });
+        Assert.That((r.B.Info.Skills[0].Time, r.Calls.Single(), r.Lines.Single()),
+            Is.EqualTo((77L, "skills", ("s_guild_notify_use_skill_user(bo,e70.3,{2})", 0xd))));
+        r.Lines.Clear(); r.Calls.Clear();
+        r.Apply(0x37, m => m with { Name = "bo", Skill = new GuildSkillState(5, 3, 0) });
+        r.Apply(0x37, m => m with { Name = "bo", Skill = new GuildSkillState(10001, 2, 0) });
+        r.Apply(0x37, m => m with { Name = "bo", Skill = new GuildSkillState(6, 1, 0) });
+        Assert.That((r.B.SkillLevel(5), r.B.SkillLevel(10001), r.B.SkillLevel(6)), Is.EqualTo((3, 2, 0)), "an id not kept is not added");
+        Assert.That(r.Calls, Is.EqualTo(new[] { "skills", "personal" }));
+        Assert.That(r.Lines, Is.EqualTo(new[] { ("s_guild_notify_upgrade_skill(bo,e70.4,3)", 0xd), ("s_guild_notify_upgrade_skill(bo,e80.2,2)", 0xd) }));
+    }
+
+    /// <summary>The gains and events: OnPacketGainExpFund 0x61 (both, the exp or the fund, grouped), OnPacketOpenEvent 0x63 (the
+    /// event's map name), OnPacketVsGameReward 0x7b (kind 1 exp, 2 fund, chat kind 3), the offline expel list 0x4c (only the
+    /// "expeled" reason), the poster 0x3a (named user only).</summary>
+    [Test]
+    public void TheGainAndEventModesShowTheirLines() {
+        var r = new Rig();
+        r.Apply(0x61, m => m with { Value = 80, Value2 = 10000 });
+        r.Apply(0x61, m => m with { Value = 80 });
+        r.Apply(0x61, m => m with { Value2 = 5 });
+        r.Apply(0x61);
+        r.Apply(0x63, m => m with { EventId = 3 });
+        r.Apply(0x63, m => m with { EventId = 4 });
+        r.Apply(0x7b, m => m with { Kind = 1, Value = 9 });
+        r.Apply(0x7b, m => m with { Kind = 2, Value = 8 });
+        r.Apply(0x7b, m => m with { Kind = 3, Value = 7 });
+        r.Apply(0x4c, m => m with { Expelled = new[] { ("bo", "expeled", 1L), ("zz", "left", 1L) } });
+        r.Apply(0x3a, m => m with { Name = "" });
+        r.Apply(0x3a, m => m with { Name = "bo" });
+        Assert.That(r.Lines, Is.EqualTo(new[] {
+            ("s_guild_gain_exp_fund(#80,#10000,{2})", 0xd), ("s_guild_gain_exp(#80,{1},{2})", 0xd), ("s_guild_gain_fund(#5,{1},{2})", 0xd),
+            ("s_guild_open_event(t3.2000001,{1},{2})", 0xd),
+            ("s_guild_notify_vsGame_reward_exp(#9,{1},{2})", 3), ("s_guild_notify_vsGame_reward_fund(#8,{1},{2})", 3),
+            ("c3ab(bo,{1})", 0xd), ("s_guild_notify_change_poster(bo,{1},{2})", 0xd) }));
+    }
+
+    /// <summary>The guild battle (no in-guild check): FUN_1413c28e0 0x28 (the sounds, then the notice 0x3bf / 0x3c0),
+    /// OnPacketBattleResult 0x2a (0x3bb won / 0x3bc lost, an empty name "Unknown"), 0x2b (0x3b9 and the apply sound), 0x2c
+    /// (0x3ba); the remain-time notice 0x50; the head names 0x4d / 0x4e.</summary>
+    [Test]
+    public void TheBattleAndHeadModesFollowTheClient() {
+        var r = new Rig();
+        r.Apply(0x9);       // out of the guild: these still run
+        r.Lines.Clear(); r.Calls.Clear();
+        r.Apply(0x28, m => m with { Accepted = true });
+        r.Apply(0x28, m => m with { Accepted = false });
+        r.Apply(0x2a, m => m with { Accepted = true, Name = "Ga" });
+        r.Apply(0x2a, m => m with { Accepted = false });
+        r.Apply(0x2b, m => m with { Name = "Ga" });
+        r.Apply(0x2c, m => m with { Name = "Ga" });
+        r.Apply(0x50);
+        r.Apply(0x4d, m => m with { Name = "bo", Text = "Gd" });
+        r.Apply(0x4e, m => m with { Name = "bo" });
+        Assert.That(r.Calls, Is.EqualTo(new[] {
+            "sound guildBattle_MatchingSuccess", "sound system_notice_GuildBattleMatching01", "notice c3bf({0},{1}) 1 True",
+            "sound guildBattle_MatchingFail", "notice c3c0({0},{1}) 1 True", "sound guildBattle_Apply", "notice c421({0},{1}) 1 True",
+            "head bo Gd", "head bo " }));
+        Assert.That(r.Lines, Is.EqualTo(new[] { ("c3bb(Ga,{1})", 0xd), ("c3bc(Unknown,{1})", 0xd), ("c3b9(Ga,{1})", 0xd), ("c3ba(Ga,{1})", 0xd) }));
+    }
+
+    /// <summary>Out of a guild the in-guild modes change nothing.</summary>
+    [Test]
+    public void OutOfAGuildTheInGuildModesDoNothing() {
+        var r = new Rig();
+        r.Apply(0x9);
+        r.Lines.Clear(); r.Calls.Clear();
+        foreach (byte t in new byte[] { 0xb, 0xc, 0xe, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21,
+                     0x22, 0x24, 0x40, 0x42, 0x43, 0x5a, 0x5b, 0x61, 0x63 })
+            r.Apply(t, m => m with { Name = "bo", NewName = "Ma", Value = 1, Value2 = 1, Result = 1, Kind = 1, EventId = 3 });
+        Assert.That((r.Lines.Count, r.Calls.Count), Is.EqualTo((0, 0)));
+    }
 }

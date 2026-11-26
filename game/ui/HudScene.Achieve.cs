@@ -43,6 +43,7 @@ public partial class HudScene
     {
         0x4e49 => Ms2Godot.Net.LiveSession.Instance?.Mails.Unread ?? 0,      // CUserMail::GetUnreadCount
         0x4e4d => Ms2Godot.Net.LiveSession.Instance?.Buddies.ReceivedCount ?? 0,   // CBuddyManager::FUN_140ae5070, the requests from others
+        0x4e4f => Ms2Godot.Net.LiveSession.Instance?.Guilds.NotificationCount ?? 0,   // CGuildManager::GetGuildNotificationCount
         0x4e73 => Ms2Godot.Net.LiveSession.Instance?.Achieves.GetRewardTotal(0) ?? 0,
         0x4f1e => mastery?.TotalClaimableRewardLevels() ?? 0,      // CMasteryManager::GetTotalClaimableRewardLevels
         0x4f67 or 0x4f87 => AdventureNotifyCount(id),             // CAdventureLevelTable::CountUnclaimedRewards (+ the missions)

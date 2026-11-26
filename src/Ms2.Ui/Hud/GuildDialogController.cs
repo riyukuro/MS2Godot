@@ -87,6 +87,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public Func<long?> PlayerCharId = () => null;
     /// <summary>FUN_141028be0(charId, code, 1, ""): the profile image path.</summary>
     public Func<long, string, string> ImagePath = (_, _) => "";
+    /// <summary>FUN_141029590(guildId, code, "", "") (ugcimagepath.cpp:488): the guild mark image path (the downloaded file, else
+    /// the no-guild image). Empty: no path known, the mark is left as it is.</summary>
+    public Func<long, string, string> GuildMarkPath = (_, _) => "";
     /// <summary>CGuildXmlData::GetAccumExp and GetMaxLevel.</summary>
     public Func<int, int> AccumExp = _ => 0;
     public Func<int> MaxLevel = () => 0;
@@ -219,6 +222,18 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.ExpRefresh += OnExpRefresh;
         Book.FundRefresh -= OnFundRefresh;
         Book.FundRefresh += OnFundRefresh;
+        Book.SkillsRefresh -= OnSkillsRefresh;
+        Book.SkillsRefresh += OnSkillsRefresh;
+        Book.PersonalSkillsRefresh -= OnPersonalSkillsRefresh;
+        Book.PersonalSkillsRefresh += OnPersonalSkillsRefresh;
+        Book.AttendRefresh -= OnAttendRefresh;
+        Book.AttendRefresh += OnAttendRefresh;
+        Book.GuildNameRefresh -= SetGuildName;
+        Book.GuildNameRefresh += SetGuildName;
+        Book.GradeRefresh -= RefreshMembersOfGrade;
+        Book.GradeRefresh += RefreshMembersOfGrade;
+        Book.MarkRefresh -= SetGuildMarkFromCode;
+        Book.MarkRefresh += SetGuildMarkFromCode;
         if (!NoMovie)
         {
             InitializeGuildDialog();
@@ -264,6 +279,12 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.MemberRemoved -= OnMemberRemoved;
         Book.ExpRefresh -= OnExpRefresh;
         Book.FundRefresh -= OnFundRefresh;
+        Book.SkillsRefresh -= OnSkillsRefresh;
+        Book.PersonalSkillsRefresh -= OnPersonalSkillsRefresh;
+        Book.AttendRefresh -= OnAttendRefresh;
+        Book.GuildNameRefresh -= SetGuildName;
+        Book.GradeRefresh -= RefreshMembersOfGrade;
+        Book.MarkRefresh -= SetGuildMarkFromCode;
         Book.ClearSearchResults();
         createPage = null;
         joinPage = null;
@@ -301,8 +322,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         UpdateAttendBackground();
     }
 
-    /// <summary>UpdateAttendBackground (@0x141973a70, :2163): m_attendBG shown while CGuildManager::CanAttend.
-    /// STILL-OPEN: the client also calls it on a day change (FUN_1413b5e80) and on the own type 0x24, not read yet.</summary>
+    /// <summary>UpdateAttendBackground (@0x141973a70, :2163): m_attendBG shown while CGuildManager::CanAttend. Also after the own
+    /// type 0x24 (<see cref="OnAttendRefresh"/>). STILL-OPEN: the client also calls it on a day change (FUN_1413b5e80).</summary>
     void UpdateAttendBackground()
     {
         if (Host.Child("m_attendBG") is { } attend) Host.SetVisible(attend, Book.CanAttend);
@@ -1169,6 +1190,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         UpdateGuildInfo();
     }
 
+    /// <summary>A member's row drawn by FUN_141973b20 (the member's name), for the tests.</summary>
+    public event Action<string> MemberRowDrawn;
+
     /// <summary>FUN_141973b20 (@0x141973b20): one member's row to the root and the member page, then the master's info and
     /// the player's rights when the row's member is the master or the player. FUN_14196e590 (the skill page's fund) is
     /// STILL-OPEN with the skill page.</summary>
@@ -1176,6 +1200,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     {
         if (IsClosed || NoMovie || Book.FindMemberByName(name) is not { } m) return;
         var row = MemberRow(m);
+        MemberRowDrawn?.Invoke(name);
         Host.Invoke(Host.Entity, "addOrUpdateMember", row);
         if (memberPage != null) Host.Invoke(memberPage, "addOrUpdateMember", row);
         if (managePage != null) Host.Invoke(managePage, "addOrUpdateMember", row);
@@ -1199,6 +1224,54 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     {
         if (IsClosed || NoMovie) return;
         UpdateSkillFund();
+    }
+
+    /// <summary>FUN_14196e590 (the guild skill page) with the dialog open: modes 0x14, 0x21, 0x36 and 0x37.</summary>
+    void OnSkillsRefresh()
+    {
+        if (IsClosed || NoMovie) return;
+        BuildGuildSkills();
+    }
+
+    /// <summary>FUN_14196f830 (the personal skill page) with the dialog open: mode 0x37 and a pending skill use's effect.</summary>
+    void OnPersonalSkillsRefresh()
+    {
+        if (IsClosed || NoMovie) return;
+        BuildPersonalSkills();
+    }
+
+    /// <summary>OnPacketMemberContribution (guildmanager.cpp:2103) of the player with the dialog open: UpdateAttendBackground.</summary>
+    void OnAttendRefresh()
+    {
+        if (IsClosed || NoMovie) return;
+        UpdateAttendBackground();
+    }
+
+    /// <summary>SetGuildName (@0x141974190, uiguilddialog.cpp:2798): the Info page's setGuildName.</summary>
+    void SetGuildName(string name)
+    {
+        if (IsClosed || NoMovie || infoPage == null) return;
+        Host.Invoke(infoPage, "setGuildName", name);
+    }
+
+    /// <summary>RefreshMembersOfGrade (@0x141973f60, uiguilddialog.cpp:2774): SetGradeInfo, then FUN_141973b20 for each member
+    /// of the grade.</summary>
+    void RefreshMembersOfGrade(int grade)
+    {
+        if (IsClosed || NoMovie) return;
+        SetGradeInfo();
+        if (Book.Info == null) return;
+        foreach (var m in Book.Info.Members.ToArray())
+            if (m.Grade == grade) OnMemberRefresh(m.Name);
+    }
+
+    /// <summary>SetGuildMarkFromCode (@0x141974120) → SetGuildMark(code, 1) (@0x141976730, uiguilddialog.cpp:3190): with the Info
+    /// page and a guild id, the page's setGuildMark with FUN_141029590's path.</summary>
+    void SetGuildMarkFromCode(string code)
+    {
+        if (IsClosed || NoMovie || infoPage == null || Book.GuildId == 0) return;
+        string path = GuildMarkPath(Book.GuildId, code);
+        if (path.Length > 0) Host.Invoke(infoPage, "setGuildMark", path);
     }
 
     /// <summary>RemoveMember (@0x141973df0).</summary>

@@ -251,6 +251,9 @@ public sealed class AdditionalBuffList
     /// <summary>The list is the own player's (AdditionalCliList::GetOwnerMyPC is set): only then the special effects run
     /// (<see cref="ReduceSkillGroupCooltime"/>).</summary>
     public bool OwnerIsMyPc;
+    /// <summary>CGuildManager::FUN_1413bce40(id, level): an effect added to the own player (Add) or set by a modify with the state
+    /// flag (Modify); the guild's pending skill uses (mode 0x5b) wait for it.</summary>
+    public event Action<int, int> OwnEffectAdded;
     /// <summary>FUN_140768090 @0x140768090 (questmasktable.cpp:485): the roll in [0, 1) a special effect's probability is
     /// tested against.</summary>
     public Func<float> Roll = Random.Shared.NextSingle;
@@ -442,6 +445,7 @@ public sealed class AdditionalBuffList
         map[b.Key] = b;
         StartIfNotListed(b);
         AddBuffUI(b);
+        if (OwnerIsMyPc) OwnEffectAdded?.Invoke((int) b.Id, b.Level);   // CGuildManager FUN_1413bce40 (additionalcli_2.cpp:216)
         Strip?.QueueSlotRefresh(0xd);
         return true;
     }
@@ -503,6 +507,7 @@ public sealed class AdditionalBuffList
         {
             StartIfNotListed(b);
             UpdateBuffUI(b);
+            if (OwnerIsMyPc) OwnEffectAdded?.Invoke((int) b.Id, b.Level);   // CGuildManager FUN_1413bce40 (additionalcli_2.cpp:301)
         }
     }
 
