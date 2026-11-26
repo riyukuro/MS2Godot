@@ -278,6 +278,11 @@ public sealed partial class NpcTalk : Node
     /// </summary>
     public NpcQuestMarks.Mark QuestMark(int npcId) => QuestMarks(packs).Get(npcId, QuestContext, Rules);
 
+    /// <summary>The npc's quest state for the minimap (CProxyGameObject::GetQuestState with ResolveQuestIcon, the guide and the
+    /// tooltip lines, <see cref="NpcQuestMarks.GetMinimap"/>) on the character's records.</summary>
+    public NpcQuestMarks.Minimap MinimapQuest(int npcId, int playerLevel, Func<string, string> common) =>
+        QuestMarks(packs).GetMinimap(npcId, QuestContext, Rules, playerLevel, common);
+
     /// <summary>The sandbox: start a quest on its records, its conditions met or not (the emoticon shots).</summary>
     public bool SandboxAccept(int questId, bool conditionsMet) => live == null && Records.Accept(questId, conditionsMet);
 

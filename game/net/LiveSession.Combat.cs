@@ -327,6 +327,27 @@ public partial class LiveSession
                 GD.Print($"live: combat minimap mark of portal {id}: {hud.MinimapPortalMarkScripted(id)?.ToString() ?? "none"}");
                 continue;
             }
+            if (step.StartsWith("minimapnpc:"))      // minimapnpc:<npc id>: the minimap's entity of each field npc of that id (icon, frame, layer, shown)
+            {
+                int id = int.Parse(step[11..]);
+                int found = 0;
+                foreach (var n in live.LiveNpcs)
+                    if (n.Row?.Id == id) { found++; GD.Print($"live: combat minimap npc {id} ({n.ObjectId}): {hud.MinimapNpcMarkScripted(n.ObjectId) ?? "no entity"}"); }
+                if (found == 0) GD.Print($"live: combat minimap npc {id}: not in the field");
+                continue;
+            }
+            if (step == "minimapnpcs")      // minimapnpcs: the minimap's npc entities counted by icon and frame
+            {
+                var counts = new System.Collections.Generic.SortedDictionary<string, int>();
+                foreach (var n in live.LiveNpcs)
+                    if (hud.MinimapNpcMarkScripted(n.ObjectId) is { } m)
+                    {
+                        string k = m[..m.IndexOf(", guide", System.StringComparison.Ordinal)];
+                        counts[k] = counts.GetValueOrDefault(k) + 1;
+                    }
+                GD.Print($"live: combat minimap npcs: {string.Join("; ", counts.Select(kv => $"{kv.Key} x{kv.Value}"))}");
+                continue;
+            }
             if (step.StartsWith("portalstate:"))      // portalstate:<portal id>: the field's portal of that id as the masks left it (shown, glow)
             {
                 int id = int.Parse(step[12..]);

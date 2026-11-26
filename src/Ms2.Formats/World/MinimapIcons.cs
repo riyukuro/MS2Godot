@@ -68,7 +68,7 @@ public sealed class MinimapIcons
     {
         if (!r.Minimap) return "empty";
         if (!string.IsNullOrEmpty(r.MinimapIcon)) return r.MinimapIcon;
-        if (r.PropertyTags.Contains("13")) return "event_boss";
+        if (r.HasTag("event_icon")) return "event_boss";      // HasPropertyTag(0xd): tag 13 is event_icon (npcdata.cpp:1355)
         int type = r.NpcType;
         if (type == 0 && r.IsBoss) return r.Class is 3 or 7 ? "elite_boss" : "boss";
         if (type == 0x55) return "gatekeeper";
@@ -152,17 +152,6 @@ public sealed class MinimapIcons
         }
         return rows;
     }
-
-    /// <summary>
-    /// AddNamedObject + UpdateNamed for an interact object that is not a quest target: none without a minimap icon; icon =
-    /// the row's minimapIcon, layer interact, no frame, shown when the object's state is 1 (reactable). A watchtower
-    /// (type 9) takes the watchtower layer, is always shown and gets frame enabled (state 0) or disabled
-    /// (UpdateNamedFrame). The name (string table 0x10) is only the tooltip.
-    /// </summary>
-    public static Entity Named(string icon, int type, int state) =>
-        string.IsNullOrEmpty(icon) ? null
-        : type == 9 ? new Entity(icon, state == 0 ? "enabled" : "disabled", "watchtower", null, true, false)
-        : new Entity(icon, "", "interact", null, state == 1, false);
 
     /// <summary>BuildMapObjects: a world object tagged MS2Minimap; icon and frame = its MinimapIconFrame lower-cased, layer interact.</summary>
     public static Entity MapObject(string iconFrame)

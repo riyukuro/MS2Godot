@@ -133,6 +133,72 @@ public class NpcQuestMarksTests
         Assert.That(marks.HasTalk(800, 0, false, ctx, rules, NoTalk), Is.False);
     }
 
+    /// <summary>
+    /// The minimap's quest marks over every npc with a quest in a data set (KMS: MS2_DATA, GMS2: MS2_GMS2_DATA): for every
+    /// displayed quest, each state's ResolveQuestIcon frame and layer is one the minimap movie draws, FUN_140763210's
+    /// description and format keys are common strings, FUN_140763550's line is filled; at the complete npc the quest's
+    /// own record gives state 1 (not complete) and state 2 (complete), and the complete one is the npc's minimap mark
+    /// (0x30 beats any start) with its line in the tooltip.
+    /// </summary>
+    [TestCase("MS2_DATA", "KR")]
+    [TestCase("MS2_GMS2_DATA", "NA")]
+    public void EveryNpcQuestHasAMinimapIconPerState(string env, string region)
+    {
+        var data = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(data) || !System.IO.Directory.Exists(data)) Assert.Ignore(env + " is not set");
+        using var packs = new Ms2.Formats.Pack.PackSet(data);
+        var t = QuestTable.Load(packs, new[] { "en" }, region, _ => true);
+        var marks = new NpcQuestMarks(t);
+        var ctx = new Ctx { Level = 99 };
+        var rules = new QuestRules(t, ctx);
+        var suffixes = new[] { "_epic", "_world", "_repeat", "_event" };
+        var frames = new HashSet<string>(suffixes.Select(x => "quest" + x).Concat(suffixes.Select(x => "quest_complete" + x))) { "quest_start" };
+        var layers = new HashSet<string>(suffixes.Select(x => "quest" + x));
+        var bad = new List<string>();
+        var seen = new SortedDictionary<string, int>();
+        int quests = 0, npcs = 0;
+        var withQuests = new HashSet<int>();
+        foreach (var q in t.Quests.OrderBy(q => q.Id))
+        {
+            int id = (int)q.Id;
+            if (!marks.IsDisplayed(id)) continue;
+            foreach (int npc in new[] { q.StartNpc, q.CompleteNpc })
+                if (npc != 0 && marks.Quests(npc).Contains(id)) withQuests.Add(npc);
+            if (q.CompleteNpc == 0 || !marks.Quests(q.CompleteNpc).Contains(id)) continue;
+            quests++;
+            ctx.Records.Clear();
+            void Check(string what, int state, int level)
+            {
+                var (frame, layer) = marks.MinimapIcon(new NpcQuestMarks.Mark(state, id, q.Type), ctx);
+                seen[what + " " + frame] = seen.GetValueOrDefault(what + " " + frame) + 1;
+                if (!frames.Contains(frame) || !layers.Contains(layer)) bad.Add($"{id} {what}: frame {frame} layer {layer}");
+                var (desc, format) = marks.GuideKeys(id, state, ctx, level);
+                if (desc == null || string.IsNullOrEmpty(t.Common(desc))) bad.Add($"{id} {what}: desc {desc}");
+                if (format == null || string.IsNullOrEmpty(t.Common(format))) bad.Add($"{id} {what}: format {format}");
+                if (string.IsNullOrEmpty(marks.StateLine(id, state, ctx, level, t.Common))) bad.Add($"{id} {what}: no line");
+            }
+            Check("start", 0, 99);
+            if (q.Require.Level > 0) Check("start below level", 0, 0);
+            ctx.Records[id] = Active(id, false);
+            Check("progress", 1, 99);
+            if (marks.Score(q.CompleteNpc, id, ctx, rules, out int s1) == 0 || s1 != 1) bad.Add($"{id} progress at {q.CompleteNpc}: state {s1}");
+            ctx.Records[id] = Active(id, true);
+            Check("taken complete", 1, 99);
+            Check("completable", 2, 99);
+            var m = marks.GetMinimap(q.CompleteNpc, ctx, rules, 99, t.Common);
+            if (m.Mark.State != 2 || m.Mark.QuestId != id) bad.Add($"{id} at {q.CompleteNpc}: mark {m.Mark}");
+            else if (!m.HasQuest || !frames.Contains(m.Frame) || !layers.Contains(m.Layer) || string.IsNullOrEmpty(m.Guide)
+                || !m.Text.Contains(marks.StateLine(id, 2, ctx, 99, t.Common)))
+                bad.Add($"{id} at {q.CompleteNpc}: minimap {m.Frame} {m.Layer} guide '{m.Guide}'");
+        }
+        npcs = withQuests.Count;
+        TestContext.Out.WriteLine($"{env}: {npcs} npcs with a displayed quest, {quests} quests checked");
+        foreach (var (k, v) in seen) TestContext.Out.WriteLine($"  {k}: {v}");
+        foreach (var b in bad.Take(40)) TestContext.Out.WriteLine("bad " + b);
+        Assert.That(quests, Is.GreaterThan(1000));
+        Assert.That(bad, Is.Empty, $"{bad.Count} bad");
+    }
+
     [Test]
     public void TheIconSuffixFollowsTheQuestKind()
     {

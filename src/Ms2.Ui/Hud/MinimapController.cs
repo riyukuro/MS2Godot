@@ -12,7 +12,7 @@ namespace Ms2.Ui.Hud;
 /// proxy and place (createEntity with UIMinimapEntity::BuildData) and every 60 ms puts the player's entity and the map under
 /// it. The movie's own MinimapDialogMax draws everything (icons, labels, guide arrows, zoom, the player row).
 /// </summary>
-public sealed class MinimapController : UiController
+public sealed partial class MinimapController : UiController
 {
     /// <summary>The ctor @0x141a35220 (uiminimapentity.cpp:1071) does not call SetTweenEnabled: m_c4 stays 0, so no
     /// startOpen / startClose.</summary>
@@ -465,6 +465,7 @@ public sealed class MinimapController : UiController
             ("channelgroup", ""),
             ("mapAlphaPrefix", Model.Tables.Common("s_word_minimap_alpha") ?? ""),
             ("bgAlphaPrefix", Model.Tables.Common("s_word_mapbg_alpha") ?? "")));
+        maxPanel = Host.Child("m_maxpanel") as AsObject;     // m_maxPanel = GetChild("m_maxpanel") (uiminimapentity.cpp:3471)
     }
 
     /// <summary>
@@ -537,6 +538,8 @@ public sealed class MinimapController : UiController
         // RemovePingEntities @0x141a47190 (FUN_141a3f730: removeEntity(clip, "")), then ClearEntityContainers' m_pings.RemoveAll
         foreach (var p in pings.Values) if (p.Clip != null) Host.Invoke("removeEntity", p.Clip, "");
         pings.Clear();
+        // the npc proxies (FUN_141a3f730: no character id) and RemoveNamedEntities ("")
+        RemoveNpcAndNamedEntities();
         playerClip = arrow = null;
         playerState = "idle";
         if (LocalPlayer != null)
@@ -548,6 +551,7 @@ public sealed class MinimapController : UiController
         }
         // the proxies without a portal (WorldService's CAtlMap order; here the order they were added), before the portals
         foreach (var o in others) CreateOther(o);
+        foreach (var n in npcs) CreateNpc(n);
         foreach (var m in Marks)
         {
             m.Visible = m.Entity.Visible;
@@ -556,6 +560,7 @@ public sealed class MinimapController : UiController
             m.Clip = Create(m.Entity.Icon, m.Entity.Frame, m.Entity.Layer, m.Entity.Label ?? "", !string.IsNullOrEmpty(m.Entity.Label),
                 m.ShowGuide && m.Visible, m.Entity.InFieldNpc, m.Position(), m.Visible, userFunction: m.HasPortal ? mark.UserFunction : null);
         }
+        BuildNamed();
         Host.Invoke("buildPlayers");
     }
 
@@ -564,19 +569,19 @@ public sealed class MinimapController : UiController
     /// icon, frame, layer, label and guide, and x / y from WorldToMinimap, visible only when the point projects.
     /// </summary>
     AsObject Create(string icon, string frame, string layer, string text, bool showText, bool showGuide, bool inFieldNpc, Vec3 pos, bool visible,
-        int groupType = 1, Func<object[], object> userFunction = null)
+        int groupType = 1, Func<object[], object> userFunction = null, string guideName = "")
     {
         if (string.IsNullOrEmpty(icon)) return null;
-        return Host.Invoke("createEntity", Data(icon, frame, layer, text, showText, showGuide, inFieldNpc, pos, visible, groupType, userFunction)) as AsObject;
+        return Host.Invoke("createEntity", Data(icon, frame, layer, text, showText, showGuide, inFieldNpc, pos, visible, groupType, userFunction, guideName)) as AsObject;
     }
 
     /// <summary>UIMinimapEntity::BuildData (uiminimapentity.cpp:373).</summary>
     AsObject Data(string icon, string frame, string layer, string text, bool showText, bool showGuide, bool inFieldNpc, Vec3 pos, bool visible,
-        int groupType, Func<object[], object> userFunction)
+        int groupType, Func<object[], object> userFunction, string guideName = "")
     {
         bool inView = WorldToMinimap(pos, out var x, out var y);
         var data = Host.Obj(("mcname", icon ?? ""), ("frame", frame ?? ""), ("layer", layer ?? ""), ("showtext", showText),
-            ("showguide", showGuide), ("name", text), ("guideName", ""), ("inFieldNpc", inFieldNpc), ("groupType", groupType),
+            ("showguide", showGuide), ("name", text), ("guideName", guideName ?? ""), ("inFieldNpc", inFieldNpc), ("groupType", groupType),
             ("x", (float)x), ("y", (float)y), ("visible", inView && visible));
         if (userFunction != null) Host.Set(data, "userFunction", userFunction);
         return data;
@@ -584,11 +589,9 @@ public sealed class MinimapController : UiController
 
     /// <summary>
     /// InvalidateEntities (uiminimapentity.cpp:2078): m_210, m_211 and m_212 set, so the next kind-4 refresh redraws every
-    /// portal (RefreshPortal) and the next refresh the named objects (RefreshNamed).
-    /// STILL-OPEN: RefreshNamed and the overlap pass (FUN_141a42bb0, which reads m_212) are not ported: m_211 is only
-    /// cleared, m_212 not kept.
+    /// portal (RefreshPortal), the next refresh the named objects (RefreshNamed) and its tail the overlap pass.
     /// </summary>
-    public void InvalidateEntities() => entitiesInvalid = namedInvalid = true;
+    public void InvalidateEntities() => entitiesInvalid = namedInvalid = overlapInvalid = true;
 
     /// <summary>
     /// UIQuestEventListener vfunc_o178_1 / _2 / _3 / _5 (@0x141a38cb0, @0x141a38de0, @0x141a38f10, @0x141a390c0,
@@ -597,6 +600,7 @@ public sealed class MinimapController : UiController
     /// </summary>
     public void OnQuestEvent(bool hasData)
     {
+        questStamp++;      // m_978: the npcs' quest states are read again
         if (IsClosed) return;
         if (hasData) InvalidateEntities();
     }
@@ -604,6 +608,7 @@ public sealed class MinimapController : UiController
     /// <summary>vfunc_o178_7 @0x141a39060: a quest result; when the dialog is open, InvalidateEntities.</summary>
     public void OnQuestResult()
     {
+        questStamp++;
         if (IsClosed) return;
         InvalidateEntities();
     }
@@ -635,8 +640,9 @@ public sealed class MinimapController : UiController
 
     /// <summary>
     /// vfunc_15 (uiminimapentity.cpp:1173): once the field image is in and the dialog is not minimized, every 60 ms
-    /// (m_timer474.Check(60)): RefreshLocalPlayer, then each moving proxy's UpdateProxyPosition. Call each frame with the
-    /// time in ms.
+    /// (m_timer474.Check(60)): RefreshLocalPlayer, then each proxy of the turn's kind (m_47c 1..4: pc, npc, pet, portal)
+    /// through RefreshProxy and every other one through UpdateProxyPosition; then m_210 cleared after a portal turn, m_211
+    /// through RefreshNamed and the overlap pass (FUN_141a42bb0). Call each frame with the time in ms.
     /// </summary>
     public void Process(ulong nowMs)
     {
@@ -652,6 +658,14 @@ public sealed class MinimapController : UiController
             if (refreshKind == 1) RefreshOtherPlayer(o);
             else if (o.Visible && o.Clip != null && !ProjectClip(o.Position(), o.Clip)) { o.Visible = false; Show(o.Clip, false); }
         }
+        for (int i = 0; i < npcs.Count; i++)
+        {
+            // kind 2 is an npc (RefreshProxy -> RefreshNpc)
+            var n = npcs[i];
+            if (!n.Kept) continue;
+            if (refreshKind == 2) RefreshNpc(n);
+            else if (n.Visible && !ProjectClip(n.Position(), n.Clip)) { n.Visible = false; Show(n.Clip, false); }
+        }
         foreach (var m in Marks)
         {
             // kind 4 is a portal (RefreshProxy -> RefreshPortal); UpdateProxyPosition returns for one
@@ -662,7 +676,8 @@ public sealed class MinimapController : UiController
         }
         if (entitiesInvalid && refreshKind == 4) entitiesInvalid = false;
         if (++refreshKind >= 5) refreshKind = 1;
-        if (namedInvalid) namedInvalid = false;
+        if (namedInvalid) { namedInvalid = false; RefreshNamed(); }
+        Overlap();
     }
 
     /// <summary>ProjectClip (uiminimapentity.cpp:2424): shown at the projected point; false when it does not project.</summary>
@@ -753,14 +768,15 @@ public sealed class MinimapController : UiController
                 if (args.Length >= 3) { centerX = (float)Num(args[0]); centerY = (float)Num(args[1]); scale = (float)Num(args[2]); }
                 return true;
             case "OnChangeMode":
-                if (args.Length > 0) FullMap = args[0] is bool b && b;     // m_fullmap (m_212: the named refresh, none here)
+                if (args.Length > 0) { FullMap = args[0] is bool b && b; overlapInvalid = true; }     // m_fullmap, m_212
                 return true;
+            case "OnWheelStepChange": overlapInvalid = true; return true;     // m_212
             case "OnWorldMap": WorldMap?.Invoke(); return true;      // ToggleDialog(0x4e42) (uiminimapentity.cpp:1253)
             case "OnChangeChannel":
                 // PopInt; WorldService::FUN_141bc80c0(channel) false: ApplySelectedChannel (uiminimapentity.cpp:1274)
                 if (args.Length > 0 && !ChangeChannel(Rt.ToInt32(args[0]))) ApplySelectedChannel();
                 return true;
-            case "OnToggleMode": case "OnCheckIcon": case "OnWheelStepChange":
+            case "OnToggleMode": case "OnCheckIcon":
             case "OnMorePlayers": case "OnReport": case "OnPopupMenu":
                 return true;        // the other dialogs, server and options they reach are not here
         }

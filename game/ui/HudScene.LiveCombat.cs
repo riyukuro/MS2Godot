@@ -65,9 +65,6 @@ public partial class HudScene
     /// <summary>Opens the inventory (the guide's InventoryDialog occurrence) when it is shut; the character window through the same menu route.</summary>
     public bool OpenInventoryScripted() { if (inventory == null || inventory.IsClosed) OpenInventory(); return inventory is { IsClosed: false }; }
 
-    /// <summary>Shuts every dialog, then opens one of the everyday windows the way its menu button does (inventory: the guide's
-    /// InventoryDialog occurrence, quest: the quest log toggle, sysmenu: the system menu); whether it is open. A live shot of the
-    /// same window in two builds compares how the whole swf UI draws.</summary>
     /// <summary>The quest log's give-up button for a quest: the log opened when it is shut, then its movie's onGiveUpQuest
     /// (GiveUpQuest, uiquestdialog.cpp:1792); whether the open log took it.</summary>
     public bool QuestLogGiveUpScripted(int questId)
@@ -81,6 +78,19 @@ public partial class HudScene
     /// <summary>Whether the minimap's mark of a portal shows; null without the minimap or the mark.</summary>
     public bool? MinimapPortalMarkScripted(int portalId) => minimapSide?.PortalMarkShown(portalId);
 
+    /// <summary>The minimap's entity of an npc: its icon, frame and layer and whether it shows; null without the minimap or the entity.</summary>
+    public string MinimapNpcMarkScripted(int objectId) =>
+        minimapSide?.Npcs.FirstOrDefault(n => n.ObjectId == objectId) is { Clip: not null } n
+            ? $"icon {n.Icon}, frame {n.State}, layer {n.Layer}, guide {n.ShowGuide}, quest target {n.QuestTarget}, shown {minimapSide.NpcMarkShown(objectId)}"
+            : null;
+
+    /// <summary>The minimap's entity of an interact object: its icon and layer and whether it shows; null without it.</summary>
+    public string MinimapNamedMarkScripted(string name) =>
+        minimapSide?.NamedMark(name) is { } m ? $"icon {m.Icon}, layer {m.Layer}, shown {minimapSide.NamedMarkShown(name)}" : null;
+
+    /// <summary>Shuts every dialog, then opens one of the everyday windows the way its menu button does (inventory: the guide's
+    /// InventoryDialog occurrence, quest: the quest log toggle, sysmenu: the system menu); whether it is open. A live shot of the
+    /// same window in two builds compares how the whole swf UI draws.</summary>
     public bool OpenWindowScripted(string name)
     {
         CloseAllDialogs();

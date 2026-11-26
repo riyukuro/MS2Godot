@@ -22,6 +22,9 @@ public partial class LiveSession
     public Action<LiveInteractObject> InteractStateDrawn;
     /// <summary>The field's interact draws (World.FieldInteractDraws.Remove): an object removed (InteractObject mode 10).</summary>
     public Action<LiveInteractObject> InteractRemoved;
+    /// <summary>Each object state change and each object removed, for the other readers (the minimap's RefreshNamedObject,
+    /// WorldService::FUN_141bc6af0, and RemoveNamedObject).</summary>
+    public event Action<LiveInteractObject> InteractChanged, InteractGone;
     /// <summary>The field's interact draws (World.FieldInteractDraws.Effect): a result's success effect (true, kept) or a remove's
     /// one-shot (false).</summary>
     public Action<LiveInteractObject, string, bool> InteractEffect;
@@ -927,9 +930,9 @@ public partial class LiveSession
             if (s.player != null && IsInstanceValid(s.player)) s.player.StopInteractAnim();
         }
 
-        public void OnObjectStateChanged(LiveInteractObject obj) => s.InteractStateDrawn?.Invoke(obj);
+        public void OnObjectStateChanged(LiveInteractObject obj) { s.InteractStateDrawn?.Invoke(obj); s.InteractChanged?.Invoke(obj); }
 
-        public void OnObjectRemoved(LiveInteractObject obj) => s.InteractRemoved?.Invoke(obj);
+        public void OnObjectRemoved(LiveInteractObject obj) { s.InteractRemoved?.Invoke(obj); s.InteractGone?.Invoke(obj); }
 
         public void OnObjectSuccessEffect(LiveInteractObject obj, string effectAsset) => s.InteractEffect?.Invoke(obj, effectAsset, true);
 

@@ -1920,6 +1920,283 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    static readonly Ms2.Formats.World.MinimapInfo NpcView = new() { FrLeft = -1000, FrRight = 1000, FrBottom = -1000, FrTop = 1000, ScrRight = 1920, ScrBottom = 1200, ImgRight = 1920, ImgBottom = 1200 };
+
+    static (MinimapController c, UiHost h) NpcMinimap(Action<MinimapController> setup = null)
+    {
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false), Viewport = NpcView };
+        setup?.Invoke(c);
+        var h = Load(c, Model());
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        return (c, h);
+    }
+
+    static MinimapController.Npc FieldNpc(int objectId, Ms2.Formats.World.NpcRow row, Func<Ms2.Formats.Model.Vec3> at, Func<bool> dead = null, Func<bool> shown = null) =>
+        new() { ObjectId = objectId, Row = row, Name = "npc" + objectId, Position = at, Dead = dead ?? (() => false), Shown = shown ?? (() => true) };
+
+    static void NpcRound(MinimapController c, ref ulong now) { for (int i = 0; i < 4; i++) { c.Process(now); now += 60; } }
+
+    [Test]
+    public void MinimapNpcQuestMarkFollowsTheQuestStateAtTheNpcRefresh()
+    {
+        // UpdateNpc (uiminimapentity.cpp:3229-3270): a quest mark (GetQuestState's icon not 0xb) is icon "quest" with
+        // ResolveQuestIcon's frame and layer and the guide on; RefreshNpc (:3271-3313) on the kind 2 turn: the frame alone is
+        // gotoAndPlay on the clip, anything else changeEntityData. The quest state is read again only after a quest event (m_978).
+        var quest = new NpcQuestMarks.Minimap(new NpcQuestMarks.Mark(0, 100, 0), "quest_epic", "quest_epic", "ablenow", "can start");
+        int reads = 0;
+        var (c, h) = NpcMinimap(c => c.NpcQuest = id => { reads++; return id == 11000004 ? quest : NpcQuestMarks.Minimap.None; });
+        bool shown = true;
+        c.AddNpc(FieldNpc(5, new Ms2.Formats.World.NpcRow { Id = 11000004, Friendly = 2 }, () => default, shown: () => shown));
+        var n = c.Npcs[0];
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(n.Clip, Is.Not.Null);
+        Assert.That((n.Icon, n.State, n.Layer, n.ShowGuide, n.GuideName), Is.EqualTo(("quest", "quest_epic", "quest_epic", true, "ablenow")));
+        Assert.That(ClipShown(h, n.Clip), Is.True);
+        c.AddNpc(FieldNpc(5, null, () => default));
+        Assert.That(c.Npcs, Has.Count.EqualTo(1), "a held npc is not added twice");
+        ulong now = 1000;
+        NpcRound(c, ref now);
+        int read = reads;
+
+        // the objectives done, but no quest event yet: the proxy keeps the state it read
+        quest = quest with { Mark = new NpcQuestMarks.Mark(2, 100, 0), Frame = "quest_complete_epic" };
+        NpcRound(c, ref now);
+        Assert.That(n.State, Is.EqualTo("quest_epic"));
+        Assert.That(reads, Is.EqualTo(read), "no quest event: no new read");
+        // the event: the next kind 2 turn reads it; only the frame moved, so the same clip plays it
+        var clip = n.Clip;
+        c.OnQuestEvent(true);
+        NpcRound(c, ref now);
+        Assert.That(reads, Is.EqualTo(read + 1));
+        Assert.That((n.Icon, n.State, n.Layer), Is.EqualTo(("quest", "quest_complete_epic", "quest_epic")));
+        Assert.That(n.Clip, Is.SameAs(clip));
+        // the quest rewarded: the npc's own icon again, through changeEntityData
+        quest = NpcQuestMarks.Minimap.None;
+        c.OnQuestResult();
+        NpcRound(c, ref now);
+        // SetFromNpcData leaves m_guideName: the guide is off, its text the last quest's
+        Assert.That((n.Icon, n.State, n.Layer, n.ShowGuide, n.GuideName), Is.EqualTo(("friendly", "", "friendly", false, "ablenow")));
+        Assert.That(n.Clip, Is.Not.Null);
+        Assert.That(ClipShown(h, n.Clip), Is.True);
+        // IsProxyVisible: the npc's actor hidden hides the entity
+        shown = false;
+        NpcRound(c, ref now);
+        Assert.That(ClipShown(h, n.Clip), Is.False);
+        Assert.That(c.NpcMarkShown(5), Is.False);
+        // a rebuild makes its entity again; RemoveProxy drops it
+        var first = n.Clip;
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        Assert.That(n.Clip, Is.Not.Null.And.Not.SameAs(first));
+        c.RemoveNpc(5);
+        Assert.That(c.Npcs, Is.Empty);
+        Assert.That(n.Clip, Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapDeadNpcKeepsABossIconAtDieAndHidesAnyOther()
+    {
+        // UpdateNpc's dead branch (uiminimapentity.cpp:3255-3262): IsBossIcon keeps the entity at frame "die", any other is
+        // hidden; an event_icon npc (property tag 13) is event_boss (GetNpcIcon)
+        bool dead = false;
+        var (c, h) = NpcMinimap();
+        var boss = new Ms2.Formats.World.NpcRow { Id = 21000001, Class = 4 };
+        var evt = new Ms2.Formats.World.NpcRow { Id = 21000002, PropertyTags = new[] { "event_icon" } };
+        var mob = new Ms2.Formats.World.NpcRow { Id = 21000003 };
+        Assert.That(Ms2.Formats.World.MinimapIcons.NpcIcon(evt), Is.EqualTo("event_boss"));
+        c.AddNpc(FieldNpc(1, boss, () => default, () => dead));
+        c.AddNpc(FieldNpc(2, evt, () => default, () => dead));
+        c.AddNpc(FieldNpc(3, mob, () => default, () => dead));
+        Assert.That(c.Npcs.Select(n => (n.Icon, n.State)), Is.EqualTo(new[] { ("boss", "alive"), ("event_boss", "alive"), ("enemy", "") }));
+        ulong now = 1000;
+        dead = true;
+        NpcRound(c, ref now);
+        Assert.That(c.Npcs.Select(n => (n.Icon, n.State)), Is.EqualTo(new[] { ("boss", "die"), ("event_boss", "die"), ("enemy", "") }));
+        Assert.That(c.Npcs.Select(n => c.NpcMarkShown(n.ObjectId)), Is.EqualTo(new bool?[] { true, true, false }));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapQuestTargetMonstersGoThroughTheOverlapPass()
+    {
+        // UpdateNpc (uiminimapentity.cpp:3263-3268): an npc that is not a dead boss and that an active quest targets
+        // (CQuestNavigator::HasMap) is quest_target_monster on the npc layer with m_64; FUN_141a42bb0 (:2321-2368), once m_212
+        // is set (a new target, OnChangeMode, OnWheelStepChange, InvalidateEntities): the first target in each cell of
+        // m_minimapCell pixels shows, the others hide (the test camera at rotation 0 draws world y and z)
+        var far = new Ms2.Formats.Model.Vec3(0, 300, 300);
+        var (c, h) = NpcMinimap(c => { c.QuestTargetNpc = id => id is 21000003 or 21000001; c.OverlapCell = 50; });
+        var mob = new Ms2.Formats.World.NpcRow { Id = 21000003 };
+        c.AddNpc(FieldNpc(1, mob, () => default));
+        c.AddNpc(FieldNpc(2, mob, () => new Ms2.Formats.Model.Vec3(0, 3, 3)));
+        c.AddNpc(FieldNpc(3, mob, () => far));
+        c.AddNpc(FieldNpc(4, new Ms2.Formats.World.NpcRow { Id = 21000001, Class = 4 }, () => new Ms2.Formats.Model.Vec3(0, 300, -300)));
+        c.AddNpc(FieldNpc(5, new Ms2.Formats.World.NpcRow { Id = 21000004 }, () => default));
+        var n = c.Npcs;
+        Assert.That(n.Select(x => (x.Icon, x.Layer, x.QuestTarget)), Is.EqualTo(new[]
+        {
+            ("quest_target_monster", "npc", true), ("quest_target_monster", "npc", true), ("quest_target_monster", "npc", true),
+            ("quest_target_monster", "npc", true), ("enemy", "npc", false),
+        }), "bBoss is set by the dead branch alone: a live boss target is the target mark too");
+        ulong now = 1000;
+        c.Process(now); now += 60;
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(n.Select(x => c.NpcMarkShown(x.ObjectId)), Is.EqualTo(new bool?[] { true, false, true, true, true }),
+            "the second target shares the first one's cell");
+        // the second one moves away: after its kind 2 turn and a wheel step it has a cell of its own
+        n[1].Position = () => new Ms2.Formats.Model.Vec3(0, -300, 300);
+        NpcRound(c, ref now);
+        Assert.That(c.OnCallback("OnWheelStepChange", new object[] { 1 }), Is.True);
+        c.Process(now + 1000);
+        Assert.That(c.NpcMarkShown(2), Is.True);
+        // the third one moves onto the first: the overlap after InvalidateEntities hides it
+        far = new Ms2.Formats.Model.Vec3(0, 1, 1);
+        NpcRound(c, ref now);
+        c.InvalidateEntities();
+        c.Process(now + 2000);
+        Assert.That(n.Select(x => c.NpcMarkShown(x.ObjectId)), Is.EqualTo(new bool?[] { true, true, false, true, true }));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapNamedObjectsFollowTheirStateAndTheQuestTargets()
+    {
+        // AddNamedObject / UpdateNamed (uiminimapentity.cpp:1839-1852, 3347-3372): a reactable object an active quest targets
+        // (HasNpc) is quest_target_object, any other its row's icon, shown when reactable; a watchtower (type 9) is always shown
+        // at frame enabled / disabled; RefreshNamedObject (:1794) on a state change; RefreshNamed (m_211) after
+        // InvalidateEntities; none in a house field
+        int heal = 1, cache = 1;
+        bool target = true;
+        var list = new List<MinimapController.InteractObject>
+        {
+            new() { Name = "heal", RowId = 11000008, Icon = "heal", State = () => heal },
+            new() { Name = "cache", RowId = 11000009, Icon = "", State = () => cache, Position = new Ms2.Formats.Model.Vec3(200, 0, 0) },
+            new() { Name = "tower", RowId = 15000001, Icon = "watchtower", Type = 9, State = () => 0 },
+            new() { Name = "plain", RowId = 11000010, Icon = "" },
+        };
+        var (c, h) = NpcMinimap(c => { c.InteractObjects = () => list; c.QuestTargetObject = id => target && id == 11000009; });
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.NamedMark("heal"), Is.EqualTo(("heal", "interact")));
+        Assert.That(c.NamedMark("cache"), Is.EqualTo(("quest_target_object", "interact")));
+        Assert.That(c.NamedMark("tower"), Is.EqualTo(("watchtower", "watchtower")));
+        Assert.That(c.NamedMark("plain"), Is.Null, "no icon and no quest: no entity");
+        ulong now = 1000;
+        c.Process(now); now += 60;
+        Assert.That(c.NamedMarkShown("heal"), Is.True);
+        Assert.That(c.NamedMarkShown("cache"), Is.True);
+        Assert.That(c.NamedMarkShown("tower"), Is.True);
+        // the heal used up (state 0): the prop's state change hides it
+        heal = 0;
+        c.RefreshNamedObject(list[0]);
+        Assert.That(c.NamedMarkShown("heal"), Is.False);
+        // the quest done: the next refresh after InvalidateEntities (m_211) takes the target mark down
+        target = false;
+        c.Process(now); now += 60;
+        Assert.That(c.NamedMark("cache")?.Icon, Is.EqualTo("quest_target_object"), "nothing asked for a refresh");
+        c.InvalidateEntities();
+        c.Process(now); now += 60;
+        Assert.That(c.NamedMark("cache")?.Icon, Is.EqualTo(""));
+        Assert.That(c.NamedMarkShown("cache"), Is.False);
+        c.RemoveNamedObject("heal");
+        Assert.That(c.NamedMark("heal"), Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // a house field has no named objects
+        var (hc, hh) = NpcMinimap(c => { c.InteractObjects = () => list; c.HouseField = true; });
+        Assert.That(hc.NamedMark("tower"), Is.Null);
+        hc.RefreshNamedObject(list[2]);
+        Assert.That(hc.NamedMark("tower"), Is.Null);
+        Assert.That(hh.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapNpcTooltips()
+    {
+        // vfunc_5 (uiminimapentity.cpp:716-761) through OnUserFunction "tooltip": a quest mark's lines; a boss (class 4 or 6)
+        // s_worldmap_tooltip_boss with "??" under hide_hpbar_level, npcID and bossFrameName; else GetNpcTooltip (:436-447):
+        // the function name in the friendly colour's FONT tag (lower-case hex)
+        var quest = new NpcQuestMarks.Minimap(new NpcQuestMarks.Mark(0, 100, 0), "quest_epic", "quest_epic", "g", "the quest lines");
+        bool hasQuest = true;
+        var (c, h) = NpcMinimap(c =>
+        {
+            c.NpcQuest = id => hasQuest && id == 11000004 ? quest : NpcQuestMarks.Minimap.None;
+            c.ColorConstant = k => k == "NameTagColorFriendly" ? 0xA2FF8Cu : 0u;
+        });
+        var m = c.Model;
+        var shop = new Ms2.Formats.World.NpcRow { Id = 11000004, Friendly = 2 };
+        c.AddNpc(FieldNpc(1, shop, () => default));
+        var boss = new Ms2.Formats.World.NpcRow { Id = 11000010, Class = 4, Level = 60, PropertyTags = new[] { "hide_hpbar_level" } };
+        c.AddNpc(FieldNpc(2, boss, () => default));
+        var evt = new Ms2.Formats.World.NpcRow { Id = 11000011, Class = 6, Level = 45, PropertyTags = new[] { "event_icon" } };
+        c.AddNpc(FieldNpc(3, evt, () => default));
+        AsObject Tip(int i) => c.Npcs[i].UserFunction(new object[] { "tooltip" }) as AsObject;
+        Assert.That(h.Get(Tip(0), "text"), Is.EqualTo("the quest lines"));
+        hasQuest = false;
+        c.OnQuestEvent(true);
+        ulong now = 1000;
+        NpcRound(c, ref now);
+        string fn = m.Tables.NpcFunctionName(11000004);
+        Assert.That(fn, Is.Not.Empty);
+        string shopText = (string)h.Get(Tip(0), "text");
+        TestContext.WriteLine("shop: " + shopText);
+        Assert.That(shopText, Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_minimap_tooltip_function_npc"), "center",
+            $"<FONT color='#a2ff8c'>{fn}</FONT>", m.Tables.NpcNameWithTitle(11000004))));
+        var bt = Tip(1);
+        Assert.That(h.Get(bt, "text"), Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_worldmap_tooltip_boss"), m.Tables.NpcNameWithTitle(11000010), "??")));
+        Assert.That((System.Convert.ToInt64(h.Get(bt, "npcID")), h.Get(bt, "bossFrameName")), Is.EqualTo((11000010L, (object)"boss")));
+        var et = Tip(2);
+        Assert.That(h.Get(et, "text"), Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_worldmap_tooltip_boss"), m.Tables.NpcNameWithTitle(11000011), (ushort)45)));
+        Assert.That(h.Get(et, "bossFrameName"), Is.EqualTo("event"));
+        Assert.That(c.Npcs[0].UserFunction(new object[] { "click" }), Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapQuestFramesAreTheMoviesOwn()
+    {
+        // ResolveQuestIcon's frames (every one the whole-list quest test gives over both data sets): createEntity's "quest"
+        // icon goes to each as a frame label of the movie's own
+        var frames = new[] { "quest_epic", "quest_world", "quest_repeat", "quest_event", "quest_start", "quest_complete_epic",
+            "quest_complete_world", "quest_complete_repeat", "quest_complete_event" };
+        string frame = frames[0];
+        var (c, h) = NpcMinimap(c => c.NpcQuest = _ => new NpcQuestMarks.Minimap(new NpcQuestMarks.Mark(0, 100, 0), frame, "quest_epic", "g", "t"));
+        var at = new HashSet<int>();
+        foreach (var f in frames)
+        {
+            frame = f;
+            c.AddNpc(FieldNpc(1, new Ms2.Formats.World.NpcRow { Id = 11000004, Friendly = 2 }, () => default));
+            var clip = c.Npcs[0].Clip;
+            Assert.That(h.Get(clip, "currentLabel"), Is.EqualTo(f));
+            Assert.That(at.Add(System.Convert.ToInt32(h.Get(clip, "currentFrame"))), Is.True, f + " has a frame of its own");
+            c.RemoveNpc(1);
+        }
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapNpcsAllocateNothingPerFrame()
+    {
+        // vfunc_15 with moving npc proxies, quest targets among them: no quest event and no state change, so no quest read,
+        // no changeEntityData and no overlap pass; each move is DisplayObject's own x / y: 0 B per frame
+        var (c, h) = NpcMinimap(c => c.QuestTargetNpc = id => id == 21000003);
+        float t = 0;
+        c.LocalPlayer = () => (new Ms2.Formats.Model.Vec3(t, 0, 0), 90f, false);
+        var mob = new Ms2.Formats.World.NpcRow { Id = 21000003 };
+        var friend = new Ms2.Formats.World.NpcRow { Id = 11000004, Friendly = 2 };
+        for (int i = 0; i < 8; i++)
+        {
+            int k = i;
+            c.AddNpc(FieldNpc(100 + i, i % 2 == 0 ? mob : friend, () => new Ms2.Formats.Model.Vec3(t + 60 * k, -t, 0)));
+        }
+        ulong now = 1000;
+        for (int i = 0; i < 16; i++) { c.Process(now); now += 60; t += 1; }
+        Assert.That(c.Npcs.All(n => n.Clip != null), Is.True);
+        double At3() => System.Convert.ToDouble(h.Get(c.Npcs[3].Clip, "x")) + System.Convert.ToDouble(h.Get(c.Npcs[3].Clip, "y"));
+        var before3 = At3();
+        long used = Alloc.Least(() => { for (int i = 0; i < 400; i++) { c.Process(now); now += 16; t += 0.5f; } });
+        Assert.That(used, Is.EqualTo(0), "bytes over 400 frames");
+        Assert.That(At3(), Is.Not.EqualTo(before3), "the proxy moved");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void UpperHudTokenAndMeratTooltips()
     {

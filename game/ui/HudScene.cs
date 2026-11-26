@@ -241,6 +241,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchQuestGuide = null;
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
+        unwatchMinimapNpcs?.Invoke();
+        unwatchMinimapNpcs = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; liveChannel.GameToGameFailed -= OnGameToGameFailed; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
         UnwatchReconnect();
         RevivalUnwatch();
@@ -1331,6 +1333,8 @@ public partial class HudScene : Node, IUiStageHost
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
+        try { MinimapNpcs(fc, c, model); }
+        catch (Exception e) { GD.PushWarning("minimap npcs: " + e.Message); }
         // the pcs already shown get their proxies with the rest (BuildEntities); later ones come through vfunc_3 / vfunc_4
         if (live != null) foreach (var pc in live.ShownPcs) c.AddOtherPlayer(MinimapPc(pc));
         else if (minimapPcsFixture) MinimapPcsFixture(c);
@@ -1355,6 +1359,7 @@ public partial class HudScene : Node, IUiStageHost
         live.FieldPcShown += shown;
         live.FieldPcLeft += left;
         unwatchMinimapPcs = () => { live.FieldPcShown -= shown; live.FieldPcLeft -= left; };
+        WatchMinimapNpcs();
     }
 
     Action unwatchMinimapPcs;
@@ -1424,9 +1429,9 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>
-    /// The field's proxies and places for BuildEntities: AddProxy's npcs (UpdateNpc: SetFromNpcData), the portals
-    /// (UpdatePortal / SetFromPortal, with their guide arrows), BuildTaxi (the first MS2TaxiStation world object),
-    /// BuildNamed (MS2InteractObject with the server's state) and BuildMapObjects (MS2Minimap). The icons and layers are
+    /// The field's places for BuildEntities: the portals (UpdatePortal / SetFromPortal, with their guide arrows), BuildTaxi
+    /// (the first MS2TaxiStation world object) and BuildMapObjects (MS2Minimap); the npcs and named objects are the
+    /// controller's own (<see cref="MinimapNpcs"/>). The icons and layers are
     /// <see cref="MinimapIcons"/>'s ports of UIMinimapEntity's.
     /// </summary>
     void MinimapMarks(World.FieldContents fc, List<Ms2.Ui.Hud.MinimapController.Mark> marks)
@@ -1436,13 +1441,6 @@ public partial class HudScene : Node, IUiStageHost
         var meta = FieldMeta.EntryOf(assets.Packs) != null ? QuestMapGraph.SharedMeta(assets.Packs) : null;
         var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, assets.Language),
             meta?.FieldNpcs ?? new Dictionary<int, List<int>>(), meta == null ? Array.Empty<int>() : meta.TaxiStations.Keys);
-        foreach (var n in fc.SpawnedNpcs)
-        {
-            var e = MinimapIcons.Npc(n.Row);
-            if (!e.Visible || !n.Root.Visible) continue;
-            var npc = n;
-            marks.Add(new() { Entity = e, Position = () => World.FieldPortals.ToMs2(npc.Position), Moves = true });
-        }
         // every portal of the field gets its proxy, a hidden one too: RefreshPortal shows it when FUN_14169d1d0 (the minimap
         // flag and IsShown) turns true. In a live field those are the server-listed portal's (LivePortals: shown after the
         // quest masks, minimap flag from FieldPortal 0x48), else the xblock's.
@@ -1470,12 +1468,6 @@ public partial class HudScene : Node, IUiStageHost
         {
             int bestLevel = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("TaxiCallBestDriverLevel", 25);
             Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), PlayerLevel >= bestLevel), taxi.Position, taxi: true);
-        }
-        foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2InteractObject")) ?? Enumerable.Empty<FieldEntity>())
-        {
-            int id = (int)e.Number("interactID");
-            var (icon, type) = id > 0 ? icons.InteractRow(assets.Packs, id) : ("", 0);
-            if (MinimapIcons.Named(icon, type, data.InteractState) is { Visible: true } named) Place(named, e.Position);
         }
         foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2Minimap")) ?? Enumerable.Empty<FieldEntity>())
             Place(MinimapIcons.MapObject(e.Get("MinimapIconFrame")), e.Position);

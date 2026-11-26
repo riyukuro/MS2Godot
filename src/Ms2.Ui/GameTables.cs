@@ -15,7 +15,7 @@ public sealed class GameTables
     readonly Dictionary<int, long> nextExp = new();
     readonly Dictionary<string, string> jobNames = new();
     readonly Dictionary<string, string> mapNames = new();
-    readonly Dictionary<string, string> mapTileDescs = new(), npcFunctionNames = new(), fieldEnterances = new(), raceNames = new();
+    readonly Dictionary<string, string> mapTileDescs = new(), npcFunctionNames = new(), interactNames = new(), fieldEnterances = new(), raceNames = new();
     readonly Func<string, string> common = _ => null;
     readonly Dictionary<string, string> titleNames = new(), itemNames = new();
     readonly Dictionary<int, string> statNames = new(), specialNames = new(), statOptions = new();
@@ -71,6 +71,7 @@ public sealed class GameTables
         mapTileDescs = r.MapTileDescs;
         commonResource = r.CommonResource;
         npcFunctionNames = r.NpcFunctionNames;
+        interactNames = r.InteractNames;
         fieldEnterances = r.FieldEnterances;
         raceNames = r.RaceNames;
         common = GameStrings.Common(r.CommonStrings, r.KeyNames);
@@ -179,7 +180,7 @@ public sealed class GameTables
         public Dictionary<int, float> EquipmentSellRates = new();
         public Dictionary<int, long> NextExp = new();
         public Dictionary<string, string> CommonResource = new();
-        public Dictionary<string, string> JobNames, MapNames, MapTileDescs, NpcFunctionNames, FieldEnterances, RaceNames,
+        public Dictionary<string, string> JobNames, MapNames, MapTileDescs, NpcFunctionNames, InteractNames, FieldEnterances, RaceNames,
             CommonStrings, KeyNames, TitleNames, ItemNames;
         public Dictionary<int, string> StatNames, StatOptions, SpecialNames;
         /// <summary>String tables stringstatname and stringspecialabilityname by id (the item option tables' value names).</summary>
@@ -241,6 +242,7 @@ public sealed class GameTables
             foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/commonresource.xml")).Root.Elements())
                 r.CommonResource.TryAdd(e.Name.LocalName, (string)e.Attribute("value") ?? "");
         r.NpcFunctionNames = s.Table("npcfunctionname", "name");
+        r.InteractNames = s.Table("interactname", "name");
         r.FieldEnterances = s.Table("stringfieldenterance", "name");
         r.RaceNames = s.Table("racename", "name");
         (r.CommonStrings, r.KeyNames) = s.CommonTables();
@@ -1235,6 +1237,8 @@ public sealed class GameTables
     public string MapTileDesc(int mapId) => mapTileDescs.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
     /// <summary>An npc's function title (string table 10 "npcFunctionName", table/string.xml); null = none.</summary>
     public string NpcFunctionName(int npcId) => npcFunctionNames.TryGetValue(npcId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
+    /// <summary>An interact object's name (string table 16 "interactName", table/string.xml, by the 8-digit object id); null = none.</summary>
+    public string InteractName(int objectId) => interactNames.TryGetValue(objectId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
     /// <summary>A dungeon room's name (string table 20 "stringFieldEnterance", by room id); null = none.</summary>
     public string FieldEnteranceName(int roomId) => fieldEnterances.TryGetValue(roomId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
     /// <summary>A race's name (string table 17 "raceName", parser raceName: by <see cref="Ms2.Formats.World.NpcTable.RaceKeys"/>); null = none.</summary>

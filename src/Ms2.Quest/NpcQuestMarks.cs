@@ -140,6 +140,122 @@ public sealed class NpcQuestMarks
     }
 
     /// <summary>
+    /// The minimap's view of an npc's quest state (UIMinimapDialog::UpdateNpc over the proxy's GetQuestState, m_wantText 1):
+    /// the mark; when it has a quest, ResolveQuestIcon's frame and layer and GetQuestGuideText's guide; and m_text, the
+    /// quest-target tooltip.
+    /// </summary>
+    public readonly record struct Minimap(Mark Mark, string Frame, string Layer, string Guide, string Text)
+    {
+        public static readonly Minimap None = new(Mark.None, "", "", "", "");
+        /// <summary>The mark has a quest (m_icon != 0xb).</summary>
+        public bool HasQuest => Mark.Icon != Mark.None.Icon;
+    }
+
+    /// <summary>
+    /// GetNpcQuestState(npc, state, 0) with m_wantText set (CProxyGameObject::UpdateQuestState, proxygameobject.cpp:382;
+    /// questmanager_2.cpp:1884), then UpdateNpc's quest half (uiminimapentity.cpp:3236-3246) for the minimap:
+    /// - the mark as <see cref="Get"/> gives it;
+    /// - m_text: every displayed quest with a non-zero score, each line FUN_140763550 (the state's format over the
+    ///   state's description, the quest's level and its name), joined by new lines, in s_minimap_tooltip_normal_alignleft
+    ///   (0x73f). The lines are sorted by score, then by level, both high first.
+    /// - ResolveQuestIcon's frame and layer, and GetQuestGuideText's guide (the state's description).
+    /// <paramref name="playerLevel"/> is the local pc's (vfunc_78); <paramref name="common"/> reads a common string by key.
+    /// STILL-OPEN: the sort's comparator (Unk_QmNpcQuestSort) reads a field it never set (an exe bug); its working order is
+    /// score then level, and std::sort is not stable, so the order of lines with the same score and level is not
+    /// defined. Here they keep the npc's list order.
+    /// </summary>
+    public Minimap GetMinimap(int npc, IQuestContext ctx, QuestRules rules, int playerLevel, Func<string, string> common)
+    {
+        var quests = Quests(npc);
+        var best = Mark.None;
+        int bestScore = 0;
+        List<(int Score, int Level, int Id, int State)> entries = null;
+        for (int i = 0; i < quests.Count; i++)
+        {
+            int id = quests[i];
+            if (!IsDisplayed(id)) continue;
+            int score = Score(npc, id, ctx, rules, out int state);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = new Mark(state, id, table.Quest(id)?.Type ?? 11);
+            }
+            if (score != 0) (entries ??= new()).Add((score, table.Quest(id)?.Level ?? 0, id, state));
+        }
+        if (best.Icon == Mark.None.Icon) return Minimap.None;
+        var lines = new List<string>(entries.Count);
+        foreach (var e in entries.OrderByDescending(e => e.Score).ThenByDescending(e => e.Level))
+            lines.Add(StateLine(e.Id, e.State, ctx, playerLevel, common));
+        string text = Ms2.Quest.ClientFormat.Format(common("s_minimap_tooltip_normal_alignleft"), string.Join("\n", lines));
+        var (frame, layer) = MinimapIcon(best, ctx);
+        string guide = common(GuideKeys(best.QuestId, best.State, ctx, playerLevel).Desc) ?? "";
+        return new Minimap(best, frame, layer, guide, text);
+    }
+
+    /// <summary>
+    /// ResolveQuestIcon @0x141a31c80 (uiminimapentity.cpp:451): state 1 shows "quest_complete" with the kind's suffix when
+    /// the taken quest (vfunc_o10_3) is complete, else "quest_start" without it; state 2 "quest_complete", state 0 "quest",
+    /// both with the suffix. The layer is "quest" with the suffix (<see cref="MinimapSuffix"/>). ("", "") for another state.
+    /// </summary>
+    public (string Frame, string Layer) MinimapIcon(Mark m, IQuestContext ctx)
+    {
+        string frame;
+        bool suffix = true;
+        switch (m.State)
+        {
+            case 1:
+                if (ctx.Get(m.QuestId) is { Complete: true }) frame = "quest_complete";
+                else { frame = "quest_start"; suffix = false; }
+                break;
+            case 2: frame = "quest_complete"; break;
+            case 0: frame = "quest"; break;
+            default: return ("", "");
+        }
+        string s = MinimapSuffix(table.Quest(m.QuestId));
+        return (suffix ? frame + s : frame, "quest" + s);
+    }
+
+    /// <summary>
+    /// SelectStringByQuestKind with the minimap's strings ("_epic", "_world", "_repeat", "_event"): <see cref="Suffix"/>,
+    /// with "_world" where it gives "" (world quests that do not repeat, the other types and a quest without data).
+    /// </summary>
+    public static string MinimapSuffix(QuestData q) => Suffix(q) is { Length: > 0 } s ? s : "_world";
+
+    /// <summary>
+    /// FUN_140763210 (commonfiles/questmasktable.cpp:1058): the common string keys of a quest's minimap description and
+    /// format. An in-progress quest whose taken record is complete counts as completable. State 0: below the required
+    /// level s_minimap_icon_quest_ableupper / s_minimap_tooltip_quest_ableupper, else the kind's ablenow icon (epic,
+    /// event, repeat, world) / s_minimap_tooltip_quest_ablenow; state 2 the kind's completable icon /
+    /// s_minimap_tooltip_quest_completable; state 1 s_minimap_icon_quest_progress / s_minimap_tooltip_quest_progress.
+    /// Null keys (GetStringCommon(0)) for another state or a quest without data.
+    /// </summary>
+    public (string Desc, string Format) GuideKeys(int questId, int state, IQuestContext ctx, int playerLevel)
+    {
+        var d = table.Quest(questId);
+        if (d == null) return (null, null);
+        if (state == 1 && ctx.Get(questId) is { Complete: true }) state = 2;
+        static string Kind(QuestData d) => d.Type == 0 ? "epic" : d.Type == 2 ? "event" : d.Repeat != 0 ? "repeat" : "world";
+        return state switch
+        {
+            0 when playerLevel < d.Require.Level => ("s_minimap_icon_quest_ableupper", "s_minimap_tooltip_quest_ableupper"),
+            0 => ("s_minimap_icon_quest_ablenow_" + Kind(d), "s_minimap_tooltip_quest_ablenow"),
+            2 => ("s_minimap_icon_quest_completable_" + Kind(d), "s_minimap_tooltip_quest_completable"),
+            1 => ("s_minimap_icon_quest_progress", "s_minimap_tooltip_quest_progress"),
+            _ => (null, null),
+        };
+    }
+
+    /// <summary>FUN_140763550 (questmasktable.cpp:1120): the state's format over its description, the quest's level and
+    /// its name (GetQuestName); "" without the quest's data.</summary>
+    public string StateLine(int questId, int state, IQuestContext ctx, int playerLevel, Func<string, string> common)
+    {
+        var d = table.Quest(questId);
+        if (d == null) return "";
+        var (desc, format) = GuideKeys(questId, state, ctx, playerLevel);
+        return Ms2.Quest.ClientFormat.Format(format == null ? "" : common(format) ?? "", desc == null ? "" : common(desc) ?? "", d.Level, table.QuestName(questId));
+    }
+
+    /// <summary>
     /// SelectStringByQuestKind (cinematiccomponent.cpp:810): the icon suffix of a quest's kind: epic "_epic", event "_event",
     /// world or the repeatable types 1 and 6 "_repeat" when repeatable, else "".
     /// </summary>
