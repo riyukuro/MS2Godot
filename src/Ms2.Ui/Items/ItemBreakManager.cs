@@ -79,7 +79,8 @@ public sealed class ItemBreakManager
     public event Action<long> InventoryRefresh;      // the inventory slot of the uid
     public event Action<ItemDismantlePacket> ResultForwarded;   // mode 3: dialog vfunc_84 (rewards)
     public event Action<ItemDismantlePacket> PreviewReceived;   // mode 5
-    public event Action RefreshActive;               // vfunc_85(true, 0) after a mode 3
+    public event Action RefreshActive;               // FUN_140532220: vfunc_85(true, 0), after a mode 4 result code
+    public event Action RefreshDialog;               // RefreshActiveDialog: the bag bound again and vfunc_85(true, 0), after a mode 3
     public event Action ResetBreak;                  // mode 4 with a break in progress
     public event Action<int> ShopCoinRefresh;        // mode 3 type 1: shop 0x4e3b UpdateGachaCoin (ShopController.FollowItemBreak)
 
@@ -306,7 +307,7 @@ public sealed class ItemBreakManager
                 Array.Clear(counts);
                 ResultForwarded?.Invoke(p);
                 if (p.Type == 1) ShopCoinRefresh?.Invoke(0);
-                RefreshActive?.Invoke();
+                RefreshDialog?.Invoke();
                 break;
             case 4:
                 switch (p.Result)

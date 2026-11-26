@@ -323,14 +323,44 @@ public class ItemBreakDialogTests
         Assert.That(r.C.OnCallback("OnBundleRegister", Array.Empty<object>()), Is.False);
     }
 
+    /// <summary>UIItemBreakDialog::vfunc_85 (uiinventorydialog.cpp:2663): the row is scrolled to as it is (SetScrollPosition(nRow)) when it is
+    /// above the top row or below the 3 shown, else the position stays; a reset goes to max(last row - 2, 0).</summary>
     [Test]
     public void ScrollTargetFollowsTheClientRule()
     {
         Assert.That(ItemBreakDialogController.ScrollTarget(true, 0, 44, 0), Is.EqualTo(6));
         Assert.That(ItemBreakDialogController.ScrollTarget(true, 0, 4, 0), Is.EqualTo(0));
-        Assert.That(ItemBreakDialogController.ScrollTarget(false, 25, 99, 0), Is.EqualTo(3), "below the 3 rows: row 5 at the bottom");
+        Assert.That(ItemBreakDialogController.ScrollTarget(false, 25, 99, 0), Is.EqualTo(5), "below the 3 rows: the row itself");
         Assert.That(ItemBreakDialogController.ScrollTarget(false, 5, 99, 3), Is.EqualTo(1), "above the top");
-        Assert.That(ItemBreakDialogController.ScrollTarget(false, 12, 99, 1), Is.EqualTo(1), "visible");
+        Assert.That(ItemBreakDialogController.ScrollTarget(false, 12, 99, 1), Is.EqualTo(1), "row 2 is in rows 1..3: unchanged");
+        Assert.That(ItemBreakDialogController.ScrollTarget(false, 14, 99, 0), Is.EqualTo(0), "row 2 is the last of rows 0..2: unchanged");
+        Assert.That(ItemBreakDialogController.ScrollTarget(false, 15, 99, 0), Is.EqualTo(3), "row 3 is the first below rows 0..2");
+        Assert.That(ItemBreakDialogController.ScrollTarget(false, 990, 44, 0), Is.EqualTo(8), "clamped to the last row");
+    }
+
+    int Scroll(Rig r) => Rt.ToInt32(r.Host.Get(r.Host.Get(r.Host.Child("m_itemBag"), "instance"), "scrollPosition"));
+
+    /// <summary>A staged item below the 3 rows the bag shows scrolls the bag to its row (vfunc_85(false, index) from OnBagSlotChanged);
+    /// one in the shown rows leaves it; one above scrolls back; the bag shows the top rows again after a break (RefreshActiveDialog).</summary>
+    [Test]
+    public void TheBagScrollsToAStagedItemOutsideItsRowsAndBackAfterABreak()
+    {
+        var r = new Rig();
+        r.Add(500); r.Add(501); r.Add(502);
+        Assert.That(Scroll(r), Is.EqualTo(0));
+        r.Put(500, 27);     // row 5
+        for (int i = 0; i < 5; i++) r.Host.Player.Tick();
+        Assert.That(Scroll(r), Is.EqualTo(5), "below the shown rows");
+        r.Put(501, 26);     // row 5 again, shown
+        Assert.That(Scroll(r), Is.EqualTo(5), "shown: unchanged");
+        r.Put(502, 2);      // row 0, above
+        for (int i = 0; i < 5; i++) r.Host.Player.Tick();
+        Assert.That(Scroll(r), Is.EqualTo(0), "above the top row");
+        r.Put(500, 52);     // row 10
+        r.M.OnPacket(new ItemDismantlePacket(3) { Type = 1 });
+        for (int i = 0; i < 5; i++) r.Host.Player.Tick();
+        Assert.That(Scroll(r), Is.EqualTo(0), "after the break nothing is staged: the top rows");
+        Assert.That(r.M.HasBreakItems, Is.False);
     }
 
     [Test]

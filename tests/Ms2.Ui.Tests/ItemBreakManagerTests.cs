@@ -348,7 +348,7 @@ public class ItemBreakManagerTests
         Make(1);
         m.OnPacket(new ItemDismantlePacket(1) { Slots = new[] { new DismantleSlot(2, 1, 1) } });
         ItemDismantlePacket got = null; int refreshed = 0;
-        m.ResultForwarded += p => got = p; m.RefreshActive += () => refreshed++;
+        m.ResultForwarded += p => got = p; m.RefreshDialog += () => refreshed++;
         m.OnPacket(new ItemDismantlePacket(3) { Type = 2 });
         Assert.That((m.Contains(1), got), Is.EqualTo((true, (ItemDismantlePacket)null)), "another type");
         var rewards = new[] { new DismantleReward(5, 2) };

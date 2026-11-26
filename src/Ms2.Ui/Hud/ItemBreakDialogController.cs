@@ -109,6 +109,7 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         Mgr.ResultForwarded += OnResult;
         Mgr.PreviewReceived += OnPreview;
         Mgr.RefreshActive += RefreshActive;
+        Mgr.RefreshDialog += RefreshDialog;
         Mgr.ResetBreak += ResetBreak;
         Mgr.Sound += OnManagerSound;
         BindItemBag();
@@ -131,6 +132,7 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
             Mgr.ResultForwarded -= OnResult;
             Mgr.PreviewReceived -= OnPreview;
             Mgr.RefreshActive -= RefreshActive;
+            Mgr.RefreshDialog -= RefreshDialog;
             Mgr.ResetBreak -= ResetBreak;
             Mgr.Sound -= OnManagerSound;
             ReleaseBindings();
@@ -144,7 +146,12 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         Closed?.Invoke();
     }
 
-    void OnSlotChanged(int i) { if (!closing) Host.Push(SlotName(i)); RefreshActive(); }
+    /// <summary>UIItemBreakBase::OnBagSlotChanged (@0x1419a1d20): the slot pushed, then vfunc_85(false, index).</summary>
+    void OnSlotChanged(int i)
+    {
+        if (!closing) Host.Push(SlotName(i));
+        ScrollBag(false, i);
+    }
     void OnInventoryRefresh(long uid) => InventorySlotRefresh?.Invoke(uid);
     void OnManagerSound(string s) { if (!closing) Sound?.Invoke(s); }
 
@@ -161,24 +168,38 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         for (int i = 0; i < ItemBreakManager.Slots; i++) Host.Push(SlotName(i));
     }
 
-    /// <summary>vfunc_85(true, 0): m_break is enabled while the list holds an item; the bag scrolls back to the top
-    /// rows (max(last / 5 - 2, 0)).</summary>
-    void RefreshActive()
+    /// <summary>CItemBreakManager::FUN_140532220 (after a result code, mode 4): vfunc_85(true, 0).</summary>
+    void RefreshActive() => ScrollBag(true, 0);
+
+    /// <summary>CItemBreakManager::RefreshActiveDialog (after a break, mode 3): FUN_1419a1430, the bag bound again, then vfunc_85(true, 0).</summary>
+    void RefreshDialog()
+    {
+        if (Host?.Entity == null || closing || Mgr == null) return;
+        BindItemBag();
+        ScrollBag(true, 0);
+    }
+
+    /// <summary>UIItemBreakDialog::vfunc_85 (@0x1419a2e30, uiinventorydialog.cpp:2663): m_break is enabled while the list holds an
+    /// item, then the slot list the m_itemBag wrapper holds as "instance" (the 5-column tile list) scrolls: a reset to
+    /// max(last row - 2, 0), else to the row of <paramref name="index"/> when it is not among the 3 rows shown.</summary>
+    void ScrollBag(bool reset, int index)
     {
         if (Host?.Entity == null || closing || Mgr == null) return;
         if (Host.Child("m_break") is { } b) Host.Set(b, "enabled", Mgr.HasBreakItems);
+        if (Host.Child("m_itemBag") is not { } bag || Host.Get(bag, "instance") is not { } list || Rt.IsNullish(list)) return;
+        int top = Rt.ToInt32(Host.Get(list, "scrollPosition"));      // ASTileList::GetScrollPosition (astilelist.cpp:100)
+        int target = ScrollTarget(reset, index, Mgr.LastItemIndex, top);
+        if (reset || target != top) Host.Set(list, "scrollPosition", target);   // SetScrollPosition (astilelist.cpp:84)
     }
 
-    /// <summary>The bag scroll of vfunc_85: <paramref name="reset"/> goes to max(last / 5 - 2, 0); else the row of
-    /// <paramref name="index"/> (clamped to the last row) is scrolled into the 3 rows the bag shows.</summary>
+    /// <summary>The scroll row of vfunc_85: <paramref name="reset"/> goes to max(last / 5 - 2, 0); else the row of
+    /// <paramref name="index"/> (clamped to 0..last row) when it is above the top row or below the 3 rows the bag shows
+    /// (nRow &lt; top || top + 2 &lt; nRow), unchanged otherwise.</summary>
     public static int ScrollTarget(bool reset, int index, int lastIndex, int top)
     {
         if (reset) return Math.Max(lastIndex / 5 - 2, 0);
-        int lastRow = Math.Max(lastIndex / 5, 0);
-        int row = Math.Clamp(index / 5, 0, lastRow);
-        if (row < top) return row;
-        if (top + 2 < row) return row - 2;
-        return top;
+        int row = Math.Min(Math.Max(0, index / 5), lastIndex / 5);
+        return row < top || top + 2 < row ? row : top;
     }
 
     // ---- the type and rank dropdowns, the texts (UIItemBreakDialog::vfunc_46) ----------------------------------------
