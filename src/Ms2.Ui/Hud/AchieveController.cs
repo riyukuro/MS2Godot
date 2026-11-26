@@ -310,7 +310,7 @@ public sealed class AchieveController : UiController
         if (args is not { Length: > 4 }) return null;
         uint palette = Rt.ToUint32(Host.Get(args[4], "paletteID"));
         uint sn = Rt.ToUint32(Host.Get(args[4], "colorSN"));
-        if (Colors(palette, sn) is not { } c || c.StringKey <= 0) return null;
+        if (Colors(palette, sn) is not { } c || c.StringKey == 0) return null;     // (unsigned)m_n2c > 0: any key but 0
         string desc = "";
         string colorName = Texts.TableString(0x48, c.StringKey);
         if (colorName.Length != 0)

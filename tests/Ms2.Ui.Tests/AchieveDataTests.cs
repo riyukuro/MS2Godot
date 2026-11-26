@@ -165,7 +165,7 @@ public class AchieveDataTests
         var h = new UiHost(p, c, m);
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
 
-        int rowsWithColours = 0, colours = 0;
+        int rowsWithColours = 0, colours = 0, undescribed = 0;
         var untipped = new List<string>();
         foreach (var a in book.GetListFromTable(0, 0, false, false).Where(a => a.Reward is { Type: 8 }))
         {
@@ -186,9 +186,10 @@ public class AchieveDataTests
                 if (tip == null || !((string)tip["text"]).Contains(name, StringComparison.Ordinal) || name.Length == 0)
                     untipped.Add($"{a.Id} colour {want[i].ColorSN}");
                 else Assert.That(tip["tooltipAlign"], Is.EqualTo(1));
+                if (texts.TableString(0x49, want[i].StringKey).Length == 0) undescribed++;
             }
         }
-        TestContext.Progress.WriteLine($"coloring trophy rows: {rowsWithColours} with {colours} colours, {untipped.Count} without a tooltip: {string.Join(", ", untipped.Take(5))}");
+        TestContext.Progress.WriteLine($"coloring trophy rows: {rowsWithColours} with {colours} colours, {untipped.Count} without a tooltip: {string.Join(", ", untipped.Take(5))}, {undescribed} without a description (table 0x49)");
         bool achievePalettes = packs.Exists("Xml", "table/na/colorpalette_achieve.xml");
         Assert.That(colours, achievePalettes ? Is.GreaterThan(100) : Is.Zero, "the coloring rows' colours");
         Assert.That(untipped, Is.Empty, "every colour has its tooltip");
@@ -197,15 +198,18 @@ public class AchieveDataTests
         // second colours (both ch2) and keeps visibleColor the palette colour
         var hand = Ms2.Ui.Items.ColorPaletteTable.Parse(System.Xml.Linq.XElement.Parse(
             @"<ms2><colorPalette id=""5""><color ch0=""ff010203"" ch2=""ff070809"" palette=""ff0a0b0c"" show2color=""1"" colorSN=""1"" stringKey=""9"" />
-              <color ch0=""ff010203"" colorSN=""2"" /><color ch0=""ff010203"" colorSN=""3"" stringKey=""9"" /></colorPalette></ms2>"));
+              <color ch0=""ff010203"" colorSN=""2"" /><color ch0=""ff010203"" colorSN=""3"" stringKey=""9"" />
+              <color ch0=""ff010203"" colorSN=""5"" stringKey=""-9"" /></colorPalette></ms2>"));
         c.Colors = (palette, sn) => hand.BySN((int)palette, (int)sn);
-        texts.TableString = (t, id) => t == 0x48 ? (id == 9 ? "Nine" : "") : t == 0x49 ? "about nine" : tables.StringTableText(t, id);
+        texts.TableString = (t, id) => t == 0x48 ? (id == 9 ? "Nine" : id == -9 ? "Minus nine" : "") : t == 0x49 ? "about nine" : tables.StringTableText(t, id);
         object Tip(int sn) => c.GetUserValue("getTooltipColor", new object[] { 0.0, 0.0, 0.0, 0.0,
             h.ToAs(new Dictionary<string, object> { ["paletteID"] = 5u, ["colorSN"] = sn }) });
         var t1 = (AsTooltip)Tip(1);
         Assert.That(t1["text"], Is.EqualTo(Ms2.Quest.ClientFormat.Format(tables.Common("s_beauty_tooltip_color_desc"), "Nine", "about nine") + "\n"));
         Assert.That(t1["tooltip"], Is.EqualTo("export_common_tooltip_tooltipText"));
         Assert.That(Tip(2), Is.Null, "no name key");
+        // the key is tested as unsigned (> 0), so a negative key still names the colour
+        Assert.That(((AsTooltip)Tip(5))?["text"], Is.EqualTo(Ms2.Quest.ClientFormat.Format(tables.Common("s_beauty_tooltip_color_desc"), "Minus nine", "about nine") + "\n"), "a negative name key");
         Assert.That(Tip(4), Is.Null, "no such colour");
         texts.TableString = (t, id) => t == 0x48 ? "" : tables.StringTableText(t, id);
         Assert.That(Tip(3), Is.Null, "an empty name");
@@ -246,6 +250,13 @@ public class AchieveDataTests
         Assert.That(complete, Is.GreaterThan(100));
         Assert.That(progress, Is.GreaterThan(100));
         Assert.That(texts.Tooltip(1, 1), Is.Null, "no such trophy");
+        // a chat link's grade is another player's text: a grade the trophy lacks gives the tooltip without desc or reward
+        int linked = book.GetListFromTable(0, 0, false, false).First(a => a.Data != null).Id;
+        foreach (int g in new[] { int.MinValue, -1, 0, 99, int.MaxValue })
+        {
+            var t = texts.Tooltip(linked, g);
+            Assert.That((t["grade"], t["desc"], t["reward"]), Is.EqualTo(((object)g, (object)"", (object)"")), $"grade {g}");
+        }
         int some = book.GetListFromTable(0, 0, false, false).First(a => a.Data != null).Id;
         var find = texts.Find;
         texts.Find = _ => null;

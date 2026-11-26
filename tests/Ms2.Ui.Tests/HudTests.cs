@@ -2711,6 +2711,16 @@ public partial class HudTests
         Assert.That(c.GetUserData("getAchieve", Fields("achieveTooltip,1,4,1,x,y")), Is.Null, "unknown trophy");
         Assert.That(c.GetUserData("getAchieve", Array.Empty<object>()), Is.Null, "no fields: trophy 0");
         Assert.That(asked[^1], Is.EqualTo((0, 0)));
+        // a link is another player's text: numbers past int clamp as atoi does, junk reads 0, braces and markup in the
+        // state and date stay as they are (they are format arguments, not the format)
+        var hostile = c.GetUserData("getAchieve", new object[] { "21100012", "-99999999999", "{0}{1}<b>x</b>", "{1}" });
+        Assert.That(asked[^1], Is.EqualTo((21100012, int.MinValue)));
+        Assert.That(hostile["state"], Is.EqualTo("{0}{1}<b>x</b> ({1})"));
+        Assert.That(c.GetUserData("getAchieve", new object[] { "99999999999", "x", "", "" }), Is.Null);
+        Assert.That(asked[^1], Is.EqualTo((int.MaxValue, 0)));
+        Assert.That(c.GetUserData("getAchieve", new object[] { " +21100012junk", "\t3", new string('a', 100_000), "" })["state"],
+            Has.Length.EqualTo(100_000));
+        Assert.That(asked[^1], Is.EqualTo((21100012, 3)));
         m.HasLocalPlayer = false;
         int calls = asked.Count;
         Assert.That(c.GetUserData("getAchieve", Fields("achieveTooltip,21100012,4,2,a,b")), Is.Null);
