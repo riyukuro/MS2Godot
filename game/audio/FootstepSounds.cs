@@ -103,6 +103,18 @@ public partial class FootstepSounds : Node
             var v = voices[nextVoice++ % voices.Length];
             v.Stream = wav;
             v.VolumeDb = Mathf.LinearToDb(clip.Volume);
+            if (clip.Rolloff is { } curve && GetParent() is FieldAudio fa && fa.HasListener)
+            {
+                // the step's curve gain from the listener (FieldAudio.Rolloff.cs), at its start: a step is short
+                v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
+                v.MaxDistance = float.IsInfinity(curve.Silent) ? 0 : curve.Silent;
+                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(fa.ListenerAt.DistanceTo(body.GlobalPosition)));
+            }
+            else
+            {
+                v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance;
+                v.MaxDistance = 3000;
+            }
             v.Bus = SoundBuses.Of(clip.Category);
             v.Play();
         }

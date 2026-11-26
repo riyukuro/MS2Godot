@@ -6,8 +6,10 @@ namespace Ms2Godot;
 
 /// <summary>
 /// The field's sound entities (flat mixin MS2Sound: soundEventID "MS2Sound/Sound/AMB/11100003", SoundRadius): one looped
-/// positional player each, at the entity's position. The attenuation range is the event's 3D min / max distance (inverse-distance
-/// roll-off from the min distance, silent beyond the max), the volume the event's.
+/// positional player each, at the entity's position, at the event's volume. Its gain by distance is the event's own
+/// "(distance)" curve from the listener (<see cref="DistanceRolloff"/>, see FieldAudio.Rolloff.cs), set by <see cref="RollOff"/>;
+/// a 2D event (Tria's town ambience AMB/11100015) is not attenuated or panned; a 3D event without a curve keeps Godot's
+/// inverse distance from 60 (or its min) to its max (or SoundRadius).
 /// The field load creates them for every MS2Sound entity with a sound event except the trigger objects (WorldService's entity
 /// add, worldservice_1.cpp:10336-10350, skips an entity whose model contains MS2TriggerObject): a trigger sound of kind AMB
 /// starts only on its Trigger packet event (<see cref="SetTriggerSound"/>).
@@ -30,6 +32,41 @@ public partial class AmbientSounds : Node3D
     {
         public AudioStreamPlayer3D Player;
         public bool On = true;    // CSoundEvent m_nStopped clear: the manager's update starts it
+        public int Index;         // in gains
+        public SoundClip Clip;
+        public System.Numerics.Vector3 At;
+        public float OldMin, OldMax;   // the inverse-distance range a clip without a curve plays with
+    }
+
+    readonly List<Sound> rolled = new();
+    readonly RolloffGains gains = new(16);
+
+    /// <summary>The curve gain of every playing ambient player with one, for a listener at <paramref name="listener"/>;
+    /// the volume is set only when it moves.</summary>
+    public void RollOff(System.Numerics.Vector3 listener)
+    {
+        for (int i = 0; i < rolled.Count; i++)
+        {
+            var s = rolled[i];
+            if (gains.Update(s.Index, listener, out float db)) s.Player.VolumeDb = db;
+        }
+    }
+
+    /// <summary>The nearest <paramref name="n"/> ambient players by the listener, with the gain now and the gain of the
+    /// old falloff (Godot's inverse distance from 60 or the min, measured from the camera), for the live check.</summary>
+    public string DescribeRolloff(System.Numerics.Vector3 listener, System.Numerics.Vector3 camera, int n)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var s in sounds.Values.OrderBy(s => System.Numerics.Vector3.Distance(listener, s.At)).Take(n))
+        {
+            float d = System.Numerics.Vector3.Distance(listener, s.At), dc = System.Numerics.Vector3.Distance(camera, s.At);
+            float now = s.Clip.Rolloff != null ? s.Clip.Volume * s.Clip.Rolloff.GainAt(d) : s.Clip.Is2D ? s.Clip.Volume : float.NaN;
+            var m = Ms2Godot.World.FieldPortals.ToMs2(s.Player.GlobalPosition);
+            var ev = s.Clip.Event;
+            sb.Append($"{s.Player.Name} {ev?.FullPath ?? s.Clip.Name} {(ev == null ? "?" : ev.Is3D ? "3d" : "2d")}{(ev?.IsSimple == true ? " simple" : "")} {s.Clip.Name} [{m.X:F0} {m.Y:F0} {m.Z:F0}] at {d:F0} (camera {dc:F0}): gain {now:F3} applied {Mathf.DbToLinear(s.Player.VolumeDb):F3}, "
+                + $"old {s.Clip.Volume * FieldAudio.OldFalloff(dc, s.OldMin, s.OldMax):F3}; ");
+        }
+        return sb.ToString();
     }
 
     readonly Dictionary<FieldEntity, Sound> sounds = new();
@@ -58,6 +95,11 @@ public partial class AmbientSounds : Node3D
             return;
         }
         s.On = on;
+        if (s.Clip.Rolloff is { } curve)
+        {
+            if (on) gains.Set(s.Index, curve, s.Clip.Volume, s.At);
+            else gains.Clear(s.Index);
+        }
         if (!on) s.Player.Stop();
         else if (s.Player.Stream != null && !s.Player.Playing) s.Player.Play();
     }
@@ -82,8 +124,28 @@ public partial class AmbientSounds : Node3D
             Name = e.Name, Position = pos, VolumeDb = Mathf.LinearToDb(clip.Volume), Bus = SoundBuses.Of(clip.Category),
             AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, UnitSize = min, MaxDistance = max,
         };
+        var sound = sounds[e] = new Sound { Player = player, Clip = clip, At = new(pos.X, pos.Y, pos.Z), OldMin = min, OldMax = max };
+        if (clip.Rolloff is { } curve)
+        {
+            // Godot's attenuation off: the curve is the gain, silent past its last non-zero point
+            player.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
+            player.MaxDistance = float.IsInfinity(curve.Silent) ? 0 : curve.Silent;
+            sound.Index = rolled.Count;
+            gains.Set(sound.Index, curve, clip.Volume, sound.At);
+            rolled.Add(sound);
+            if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(sound.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z), out float db))
+                player.VolumeDb = db;
+        }
+        else if (clip.Is2D)
+        {
+            // a 2D event: FMOD neither attenuates nor pans it, and the client starts every environment sound with no range
+            // check (CSoundEventMgr::StartEnvironmentSounds @0x14177d230, soundeventmgr.cpp:1465-1481), so it is heard
+            // across the field at its own volume
+            player.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
+            player.MaxDistance = 0;
+            player.PanningStrength = 0;
+        }
         AddChild(player);
-        var sound = sounds[e] = new Sound { Player = player };
         Count++;
         Live++;
         Log.Add($"{e.Name} at {pos} -> {id} = {clip.Name} vol {clip.Volume:F2} range {min}..{max}");

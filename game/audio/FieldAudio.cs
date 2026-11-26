@@ -475,6 +475,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         while (decodedSegments.TryDequeue(out var decoded)) decoded();
         if (following3d > 0) FollowVoices();
+        RollOff();
         if (Ms2Godot.Net.LiveSession.LiveCheck) lastPlaying3d = Playing3d;   // the leave's count: the voices stop as they leave first
         audioClock += delta;
         if (voiceSlots.Pending > 0)
@@ -800,7 +801,9 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             if (n == null) continue;
             if (IsInstanceValid(n) && n.IsInsideTree() && IsInstanceValid(voices3d[i]))
             {
-                voices3d[i].GlobalPosition = n.GlobalPosition + followOffset3d[i];
+                var at = n.GlobalPosition + followOffset3d[i];
+                voices3d[i].GlobalPosition = at;
+                gains3d.Move(i, ToNumerics(at));
                 continue;
             }
             followed3d[i] = null;
@@ -866,6 +869,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     void StopVoice(int slot)
     {
         if (followed3d[slot] != null) { followed3d[slot] = null; following3d--; }
+        gains3d.Clear(slot);
         if (voices3d[slot] is { } v && IsInstanceValid(v)) v.Stop();
     }
 
@@ -906,6 +910,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (v == null)
         {
             v = voices3d[slot] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 };
+            int s = slot;
+            v.Finished += () => gains3d.Clear(s);   // a one-shot played out: no more volume sets for it
             AddChild(v);
             made3d++;
             Live3dPlayers++;
@@ -915,11 +921,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (follow != null) { followOffset3d[slot] = position - follow.GlobalPosition; following3d++; }
         v.Stream = wav;
         v.GlobalPosition = position;
-        v.VolumeDb = Mathf.LinearToDb(clip.Volume * volume);
         v.Bus = SoundBuses.Of(clip.Category);
         if (Ms2Godot.Net.LiveSession.LiveCheck) LogGain("3d", clip, clip.Volume * volume, v.Bus);
-        v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
-        v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;
+        SetAttenuation(v, slot, clip, clip.Volume * volume, position);
+        if (Ms2Godot.Net.LiveSession.LiveCheck) LogRolloff(clip, clip.Volume * volume, position, v.VolumeDb);
         // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing
         // the voice's sound may be stopped, or the voice taken by a newer sound, before the delay ends
         if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v) && voiceSlots.SlotOf(ticket) == slot) v.Play(); }; else v.Play();

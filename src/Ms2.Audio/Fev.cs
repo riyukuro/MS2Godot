@@ -134,10 +134,19 @@ public sealed class FevEvent
     public float Volume = 1f;
     /// <summary>The record's mode at +0x34 has FMOD_3D (0x10; a 2D event has FMOD_2D, 0x08).</summary>
     public bool Is3D;
+    /// <summary>The record's mode word at +0x34 (FMOD_MODE bits: 3D / 2D, and the rolloff, <see cref="RolloffModel"/>).</summary>
+    public int Mode;
+    /// <summary>The rolloff the mode asks for: custom (0x04000000), else linear (0x00200000), else log (0x00100000, FMOD's
+    /// default). No MS2Sound.fev event sets two of them.</summary>
+    public RolloffModel RolloffModel => (Mode & FevProject.CustomRolloff) != 0 ? RolloffModel.Custom
+        : (Mode & FevProject.LinearRolloff) != 0 ? RolloffModel.Linear : RolloffModel.Log;
     /// <summary>3D min and max distance of a complex 3D event, from its record's +0x38 and +0x3c (FMOD_EVENTPROPERTY_3D_MINDISTANCE,
     /// _3D_MAXDISTANCE; a 2D event holds FMOD's 1 / 10000 there). The min is 0 in every MS2Sound.fev 3D event. 0 / 0 when
     /// the event has no range (2D, simple, or a record holding 1 / 1).</summary>
     public float MinDistance, MaxDistance;
+    /// <summary>The volume by listener distance of a complex 3D event (<see cref="DistanceRolloff"/>): its built-in volume
+    /// envelope (effect 0xc) on the "(distance)" parameter; null for 2D and simple events.</summary>
+    public DistanceRolloff Rolloff;
     public List<int> Defs = new();
     public List<float> DefVolumes = new();   // the sound's own volume (parallel to Defs)
     /// <summary>Whether the sound loops until the event is stopped (parallel to <see cref="Defs"/>): a sound instance's loop
@@ -303,7 +312,7 @@ public sealed class FevProject
     {
         if (Encoding.ASCII.GetString(d, 0, 4) != "RIFF" || Encoding.ASCII.GetString(d, 8, 4) != "FEV ")
             throw new InvalidDataException("not an FEV file");
-        int strrOff = -1, obct = -1, langOff = -1;
+        int strrOff = -1, obct = -1, langOff = -1, eprpOff = -1;
         int o = 36;   // inside LIST PROJ (RIFF 12, FMT 12, LIST header 12)
         int end = d.Length;
         while (o + 8 <= end)
@@ -314,6 +323,7 @@ public sealed class FevProject
             else if (tag == "STRR") strrOff = o + 8;
             else if (tag == "OBCT") obct = o + 8;
             else if (tag == "LANG") langOff = o + 8;
+            else if (tag == "EPRP") eprpOff = o + 8;
             o += 8 + size + (size & 1);
         }
         if (lgcy == 0 || strrOff < 0) throw new InvalidDataException("FEV without LGCY / STRR");
@@ -323,8 +333,38 @@ public sealed class FevProject
         int defCount = ObjectCount(obct, 17);
         ReadDefs(defCount, out int defsEnd);
         ReadMusic(defsEnd);
+        if (eprpOff >= 0) ReadEnvelopePoints(eprpOff);
         int groupsStart = ReadCategoryTree(afterBanks, null);
         ReadEventGroups(groupsStart);
+    }
+
+    /// <summary>The effect id of an event's volume envelope.</summary>
+    const int EnvelopeVolume = 0xc;
+    float[] envX, envY;
+
+    // EPRP: u32 count, then 12-byte envelope points (f32 x as a fraction of the parameter's range, f32 value, u32 shape).
+    void ReadEnvelopePoints(int o)
+    {
+        int n = U32(o);
+        envX = new float[n];
+        envY = new float[n];
+        for (int i = 0; i < n; i++) { envX[i] = F32(o + 4 + 12 * i); envY[i] = F32(o + 8 + 12 * i); }
+    }
+
+    DistanceRolloff Rolloff(int env, float min, float max)
+    {
+        if (envX == null || !(max > min)) return null;
+        int n = U32(env + 20);
+        var dist = new float[n];
+        var gain = new float[n];
+        for (int i = 0; i < n; i++)
+        {
+            int k = U32(env + 24 + 4 * i);
+            if ((uint)k >= (uint)envX.Length) return null;
+            dist[i] = min + envX[k] * (max - min);
+            gain[i] = envY[k];
+        }
+        return new DistanceRolloff(dist, gain);
     }
 
     void ReadStrings(int o)
@@ -481,7 +521,8 @@ public sealed class FevProject
             MaxPlaybacks = U32(p + 0x2c),
             MaxPlaybacksBehavior = U32(p + 0x78),
         };
-        ev.Is3D = (U32(p + 0x34) & 0x10) != 0;
+        ev.Mode = U32(p + 0x34);
+        ev.Is3D = (ev.Mode & 0x10) != 0;
         if (etype == 8 && ev.Is3D)
         {
             float a = F32(p + 0x38), b = F32(p + 0x3c);
@@ -497,6 +538,7 @@ public sealed class FevProject
         }
         else if (etype == 8)
         {
+            int volumeEnv = -1;
             int nLayers = U32(p);
             p += 4;
             for (int l = 0; l < nLayers; l++)
@@ -512,11 +554,30 @@ public sealed class FevProject
                 for (int e = 0; e < nEnv; e++)
                 {
                     int nPts = U32(p + 20);
+                    // u32 unit (-1 built-in, else a DSP unit), u32, u32 parameter, u32 effect, u32, u32 point count, the points
+                    if (ev.Is3D && volumeEnv < 0 && U32(p) == -1 && U32(p + 12) == EnvelopeVolume && nPts > 0) volumeEnv = p;
                     p += 24 + 4 * nPts + 8;
                 }
             }
             int nParams = U32(p);
+            // 32-byte parameters: u32 name (STRR), u32, f32 min, f32 max, ...
+            for (int q = 0; q < nParams && volumeEnv >= 0; q++)
+            {
+                int r = p + 4 + 32 * q;
+                if (strr[U32(r)] != "(distance)") continue;
+                ev.Rolloff = Rolloff(volumeEnv, F32(r + 8), F32(r + 12));
+                break;
+            }
             p += 4 + 32 * nParams;
+            // a linear or log event: FMOD's model on its range, times its "(distance)" envelope when it has one
+            if (ev.Is3D && ev.RolloffModel != RolloffModel.Custom && ev.MaxDistance > ev.MinDistance)
+            {
+                var c = ev.Rolloff;
+                var cd = new float[c?.Count ?? 0];
+                var cg = new float[cd.Length];
+                for (int i = 0; i < cd.Length; i++) { cd[i] = c.DistanceOf(i); cg[i] = c.GainOf(i); }
+                ev.Rolloff = new DistanceRolloff(cd, cg, ev.RolloffModel, ev.MinDistance, ev.MaxDistance);
+            }
         }
         else
         {
@@ -544,6 +605,9 @@ public sealed class FevProject
     /// and hit sound of the KMS2 and GMS2 projects is a one-shot; the keep, remain, idle and loop sounds are 0 or 2 (2 only in
     /// layered events). A loop plays until the event stops, which is what FMOD's own lengthms of -1 reports.</summary>
     public const int LoopModeOneShot = 1;
+
+    /// <summary>The rolloff bits of an event's mode word (FMOD_3D_LOGROLLOFF, _LINEARROLLOFF, _CUSTOMROLLOFF; fmod.h).</summary>
+    public const int LogRolloff = 0x00100000, LinearRolloff = 0x00200000, CustomRolloff = 0x04000000;
 
     /// <summary>The instances read by loop mode: [0], [1], [2] for the three modes, [3] for any other value (counted as a loop).</summary>
     public readonly int[] LoopModeCounts = new int[4];

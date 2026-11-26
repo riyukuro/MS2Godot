@@ -14,12 +14,16 @@ public sealed class SoundClip
     /// <summary>The event's sound loops until it is stopped (<see cref="FevEvent.DefLoops"/>); a music segment's loop is the cue's.</summary>
     public bool Loops;
     public float MinDistance, MaxDistance;   // 3D events: attenuation range in world units (0 = not 3D)
+    /// <summary>The event's volume by listener distance (<see cref="FevEvent.Rolloff"/>); null when it has none.</summary>
+    public DistanceRolloff Rolloff;
     /// <summary>The client's category slot the event plays in (<see cref="SoundCategories"/>); -1 for none (a music
     /// segment, which the music system plays).</summary>
     public int Category = -1;
     /// <summary>The event the clip plays (<see cref="SoundLibrary.ResolveEvent"/>), whose playback limits choose its voice;
     /// null for a clip of no event.</summary>
     public FevEvent Event;
+    /// <summary>The clip's event is 2D (its mode has FMOD_2D): FMOD neither attenuates nor pans it.</summary>
+    public bool Is2D => Event is { Is3D: false };
 }
 
 /// <summary>
@@ -197,6 +201,7 @@ public sealed class SoundLibrary
         clip.MinDistance = ev.MinDistance;
         clip.MaxDistance = ev.MaxDistance;
         clip.Event = ev;
+        clip.Rolloff = ev.Rolloff;
         return clip;
     }
 

@@ -305,6 +305,26 @@ public partial class LiveSession
                 await frames(60 * int.Parse(step[5..]));
                 continue;
             }
+            if (step.StartsWith("playsound:"))      // playsound:<event path>:<d>[/<d>...]: the event played d units beside the own pc in turn (along +x), each held 1 s with the rolloff printed
+            {
+                var p = step.Split(':');
+                var audio = FieldAudio.Instance;
+                if (audio == null || p.Length < 3 || live.player == null) { GD.Print($"live: combat {step}: not run"); continue; }
+                foreach (var ds in p[2].Split('/'))
+                {
+                    if (!float.TryParse(ds, System.Globalization.CultureInfo.InvariantCulture, out float d)) continue;
+                    bool played = audio.PlayEventAt(p[1], live.player.GlobalPosition + new Vector3(d, 0, 0));
+                    await frames(20);
+                    GD.Print($"live: combat playsound {p[1]} at {d}: {(played ? "played" : "NOT played")}; {audio.DescribeRolloff()}");
+                    await frames(40);
+                }
+                continue;
+            }
+            if (step == "rolloff")      // the listener, the playing 3D voices and the nearest ambient players: distance, gain now and the old falloff's
+            {
+                GD.Print($"live: combat rolloff: {FieldAudio.Instance?.DescribeRolloff() ?? "no field audio"}");
+                continue;
+            }
             if (step.StartsWith("giveup:"))      // giveup:<quest id>: the quest log's give-up as its message box sends it (Quest 6, uiquestdialog.cpp:1813 and :1826), then until the server's answer
             {
                 int id = int.Parse(step[7..]);
