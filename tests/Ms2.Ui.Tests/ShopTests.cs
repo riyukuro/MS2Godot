@@ -521,6 +521,51 @@ public class ShopTests
         Assert.That(notices[0], Is.Not.Empty);
     }
 
+    /// <summary>The whole tab list (table/shopcategory.xml and meratmarketcategory.xml): every category id loads a tab tree, and every
+    /// named tab of it (a tab the client shows) has a name in the category name table, a sub tab list within the XML's own, and a
+    /// category list that holds each sub tab's categories (LoadTabs: a parent's grows by its sub tabs').</summary>
+    [Test]
+    public void EveryShopCategoryLoadsTabsWithNamesAndTheirSubTabsCategories()
+    {
+        var packs = Packs();
+        var model = NewModel();
+        var table = new ShopCategoryTable(packs);
+        int categories = 0, tabs = 0;
+        var nameless = new List<string>();
+        foreach (var path in new[] { "table/shopcategory.xml", "table/meratmarketcategory.xml" })
+        {
+            if (!packs.Exists("Xml", path)) continue;
+            var root = Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", path)).Root;
+            foreach (var cat in root.Elements("category"))
+            {
+                uint.TryParse((string)cat.Attribute("id"), out uint id);
+                if (id == 0) continue;
+                var list = table.GetTabs((int)id);
+                Assert.That(list, Is.Not.Null, "category " + id);
+                categories++;
+                void Walk(IReadOnlyList<ShopTab> level, string where)
+                {
+                    foreach (var t in level)
+                    {
+                        tabs++;
+                        if (t.NameId > 0 && string.IsNullOrEmpty(model.Tables.CategoryName(t.NameId))) nameless.Add($"{where}:{t.NameId}");
+                        foreach (var sub in t.SubTabs)
+                            foreach (var token in sub.Category.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                Assert.That(ShopController.IsCategoryInList(token, t.Category), Is.True, $"{where}: {token} of a sub tab is in its parent");
+                        Walk(t.SubTabs, where);
+                    }
+                }
+                Walk(list, "category " + id);
+            }
+        }
+        Assert.That(categories, Is.GreaterThan(5));
+        Assert.That(tabs, Is.GreaterThan(categories));
+        // a tab name the table lacks is lacking in the data's string file itself (the client shows an empty tab name for it too), never lost by the lookup
+        var raw = Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", "string/en/categoryname.xml")).Root.Elements("key")
+            .Where(k => !string.IsNullOrEmpty((string)k.Attribute("name"))).Select(k => (string)k.Attribute("id")).ToHashSet();
+        Assert.That(nameless.Where(n => raw.Contains(n.Substring(n.IndexOf(':') + 1))), Is.Empty, "tab names the string file has but the lookup lost");
+    }
+
     [Test]
     public void BuySingleItemBelowConfirmPriceSendsImmediatelyWithoutLocalMutation()
     {
