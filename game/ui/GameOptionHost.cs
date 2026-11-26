@@ -223,7 +223,10 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void SetShimmer(GameOption.Graphic state, bool on) => state.DisplayShimmer = on;
 
     public void SetEffectStep(int step) { }                   // CEffectService: not ported
-    public void ShowFrameRate(bool shown) => GD.Print($"options: frame rate dialog {(shown ? "on" : "off")} (dialog 0x4e7d is not hosted)");
+    /// <summary>The HUD's frame rate dialog (UIPerformanceDialog 0x4e7d): opened when shown, else closed.</summary>
+    public Action<bool> FrameRateShown;
+    /// <summary>gameoption.cpp:1339-1342, on Apply: OpenDialog(0x4e7d) when the frame rate is shown, else CloseDialog(0x4e7d).</summary>
+    public void ShowFrameRate(bool shown) => FrameRateShown?.Invoke(shown);
     public void EnchantEffectChanged(bool on) { }             // WorldService: not ported
 
     public SoundFlag SoundFlag => GameOptions.SoundFlag;

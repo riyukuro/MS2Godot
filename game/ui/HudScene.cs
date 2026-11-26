@@ -448,6 +448,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchOwnSkill();
         ScreenMask();
         NoticeTab(uiRoot, constants);
+        PerformanceOnEntry();                                              // the open list's 0x4e7d (uiservice.cpp:744)
         QuestNavigationSlot(uiRoot);
         SmartPushStrip(uiRoot);
         Minimap(uiRoot);
@@ -744,7 +745,7 @@ public partial class HudScene : Node, IUiStageHost
     void EnsureOptionHost()
     {
         if (optionDialog != null) return;
-        optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a) };
+        optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a), FrameRateShown = ShowPerformance };
         optionHost.AgreementReminder += SetAgreementReminder;
         optionHost.HasTutorial = FieldHasTutorial;
         if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
@@ -2091,6 +2092,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
         if (SkillCompactKeys(k)) return true;
+        PerformanceKeys(k);                                   // CUIService::FUN_141aec690: left Ctrl+P, the key goes on
         if (PartyDpsKeys(k)) return true;
         bool actions = !Ms2.Ui.InputBlock.Active;   // FUN_141431fc0 (m_nMode taken as on)
         if (actions && k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }   // a DirectInput key code is a physical key
@@ -4617,6 +4619,7 @@ public partial class HudScene : Node, IUiStageHost
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
         TickPartyDps();                                                      // UIPartyDPSDialog::vfunc_72
+        TickPerformance();                                                   // CMainSystem::OnTick's rate, UIPerformanceDialog::vfunc_72
         TickDungeonRoom();                                                   // UIDungeonRoomDialog's list
         if (guildWatched) Ms2Godot.Net.LiveSession.Instance?.Guilds.Update();   // CGuildManager::FUN_1413b5e80: the guild day change
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
