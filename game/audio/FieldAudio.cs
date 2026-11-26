@@ -814,8 +814,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             LoopsStoppedWithNode++;
         }
     }
-    /// <summary>The event voices' sounds by clip and fade-in (a clip can be played by events with different fade-ins).</summary>
-    readonly Dictionary<(string, int), AudioStreamWav> decoded = new();
+    /// <summary>The event voices' sounds by clip, fade-in and loop (a clip can be played by events with different fade-ins, and
+    /// by a looping event and a one-shot: <see cref="EventStream"/> bakes both), with a stereo clip's channel correlation
+    /// (<see cref="Player3DOutput.Correlation"/>, NaN for a mono one).</summary>
+    readonly Dictionary<(string, int, bool), (AudioStreamWav Wav, float Stereo)> decoded = new();
     /// <summary>Looping sounds stopped because <see cref="EffectVoiceSlots.MaxLooping"/> voices looped already.</summary>
     public int LoopsTaken;
     public int PositionalPlayed;
@@ -888,15 +890,17 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         var clip = library?.ResolveEvent(path);
         if (clip == null) return 0;
-        if (!decoded.TryGetValue((clip.Name, clip.Event?.FadeIn ?? 0), out var wav))
+        var key = (clip.Name, clip.Event?.FadeIn ?? 0, clip.Loops);
+        if (!decoded.TryGetValue(key, out var sound))
         {
             var pcm = SafeDecode.Decode(clip);
-            decoded[(clip.Name, clip.Event?.FadeIn ?? 0)] = wav = pcm == null ? null : EventStream(pcm, clip);   // a looping event loops until stopped
+            decoded[key] = sound = pcm == null ? default : (EventStream(pcm, clip), Player3DOutput.Correlation(pcm));   // a looping event loops until stopped
         }
+        var wav = sound.Wav;
         if (wav == null) return 0;
         // the event's instance is taken as the effect is made, so it is held through the start delay too
         var ev = clip.Event;
-        float audibility = Audibility(clip, clip.Volume * volume, position);
+        float audibility = Audibility(clip, clip.Volume * volume, position, sound.Stereo);
         double length = clip.Seconds > 0 ? clip.Seconds : wav.GetLength();
         bool loopsFull = clip.Loops && voiceSlots.Looping >= voiceSlots.MaxLooping;
         int ticket = voiceSlots.Start(ev, ev?.MaxPlaybacks ?? 0, ev?.MaxPlaybacksBehavior ?? 0, ev?.Priority ?? 0, audibility,
@@ -924,7 +928,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         v.GlobalPosition = position;
         v.Bus = SoundBuses.Of(clip.Category);
         if (Ms2Godot.Net.LiveSession.LiveCheck) LogGain("3d", clip, clip.Volume * volume, v.Bus);
-        SetAttenuation(v, slot, clip, clip.Volume * volume, position);
+        SetAttenuation(v, slot, clip, clip.Volume * volume, position, sound.Stereo);
         if (Ms2Godot.Net.LiveSession.LiveCheck) LogRolloff(clip, clip.Volume * volume, position, v.VolumeDb);
         // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing
         // the voice's sound may be stopped, or the voice taken by a newer sound, before the delay ends
@@ -941,14 +945,14 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public static bool LogVoices;
 
     /// <summary>The new sound's volume at the listener for the quietest choices, measured from the camera's actor where the
-    /// listener stands (Field's listener, soundservice.cpp:975-999). That is its gain times its curve's gain at that distance
-    /// (the attenuation its voice is given; the curve starts at FMOD's 3D min of 0), or without a curve times the inverse
-    /// distance from the event's range. Without a viewer it is the gain alone.</summary>
-    float Audibility(SoundClip clip, float gain, Vector3 position)
+    /// listener stands (Field's listener, soundservice.cpp:975-999). That is its gain times its curve's gain and its pan level's
+    /// gain at that distance (the volume its voice is given, <see cref="RolloffGains.Update"/>; the curve starts at FMOD's 3D
+    /// min of 0), or without a curve times the inverse distance from the event's range. Without a viewer it is the gain alone.</summary>
+    float Audibility(SoundClip clip, float gain, Vector3 position, float stereo)
     {
         if (Viewer?.Invoke() is not { } at) return gain;
         float d = at.DistanceTo(position);
-        if (clip.Rolloff is { } curve) return gain * curve.GainAt(d);
+        if (clip.Rolloff is { } curve) return gain * curve.GainAt(d) * Player3DOutput.PanLevelGain(curve.PanLevelAt(d), stereo);
         float max = clip.MaxDistance > 0 ? clip.MaxDistance : 3000, unit = clip.MinDistance > 0 ? clip.MinDistance : 300;
         return d >= max ? 0 : d <= unit ? gain : gain * unit / d;
     }

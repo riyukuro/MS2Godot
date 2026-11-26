@@ -24,8 +24,8 @@ public class PoolThreadEngineCallTests
         new("audio/FieldAudio.cs", "cueSegments[next.Id] = (clip, pcm, wav);", "poolGate",
             "the next segment's decode: as above"),
         new("audio/AmbientSounds.cs", "SafeDecode.Decode(clip, out var failure)", null,
-            "MpegDecoder (no engine); the warning goes through EngineCalls"),
-        new("audio/AmbientSounds.cs", "started.Enqueue(() => Start(sound, pcm, data, begin, end))", null,
+            "MpegDecoder and the channel correlation (Player3DOutput.Correlation, Ms2.Audio: no engine); the warning goes through EngineCalls"),
+        new("audio/AmbientSounds.cs", "started.Enqueue(() => Start(sound, pcm, stereo, data, begin, end))", null,
             "bytes only (EventFadeIn.Bytes, Ms2.Audio: no engine); the stream is built on the main thread"),
         new("scripts/SetupScreen.cs", "UiCode.Build(data, progress)", null,
             "the setup build: UiGenerator, crossgen2, src tables; the folders are read on the main thread first (UiCode.RootPath, " +

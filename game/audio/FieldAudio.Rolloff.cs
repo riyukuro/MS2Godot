@@ -21,6 +21,9 @@ public partial class FieldAudio
     /// <summary>Whether the voice's sound has started (its start delay is over), so a loop stopped past its silent distance
     /// plays again on the way back.</summary>
     readonly bool[] started3d = new bool[EffectVoiceSlots.ClientChannels];
+    /// <summary>Where a voice's loop plays again from when the listener comes back (s): its loop start, past the event's
+    /// fade-in, since FMOD's event kept running while out of range (<see cref="EventFadeIn"/>).</summary>
+    readonly float[] loopFrom3d = new float[EffectVoiceSlots.ClientChannels];
     AudioListener3D listener;
     bool listenerOn;
 
@@ -62,7 +65,7 @@ public partial class FieldAudio
             if (gains3d.PastSilentChanged(i, out bool past))
             {
                 if (past) voices3d[i].Stop();
-                else if (started3d[i]) voices3d[i].Play();
+                else if (started3d[i]) voices3d[i].Play(loopFrom3d[i]);
             }
         }
         Ambient?.RollOff(l);
@@ -72,15 +75,16 @@ public partial class FieldAudio
     /// listener with Godot's attenuation, max distance fade and filter off, or without a curve Godot's inverse distance and
     /// filter from the event's range (3000 / 300 when it has none). The curve also gives the panning strength (its pan level).
     /// The voice is reused, so each branch sets all of them.</summary>
-    void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position)
+    void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position, float stereo)
     {
         started3d[slot] = false;
+        loopFrom3d[slot] = v.Stream is AudioStreamWav w && w.MixRate > 0 ? (float)w.LoopBegin / w.MixRate : 0;
         if (clip.Rolloff is { } c)
         {
             v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
             v.MaxDistance = Player3DOutput.CurveMaxDistance(c);
             v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
-            gains3d.Set(slot, c, own, ToNumerics(position), stopsPastSilent: clip.Loops);
+            gains3d.Set(slot, c, own, ToNumerics(position), stopsPastSilent: clip.Loops, stereoCorrelation: stereo);
             v.VolumeDb = HasListener && gains3d.Update(slot, ToNumerics(ListenerAt), out float db) ? db : Mathf.LinearToDb(own);
             if (gains3d.PanChanged(slot, out float pan)) v.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
             return;

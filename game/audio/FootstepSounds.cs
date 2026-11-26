@@ -18,7 +18,7 @@ public partial class FootstepSounds : Node
     readonly GroundEffectTable table;
     readonly CharacterBody3D body;
     readonly AnimationPlayer anim;
-    readonly Dictionary<string, AudioStreamWav> decoded = new();
+    readonly Dictionary<string, (AudioStreamWav Wav, float Stereo)> decoded = new();   // with a stereo clip's channel correlation (Player3DOutput.Correlation)
     readonly AudioStreamPlayer3D[] voices = new AudioStreamPlayer3D[4];
     int nextVoice;
     double lastPos = -1;
@@ -94,11 +94,12 @@ public partial class FootstepSounds : Node
         {
             var clip = library.ResolveEvent(ev, rng);
             if (clip == null) continue;
-            if (!decoded.TryGetValue(clip.Name, out var wav))
+            if (!decoded.TryGetValue(clip.Name, out var sound))
             {
                 var pcm = SafeDecode.Decode(clip);
-                decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
+                decoded[clip.Name] = sound = pcm == null ? default : (new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() }, Player3DOutput.Correlation(pcm));
             }
+            var wav = sound.Wav;
             if (wav == null) continue;
             var curve = clip.Rolloff;
             var fa = GetParent() as FieldAudio;
@@ -115,8 +116,8 @@ public partial class FootstepSounds : Node
                 v.MaxDistance = Player3DOutput.CurveMaxDistance(curve);
                 v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
                 float level = curve.PanLevelAt(d);
-                v.PanningStrength = Player3DOutput.PanningStrength(level);   // FMOD's pan level, its gain on the volume
-                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d) * Player3DOutput.PanLevelGain(level));
+                v.PanningStrength = Player3DOutput.PanningStrength(level, sound.Stereo);   // FMOD's pan level, its gain on the volume
+                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d) * Player3DOutput.PanLevelGain(level, sound.Stereo));
             }
             else
             {

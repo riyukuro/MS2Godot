@@ -19,7 +19,7 @@ namespace Ms2Godot;
 public partial class AmbientSounds : Node3D
 {
     readonly SoundLibrary library;
-    readonly Dictionary<string, Task<Pcm16>> decoded = new();
+    readonly Dictionary<string, Task<(Pcm16 Pcm, float Stereo)>> decoded = new();
     public int Count { get; private set; }
 
     /// <summary>The ambient players of every field now in the tree (made, not yet freed with their field).</summary>
@@ -36,6 +36,8 @@ public partial class AmbientSounds : Node3D
         public SoundClip Clip;
         public System.Numerics.Vector3 At;
         public float OldMin, OldMax;   // the inverse-distance range a clip without a curve plays with
+        public float Stereo = float.NaN;   // the decoded clip's channel correlation (Player3DOutput.Correlation; NaN: mono or not yet decoded)
+        public float LoopFrom;   // where the loop plays again from when the listener comes back (s), past the fade-in
     }
 
     readonly List<Sound> rolled = new();
@@ -54,7 +56,7 @@ public partial class AmbientSounds : Node3D
             {
                 // a loop: stopped while silent, played again on the way back
                 if (past) s.Player.Stop();
-                else if (s.On && s.Player.Stream != null) s.Player.Play();
+                else if (s.On && s.Player.Stream != null) s.Player.Play(s.LoopFrom);   // FMOD's event kept running: no new fade-in
             }
         }
     }
@@ -104,7 +106,7 @@ public partial class AmbientSounds : Node3D
         s.On = on;
         if (s.Clip.Rolloff is { } curve)
         {
-            if (on) { gains.Set(s.Index, curve, s.Clip.Volume, s.At, stopsPastSilent: true); Place(s); }
+            if (on) { gains.Set(s.Index, curve, s.Clip.Volume, s.At, stopsPastSilent: true, stereoCorrelation: s.Stereo); Place(s); }
             else gains.Clear(s.Index);
         }
         if (!on) s.Player.Stop();
@@ -163,9 +165,9 @@ public partial class AmbientSounds : Node3D
         {
             var pcm = SafeDecode.Decode(clip, out var failure);
             if (failure != null) EngineCalls.Warn(failure);
-            return pcm;
+            return pcm == null ? default : (pcm, Player3DOutput.Correlation(pcm));
         });
-        task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; var data = EventFadeIn.Bytes(pcm, clip.Event?.FadeIn ?? 0, true, out int begin, out int end); started.Enqueue(() => Start(sound, pcm, data, begin, end)); });
+        task.ContinueWith(t => { if (t.IsFaulted || t.Result.Pcm == null) return; var (pcm, stereo) = t.Result; var data = EventFadeIn.Bytes(pcm, clip.Event?.FadeIn ?? 0, true, out int begin, out int end); started.Enqueue(() => Start(sound, pcm, stereo, data, begin, end)); });
     }
 
     /// <summary>The clips decoded on the pool threads, started on the main thread (<see cref="_Process"/>): a pool thread makes
@@ -197,11 +199,15 @@ public partial class AmbientSounds : Node3D
     bool Past(Sound s) => s.Clip.Rolloff != null && gains.IsPast(s.Index);
 
     /// <summary>The decoded loop played: <paramref name="data"/> with the event's fade-in on its first pass, looping over
-    /// [<paramref name="loopBegin"/>, <paramref name="loopEnd"/>) frames (<see cref="EventFadeIn"/>).</summary>
-    void Start(Sound s, Pcm16 pcm, byte[] data, int loopBegin, int loopEnd)
+    /// [<paramref name="loopBegin"/>, <paramref name="loopEnd"/>) frames (<see cref="EventFadeIn"/>). A stereo clip's curve
+    /// volume and panning strength are set again for its channels (<paramref name="stereo"/>, Player3DOutput).</summary>
+    void Start(Sound s, Pcm16 pcm, float stereo, byte[] data, int loopBegin, int loopEnd)
     {
         var p = s.Player;
         if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
+        s.Stereo = stereo;
+        s.LoopFrom = pcm.Rate > 0 ? (float)loopBegin / pcm.Rate : 0;
+        if (s.Clip.Rolloff != null && !float.IsNaN(stereo) && gains.Has(s.Index)) { gains.SetStereo(s.Index, stereo); Place(s); }
         p.Stream = new AudioStreamWav
         {
             Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = data,

@@ -192,8 +192,8 @@ public sealed class DistanceRolloff
 /// nothing of it can be heard and played again when the listener comes back (Godot's StreamPaused is not used: a pause set
 /// within about a frame of play() is dropped, measured with the Dummy driver, while Stop is not). Allocation-free after
 /// construction. The voice's pan level at that distance (<see cref="DistanceRolloff.PanLevelAt"/>) gives its player's
-/// panning strength (<see cref="Player3DOutput.PanningStrength"/>, said by <see cref="PanChanged"/> when it moved by
-/// <see cref="PanStep"/> or more) and a gain on its volume (<see cref="Player3DOutput.PanLevelGain"/>).
+/// panning strength (<see cref="Player3DOutput.PanningStrength(float, float)"/>, said by <see cref="PanChanged"/> when it moved by
+/// <see cref="PanStep"/> or more) and a gain on its volume (<see cref="Player3DOutput.PanLevelGain(float, float)"/>).
 /// </summary>
 public sealed class RolloffGains
 {
@@ -205,7 +205,7 @@ public sealed class RolloffGains
     public const float SilentDb = -80f;
 
     DistanceRolloff[] curve;
-    float[] own, appliedDb, pan, appliedPan;
+    float[] own, appliedDb, pan, appliedPan, stereo;
     Vector3[] at;
     bool[] stops, past, crossed;
 
@@ -216,6 +216,7 @@ public sealed class RolloffGains
         appliedDb = new float[capacity];
         pan = new float[capacity];
         appliedPan = new float[capacity];
+        stereo = new float[capacity];
         at = new Vector3[capacity];
         stops = new bool[capacity];
         past = new bool[capacity];
@@ -225,15 +226,17 @@ public sealed class RolloffGains
     public int Capacity => curve.Length;
 
     /// <summary>Voice <paramref name="i"/> now plays with <paramref name="rolloff"/> (null: none) at <paramref name="ownGain"/>,
-    /// on this side of its silent distance; with <paramref name="stopsPastSilent"/> it is to stop past it.</summary>
-    public void Set(int i, DistanceRolloff rolloff, float ownGain, Vector3 position, bool stopsPastSilent = false)
+    /// on this side of its silent distance; with <paramref name="stopsPastSilent"/> it is to stop past it. A stereo clip passes
+    /// its channels' <see cref="Player3DOutput.Correlation"/> as <paramref name="stereoCorrelation"/> (NaN: mono).</summary>
+    public void Set(int i, DistanceRolloff rolloff, float ownGain, Vector3 position, bool stopsPastSilent = false, float stereoCorrelation = float.NaN)
     {
         if (i >= curve.Length) Grow(Math.Max(i + 1, curve.Length * 2));
         curve[i] = rolloff;
         own[i] = ownGain;
         at[i] = position;
+        stereo[i] = stereoCorrelation;
         appliedDb[i] = float.NaN;
-        pan[i] = rolloff == null ? 1f : Player3DOutput.PanningStrength(rolloff.PanLevelAt(0));
+        pan[i] = rolloff == null ? 1f : Player3DOutput.PanningStrength(rolloff.PanLevelAt(0), stereoCorrelation);
         appliedPan[i] = float.NaN;
         stops[i] = stopsPastSilent;
         past[i] = false;
@@ -241,6 +244,14 @@ public sealed class RolloffGains
     }
 
     public void Move(int i, Vector3 position) => at[i] = position;
+    /// <summary>Voice <paramref name="i"/>'s clip turned out stereo with <paramref name="stereoCorrelation"/> (it was set before
+    /// it was decoded): its volume and panning strength are passed again on the next <see cref="Update"/>.</summary>
+    public void SetStereo(int i, float stereoCorrelation)
+    {
+        stereo[i] = stereoCorrelation;
+        appliedDb[i] = float.NaN;
+        appliedPan[i] = float.NaN;
+    }
     public void Clear(int i) => curve[i] = null;
     public bool Has(int i) => curve[i] != null;
     public float AppliedDb(int i) => appliedDb[i];
@@ -281,8 +292,9 @@ public sealed class RolloffGains
         float d = Vector3.Distance(listener, at[i]);
         if (stops[i] && d >= c.Silent != past[i]) { past[i] = !past[i]; crossed[i] = true; }
         float level = c.PanLevelAt(d);
-        pan[i] = Player3DOutput.PanningStrength(level);
-        volumeDb = ToDb(own[i] * c.GainAt(d) * Player3DOutput.PanLevelGain(level));
+        float rho = stereo[i];
+        pan[i] = Player3DOutput.PanningStrength(level, rho);
+        volumeDb = ToDb(own[i] * c.GainAt(d) * Player3DOutput.PanLevelGain(level, rho));
         float last = appliedDb[i];
         if (!float.IsNaN(last) && MathF.Abs(volumeDb - last) < StepDb) return false;
         appliedDb[i] = volumeDb;
@@ -299,6 +311,7 @@ public sealed class RolloffGains
         Array.Resize(ref appliedDb, n);
         Array.Resize(ref pan, n);
         Array.Resize(ref appliedPan, n);
+        Array.Resize(ref stereo, n);
         Array.Resize(ref at, n);
         Array.Resize(ref stops, n);
         Array.Resize(ref past, n);
@@ -345,26 +358,76 @@ public static class Player3DOutput
     public const float GlobalPanningStrength = 0.5f;
 
     /// <summary>
-    /// The panning strength that gives a player FMOD's stereo spread at pan level <paramref name="panLevel"/>. FMOD mixes a
+    /// The panning strength that gives a mono player FMOD's stereo spread at pan level <paramref name="panLevel"/>. FMOD mixes a
     /// 3D voice as L times its 3D pan (constant power from the direction's side component: 0.707 each in front, 1 / 0 at the
     /// side) plus 1 - L times the 2D centre (1 on each channel), so the side ratio is 1 / (1 - L). Godot 4.7's player pans
     /// with constant power, 1 per channel in front, and a side ratio of 1 / (1 - s * 0.5) for a strength s under the global
-    /// 0.5. Measured from the FMOD probe's render of the meso pickup (pan level 0.523 at 600) and Godot recordings at 0, 0.25,
-    /// 0.5 and 1: side 2.095 / 2.010, 60 degrees 1.833 / 1.786, 45 degrees 1.603 / 1.578, 30 degrees 1.377 / 1.366, in front
-    /// and behind 1 / 1 (FMOD, Godot at 1). So s = L / 0.5. FMOD reads only the direction's side component; Godot pans an
-    /// elevated source at the side's ratio.
+    /// 0.5, up to 2, where the far channel is muted. Measured from the FMOD probe's render of the meso pickup (pan level 0.523
+    /// at 600) and Godot recordings: side 2.095 / 2.010, 60 degrees 1.833 / 1.786, 45 degrees 1.603 / 1.578, 30 degrees
+    /// 1.377 / 1.366, in front and behind 1 / 1 (FMOD, Godot at 1); Godot's side far / near at strengths 0, 0.25, 0.5, 1,
+    /// 1.25, 1.5, 1.75 and 2: 1, 0.874, 0.749, 0.498, 0.371, 0.246, 0.120 and 0, with the power the same at every one. So
+    /// s = L / 0.5. FMOD reads only the direction's side component; Godot pans an elevated source at the side's ratio.
     /// </summary>
     public static float PanningStrength(float panLevel) => Math.Clamp(panLevel, 0f, 1f) / GlobalPanningStrength;
 
     /// <summary>
-    /// The gain that brings the player's power to FMOD's at pan level <paramref name="panLevel"/>: Godot keeps 1 + 1 at every
-    /// strength, FMOD has L^2 + 2 L (1 - L) (l + r) + 2 (1 - L)^2 for the 3D pan's l + r, taken at its mid value (1 + 1.414) / 2
-    /// (within 0.35 dB of the front and the side). 1 at L = 0 (2D), 0.707 at L = 1; 0.815 at the meso pickup's 0.523.
+    /// The gain that brings the mono player's power to FMOD's at pan level <paramref name="panLevel"/>: Godot keeps 1 + 1 at
+    /// every strength, FMOD has L^2 + 2 L (1 - L) (l + r) + 2 (1 - L)^2 for the 3D pan's l + r, taken at its mid value
+    /// (1 + 1.414) / 2 (within 0.35 dB of the front and the side). 1 at L = 0 (2D), 0.707 at L = 1; 0.815 at the meso
+    /// pickup's 0.523.
     /// </summary>
     public static float PanLevelGain(float panLevel)
     {
         float l = Math.Clamp(panLevel, 0f, 1f), m = 1 - l;
         const float k = 1.2071068f;
         return MathF.Sqrt((l * l + 2 * l * m * k + 2 * m * m) / 2);
+    }
+
+    /// <summary>
+    /// The panning strength for a stereo clip whose channels correlate by <paramref name="stereo"/> (<see cref="Correlation"/>;
+    /// NaN: a mono clip, <see cref="PanningStrength(float)"/>). FMOD Ex pans a stereo 3D voice's channel sum: each channel
+    /// is v ((1 - L) own + L g (left + right)), g the 3D pan's constant power gain (regressed from the FMOD probe's renders
+    /// of the stereo AMB/11100001 against the same at the listener: at 1000 to the side, L 0.447, the near channel 0.762
+    /// own + 0.341 other, the far 0.421 own; in front 0.662 own + 0.241 other, a residual under 1e-4), so the near ear's power
+    /// is 1 + L^2 + 2 L rho and the far's (1 - L)^2. Godot pans each input channel by the mono ear gains with no cross-feed
+    /// (the same clip recorded to the side at strength 1: left 1.266 left, right 0.630 right, cross 0), so the side ratio
+    /// 1 / (1 - s / 2) is matched to FMOD's: s = 2 (1 - (1 - L) / sqrt(1 + L^2 + 2 L rho)).
+    /// </summary>
+    public static float PanningStrength(float panLevel, float stereo)
+    {
+        if (float.IsNaN(stereo)) return PanningStrength(panLevel);
+        float l = Math.Clamp(panLevel, 0f, 1f), near = MathF.Sqrt(MathF.Max(0, 1 + l * l + 2 * l * stereo));
+        return near <= 1e-6f ? 2f : Math.Clamp(2 * (1 - (1 - l) / near), 0f, 2f);
+    }
+
+    /// <summary>
+    /// The gain for a stereo clip (<see cref="PanningStrength(float, float)"/>; NaN: <see cref="PanLevelGain(float)"/>): Godot
+    /// puts out 1 + 1 of the input's power at every strength, FMOD at the side 1 + L^2 + 2 L rho + (1 - L)^2 and in front
+    /// 2 (a^2 + b^2 + 2 rho a b) for a = 1 - L + 0.707 L, b = 0.707 L; the gain takes the mean of the two (within 0.36 dB of
+    /// both for L 0 to 1 and rho -0.5 to 1). 1 at L = 0, sqrt(1 + rho) at L = 1.
+    /// </summary>
+    public static float PanLevelGain(float panLevel, float stereo)
+    {
+        if (float.IsNaN(stereo)) return PanLevelGain(panLevel);
+        float l = Math.Clamp(panLevel, 0f, 1f), m = 1 - l;
+        const float c = 0.70710677f;
+        float side = (1 + l * l + 2 * l * stereo + m * m) / 2, a = m + l * c, b = l * c;
+        float front = a * a + b * b + 2 * stereo * a * b;
+        return MathF.Sqrt(MathF.Max(0, (side + front) / 2));
+    }
+
+    /// <summary>The correlation of a stereo clip's two channels (sum l r / sqrt(sum l^2 sum r^2), 0 when either is silent);
+    /// NaN for a mono one. Taken once as the clip is decoded.</summary>
+    public static float Correlation(Pcm16 pcm)
+    {
+        if (pcm == null || pcm.Channels != 2) return float.NaN;
+        var x = pcm.Samples;
+        double lr = 0, ll = 0, rr = 0;
+        for (int i = 0; i + 1 < x.Length; i += 2)
+        {
+            double a = x[i], b = x[i + 1];
+            lr += a * b; ll += a * a; rr += b * b;
+        }
+        return ll <= 0 || rr <= 0 ? 0f : (float)(lr / Math.Sqrt(ll * rr));
     }
 }
