@@ -205,7 +205,10 @@ public sealed class QuestDialogController : UiController
         if (Host.Entity != null) Host.Invoke("updatePaper", 1);
     }
 
-    /// <summary>CloseChapter @0x141aa2520 (:1910) on the sub-tab GetSubTab reads (3, none, without the movie).</summary>
+    /// <summary>CloseChapter @0x141aa2520 (:1910) on the sub-tab GetSubTab reads. Without the movie (before the first open,
+    /// and after each close: OnEndClose -> Unload, uiswfentity.cpp:241, m_30 = 0) GetButtonBar is null
+    /// (uidailymissiondialog.cpp:687), GetSubTab gives 3 and GetFlags none: the reward closes nothing, and nothing is kept
+    /// for the next open.</summary>
     public void CloseChapter(int chapter)
     {
         if (Log == null) return;

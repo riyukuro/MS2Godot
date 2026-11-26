@@ -158,6 +158,12 @@ public sealed class LivePortals
     /// portal.cpp:420-464): raised on every register, and on a quest mask run (FUN_14169d0e0), a FieldPortal mode 2 or the
     /// start tick that changes the shown flag. The field's draw of the entity follows it (<see cref="PortalDraws"/>).</summary>
     public event Action<LivePortal> ShownChanged;
+    /// <summary>A portal registered: RegisterPortal ends with AddProxyObject (worldservice_1.cpp:9106-9110), the portal's
+    /// proxy (m_14c) added, which the entity event dispatcher shows (ShowNotice: the minimap's AddProxy).</summary>
+    public event Action<LivePortal> Added;
+    /// <summary>A registered portal removed: RemoveFieldObject ends with RemoveProxyObject (worldservice_1.cpp:4054), whose
+    /// HideNotice is the minimap's RemoveProxy.</summary>
+    public event Action<LivePortal> Removed;
     public LivePortal ById(int id) => byId.GetValueOrDefault(id);
     /// <summary>The field's entities are attached (the portal messages before it are held, as the client's field is built
     /// before it reads the field's packets).</summary>
@@ -249,6 +255,7 @@ public sealed class LivePortals
         // the register sets the entity's IsVisible whatever it was: the entity may still be drawn from before a mode 1
         // (RemoveFieldObject leaves a bound xblock entity's flags), so the draw always takes it
         ShownChanged?.Invoke(p);
+        Added?.Invoke(p);
     }
 
     /// <summary>Tells the draw when a registered portal's shown flag changed from <paramref name="was"/>.</summary>
@@ -259,7 +266,9 @@ public sealed class LivePortals
 
     public void Remove(int id)
     {
-        if (byId.Remove(id, out var p)) order.Remove(p);
+        if (!byId.Remove(id, out var p)) return;
+        order.Remove(p);
+        Removed?.Invoke(p);
     }
 
     bool Available(LivePortal p) => available(p.Feature, p.Locale);

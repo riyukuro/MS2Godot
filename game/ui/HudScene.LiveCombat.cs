@@ -78,6 +78,17 @@ public partial class HudScene
     /// <summary>Whether the minimap's mark of a portal shows; null without the minimap or the mark.</summary>
     public bool? MinimapPortalMarkScripted(int portalId) => minimapSide?.PortalMarkShown(portalId);
 
+    /// <summary>The minimap's portal marks (id and whether each shows), the xblock portals with no mark and the marked portals
+    /// the xblock lacks; null without the minimap.</summary>
+    public string MinimapPortalMarksScripted()
+    {
+        if (minimapSide == null) return null;
+        var marked = minimapSide.Marks.Where(m => m.HasPortal).Select(m => m.PortalId).ToList();
+        string shown = string.Join(" ", marked.Select(id => $"{id}:{(minimapSide.PortalMarkShown(id) is { } v ? (v ? "shown" : "hidden") : "no clip")}"));
+        return $"marks [{shown}], xblock only [{string.Join(" ", minimapXblockPortals.Except(marked))}], " +
+            $"not in the xblock [{string.Join(" ", marked.Except(minimapXblockPortals))}]";
+    }
+
     /// <summary>The minimap's entity of an npc: its icon, frame and layer and whether it shows; null without the minimap or the entity.</summary>
     public string MinimapNpcMarkScripted(int objectId) =>
         minimapSide?.Npcs.FirstOrDefault(n => n.ObjectId == objectId) is { Clip: not null } n

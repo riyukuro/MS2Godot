@@ -12,7 +12,7 @@ using NUnit.Framework;
 namespace Ms2.Ui.Tests;
 
 /// <summary>The HUD movies run by their own ActionScript and fed by the Ms2.Ui controllers (needs MS2_DATA).</summary>
-public class HudTests
+public partial class HudTests
 {
     static PackSet packs;
     static KeyTable keys;

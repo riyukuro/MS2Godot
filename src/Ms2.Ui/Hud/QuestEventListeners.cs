@@ -46,8 +46,8 @@ public sealed class QuestEventListeners
     public void Rewarded(int id)
     {
         if (General(id) is not { } d) return;
-        // vfunc_o178_2 @0x141a9ab10: CloseChapter even while closed. A log not made yet builds its chapter flags when it
-        // opens.
+        // vfunc_o178_2 @0x141a9ab10: CloseChapter even while closed, where it sets nothing (no m_subTab without the movie).
+        // A log not made yet has no flags to close; it starts each chapter on IsSubTabOne when it reads it.
         QuestLog()?.OnQuestRewarded(d.Chapter);
         Minimap()?.OnQuestEvent(true);
     }

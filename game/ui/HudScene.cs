@@ -1331,7 +1331,7 @@ public partial class HudScene : Node, IUiStageHost
         };
         WireMinimapDungeons(c);
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
-        try { MinimapMarks(fc, c.Marks); }
+        try { MinimapMarks(fc, c); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
         try { MinimapNpcs(fc, c, model); }
         catch (Exception e) { GD.PushWarning("minimap npcs: " + e.Message); }
@@ -1434,33 +1434,39 @@ public partial class HudScene : Node, IUiStageHost
     /// controller's own (<see cref="MinimapNpcs"/>). The icons and layers are
     /// <see cref="MinimapIcons"/>'s ports of UIMinimapEntity's.
     /// </summary>
-    void MinimapMarks(World.FieldContents fc, List<Ms2.Ui.Hud.MinimapController.Mark> marks)
+    void MinimapMarks(World.FieldContents fc, Ms2.Ui.Hud.MinimapController c)
     {
+        var marks = c.Marks;
         // the field meta table the quest table already read (QuestTable.Load), not a second parse of fieldmetadata.xml
         // (none without the table: no portal npcs and no taxi, the other marks still placed)
         var meta = FieldMeta.EntryOf(assets.Packs) != null ? QuestMapGraph.SharedMeta(assets.Packs) : null;
         var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, assets.Language),
             meta?.FieldNpcs ?? new Dictionary<int, List<int>>(), meta == null ? Array.Empty<int>() : meta.TaxiStations.Keys);
         // every portal of the field gets its proxy, a hidden one too: RefreshPortal shows it when FUN_14169d1d0 (the minimap
-        // flag and IsShown) turns true. In a live field those are the server-listed portal's (LivePortals: shown after the
-        // quest masks, minimap flag from FieldPortal 0x48), else the xblock's.
-        // STILL-OPEN: the marks are the xblock's portals: one only the server lists gets none, and one it never lists keeps
-        // the xblock's flags
-        var livePortals = Ms2Godot.Net.LiveSession.Instance?.Portals is { } lps && lps.FieldId == fc.FieldId ? lps : null;
-        foreach (var p in fc.Portals.All)
+        // flag and IsShown) turns true. Live, the portals are the server's (WorldService's proxies: one per registered portal,
+        // RegisterPortal's AddProxyObject): an xblock portal the server never lists has no proxy and no mark, a spawned one
+        // has its mark, and the later registers and removes add and remove marks. Offline the xblock's portals stand in.
+        unwatchMinimapPortals?.Invoke();
+        unwatchMinimapPortals = null;
+        minimapXblockPortals = fc.Portals.All.Select(p => p.Id).ToArray();
+        if (Ms2Godot.Net.LiveSession.Instance is { } live)
         {
-            int field = fc.FieldId, target = p.TargetField, type = (int)p.Entity.Number("PortalType"), id = p.Id;
-            bool own = p.Visible && p.Entity.Bool("MinimapIconVisible", true);
-            bool Flags() => livePortals?.ById(id) is { } lp ? lp.Minimap && lp.Shown : own;
-            var e = icons.Portal(field, target, type, Flags(), true);
-            if (e == null) continue;
-            var at = p.Position;
-            marks.Add(new()
-            {
-                Entity = e, Position = () => at, ShowGuide = true, HasPortal = true, PortalType = type, PortalId = id,
-                PortalVisible = Flags, FromPortal = () => icons.Portal(field, target, type, Flags(), true),
-            });
+            if (live.Portals is { } lps && lps.FieldId == fc.FieldId) unwatchMinimapPortals = c.WatchPortals(lps, icons, fc.FieldId);
         }
+        else
+            foreach (var p in fc.Portals.All)
+            {
+                int field = fc.FieldId, target = p.TargetField, type = (int)p.Entity.Number("PortalType"), id = p.Id;
+                bool own = p.Visible && p.Entity.Bool("MinimapIconVisible", true);
+                var e = icons.Portal(field, target, type, own, true);
+                if (e == null) continue;
+                var at = p.Position;
+                marks.Add(new()
+                {
+                    Entity = e, Position = () => at, ShowGuide = true, HasPortal = true, PortalType = type, PortalId = id,
+                    PortalVisible = () => own, FromPortal = () => icons.Portal(field, target, type, own, true),
+                });
+            }
         static bool IsModel(FieldEntity e, string model) =>
             string.Equals(e.ModelName, model, StringComparison.OrdinalIgnoreCase) || e.HasMixin(model);
         void Place(MinimapIcons.Entity e, Vec3 at, bool taxi = false) { if (e != null) marks.Add(new() { Entity = e, Position = () => at, IsTaxi = taxi }); }
@@ -1472,6 +1478,10 @@ public partial class HudScene : Node, IUiStageHost
         foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2Minimap")) ?? Enumerable.Empty<FieldEntity>())
             Place(MinimapIcons.MapObject(e.Get("MinimapIconFrame")), e.Position);
     }
+
+    Action unwatchMinimapPortals;
+    /// <summary>The field's xblock portal ids at the minimap's build (a scripted run compares them with the marks).</summary>
+    int[] minimapXblockPortals = Array.Empty<int>();
 
     /// <summary>The local player for RefreshLocalPlayer: its position, GetPlayerHeading and dead state (none offline).</summary>
     (Vec3, float, bool) LocalMinimapPlayer()

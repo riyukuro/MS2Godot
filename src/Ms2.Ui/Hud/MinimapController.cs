@@ -552,16 +552,52 @@ public sealed partial class MinimapController : UiController
         // the proxies without a portal (WorldService's CAtlMap order; here the order they were added), before the portals
         foreach (var o in others) CreateOther(o);
         foreach (var n in npcs) CreateNpc(n);
-        foreach (var m in Marks)
-        {
-            m.Visible = m.Entity.Visible;
-            var mark = m;
-            mark.UserFunction = a => { if (a.Length > 0 && Rt.ToString(a[0]) == "click") ClickMark(mark); return null; };
-            m.Clip = Create(m.Entity.Icon, m.Entity.Frame, m.Entity.Layer, m.Entity.Label ?? "", !string.IsNullOrEmpty(m.Entity.Label),
-                m.ShowGuide && m.Visible, m.Entity.InFieldNpc, m.Position(), m.Visible, userFunction: m.HasPortal ? mark.UserFunction : null);
-        }
+        foreach (var m in Marks) CreateMark(m);
         BuildNamed();
         Host.Invoke("buildPlayers");
+    }
+
+    /// <summary>A mark's entity made (AddProxy's FUN_141a3e7d0), with the click userFunction for a portal.</summary>
+    void CreateMark(Mark m)
+    {
+        m.Visible = m.Entity.Visible;
+        var mark = m;
+        mark.UserFunction = a => { if (a.Length > 0 && Rt.ToString(a[0]) == "click") ClickMark(mark); return null; };
+        m.Clip = Create(m.Entity.Icon, m.Entity.Frame, m.Entity.Layer, m.Entity.Label ?? "", !string.IsNullOrEmpty(m.Entity.Label),
+            m.ShowGuide && m.Visible, m.Entity.InFieldNpc, m.Position(), m.Visible, userFunction: m.HasPortal ? mark.UserFunction : null);
+    }
+
+    /// <summary>
+    /// A portal's proxy added (WorldService::RegisterPortal's AddProxyObject, whose ShowNotice is the dialog's vfunc_3 ->
+    /// AddProxy, uiminimapentity.cpp:3539-3590): a portal id already marked is skipped; the mark goes after the other portals
+    /// (BuildEntities' order on the next build) and, once the field image is in, its entity is made at once.
+    /// </summary>
+    public void AddPortal(Mark m)
+    {
+        if (m == null || !m.HasPortal || FindPortal(m.PortalId) >= 0) return;
+        int at = 0;
+        for (int i = 0; i < Marks.Count; i++) if (Marks[i].HasPortal) at = i + 1;
+        Marks.Insert(at, m);
+        if (Host?.Entity != null && fieldLoaded) CreateMark(m);
+    }
+
+    /// <summary>A portal's proxy removed (RemoveFieldObject's RemoveProxyObject, HideNotice -> vfunc_4 -> RemoveProxy,
+    /// uiminimapentity.cpp:3632): removeEntity(clip, "") (no character id), then the mark goes.</summary>
+    public void RemovePortal(int portalId)
+    {
+        int i = FindPortal(portalId);
+        if (i < 0) return;
+        var m = Marks[i];
+        Marks.RemoveAt(i);
+        if (m.Clip != null && Host?.Entity != null) Host.Invoke("removeEntity", m.Clip, "");
+        m.Clip = null;
+    }
+
+    int FindPortal(int portalId)
+    {
+        for (int i = 0; i < Marks.Count; i++)
+            if (Marks[i].HasPortal && Marks[i].PortalId == portalId) return i;
+        return -1;
     }
 
     /// <summary>

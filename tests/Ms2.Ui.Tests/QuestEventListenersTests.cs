@@ -20,6 +20,17 @@ public class QuestEventListenersTests
         public bool NpcFieldOpen(int npcId, int fieldId) => false;
     }
 
+    sealed class Rewarded : IQuestState
+    {
+        public readonly Dictionary<int, QuestRecord> ById = new();
+        public IReadOnlyList<QuestRecord> Records => ById.Values.ToList();
+        public QuestRecord Get(int questId) => ById.TryGetValue(questId, out var q) ? q : null;
+        public bool CanStart(int questId) => false;
+        public int PlayerLevel { get; set; } = 10;
+        public long CharacterId => 7;
+        public bool NpcFieldOpen(int npcId, int fieldId) => false;
+    }
+
     // 1 a general quest of chapter 10, 2 .. 6 the types the dispatcher sends elsewhere, 7 type 1 (general), 9 no data
     static QuestData Data(int id) => id switch
     {
@@ -115,5 +126,51 @@ public class QuestEventListenersTests
         l.Rewarded(4);
         l.Rewarded(9);
         Assert.That(rewards, Is.EqualTo(1), "slot 2: the general type with data only");
+    }
+
+    /// <summary>
+    /// A reward closes its chapter only on a log with its movie. CloseChapter @0x141aa2520 (uiquestdialog.cpp:1910) reads
+    /// the sub-tab through GetButtonBar("m_subTab"), null while m_30 is null (uidailymissiondialog.cpp:687): before the
+    /// first open and after every close (OnEndClose, uidialog.cpp:894 -> Unload, uiswfentity.cpp:241). GetSubTab then
+    /// gives 3, GetFlags null, and nothing is set or kept for later; a reopen shows the old flag, and a chapter seen the
+    /// first time starts on IsSubTabOne (:1935).
+    /// </summary>
+    [Test]
+    public void ARewardWithoutTheMovieLeavesTheChapterFlags()
+    {
+        var table = new QuestTable("KR", _ => true);
+        table.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest id=""1""><basic chapterID=""10"" questType=""0"" standardLevel=""10"" /></quest>
+            <quest id=""2""><basic chapterID=""20"" questType=""0"" standardLevel=""10"" /></quest></ms2>"));
+        table.BuildIndexes();
+        var state = new Rewarded();
+        state.ById[1] = new QuestRecord(1, 2, 5, 9, 0, true, false);
+        state.ById[2] = new QuestRecord(2, 2, 5, 9, 0, true, false);
+        var l = new QuestEventListeners { Data = Data };
+
+        // not made yet: the reward goes nowhere; the log made later starts chapter 10 open on the in-progress sub-tab
+        l.Rewarded(1);
+        var c = new QuestDialogController { Log = new QuestLog(table, state) { SubTab = 1 } };
+        l.QuestLog = () => c;
+        Assert.That(c.Log.IsChapterOpen(10), Is.True, "a chapter seen the first time: IsSubTabOne");
+
+        // made, its flag seen open, then closed (no movie): the reward sets nothing, the reopen shows the old flag
+        l.Rewarded(1);
+        Assert.That(c.Log.SubTab, Is.EqualTo(3), "GetSubTab without m_subTab");
+        c.Log.SubTab = 1;
+        Assert.That(c.Log.IsChapterOpen(10), Is.True, "the flag kept from before the close");
+
+        // the same reward on the sub-tab the movie gives closes it (the open log's path)
+        c.Log.CloseChapter(10);
+        Assert.That(c.Log.IsChapterOpen(10), Is.False);
+
+        // a chapter rewarded while closed and never seen: the default, on whichever sub-tab the reopen reads
+        c.Log.SubTab = 3;
+        l.Rewarded(7);
+        Assert.That(Data(7).Chapter, Is.EqualTo(20));
+        c.Log.SubTab = 1;
+        Assert.That(c.Log.IsChapterOpen(20), Is.True);
+        c.Log.SubTab = 0;
+        Assert.That(c.Log.IsChapterOpen(20), Is.False);
     }
 }

@@ -327,6 +327,11 @@ public partial class LiveSession
                 GD.Print($"live: combat minimap mark of portal {id}: {hud.MinimapPortalMarkScripted(id)?.ToString() ?? "none"}");
                 continue;
             }
+            if (step == "minimapportals")      // minimapportals: the minimap's portal marks against the xblock's portals
+            {
+                GD.Print($"live: combat minimap portals in map {live.Portals?.FieldId}: {hud.MinimapPortalMarksScripted() ?? "no minimap"}");
+                continue;
+            }
             if (step.StartsWith("minimapnpc:"))      // minimapnpc:<npc id>: the minimap's entity of each field npc of that id (icon, frame, layer, shown)
             {
                 int id = int.Parse(step[11..]);
