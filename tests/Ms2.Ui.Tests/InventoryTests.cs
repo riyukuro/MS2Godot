@@ -910,6 +910,17 @@ public class InventoryTests
     }
 
     [Test]
+    public void TheShopIdComesFromParam1OfAType20ItemOrTheGms2ShopElement()
+    {
+        // GetShopId (itemdatastruct.cpp:1181): param1 of a type 0x14 item. The GMS2 item files carry no param1 there: they give the
+        // shop as <Shop systemShopID> (item/2/03/20301082.xml: type 20, systemShopID 196).
+        var kms = ItemData.Load(1, System.Xml.Linq.XElement.Parse("<e><property type=\"20\" param1=\"196\"/></e>"));
+        var gms2 = ItemData.Load(2, System.Xml.Linq.XElement.Parse("<e><property type=\"20\"/><Shop systemShopID=\"196\"/></e>"));
+        var none = ItemData.Load(3, System.Xml.Linq.XElement.Parse("<e><property type=\"20\"/></e>"));
+        Assert.That((kms.ShopId, gms2.ShopId, none.ShopId), Is.EqualTo((196, 196, 0)));
+    }
+
+    [Test]
     public void AShopItemDoubleClickAsksTheSystemShopAndOpensNothingLocally()
     {
         // InvenSlot::vfunc_13 (invenslot.cpp:859-866): an item without a function whose GetShopId > 0 passes FUN_14140dea0 and the shop

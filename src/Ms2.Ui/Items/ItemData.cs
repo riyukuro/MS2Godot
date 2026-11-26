@@ -170,6 +170,7 @@ public sealed class ItemData
         d.CustomNote = ((string)env.Element("MusicScore")?.Attribute("isCustomNote"))?.ToLowerInvariant() is "true" or "1";
         if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
         if (env.Element("maid") is { } maid) Int(maid, "maidID", ref d.MaidElementId);
+        if (env.Element("Shop") is { } shop) Int(shop, "systemShopID", ref d.SystemShopId);   // GMS2 data only
         if (env.Element("property") is { } p)
         {
             Int(p, "type", ref d.Type);
@@ -491,8 +492,13 @@ public sealed class ItemData
     }
     /// <summary>FUN_14053cbc0 (:663): an equipment item.</summary>
     public bool IsEquipItem => Type == 1;
-    /// <summary>GetShopId (:1181): param1 of a type 0x14 item, else 0.</summary>
-    public int ShopId => Type == 0x14 ? Param1 : 0;
+    /// <summary>GetShopId (:1181): param1 of a type 0x14 item (KMS), else the GMS2 data's <see cref="SystemShopId"/>, else 0.</summary>
+    public int ShopId => Type == 0x14 && Param1 > 0 ? Param1 : SystemShopId;
+
+    /// <summary>The GMS2 item files' &lt;Shop systemShopID&gt; (item/2/03/20301082.xml: type 20, no param1, systemShopID 196); the KMS
+    /// files carry the shop id in param1 instead. STILL-OPEN: the GMS2 exe's GetShopId (its image is packed, so unread); the
+    /// server side (SystemShop type 10 answers from this element) and the data both name it.</summary>
+    public int SystemShopId;
     /// <summary>GetPetId (itemdata.cpp:1134): param1 of a pet item (type 0xb), else 0.</summary>
     public int PetId => Type == 0xb ? Param1 : 0;
     /// <summary>HasCubeTextureMesh (:987).</summary>
