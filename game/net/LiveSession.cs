@@ -2377,7 +2377,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Shop))
             {
                 var sp = ShopPacket.Read(p.Reader(), game.Profile);   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
-                GD.Print($"live: shop cmd {sp.Command}" + (sp.Error != null ? $" error {sp.Error.Error} for cmd {sp.Error.Command} value {sp.Error.Value}" : ""));
+                if (LiveCheck) GD.Print($"live: shop cmd {sp.Command}" + (sp.Error != null ? $" error {sp.Error.Error} for cmd {sp.Error.Command} value {sp.Error.Value}" : ""));
                 ShopReceived?.Invoke(sp);
             }
             else if (game.Is(p, Inbound.MeretMarket))
