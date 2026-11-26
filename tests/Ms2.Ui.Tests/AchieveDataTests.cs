@@ -220,6 +220,8 @@ public class AchieveDataTests
         // NotifyReward: every grade's reward by type
         var byType = new SortedDictionary<int, int>();
         var empty = new List<string>();
+        var unnamedSkills = new List<string>();
+        int dynamicActions = 0;
         foreach (var d in book.GetList(0, 0, false, false).Select(a => a.Data))
             foreach (var g in d.Grades.Values)
             {
@@ -246,9 +248,22 @@ public class AchieveDataTests
                     if (toasts.Log[0].EndsWith("|", StringComparison.Ordinal) || lines[0].Text.Length == 0) empty.Add($"{d.Id}/{g.Grade}");
                 }
                 if (r.Type is 3 or 4) Assert.That(lines.Select(l => l.Kind), Is.EqualTo(new[] { TalkKind.SystemNotice }));
+                if (r.Type == 12)
+                {
+                    // the dynamic action's name (string table 4 skillName) in the notice line and the reward text
+                    dynamicActions++;
+                    string skill = texts.TableString(4, r.Code);
+                    if (skill.Length == 0 || (want == 1 && !lines[0].Text.Contains(skill, StringComparison.Ordinal))
+                        || (texts.FindSpecialReward(d.Id, g.Grade) == null && texts.RewardText(d.Id, g.Grade) is { Length: > 0 } rewardText
+                            && !rewardText.Contains(skill, StringComparison.Ordinal)))
+                        unnamedSkills.Add($"{d.Id}/{g.Grade} skill {r.Code}");
+                }
             }
         TestContext.Progress.WriteLine("reward types: " + string.Join(", ", byType.Select(kv => $"{AchieveData.RewardTypeName(kv.Key)}({kv.Key}) {kv.Value}")));
         Assert.That(empty, Is.Empty, "every unlock notice has its text");
+        TestContext.Progress.WriteLine($"dynamic action rewards: {dynamicActions}, {unnamedSkills.Count} without the skill's name: {string.Join(", ", unnamedSkills.Take(5))}");
+        Assert.That(dynamicActions, Is.GreaterThan(0), "the dynamic action rewards");
+        Assert.That(unnamedSkills, Is.Empty, "every dynamic action reward names its skill");
         Assert.That(byType.GetValueOrDefault(1) + byType.GetValueOrDefault(3), Is.GreaterThan(100), "the item and stat rewards");
     }
 

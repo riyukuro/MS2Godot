@@ -78,11 +78,12 @@ public partial class HudScene
     /// <summary>
     /// The mode 2 notices of <paramref name="book"/> on this HUD: the reward notify's toasts, the chat log's system lines, the
     /// guide's triggers and limit, the local player (the chat link's name, the beauty reward's gender), the skill icons, the
-    /// main player info's progress lines and the dynamic action window's refresh on a clear.
+    /// main player info's progress lines and the dynamic action window's refresh on a clear. The trophy texts
+    /// (CAchieveUIData) are read on the first notice, so the HUD's load does not read them.
     /// </summary>
     AchieveNotices AchieveNoticesFor(AchieveBook book)
     {
-        var n = new AchieveNotices(AchieveTextsFor(book))
+        var n = new AchieveNotices(() => AchieveTextsFor(book))     // the texts are read on the first mode 2 update
         {
             Toasts = () => Ms2Godot.Net.LiveSession.LiveCheck ? new LoggedToasts(EnsureRewardNotify()) : EnsureRewardNotify(),
             Line = (text, kind) =>

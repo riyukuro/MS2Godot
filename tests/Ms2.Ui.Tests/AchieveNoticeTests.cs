@@ -64,9 +64,12 @@ public class AchieveNoticeTests
         public readonly List<string> Log = new();
         public int? Gender = 0;
         public bool FeatureBb = true, FeatureBc = true;
+        public int TextsMade;
     }
 
-    static Rig Make(Dictionary<ulong, AchieveTexts.SpecialReward> specials, params AchieveData[] data)
+    static Rig Make(Dictionary<ulong, AchieveTexts.SpecialReward> specials, params AchieveData[] data) => Make(specials, false, data);
+
+    static Rig Make(Dictionary<ulong, AchieveTexts.SpecialReward> specials, bool lazyTexts, params AchieveData[] data)
     {
         var rig = new Rig();
         rig.Book = new AchieveBook(data.ToDictionary(d => d.Id), data);
@@ -79,7 +82,8 @@ public class AchieveNoticeTests
             Gender = () => rig.Gender,
         };
         var toasts = new Toasts(rig.Log);
-        rig.Notices = new AchieveNotices(texts)
+        Func<AchieveTexts> made = () => { rig.TextsMade++; return texts; };
+        rig.Notices = new AchieveNotices(lazyTexts ? made : () => texts)
         {
             Toasts = () => toasts,
             Line = (text, kind) => rig.Log.Add($"line {kind:x} {text}"),
@@ -97,6 +101,19 @@ public class AchieveNoticeTests
 
     static string Link(int id, int grade, string text, string title) =>
         MessengerBrowser.LinkMarkup($"'event:achieveTooltip,{id},4,{grade},{text},'", "#ffffff", title);
+
+    [Test]
+    public void LazyTextsAreMadeOnTheFirstUpdateOnly()
+    {
+        var rig = Make(null, true, D(21100001, 1, G(1, 10, 1, 20000001, 1, 3), G(2, 20, 3, 0, 5)));
+        rig.Book.Apply(new AchieveMessage.Rows(new[] { (21100001, 1, P(2, 1, 1, 4)) }));
+        Assert.That(rig.TextsMade, Is.Zero, "mode 1 reads no text");
+        rig.Book.Apply(new AchieveMessage.Update(21100001, P(2, 2, 1, 0)));
+        Assert.That(rig.TextsMade, Is.EqualTo(1), "the first mode 2 update makes the texts");
+        Assert.That(rig.Log, Does.Contain($"toast achieve Trophy21100001 {Medal} 2"));
+        rig.Book.Apply(new AchieveMessage.Update(21100001, P(2, 2, 1, 5)));
+        Assert.That(rig.TextsMade, Is.EqualTo(1), "made once");
+    }
 
     [Test]
     public void AGradeClearedTheRewardTakenAndProgressNotifyInTheClientsOrder()

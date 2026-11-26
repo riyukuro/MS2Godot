@@ -25,9 +25,16 @@ public interface IAchieveToasts
 /// </summary>
 public sealed class AchieveNotices
 {
-    public readonly AchieveTexts Texts;
+    AchieveTexts texts;
+    readonly Func<AchieveTexts> makeTexts;
 
-    public AchieveNotices(AchieveTexts texts) => Texts = texts;
+    /// <summary>The trophy texts; made by the factory on the first notice that reads them.</summary>
+    public AchieveTexts Texts => texts ??= makeTexts();
+
+    public AchieveNotices(AchieveTexts texts) => this.texts = texts;
+
+    /// <summary>Notices whose texts are made on first use (the first mode 2 update), not when the HUD loads.</summary>
+    public AchieveNotices(Func<AchieveTexts> makeTexts) => this.makeTexts = makeTexts;
 
     /// <summary>FindRewardNotify(0x4e5d): the HUD's reward notify, null when there is none.</summary>
     public Func<IAchieveToasts> Toasts = () => null;
@@ -39,7 +46,8 @@ public sealed class AchieveNotices
     public Func<bool> ProgressRestricted = () => false;
     /// <summary>The local player's name (PCBase::vfunc_77), null when there is no local player.</summary>
     public Func<string> PlayerName = () => null;
-    /// <summary>SkillDataTableCli::GetSkillData(code)'s icon, null without the skill's data.</summary>
+    /// <summary>SkillDataTableCli::GetSkillData(code)'s icon, null without the skill's data. NotifyReward passes it through
+    /// FUN_14016a730(m_strIcon, 0), the narrow to wide text conversion, so the path is the icon as it is.</summary>
     public Func<uint, string> SkillIcon = _ => null;
     /// <summary>UIMainPlayerInfo::AppendMessage (@0x1419f0ef0): FindMainPlayerInfo(0x4e5f) and its movie's
     /// appendMessage(message, type); nothing without the window.</summary>

@@ -1179,7 +1179,7 @@ public sealed class GameTables
             StatName, SpecialAbilityName);
 
     /// <summary>
-    /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 3 mapName, 38 GuildEventDesc, 1 itemName,
+    /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 3 mapName, 38 GuildEventDesc, 1 itemName, 4 skillName,
     /// 11 stringInteractObjectAction, 14 actionName (the talk key's caption by npc), 15 mapNamePortalTooltip, 20 stringFieldEnterance (0x15: its uiDescription), 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 49 stringRideeName, 51 stringUgc, 59 petName, 74 achieveCategoryName, and 80
     /// specialQuestType (string/&lt;lang&gt;/specialquesttype.xml, the character ability dialog's); "" for an unknown id or
     /// another table.
@@ -1187,6 +1187,7 @@ public sealed class GameTables
     public string StringTableText(int table, long id)
     {
         if (table == 3) return MapName((int)id) ?? "";   // mapName
+        if (table == 4) return id is >= 0 and <= uint.MaxValue ? SkillName((uint)id) : "";   // skillName (the dynamic action rewards)
         string file = table switch
         {
             0x26 => "guildeventdesc",
