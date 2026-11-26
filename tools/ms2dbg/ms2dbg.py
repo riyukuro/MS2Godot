@@ -48,10 +48,13 @@ COMMANDS = {
     "as3": ("AS3 movies: no args lists the views; movie (+ dotted instance path) shows a display-list / variable view.", {
         "movie": ("s", "movie name"), "path": ("s", "dotted instance names from the movie root")}),
     "creative": ("The debug item browser (KMS2 only): its state, open/close, search, tab filter, a hover/click of the first cell and a spawn by id.", {
-        "action": ("s", "status (default), open, close, toggle, search, tab, amount, hover, click, spawn"),
+        "action": ("s", "status (default), open, close, toggle, search, tab, amount, hover, click, spawn, enhance, gem, bonus"),
         "search": ("s", "the search box's text (name or id)"), "tab": ("i", "bag tab 0-14, -1 all (search/tab actions)"),
         "spawn": ("i", "item id to spawn (spawn action)"), "amount": ("i", "the amount box (amount action) or the spawn count (spawn action)"),
-        "rarity": ("i", "0 = the item's own, 1-6"), "stack": ("b", "spawn a full stack")}),
+        "rarity": ("i", "0 = the item's own, 1-6"), "stack": ("b", "spawn a full stack"),
+        "field": ("s", "enhance action: enchant, limit, socket or rarity"), "value": ("i", "enhance/bonus action: the value"),
+        "index": ("i", "gem action: the socket (0-4, -1 every one)"), "gemid": ("i", "gem action: the gem item id"),
+        "kind": ("s", "bonus action: stat (default) or special"), "statid": ("i", "bonus action: the client stat or special id")}),
 }
 LIST_ARGS = {"props", "names"}
 

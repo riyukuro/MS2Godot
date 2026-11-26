@@ -9,8 +9,8 @@ namespace Ms2Godot;
 public partial class DevEndpoint
 {
     /// <summary>
-    /// creative {action=toggle|open|close|search|tab|spawn|click|hover|amount|status, search, tab, spawn, amount, rarity,
-    /// stack}: the debug item browser (game/devtools/CreativeMenu.cs). "spawn" sends the same chat line a click does and
+    /// creative {action=toggle|open|close|search|tab|spawn|click|hover|amount|enhance|gem|bonus|status, search, tab, spawn,
+    /// amount, rarity, stack, field, value, index, id, kind}: the debug item browser (game/devtools/CreativeMenu.cs). "spawn" sends the same chat line a click does and
     /// returns it with the menu's state; "click" clicks the first visible cell (the real amount/rarity/shift path), "hover"
     /// hovers it (which must not touch the amount box) and "amount" sets the amount box. Every action returns the state, so
     /// a run can open it, filter it and spawn without the mouse. The catalog is built on the first open (once per pack set).
@@ -29,6 +29,9 @@ public partial class DevEndpoint
             case "search": menu.SetSearch(r.GetString("search", "")); break;
             case "tab": menu.SetTab(r.GetInt("tab", -1)); break;
             case "amount": menu.SetAmount(r.GetInt("amount", 1)); break;
+            case "enhance": menu.SetField(r.GetString("field", "enchant"), r.GetInt("value", 0)); break;
+            case "gem": menu.SetGem(r.GetInt("index", -1), r.GetInt("gemid", 0)); break;
+            case "bonus": menu.AddBonusLine(r.GetString("kind", "stat") == "special", r.GetInt("statid", 0), r.GetInt("value", 0)); break;
             case "hover": menu.HoverFirst(); break;
             case "click":
                 string clicked = menu.ClickFirst();

@@ -120,7 +120,7 @@ public partial class CreativeMenu : Control
 
     public override void _ExitTree()
     {
-        if (noticed != null) { noticed.Notice -= OnNotice; noticed = null; }
+        if (noticed != null) { noticed.Notice -= OnNotice; noticed.Items.Changed -= OnItemsChanged; noticed = null; }
         if (Current == this) Current = null;
     }
 
@@ -153,37 +153,38 @@ public partial class CreativeMenu : Control
         var live = Ms2Godot.Net.LiveSession.Instance;
         if (live != null && !ReferenceEquals(noticed, live))
         {
-            if (noticed != null) noticed.Notice -= OnNotice;
-            noticed = live; noticed.Notice += OnNotice;
+            if (noticed != null) { noticed.Notice -= OnNotice; noticed.Items.Changed -= OnItemsChanged; }
+            noticed = live; noticed.Notice += OnNotice; noticed.Items.Changed += OnItemsChanged;
         }
         search.GrabFocus();
         Refilter(true);
+        RaiseTooltipLayer();
+        if (serverSupport == null) AskServerSupport(); else ApplySupport(serverSupport);
         return true;
     }
 
     public void Close()
     {
+        hoveredCell = null;
+        RestoreTooltipLayer();
         Visible = false;
         MouseFilter = MouseFilterEnum.Ignore;
-        if (noticed != null) { noticed.Notice -= OnNotice; noticed = null; }
+        if (noticed != null) { noticed.Notice -= OnNotice; noticed.Items.Changed -= OnItemsChanged; noticed = null; }
+        awaitingHelp = false;
     }
 
     /// <summary>
-    /// KMS2 only, as the brief says: the live session's profile when there is one (GMS2 refuses with one log line), and the
-    /// data's locale (the GMS2 data is NA, <see cref="LobbyFeatures.LocaleOf"/>; its item tables are the per-item layout).
+    /// The browser opens on both data sets: the KMS2 data (locale KR) and the GMS2 per-item data (locale NA). The catalog
+    /// and the tooltips read each layout through the same tables; which /item options the live server takes is asked of
+    /// that server (<see cref="AskServerSupport"/>), never hard-coded per region.
     /// </summary>
     bool Allowed()
     {
-        var live = Ms2Godot.Net.LiveSession.Instance;
-        if (live != null && live.GameProfile.IsGms2)
-        {
-            GD.Print("creative: the live session's profile is GMS2; the item browser opens on the KMS2 profile only");
-            return false;
-        }
         string locale = LobbyFeatures.LocaleOf(packs);
-        if (!string.Equals(locale, "KR", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(locale, "KR", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(locale, "NA", StringComparison.OrdinalIgnoreCase))
         {
-            GD.Print($"creative: the data is {locale}, not KMS2 (locale KR); the item browser opens on the KMS2 data only");
+            GD.Print($"creative: the data is {locale}, not KMS2 (KR) or GMS2 (NA); the item browser opens on those only");
             return false;
         }
         return true;
@@ -258,6 +259,7 @@ public partial class CreativeMenu : Control
         close.Pressed += Close;
         top.AddChild(close);
 
+        BuildEnhance(box);
         group = new Label { Text = "", ClipText = true, CustomMinimumSize = new Vector2(0, 20), Visible = false };
         group.AddThemeColorOverride(FontColor, MutedColor);
         box.AddChild(group);
@@ -303,7 +305,8 @@ public partial class CreativeMenu : Control
         grid.AddChild(b);
         var cell = new Cell { Button = b, Icon = icon, Name = name, Col = col, Row = row };
         b.Pressed += () => Click(cell);
-        b.MouseEntered += () => Hover(cell);
+        b.MouseEntered += () => EnhanceHover(cell);
+        b.MouseExited += () => EnhanceLeave(cell);
         return cell;
     }
 
@@ -436,15 +439,7 @@ public partial class CreativeMenu : Control
         return false;
     }
 
-    void Hover(Cell c)
-    {
-        if (c.Entry < 0) return;
-        var e = catalog.Entries[c.Entry];
-        c.Button.TooltipText = Tooltip(e);        // built on hover, so scrolling never builds one
-        details.Text = $"{e.Name}  (id {ItemCatalog.IdText(e.Id)}, {ItemCatalog.TabName(tables, e.Tab)}, rank {e.Rank}, max stack {e.SlotMax})";
-        // the amount box is left alone: it is what the next item's command sends, and clamping it to this item's slot max
-        // would keep a non-stackable hover from reducing the amount a later potion spawns (ItemSpawnCommand caps a stack).
-    }
+    // The hover and its tooltip are in CreativeMenu.Enhance.cs (the panel's limits and the client's item tooltip).
 
     // ---- spawning -----------------------------------------------------------------------------------------------------
 
@@ -468,7 +463,13 @@ public partial class CreativeMenu : Control
     public string Spawn(ItemCatalog.Entry e, int amount, int rarity)
     {
         if (!Allowed()) return null;
-        string line = ItemSpawnCommand.Line(e.Id, amount, rarity, (uint)e.SlotMax);
+        if (ValidateFor(tables.Items.Get(e.Id)) is { } invalid)
+        {
+            ShowStatus(invalid, error: true);
+            GD.Print($"creative: {invalid}");
+            return null;
+        }
+        string line = ItemSpawnCommand.Line(e.Id, amount, rarity, (uint)e.SlotMax, settings);
         lastLine = line;
         var live = Ms2Godot.Net.LiveSession.Instance;
         if (live?.GameSession == null)
@@ -487,11 +488,23 @@ public partial class CreativeMenu : Control
     void OnNotice(Ms2.Net.Packets.NoticeMessage n)
     {
         if (!Visible) return;
+        if (TakeHelp(n)) return;
         string text = n.Text.Formatted ? ClientFormat.Format(tables.Common(n.Text.Id), n.Text.Args) : n.Text.Text ?? "";
         text = System.Net.WebUtility.HtmlDecode(StripTags(text));   // the command output is html-encoded (&#39; for a quote)
         if (text.Length == 0) return;
         lastAnswer = text;
         ShowStatus("server: " + text, error: true);
+    }
+
+    /// <summary>
+    /// The bag changed (an item packet): when a hover is up, its tooltip is rebuilt, so a spawn's server-made enchant,
+    /// limit break and constant option blocks appear under the pointer as soon as the item lands (the client has no
+    /// table for those). Event-driven, never per frame.
+    /// </summary>
+    void OnItemsChanged(long uid)
+    {
+        if (!Visible || hoveredCell == null) return;
+        SettingsChanged();
     }
 
     /// <summary>The command output's tags (&lt;b&gt; around "Name:", &lt;br&gt;) removed for the one-line label.</summary>
@@ -526,7 +539,7 @@ public partial class CreativeMenu : Control
     public void HoverFirst()
     {
         if (!Visible) Open();
-        if (FirstVisible() is { } c) Hover(c);
+        if (FirstVisible() is { } c) EnhanceHover(c);
     }
 
     /// <summary>Clicks the first visible cell: the same amount, rarity and shift path a real click takes.</summary>
@@ -570,6 +583,11 @@ public partial class CreativeMenu : Control
             ["scrollEvents"] = scrollEvents, ["scrollBytes"] = scrollBytes, ["catalogMs"] = catalogMs,
             ["lastLine"] = lastLine, ["lastAnswer"] = lastAnswer, ["unfiltered"] = catalog?.Unfiltered ?? 0,
             ["removed"] = catalog == null ? 0 : catalog.Removed.Count, ["removedSummary"] = catalog?.RemovedSummary() ?? "",
+            ["enchant"] = settings.Enchant, ["limitBreak"] = settings.LimitBreak, ["sockets"] = settings.Sockets,
+            ["gems"] = string.Join(",", settings.Gems), ["bonus"] = settings.Signature(),
+            ["support"] = $"enchant={support.Enchant},limit={support.LimitBreak},socket={support.Socket},gem={support.Gem},stat={support.Stat},special={support.Special}",
+            ["field"] = Ms2Godot.Net.LiveSession.Instance?.FieldId ?? 0,
+            ["tooltipBuilds"] = tooltipBuilds, ["tooltipBuildBytes"] = tooltipBuildBytes,
         };
         return o;
     }
