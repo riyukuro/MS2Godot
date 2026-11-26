@@ -2484,6 +2484,13 @@ public partial class LiveSession : Node
                     GD.Print($"live: merat market buy mode 0x{mm.Mode:x}");
                     MeretMarketReceived?.Invoke(mm);
                 }
+                else if (LiveCheck)
+                {
+                    // the other modes are not read; mode 0x67 (CMeratMarketMan::OnAdProducts, meratmarketman.cpp:2129) starts with its u8 count
+                    var mr = p.Reader();
+                    byte mode = mr.ReadByte();
+                    GD.Print($"live: merat market mode 0x{mode:x}, {mr.Available} bytes" + (mode == 0x67 && mr.Available > 0 ? $", {mr.ReadByte()} ad products" : ""));
+                }
             }
             else if (game.Is(p, Inbound.ItemMerge))
             {

@@ -443,6 +443,19 @@ public partial class LiveSession
                 GD.Print($"live: combat achieve {step[13..]}: {hud.AchieveStateScripted(int.Parse(step[13..]))}");
                 continue;
             }
+            if (step == "adlist")      // adlist: the ad list request (SendMeretMarketMode103, meratmarketman.cpp:420); the answer is logged
+            {
+                live.SendTalk(new Ms2.Net.Packets.MeretMarketModeRequest(0x67));
+                await frames(120);
+                continue;
+            }
+            if (step.StartsWith("achievelink:"))      // achievelink:<trophy id>:<grade>: a click on the trophy's chat link and the window's tooltip (0:1 a complete grade, 0:-1 one in progress)
+            {
+                var a = step[12..].Split(':');
+                GD.Print($"live: combat achieve link {hud.AchieveLinkScripted(int.Parse(a[0]), int.Parse(a[1]))}");
+                await frames(30);
+                continue;
+            }
             if (step.StartsWith("achievereward:"))      // achievereward:<trophy id>: the trophy window's reward button; waits for the start grade to move
             {
                 int id = int.Parse(step[14..]);

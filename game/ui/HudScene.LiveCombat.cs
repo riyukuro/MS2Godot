@@ -175,6 +175,38 @@ public partial class HudScene
             ? $"state {a.State} grade {a.CurGrade} start {a.StartGrade} count {a.Count} rewards waiting {a.RewardCount}"
             : "none";
 
+    /// <summary>
+    /// A left click on the chat link of trophy <paramref name="id"/> grade <paramref name="grade"/>, as the messenger movie's
+    /// showTooltipTextLinkEvent runs it (the runtime sends no TextEvent.LINK for html event: links yet): the link the trophy
+    /// notices make (AchieveLink), its text after "event:" split on ",", and getUserData "getAchieve" with fields 1, 3, 4
+    /// and 5 on the first chat window. Then the trophy window's getTooltipAchieve(id, grade), the window opened when it is
+    /// shut. Id 0 takes the book's first trophy with a recorded grade (complete) and <paramref name="grade"/> -1 its first
+    /// grade without one (in progress). For the log.
+    /// </summary>
+    public string AchieveLinkScripted(int id, int grade)
+    {
+        if (Ms2Godot.Net.LiveSession.Instance?.Achieves is not { Notices: { } notices } book) return "no trophy notices";
+        if (id == 0)
+        {
+            var pick = book.GetListFromTable(0, 0, false, false).Where(a => a.Data != null)
+                .SelectMany(a => a.Data.GradeConditions.Keys.OrderBy(g => g).Select(g => (a, g)))
+                .FirstOrDefault(x => grade < 0 ? x.a.State == 2 && x.a.GetValue(x.g) == 0 : x.a.GetValue(x.g) != 0);
+            if (pick.a == null) return "no such trophy in the book";
+            (id, grade) = (pick.a.Id, pick.g);
+        }
+        string link = notices.AchieveLink(id, grade);
+        int at = link.IndexOf("event:", System.StringComparison.Ordinal), end = at < 0 ? -1 : link.IndexOf('\'', at);
+        if (end < 0) return $"trophy {id} grade {grade}: no link ({link})";
+        var f = link[(at + 6)..end].Split(',');
+        if (messengers.Count == 0 || f.Length < 6) return $"trophy {id} grade {grade}: no chat window or fields ({link})";
+        static string Show(System.Collections.Generic.IDictionary<string, object> t) => t == null ? "null" : string.Join(" | ",
+            new[] { "title", "grade", "desc", "reward", "state", "closeButton", "comment", "imgPath" }.Where(t.ContainsKey).Select(k => $"{k}={t[k]}"));
+        var chat = messengers[0].Side.GetUserData("getAchieve", new object[] { f[1], f[3], f[4], f[5] });
+        if (!AchieveOpen) OpenAchieve();
+        var window = AchieveOpen ? achieve.GetUserValue("getTooltipAchieve", new object[] { (double)id, (double)grade }) as System.Collections.Generic.IDictionary<string, object> : null;
+        return $"trophy {id} grade {grade}: link {link} -> chat tooltip {Show(chat)}; window tooltip {Show(window)}";
+    }
+
     /// <summary>The trophy window's reward button of trophy <paramref name="id"/> (onReward); the window opened when it is shut.
     /// Whether the request went out.</summary>
     public bool AchieveRewardScripted(int id)
