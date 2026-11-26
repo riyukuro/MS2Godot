@@ -279,7 +279,13 @@ public partial class GlyphShadow : Node2D
             data[2 * p + 1] = (byte)Math.Clamp(v, 0, 255);
         }
         var origin = gofs + new Vector2(bx0 - pad, by0 - pad);
-        if (W + 1 > Page.Width || H + 1 > Page.Height) return default;
+        if (W + 1 > Page.Width || H + 1 > Page.Height)
+        {
+            // a raster no page can hold (a large ramp size with a wide blur) keeps a texture of its own, as every raster did
+            // before the pages, so its shadow is still drawn
+            using var own = Image.CreateFromData(W, H, false, Image.Format.La8, data);
+            return new Entry(ImageTexture.CreateFromImage(own), new Rect2(0, 0, W, H), origin, new Vector2(W, H));
+        }
         int px = 0, py = 0;
         Page page = null;
         // one empty texel between slots, so the scaled draw's filter reads no neighbour
