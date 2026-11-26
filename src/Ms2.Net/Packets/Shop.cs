@@ -330,44 +330,44 @@ public sealed class ShopPacket {
     public static ShopPacket Read(ByteReader r, ProtocolProfile profile) {
         int cmd = r.ReadByte();
         switch (cmd) {
-            case 0: return new ShopPacket { Command = cmd, Info = ShopInfo.Read(r) };
-            case 1: {
+            case ShopModes.RecvInfo: return new ShopPacket { Command = cmd, Info = ShopInfo.Read(r) };
+            case ShopModes.RecvProducts: {
                 int n = r.ReadByte();
                 var list = new List<ShopProduct>(n);
                 for (int i = 0; i < n; i++) list.Add(ShopProduct.Read(r, profile));
                 return new ShopPacket { Command = cmd, Products = list };
             }
-            case 2: return new ShopPacket { Command = cmd, ProductUpdate = new ShopProductUpdate(r.ReadInt(), r.ReadInt()) };
-            case 4: return new ShopPacket { Command = cmd, PurchaseResult = new ShopPurchaseResult(r.ReadInt(), r.ReadInt(), (uint) r.ReadInt(), r.ReadByte(), r.ReadBool()) };
-            case 6: return new ShopPacket { Command = cmd, RepurchaseCount = (ushort) r.ReadShort() };
-            case 7: {
+            case ShopModes.RecvProductUpdate: return new ShopPacket { Command = cmd, ProductUpdate = new ShopProductUpdate(r.ReadInt(), r.ReadInt()) };
+            case ShopModes.RecvPurchaseResult: return new ShopPacket { Command = cmd, PurchaseResult = new ShopPurchaseResult(r.ReadInt(), r.ReadInt(), (uint) r.ReadInt(), r.ReadByte(), r.ReadBool()) };
+            case ShopModes.RecvRepurchaseStart: return new ShopPacket { Command = cmd, RepurchaseCount = (ushort) r.ReadShort() };
+            case ShopModes.RecvRepurchaseAdd: {
                 int n = (ushort) r.ReadShort();
                 var list = new List<ShopProduct>(n);
                 for (int i = 0; i < n; i++) list.Add(ShopProduct.ReadRepurchase(r, profile));
                 return new ShopPacket { Command = cmd, Products = list };
             }
-            case 8: return new ShopPacket { Command = cmd, RemoveSerial = r.ReadInt() };
-            case 9: {
+            case ShopModes.RecvRepurchaseRemoval: return new ShopPacket { Command = cmd, RemoveSerial = r.ReadInt() };
+            case ShopModes.RecvResetResult: {
                 bool ok = r.ReadBool();
                 int itemId = ok ? r.ReadInt() : 0;
                 int count = ok ? r.ReadInt() : 0;
                 return new ShopPacket { Command = cmd, ResetResult = new ShopResetResult(ok, itemId, count) };
             }
-            case 11: return new ShopPacket { Command = cmd, MeratCount = (ushort) r.ReadShort() };
-            case 12: {   // ReadMeratItems (uishopdialog.cpp:1722): u8 count, each CNpcShopMeratItemCli::vfunc_2
+            case ShopModes.RecvMeratStart: return new ShopPacket { Command = cmd, MeratCount = (ushort) r.ReadShort() };
+            case ShopModes.RecvMeratItems: {   // ReadMeratItems (uishopdialog.cpp:1722): u8 count, each CNpcShopMeratItemCli::vfunc_2
                 int n = r.ReadByte();
                 var list = new List<ShopMeratItem>(n);
                 for (int i = 0; i < n; i++) list.Add(ShopMeratItem.Read(r));
                 return new ShopPacket { Command = cmd, MeratItems = list };
             }
-            case 13: return new ShopPacket { Command = cmd, NewStart = new ShopNewStart(r.ReadInt(), r.ReadInt(), r.ReadInt(), (ushort) r.ReadShort()) };
-            case 14: {
+            case ShopModes.RecvNewStart: return new ShopPacket { Command = cmd, NewStart = new ShopNewStart(r.ReadInt(), r.ReadInt(), r.ReadInt(), (ushort) r.ReadShort()) };
+            case ShopModes.RecvNewProducts: {
                 int n = r.ReadByte();
                 var list = new List<ShopNewProduct>(n);
                 for (int i = 0; i < n; i++) list.Add(ShopNewProduct.Read(r));
                 return new ShopPacket { Command = cmd, NewProducts = list };
             }
-            case 15: return new ShopPacket { Command = cmd, Error = new ShopError(r.ReadInt(), r.ReadByte(), r.ReadInt()) };
+            case ShopModes.RecvError: return new ShopPacket { Command = cmd, Error = new ShopError(r.ReadInt(), r.ReadByte(), r.ReadInt()) };
             default: return new ShopPacket { Command = cmd };
         }
     }
@@ -445,7 +445,7 @@ public sealed class ShopPacket {
 /// <summary>Outbound 0x28 mode 3 (UIShopDialog::RequestRepurchase @0x141affeb0, uishopdialog.cpp:2826): u8 3, i32 serial.</summary>
 public sealed record ShopRepurchaseRequest(int Serial) : IOutPacket {
     public Outbound Op => Outbound.Shop;
-    public void Write(ByteWriter w) { w.WriteByte(3); w.WriteInt(Serial); }
+    public void Write(ByteWriter w) { w.WriteByte(ShopModes.SendRepurchase); w.WriteInt(Serial); }
 }
 
 /// <summary>Outbound 0x28 mode 4 (UIShopDialog::SendPurchase @0x141b00060, uishopdialog.cpp:2846): u8 4, i32 serial, i32 quantity, i32 shopId.</summary>
@@ -453,31 +453,31 @@ public sealed record ShopBuyRequest(int Serial, int Quantity, int ShopId) : IPro
     public Outbound Op => Outbound.Shop;
     public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
     /// <summary>GMS2 sends no shop id: u8 4, i32 serial, i32 quantity (every recorded request, 9 bytes).</summary>
-    public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(4); w.WriteInt(Serial); w.WriteInt(Quantity); if (!profile.IsGms2) w.WriteInt(ShopId); }
+    public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(ShopModes.SendBuy); w.WriteInt(Serial); w.WriteInt(Quantity); if (!profile.IsGms2) w.WriteInt(ShopId); }
 }
 
 /// <summary>Outbound 0x28 mode 5 (RequestSellItem @0x141425fc0, itemugcmesh.cpp:1097): u8 5, i64 itemUid, i32 count.</summary>
 public sealed record ShopSellRequest(long ItemUid, int Count) : IOutPacket {
     public Outbound Op => Outbound.Shop;
-    public void Write(ByteWriter w) { w.WriteByte(5); w.WriteLong(ItemUid); w.WriteInt(Count); }
+    public void Write(ByteWriter w) { w.WriteByte(ShopModes.SendSell); w.WriteLong(ItemUid); w.WriteInt(Count); }
 }
 
 /// <summary>Outbound 0x28 mode 9 (UIShopDialog::ResetList @0x141afe8b0, uishopdialog.cpp:2550): u8 9, i32 resetPrice.</summary>
 public sealed record ShopResetListRequest(int ResetPrice) : IOutPacket {
     public Outbound Op => Outbound.Shop;
-    public void Write(ByteWriter w) { w.WriteByte(9); w.WriteInt(ResetPrice); }
+    public void Write(ByteWriter w) { w.WriteByte(ShopModes.SendReset); w.WriteInt(ResetPrice); }
 }
 
 /// <summary>Outbound 0x28 mode 10 (UIShopDialog::vfunc_72 @0x141af3460, uishopdialog.cpp:750, :762): u8 10. Request the
 /// product list after the reset timer expires or the day rolls over.</summary>
 public sealed record ShopRequestListRequest : IOutPacket {
     public Outbound Op => Outbound.Shop;
-    public void Write(ByteWriter w) { w.WriteByte(10); }
+    public void Write(ByteWriter w) { w.WriteByte(ShopModes.SendRequestList); }
 }
 
 /// <summary>Outbound 0x28 mode 13 (UIShopDialog::FillNewProducts @0x141afc9d0, uishopdialog.cpp:2270): u8 13. Request the
 /// new-items tab list.</summary>
 public sealed record ShopRequestNewItemsRequest : IOutPacket {
     public Outbound Op => Outbound.Shop;
-    public void Write(ByteWriter w) { w.WriteByte(13); }
+    public void Write(ByteWriter w) { w.WriteByte(ShopModes.SendRequestNewItems); }
 }
