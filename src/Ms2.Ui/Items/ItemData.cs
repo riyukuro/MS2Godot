@@ -557,6 +557,30 @@ public sealed class ItemData
     public int MaidElementId;
     public bool IsCashItem => ItemGroup == 4;                  // :1280
     public bool HasSkinType => SkinType != 0;                  // :756
+    /// <summary>
+    /// CItemData::FUN_14053e530 (itemdata.cpp:1381), the item's bag tab 0-14, as Unk_Inventory::FUN_140a61870
+    /// (inventory.cpp:1148) takes it: the type picks the tab, an equip with a skin type is the outfit tab (1) and any
+    /// other equip the gear tab (0), and a type the switch does not name is the etc tab (7). The tab names are
+    /// CStringTable::GetInventoryTabName (stringtable.cpp:931, common strings s_inventory_tab_*). The GMS2 client numbers
+    /// its tabs differently (<see cref="Gms2InventoryTabOf"/>); this is the KMS rule.
+    /// </summary>
+    public int InventoryTab => Type switch
+    {
+        1 => HasSkinType ? 1 : 0,
+        6 or 8 or 0xc or 0x17 => 4,
+        5 or 9 => 2,
+        0xd or 0xe => 6,
+        3 => 5,
+        0xf or 0x13 => 3,
+        0x10 => 8,
+        0xb => 9,
+        2 => 10,
+        0x14 => 0xb,
+        7 => 0xc,
+        0x15 => 0xd,
+        0x1b => 0xe,
+        _ => 7,
+    };
     /// <summary>:564: not type 1, and more than one per slot.</summary>
     public bool IsStackable => Type != 1 && SlotMax > 1;
     public bool IsEquip => Type == 1;                          // FUN_14053cbc0 (:663)
@@ -702,35 +726,77 @@ public sealed class ItemDataTable
     {
         if (packs == null || id <= 0) return null;
         int file = id / 100000;
-        if (!files.TryGetValue(file, out var rows))
-        {
-            rows = new();
-            string entry = $"itemdata/{file:000}.xml";                 // LoadItemDataFile: "{0:03d}.xml"
-            bool present = packs.Exists("Xml", entry);
-            hasItemdata |= present;
-            if (present)
-                using (var r = Ms2.Formats.Text.XmlRows.Open(packs.Read("Xml", entry)))
-                {
-                    // the root's <item> children, each read as its own element (no document of the whole file)
-                    r.MoveToContent();
-                    if (!r.IsEmptyElement)
-                    {
-                        r.Read();
-                        while (r.NodeType != System.Xml.XmlNodeType.EndElement && !r.EOF)
-                        {
-                            if (r.NodeType != System.Xml.XmlNodeType.Element) { r.Read(); continue; }
-                            if (r.LocalName != "item" || r.NamespaceURI.Length != 0) { r.Skip(); continue; }
-                            var e = (XElement)XNode.ReadFrom(r);
-                            if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
-                            if (FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
-                            rows.TryAdd(i, ItemData.Load(i, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType")));   // std::map::insert keeps the first
-                        }
-                    }
-                }
-            files[file] = rows;
-        }
+        var rows = LoadFile(file);
         if (rows.TryGetValue(id, out var d)) return d;
         return hasItemdata || packs.Exists("Xml", entry0(file)) ? null : PerItem(id);   // a KMS miss: itemdata/ exists, so no per-item entries
+    }
+
+    /// <summary>LoadItemDataFile: one itemdata/&lt;file&gt;.xml into its rows, on first use (empty when the pack has no such file).</summary>
+    Dictionary<int, ItemData> LoadFile(int file)
+    {
+        if (files.TryGetValue(file, out var rows)) return rows;
+        rows = new();
+        string entry = entry0(file);                 // LoadItemDataFile: "{0:03d}.xml"
+        bool present = packs.Exists("Xml", entry);
+        hasItemdata |= present;
+        if (present)
+            using (var r = Ms2.Formats.Text.XmlRows.Open(packs.Read("Xml", entry)))
+            {
+                // the root's <item> children, each read as its own element (no document of the whole file)
+                r.MoveToContent();
+                if (!r.IsEmptyElement)
+                {
+                    r.Read();
+                    while (r.NodeType != System.Xml.XmlNodeType.EndElement && !r.EOF)
+                    {
+                        if (r.NodeType != System.Xml.XmlNodeType.Element) { r.Read(); continue; }
+                        if (r.LocalName != "item" || r.NamespaceURI.Length != 0) { r.Skip(); continue; }
+                        var e = (XElement)XNode.ReadFrom(r);
+                        if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
+                        if (FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
+                        rows.TryAdd(i, ItemData.Load(i, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType")));   // std::map::insert keeps the first
+                    }
+                }
+            }
+        files[file] = rows;
+        return rows;
+    }
+
+    List<int> ids;
+
+    /// <summary>
+    /// Every item id of the item tables that has data, ascending: the ids of the itemdata/NNN.xml files (KMS) or of the
+    /// per-item entries (GMS2, <see cref="PerItem"/>, which loads every item file here), as the client's CItemDataTable
+    /// holds them in its id map. The client itself reads items by id only; this list is for a tool that lists them all
+    /// (the debug item browser), so it loads every file once and keeps the rows in <see cref="files"/>.
+    /// </summary>
+    public IReadOnlyList<int> Ids()
+    {
+        if (ids != null) return ids;
+        var list = new List<int>();
+        if (packs != null)
+        {
+            var names = packs.List("Xml");
+            var found = new List<int>();
+            foreach (var name in names)
+            {
+                string n = name.Replace('\\', '/');
+                if (!n.StartsWith("itemdata/", StringComparison.OrdinalIgnoreCase) || !n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
+                string number = n["itemdata/".Length..^".xml".Length];
+                if (number.Length > 0 && int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out int file)) found.Add(file);
+            }
+            if (found.Count > 0)
+            {
+                found.Sort();
+                foreach (int file in found) list.AddRange(LoadFile(file).Keys);
+            }
+            else
+            {
+                foreach (int id in PerItemIndex(names).Keys) if (PerItem(id) != null) list.Add(id);
+            }
+            list.Sort();
+        }
+        return ids = list;
     }
 
     /// <summary>
