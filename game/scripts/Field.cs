@@ -1033,10 +1033,12 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
 
     /// <summary>The half width and half height of the near plane the blocked check casts from: CTargetCameraMode::vfunc_38
     /// (targetcameramode.cpp:732-736) takes the frustum's near plane and aspect with tan of the whole FOV, not its half,
-    /// so its points lie outside the drawn near plane.</summary>
+    /// so its points lie outside the drawn near plane. The FOV is the mode's setting (FUN_140ad4b30, m_setting.m_0,
+    /// cameramode.h:193; targetcameramode.cpp:733), which is the field's camera FOV, not the live camera's: a cut scene's
+    /// FOV or an easing one does not move these points.</summary>
     public Vector2 BlockedCheckHalfExtents()
     {
-        float near = camera.Near, tan = Mathf.Tan(Mathf.DegToRad(camera.Fov));
+        float near = camera.Near, tan = Mathf.Tan(Mathf.DegToRad(cam.FovDeg));
         float asp = GetViewport().GetVisibleRect().Size.Aspect();
         return new Vector2(near * tan * asp, near * tan);
     }
