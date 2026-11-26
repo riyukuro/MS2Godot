@@ -81,6 +81,29 @@ public class ItemBreakDialogTests
         }
     }
 
+    /// <summary>FUN_1419a1430 (uiinventorydialog.cpp:2307) sets "bagId" on the slot list the m_itemBag wrapper holds as "instance". Set on the
+    /// wrapper (the old code) nothing asked GameDataModel.getBagSlotBindings, the list made no tiles and every staged item drew in no slot.</summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(6)]
+    [TestCase(9)]
+    public void TheStagedItemsGridHasATileBoundToEverySlotForEachDismantleInput(int type)
+    {
+        var r = new Rig();
+        r.C.OnCallback("onbundletype", new object[] { type });
+        r.Add(500);
+        r.Put(500, 0);
+        for (int i = 0; i < 30; i++) r.Host.Player.Tick();
+        var list = r.Host.Get(r.Host.Child("m_itemBag"), "instance");
+        Assert.That(Rt.ToString(r.Host.Get(list, "bagId")), Is.EqualTo("ItemBreakDialog"));
+        Assert.That(Rt.ToNumber(r.Host.Get(r.Host.Get(list, "dataProvider"), "length")), Is.EqualTo(ItemBreakManager.Slots));
+        var tiles = r.Host.Invoke(list, "getChildAt", 1);
+        Assert.That(Rt.ToNumber(r.Host.Get(tiles, "numChildren")), Is.EqualTo(ItemBreakManager.Slots), "one tile per slot");
+        Assert.That(r.Host.BindingNames, Does.Contain("ItemBreakDialog.0"), "the staged slot's tile asked for its binding");
+        Assert.That(r.C.GetBinding("ItemBreakDialog.0"), Is.Not.Null);
+        Assert.That(r.C.GetBinding("ItemBreakDialog.1"), Is.Null, "an empty slot has no binding");
+    }
+
     [Test]
     public void LoadSendsModeOneAndBindsTheBag()
     {
@@ -88,7 +111,7 @@ public class ItemBreakDialogTests
         Assert.That(r.M.DialogOpen, Is.True);
         Assert.That(r.M.Type, Is.EqualTo(1));
         Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.SetMode(1))));
-        Assert.That(Rt.ToString(r.Host.Get(r.Host.Child("m_itemBag"), "bagId")), Is.EqualTo("ItemBreakDialog"));
+        Assert.That(Rt.ToString(r.Host.Get(r.Host.Child("instance", r.Host.Child("m_itemBag")), "bagId")), Is.EqualTo("ItemBreakDialog"));
         Assert.That(r.C.GetBagSlotBindings("ItemBreakDialog").Count(), Is.EqualTo(100));
         Assert.That(r.Host.Child("m_break"), Is.Not.Null);
     }
@@ -99,7 +122,7 @@ public class ItemBreakDialogTests
         var r = new Rig(true);
         Assert.That(r.M.Type, Is.EqualTo(2));
         Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.SetMode(2))));
-        Assert.That(Rt.ToString(r.Host.Get(r.Host.Child("m_itemBag"), "bagId")), Is.EqualTo("ItemBreakDonationDialog"));
+        Assert.That(Rt.ToString(r.Host.Get(r.Host.Child("instance", r.Host.Child("m_itemBag")), "bagId")), Is.EqualTo("ItemBreakDonationDialog"));
     }
 
     [Test]

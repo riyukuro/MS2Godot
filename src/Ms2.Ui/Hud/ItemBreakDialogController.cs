@@ -150,11 +150,13 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
 
     void UpdateCanSend() { Mgr.CanSendOptions = Mgr.DialogOpen && !InProgress; }
 
-    /// <summary>BindItemBag (FUN_1419a1430): the bag's "bagId" is the type name, its slots are pushed again.</summary>
+    /// <summary>BindItemBag (FUN_1419a1430, uiinventorydialog.cpp:2307): "bagId" is the type name, set on the slot list the m_itemBag
+    /// wrapper clip holds as its child "instance" (a setter on that list asks GameDataModel.getBagSlotBindings for the slot names);
+    /// the wrapper itself has no such setter. The slots are pushed again.</summary>
     void BindItemBag()
     {
         if (Host?.Entity == null || closing) return;
-        bagChild ??= Host.Child("m_itemBag");
+        bagChild ??= Host.Child("instance", Host.Child("m_itemBag"));
         if (bagChild != null) Host.Set(bagChild, "bagId", Bag);
         for (int i = 0; i < ItemBreakManager.Slots; i++) Host.Push(SlotName(i));
     }
