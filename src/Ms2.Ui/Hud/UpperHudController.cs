@@ -65,13 +65,14 @@ public sealed class UpperHudController : UiController
             if (Host.Child("m_gamePadOff") is { } padOff) Listen(padOff, "buttonClick", () => GamePadClick?.Invoke(true));
             ShowGamePadMode();
         }
+        // After the watermark branch below, the development client (uiupperhuddialog.cpp:316-322) also shows the field and makes
+        // it multiline with or without 0xc9, so the movie's own hidden text ("version") shows. The retail client has no such
+        // block (the GMS2 x64 build reads m_version only in its watermark branch, @0x140a6612e), so the field stays hidden there.
         if (Model.IsFeatureEnabled(Feature.VersionText) && Host.Child("m_version") is { } ver)
         {
             Host.SetVisible(ver, true);
             Host.Set(ver, "htmlText", Model.Tables.Common("s_upper_hud_version") ?? "");
         }
-        // the version field is shown and multiline with or without 0xc9 (uiupperhuddialog.cpp:307)
-        if (Host.Child("m_version") is { } version) { Host.SetVisible(version, true); Host.Set(version, "multiline", true); }
         if (Host.Child("m_maidStatusButton") is AsDisplayObject maid) Host.SetChildVisible("badge", false, maid);
         UpdateMoney();
         UpdateHotTime();
