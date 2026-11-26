@@ -86,4 +86,19 @@ public class ShopModesTests {
         // 11 and 12 (merat) are KMS-only but in the table
         Assert.That(ShopModes.Receive, Does.Contain(ShopModes.RecvMeratStart).And.Contain(ShopModes.RecvMeratItems));
     }
+
+    [Test]
+    public void EverySystemShopTypeTheClientSendsRoundTripsAndTheGms2ServersAreTheClientsNumbers() {
+        // upstream SystemShopHandler.Command: Arena 3, Fishing 4, Mentee 6, Mentor 7, Item 10
+        var upstream = new Dictionary<string, byte> { ["Arena"] = 3, ["Fishing"] = 4, ["Mentee"] = 6, ["Mentor"] = 7, ["Item"] = 10 };
+        Assert.That(upstream.Values.OrderBy(x => x), Is.EqualTo(SystemShopTypes.Gms2Server));
+        Assert.That(SystemShopTypes.Gms2Server.Except(SystemShopTypes.All), Is.Empty);
+        Assert.That(SystemShopTypes.All, Is.EqualTo(new byte[] { 3, 4, 6, 7, 8, 9, 10 }));
+        foreach (byte t in SystemShopTypes.All) {
+            Assert.That(Raw(new SystemShopRequest(t, 1)), Is.EqualTo(new byte[] { t, 1 }));
+            Assert.That(Raw(new SystemShopRequest(t, 0)), Is.EqualTo(new byte[] { t, 0 }));
+            Assert.That(SystemShopPacket.Read(new ByteReader(new byte[] { t, 1 })), Is.EqualTo(new SystemShopPacket(t, true)));
+        }
+        Assert.That(Raw(new SystemShopCoinRequest(7))[0], Is.EqualTo(SystemShopTypes.Item));
+    }
 }

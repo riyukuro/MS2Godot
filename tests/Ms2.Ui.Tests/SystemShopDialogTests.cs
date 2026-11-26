@@ -58,4 +58,18 @@ public class SystemShopDialogTests
         Assert.That(c.BaitItem, Is.Null);
         Assert.That(c.IsClosed, Is.True);
     }
+
+    /// <summary>The fishing pane's shop button is OnShop(0): ToggleShopTab(m_nMode) (uisystemshopdialog.cpp:257), which asks the server for
+    /// system shop type 4; the instrument pane has no shop button (its action 0 is the extend box).</summary>
+    [Test]
+    public void TheFishingPanesShopButtonAsksForSystemShopTypeFour()
+    {
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var shop = new ShopController();
+        var (c, _, _) = Open(4, x => x.ToggleShop = tab => SystemShopFlow.ToggleShopTab(tab, shop, false, null, null, sent.Add));
+        Assert.That(c.OnCallback("OnShop", new object[] { 0 }), Is.True);
+        Assert.That(sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new Ms2.Net.Packets.SystemShopRequest(4, 1) }));
+        var (c5, _, _) = Open(5, x => x.ToggleShop = tab => { Assert.Fail("the instrument pane has no shop button"); return 0; });
+        c5.OnCallback("OnShop", new object[] { 0 });
+    }
 }

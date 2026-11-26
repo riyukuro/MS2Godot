@@ -37,7 +37,7 @@ public partial class HudScene
             PlaySound = key => FieldAudio.Instance?.PlayUi(key),
             ShowBox = box => MessageBoxQueue.Show(box),
             OpenDialog = id => GD.Print($"lullu box: dialog 0x{id:x} is not in this HUD"),
-            ToggleShopTab = ToggleShopTab,
+            ToggleShopTab = tab => ToggleShopTab(tab),
             ReplaceWords = lulluWords ??= SidePopupWords(),
         };
         c.NoticeText += SystemNoticeText;

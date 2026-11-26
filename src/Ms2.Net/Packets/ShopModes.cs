@@ -58,3 +58,28 @@ public static class ShopModes {
     /// <summary>Every send mode the client writes.</summary>
     public static readonly byte[] Send = { 3, 4, 5, 9, 10, 13 };
 }
+
+/// <summary>
+/// The system shop's type numbers (SendOp::SystemShop, CNetworkService::SendSystemShop @0x141538c40, networkservice.cpp:530: u8 type, u8
+/// state; RecvOp::SystemShop, CSceneStateGame::OnSystemShop @0x141733660: u8 type, bool ok). The client asks through ToggleShopTab
+/// (unit_141347b10.cpp:468) with the tab its caller passes: rank pvp 3 (uirankpvpdialog.cpp:432), the fishing pane 4 (the pane's mode,
+/// uisystemshopdialog.cpp:257), the mentoring reward page 6 mentee and 7 mentor (uimentoringrewardpage.cpp:85), the merat market's
+/// star shop 8 (uimeratmarketdialog.cpp:4141), the game menu and the lullu box 9 (uigamemenudialog.cpp:2209,
+/// uiitemlulluboxdialog.cpp:331), and 10 for a coin shop opened by an item (<see cref="SystemShopCoinRequest"/>). The GMS2 server
+/// (upstream SystemShopHandler.Command) numbers Arena 3, Fishing 4, Mentee 6, Mentor 7, Item 10 the same and has no 8 or 9, so a
+/// GMS2 server never answers those two.
+/// </summary>
+public static class SystemShopTypes {
+    public const byte Arena = 3;
+    public const byte Fishing = 4;
+    public const byte Mentee = 6;
+    public const byte Mentor = 7;
+    public const byte StarPoint = 8;
+    public const byte Style = 9;
+    public const byte Item = 10;
+
+    /// <summary>Every type the client sends.</summary>
+    public static readonly byte[] All = { Arena, Fishing, Mentee, Mentor, StarPoint, Style, Item };
+    /// <summary>The types the GMS2 server answers (its SystemShopHandler cases).</summary>
+    public static readonly byte[] Gms2Server = { Arena, Fishing, Mentee, Mentor, Item };
+}

@@ -35,6 +35,7 @@ public partial class HudScene
         var c = new SystemShopController
         {
             Mode = mode,
+            ToggleShop = ToggleShopTab,   // uisystemshopdialog.cpp:257
             GetBaitId = () => fishingBaitId,
             SetBaitId = id => fishingBaitId = id,
             GetAutoFishingCount = () => fishingAutoCount,
