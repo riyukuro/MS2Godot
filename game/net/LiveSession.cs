@@ -3464,6 +3464,33 @@ public partial class LiveSession : Node
                 Shot($"mail_{tab}_removed.png");
             }
         }
+        // MS2_LIVE_FPS_SHOTS=<dir>: the upper HUD and the frame rate dialog (UIPerformanceDialog). The HUD is shot as it comes
+        // up (fps_entry.png: the version field, and the dialog when the options file has it saved on), then the options'
+        // Apply with the frame rate on and off (fps_option_on / _off), then left Ctrl+P twice as key events (fps_key_on / _off).
+        string fpsShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_FPS_SHOTS");
+        if (!string.IsNullOrEmpty(fpsShots) && tree.CurrentScene is Ui.HudScene fpsHud)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(fpsShots);
+            void Shot(string name) { flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(fpsShots, name)); GD.Print("live: shot " + name); }
+            void PressKey(Godot.Key key, bool pressed) =>
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Location = key == Godot.Key.Ctrl ? KeyLocation.Left : KeyLocation.Unspecified, Pressed = pressed, CtrlPressed = true });
+            await Frames(240);
+            GD.Print($"live: fps entry: {fpsHud.PerformanceText()}");
+            Shot("fps_entry.png");
+            GD.Print($"live: fps option on: open {fpsHud.PerformanceShowScripted(true)}");
+            await Frames(150); GD.Print($"live: fps line: {fpsHud.PerformanceText()}");
+            await Frames(90); GD.Print($"live: fps line: {fpsHud.PerformanceText()}");
+            Shot("fps_option_on.png");
+            GD.Print($"live: fps option off: open {fpsHud.PerformanceShowScripted(false)}");
+            await Frames(60);
+            Shot("fps_option_off.png");
+            PressKey(Godot.Key.Ctrl, true); await Frames(2); PressKey(Godot.Key.P, true); await Frames(2); PressKey(Godot.Key.P, false);
+            await Frames(150); GD.Print($"live: fps ctrl+p: {fpsHud.PerformanceText()}");
+            Shot("fps_key_on.png");
+            PressKey(Godot.Key.P, true); await Frames(2); PressKey(Godot.Key.P, false); await Frames(2); PressKey(Godot.Key.Ctrl, false);
+            await Frames(60); GD.Print($"live: fps ctrl+p again: {fpsHud.PerformanceText()}");
+            Shot("fps_key_off.png");
+        }
         await CombatRun(flow, Frames, async (c, max) => await Until(c, max));   // MS2_LIVE_COMBAT_STEP (LiveSession.Combat.cs)
         // MS2_LIVE_GUILD_SHOTS=<dir> with MS2_LIVE_GUILD_STEP: one scripted step of the guild dialog against the live
         // server, each with its shots. create: the Create page's button, the name (MS2_LIVE_GUILD_NAME) into the box, the
