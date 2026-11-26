@@ -30,7 +30,7 @@ public partial class PressRoutingCheck : Node
         public override void _Input(InputEvent ev)
         {
             if (ev is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
-            bool over = As3View.AnyMouseOverUi(GetViewport());
+            bool over = Ms2Godot.Movement.MouseMove.UiTakesMouse(GetViewport());
             if (mb.Pressed) gate.Press(over);
             else if (gate.Release(over)) Presses++;
         }
@@ -41,6 +41,7 @@ public partial class PressRoutingCheck : Node
     AsSprite lowerBox, upperBox;
     Game game;
     int lowerDown, upperDown;
+    bool controlAdded;
     readonly List<string> fails = new();
 
     public override void _Ready()
@@ -72,6 +73,7 @@ public partial class PressRoutingCheck : Node
     void Press(float x, float y)
     {
         var at = new Vector2(x, y);
+        GetViewport().PushInput(new InputEventMouseMotion { Position = at, GlobalPosition = at }, true);   // the hover follows the cursor, as a real click's motion
         GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at, ButtonMask = MouseButtonMask.Left }, true);
         GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at }, true);
     }
@@ -100,7 +102,7 @@ public partial class PressRoutingCheck : Node
             Press(700, 500);
             Is(lowerDown == 0 && upperDown == 0 && game.Presses == g0, $"a press at no dialog reached the game while the sample said over (lower {lowerDown}, upper {upperDown}, game +{game.Presses - g0})");
         }
-        if (frames == 40)
+        if (frames == 40 && !controlAdded)
         {
             // 4. the sample is "not over" now (the dialog stands at x 200, the cursor at 0); the dialog moves under the cursor and a press follows at once:
             //    the dialog gets it (its hit test) and the game takes it too (the flag read at the press is clear: mode 3, the release runs)
@@ -114,6 +116,20 @@ public partial class PressRoutingCheck : Node
             g0 = game.Presses; lowerDown = upperDown = 0;
             Press(700, 500);
             Is(lowerDown == 0 && upperDown == 0 && game.Presses == g0 + 1, $"a press at no dialog with the sample not over did not reach the game (game +{game.Presses - g0})");
+            // 6. a Godot Control (the creative menu, a text input) over the ground takes the click: the game does not walk, as when it
+            //    ran after the GUI; a press next to it walks
+            var control = new ColorRect { Position = new Vector2(600, 400), Size = new Vector2(100, 100), MouseFilter = Control.MouseFilterEnum.Stop };
+            AddChild(control);
+            controlAdded = true;
+        }
+        if (controlAdded && frames == 45)
+        {
+            int g0 = game.Presses; lowerDown = upperDown = 0;
+            Press(650, 450);
+            Is(game.Presses == g0, $"a press on a Godot control over the ground walked (game +{game.Presses - g0})");
+            g0 = game.Presses;
+            Press(750, 550);
+            Is(game.Presses == g0 + 1, $"a press next to the control did not walk (game +{game.Presses - g0})");
             foreach (var f in fails) GD.PrintErr("press routing: " + f);
             GD.Print(fails.Count == 0 ? "press routing: ok" : $"press routing: {fails.Count} failed");
             GetTree().Quit(fails.Count == 0 ? 0 : 1);

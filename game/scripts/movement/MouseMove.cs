@@ -60,14 +60,22 @@ public partial class MouseMove : Node
     /// (<see cref="Ui.As3View.AnyMouseOverUi"/>), not what any view's event handler did, so this sees the event before the views
     /// (_Input runs before every _UnhandledInput): a press over a dialog's sample is ignored, with its release (m_nIgnoreRelease);
     /// a press taken in the field walks on its release even when it ends over a dialog (<see cref="Ms2.Ui.MouseReleaseGate"/>).
+    /// Godot's own controls (the creative menu, text inputs, widgets) are no part of the client's UI movie, but they took the
+    /// click before this node saw it while it ran in _UnhandledInput; here a control under the cursor counts as the UI too
+    /// (<see cref="UiTakesMouse"/>).
     /// </summary>
     public override void _Input(InputEvent e)
     {
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
-        bool over = Ui.As3View.AnyMouseOverUi(GetViewport());
+        bool over = UiTakesMouse(GetViewport());
         if (mb.Pressed) { gate.Press(over); return; }
         if (gate.Release(over)) Release(mb);
     }
+
+    /// <summary>The sampled flag of the UI movie (<see cref="Ui.As3View.AnyMouseOverUi"/>), or a Godot Control with a mouse filter
+    /// other than Ignore under the cursor (the hovered control: what the GUI would give the click to).</summary>
+    public static bool UiTakesMouse(Viewport vp) =>
+        Ui.As3View.AnyMouseOverUi(vp) || vp.GuiGetHoveredControl() is { MouseFilter: not Control.MouseFilterEnum.Ignore };
 
     void Release(InputEventMouseButton mb)
     {
