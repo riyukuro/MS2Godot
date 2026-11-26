@@ -28,6 +28,11 @@ public partial class HudScene
         unwatchEnchantScroll = () =>      // the session and its book outlive this HUD
         {
             book.OpenRequested -= OpenEnchantScroll;
+            // The window goes with the HUD (vfunc_67, uienchantscrolldialog.cpp:136): its handlers leave the book and the
+            // book's IsOpen clears, so the next scroll use opens the window again (FUN_140f3b920's OpenDialog, :199).
+            if (EnchantScrollOpen) enchantScroll.Close();
+            enchantScroll = null;
+            if (enchantScrollMovie != null) { enchantScrollMovie.Host.Unload(); enchantScrollMovie.QueueFree(); enchantScrollMovie = null; }
             enchantScrollWatched = false;
         };
     }

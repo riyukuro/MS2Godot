@@ -371,4 +371,22 @@ public class EnchantScrollDialogTests
         Assert.That(n.Closes, Is.EqualTo(1), "only code 1 closes");
         Assert.That((n.Sent.Count, n.Stored.Count), Is.EqualTo((0, 0)));
     }
+
+    /// <summary>vfunc_67 (:136) through the window's own Close, as the HUD's teardown runs it: the book's IsOpen clears and the
+    /// window's handlers leave the session's book, so the next mode 0 asks OpenDialog again (FUN_140f3b920, :199) instead of
+    /// updating the gone window, and a later result raises no box of the old window.</summary>
+    [Test]
+    public void TheWindowsCloseLetsTheNextScrollOpenItAgain()
+    {
+        var r = new Rig();
+        r.Open(1);
+        Assert.That((r.Book.IsOpen, r.Book.SlotRegistered, r.Opens), Is.EqualTo((true, true, 0)));
+        r.C.Close();
+        Assert.That((r.Book.IsOpen, r.Book.SlotRegistered, r.Closes), Is.EqualTo((false, false, 1)));
+        r.Open(1);
+        Assert.That((r.Opens, r.Book.SlotRegistered), Is.EqualTo((1, false)), "OpenDialog, not the old window's UpdateScrollInfo");
+        var body = Of(w => { var probe = new ByteReader(new byte[600]); ItemReader.ReadBodyInto(probe, new EquipItem { Id = 1 }); w.WriteBytes(new byte[probe.Position]); });
+        r.Recv(Of(w => { w.WriteByte(3); w.WriteShort(0); w.WriteLong(Gear); w.WriteBytes(body); }));
+        Assert.That((r.Stored.Count, r.Boxes.Count, r.Sent.Count), Is.EqualTo((1, 0, 0)), "the book stores the item; the closed window shows no box");
+    }
 }
