@@ -2,6 +2,7 @@ using Ms2.Net.Packets;
 using Ms2.Quest;
 using Ms2.Ui.Guide;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -55,6 +56,9 @@ public class AchieveNoticeTests
         ["s_system_achieve_reward_dynamicaction"] = "action {0}",
         ["s_system_achieve_reward_dynamicaction_auth_notify"] = "action line {0}",
         ["s_system_achieve_reward_auth_notify_manual"] = "obtained {0}",
+        ["s_achieve_reward_coloring"] = "colour {0}",
+        ["s_system_achieve_reward_coloring"] = "coloring {0}",
+        ["s_system_achieve_reward_coloring_auth_notify"] = "coloring line {0}",
     };
 
     sealed class Rig
@@ -65,6 +69,7 @@ public class AchieveNoticeTests
         public int? Gender = 0;
         public bool FeatureBb = true, FeatureBc = true;
         public int TextsMade;
+        public ColorPaletteTable Palettes = ColorPaletteTable.Empty;
     }
 
     static Rig Make(Dictionary<ulong, AchieveTexts.SpecialReward> specials, params AchieveData[] data) => Make(specials, false, data);
@@ -80,6 +85,7 @@ public class AchieveNoticeTests
             TableString = (table, code) => table == 0x18 ? $"Trophy{code}" : $"S{table}:{code}",
             FeatureOn = f => f == 0xbb ? rig.FeatureBb : f == 0xbc && rig.FeatureBc,
             Gender = () => rig.Gender,
+            PaletteColors = p => rig.Palettes.Rows(p),
         };
         var toasts = new Toasts(rig.Log);
         Func<AchieveTexts> made = () => { rig.TextsMade++; return texts; };
@@ -236,6 +242,15 @@ public class AchieveNoticeTests
             G(1, 1, 5, 15000001), G(2, 1, 6, 50000001), G(3, 1, 7, 50100001), G(4, 1, 10, 0, 0, 1, 1, male),
             G(5, 1, 12, 90200001), G(6, 1, 9, 0, 0, 1, 1, male), G(7, 1, 8, 7), G(8, 1, 2, 30), G(9, 1, 1, 20000001)));
         rig.Book.Apply(new AchieveMessage.Rows(new[] { (id, 1, P(3, 9, 1, 1)) }));
+        // palette 7: two colours of this trophy's grade 7 (in file order, a repeated colorSN kept), one of grade 6, one of
+        // another trophy and one of none
+        rig.Palettes = ColorPaletteTable.Parse(System.Xml.Linq.XElement.Parse($@"<ms2><colorPalette id=""7"">
+            <color ch0=""ff010101"" stringKey=""31"" colorSN=""1"" achieveID=""{id}"" achieveGrade=""7"" />
+            <color ch0=""ff020202"" stringKey=""32"" colorSN=""2"" achieveID=""{id}"" achieveGrade=""6"" />
+            <color ch0=""ff030303"" stringKey=""33"" colorSN=""3"" achieveID=""21100002"" achieveGrade=""7"" />
+            <color ch0=""ff040404"" stringKey=""34"" colorSN=""4"" />
+            <color ch0=""ff050505"" stringKey=""35"" colorSN=""1"" achieveID=""{id}"" achieveGrade=""7"" />
+            </colorPalette></ms2>"));
         for (int g = 1; g <= 9; g++) rig.Notices.NotifyReward(id, g);
         const string etc = "./Data/Resource/Image/ETC/";
         Assert.That(rig.Log, Is.EqualTo(new[]
@@ -246,10 +261,15 @@ public class AchieveNoticeTests
             $"toast icon {etc}customizeshop_unlock.png beauty S1:11300001 0", "line 1c beauty line S1:11300001", "trigger 3 10",
             "toast icon skill90200001.png action S4:90200001 0", "line 1c action line S4:90200001", "trigger 3 12",
             $"toast icon {etc}customizeshop_unlock.png beauty S1:11300001 0", "line 1c beauty line S1:11300001", "trigger 3 9",
-            "trigger 3 8",          // the palette: GetPaletteColors is not ported
+            $"toast icon {etc}colorpalette_unlock.png coloring S72:31 0", "line 1c coloring line S72:31",
+            $"toast icon {etc}colorpalette_unlock.png coloring S72:35 0", "line 1c coloring line S72:35", "trigger 3 8",
             "trigger 3 2",          // a title: no toast
             "toast icon special.png special notice 0", "line 1c obtained a special", "trigger 3 1",
         }));
+
+        // the reward text (FUN_14093ce70): a line per colour of this trophy and grade
+        Assert.That(rig.Notices.Texts.RewardText(id, 7), Is.EqualTo("colour S72:31\ncolour S72:35"));
+        Assert.That(rig.Notices.Texts.RewardText(id, 6), Is.EqualTo(""), "grade 6's reward is a beauty item");
 
         // a female player gets the female row; no local player ends a type 9 notice before the trigger and shows no
         // type 10 one; the features off show none of theirs

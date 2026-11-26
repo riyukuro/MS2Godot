@@ -16,10 +16,11 @@ public sealed class ColorPaletteTable
     /// <summary>
     /// ItemColorEx: ch0..ch2 (m_aValues), Visible (m_n38: the palette attribute, else ch0), Show2Color (m_bFlag,
     /// show2color), StringKey (m_n2c, the stringColorPalette id), ColorSN (m_nColor, -1 without the attribute: itemdata.h:310) and PaletteId (m_nId). Colours are the
-    /// ARGB words as written.
+    /// ARGB words as written. AchieveId (m_n24, achieveID) and AchieveGrade (m_n28, achieveGrade) tie a colour to the trophy
+    /// grade whose type 8 reward unlocks it (itemdatatable.cpp:1171), 0 without the attribute (itemdatastruct.cpp:262).
     /// </summary>
     public sealed record Color(uint Ch0, uint Ch1, uint Ch2, uint Visible, bool Show2Color, int StringKey, int ColorSN, int PaletteId,
-        uint Eye0 = 0, uint Eye2 = 0)
+        uint Eye0 = 0, uint Eye2 = 0, int AchieveId = 0, int AchieveGrade = 0)
     {
         public uint Channel(int i) => i switch { 0 => Ch0, 1 => Ch1, _ => Ch2 };
     }
@@ -64,7 +65,8 @@ public sealed class ColorPaletteTable
                 var color = new Color(ch0, Hex((string)c.Attribute("ch1")), Hex((string)c.Attribute("ch2")),
                     pal.Length > 0 ? Hex(pal) : ch0, Flag((string)c.Attribute("show2color")),
                     ItemData.Atoi((string)c.Attribute("stringKey") ?? "0"), ItemData.Atoi((string)c.Attribute("colorSN") ?? "-1"), id,
-                    Hex((string)c.Attribute("ch0_eye")), Hex((string)c.Attribute("ch2_eye")));
+                    Hex((string)c.Attribute("ch0_eye")), Hex((string)c.Attribute("ch2_eye")),
+                    ItemData.Atoi((string)c.Attribute("achieveID") ?? "0"), ItemData.Atoi((string)c.Attribute("achieveGrade") ?? "0"));
                 info.Rows.Add(color);                                          // AddColor: the array keeps every row,
                 info.BySN[color.ColorSN] = color;                              // the map a later colorSN replaces
             }

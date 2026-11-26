@@ -74,6 +74,7 @@ public class AchieveDataTests
         texts.TitleName = tables.TitleName;
         texts.FeatureOn = m.IsFeatureEnabled;
         texts.Gender = () => 0;
+        texts.PaletteColors = tables.ColorPalettes.Rows;
         return (book, texts);
     }
 
@@ -142,6 +143,74 @@ public class AchieveDataTests
         var outside = anyTrophy.Where(id => !listed.Contains(id)).ToList();
         TestContext.Progress.WriteLine($"trophies in no category: {outside.Count} ({string.Join(", ", outside.Take(10))})");
         Assert.That(outside.Count, Is.LessThan(anyTrophy.Count / 20 + 1), "nearly every listable trophy is in a category");
+    }
+
+    /// <summary>
+    /// FUN_1418ab000 (uiachievedialog.cpp:872): an item-coloring trophy's row gives palette0.. for the reward palette's
+    /// colours of its start grade, and getTooltipColor (:509) of each gives the colour's name and description text
+    /// tooltip. Only the GMS2 data ties colours to trophies; a hand-made palette covers both data sets.
+    /// </summary>
+    [Test]
+    public void AColoringTrophyRowListsItsColoursAndTheirTooltips()
+    {
+        var m = Model();
+        var (book, texts) = Book(m);
+        texts.FeatureOn = _ => true;
+        var c = new AchieveController(book, texts, AchieveCategory.Load(packs))
+        {
+            Colors = (palette, sn) => tables.ColorPalettes.BySN((int)palette, (int)sn),
+        };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 50_000_000);
+        p.StageW = 1920; p.StageH = 1080;
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+
+        int rowsWithColours = 0, colours = 0;
+        var untipped = new List<string>();
+        foreach (var a in book.GetListFromTable(0, 0, false, false).Where(a => a.Reward is { Type: 8 }))
+        {
+            var row = c.Row(a);
+            var want = texts.RewardColors(a.Id, a.StartGrade, a.Reward.Code).ToList();
+            var got = row.Keys.Where(k => k.StartsWith("palette", StringComparison.Ordinal)).ToList();
+            Assert.That(got, Is.EqualTo(Enumerable.Range(0, want.Count).Select(i => $"palette{i}")), $"{a.Id}: the palette members");
+            if (want.Count > 0) rowsWithColours++;
+            for (int i = 0; i < want.Count; i++)
+            {
+                colours++;
+                var o = (Dictionary<string, object>)row[$"palette{i}"];
+                Assert.That((o["paletteID"], o["realColor"], o["visibleColor"], o["ch2Color"], o["colorSN"]),
+                    Is.EqualTo(((object)a.Reward.Code, (object)want[i].Ch0, (object)want[i].Visible, (object)want[i].Ch2, (object)want[i].ColorSN)));
+                Assert.That(o.ContainsKey("realColor2"), Is.EqualTo(want[i].Show2Color));
+                var tip = c.GetUserValue("getTooltipColor", new object[] { 0.0, 0.0, 0.0, 0.0, h.ToAs(o) }) as AsTooltip;
+                string name = texts.TableString(0x48, want[i].StringKey);
+                if (tip == null || !((string)tip["text"]).Contains(name, StringComparison.Ordinal) || name.Length == 0)
+                    untipped.Add($"{a.Id} colour {want[i].ColorSN}");
+                else Assert.That(tip["tooltipAlign"], Is.EqualTo(1));
+            }
+        }
+        TestContext.Progress.WriteLine($"coloring trophy rows: {rowsWithColours} with {colours} colours, {untipped.Count} without a tooltip: {string.Join(", ", untipped.Take(5))}");
+        bool achievePalettes = packs.Exists("Xml", "table/na/colorpalette_achieve.xml");
+        Assert.That(colours, achievePalettes ? Is.GreaterThan(100) : Is.Zero, "the coloring rows' colours");
+        Assert.That(untipped, Is.Empty, "every colour has its tooltip");
+
+        // a hand-made palette: a colour without a name key, or whose name is empty, has no tooltip; show2color adds the
+        // second colours (both ch2) and keeps visibleColor the palette colour
+        var hand = Ms2.Ui.Items.ColorPaletteTable.Parse(System.Xml.Linq.XElement.Parse(
+            @"<ms2><colorPalette id=""5""><color ch0=""ff010203"" ch2=""ff070809"" palette=""ff0a0b0c"" show2color=""1"" colorSN=""1"" stringKey=""9"" />
+              <color ch0=""ff010203"" colorSN=""2"" /><color ch0=""ff010203"" colorSN=""3"" stringKey=""9"" /></colorPalette></ms2>"));
+        c.Colors = (palette, sn) => hand.BySN((int)palette, (int)sn);
+        texts.TableString = (t, id) => t == 0x48 ? (id == 9 ? "Nine" : "") : t == 0x49 ? "about nine" : tables.StringTableText(t, id);
+        object Tip(int sn) => c.GetUserValue("getTooltipColor", new object[] { 0.0, 0.0, 0.0, 0.0,
+            h.ToAs(new Dictionary<string, object> { ["paletteID"] = 5u, ["colorSN"] = sn }) });
+        var t1 = (AsTooltip)Tip(1);
+        Assert.That(t1["text"], Is.EqualTo(Ms2.Quest.ClientFormat.Format(tables.Common("s_beauty_tooltip_color_desc"), "Nine", "about nine") + "\n"));
+        Assert.That(t1["tooltip"], Is.EqualTo("export_common_tooltip_tooltipText"));
+        Assert.That(Tip(2), Is.Null, "no name key");
+        Assert.That(Tip(4), Is.Null, "no such colour");
+        texts.TableString = (t, id) => t == 0x48 ? "" : tables.StringTableText(t, id);
+        Assert.That(Tip(3), Is.Null, "an empty name");
+        Assert.That(c.GetUserValue("getTooltipColor", new object[] { 0.0, 0.0 }), Is.Null, "too few arguments");
+        Assert.That(rt.Errors, Is.Empty);
     }
 
     sealed class Count : IAchieveToasts
@@ -222,6 +291,8 @@ public class AchieveDataTests
         var empty = new List<string>();
         var unnamedSkills = new List<string>();
         int dynamicActions = 0;
+        int paletteNotices = 0;
+        var unnamedColors = new List<string>();
         foreach (var d in book.GetList(0, 0, false, false).Select(a => a.Data))
             foreach (var g in d.Grades.Values)
             {
@@ -239,7 +310,8 @@ public class AchieveDataTests
                     1 or 3 or 4 or 5 or 6 or 7 => 1,
                     9 or 10 or 11 => r.Extra.ContainsKey("male") ? 1 : 0,
                     12 => tables.Skills.GetSkillData(r.Code)?.Icon != null ? 1 : 0,
-                    _ => 0,                 // a title (2), a palette (8, STILL-OPEN), etc (13) or none
+                    8 => texts.RewardColors(d.Id, g.Grade, r.Code).Count(),   // one per colour of this trophy and grade
+                    _ => 0,                 // a title (2), etc (13) or none
                 };
                 Assert.That(toasts.Log, Has.Count.EqualTo(want), $"{d.Id}/{g.Grade}: type {r.Type}'s toast");
                 if (want == 1 && r.Type is 5 or 6 or 7 or 9 or 10 or 11 or 12)
@@ -248,6 +320,19 @@ public class AchieveDataTests
                     if (toasts.Log[0].EndsWith("|", StringComparison.Ordinal) || lines[0].Text.Length == 0) empty.Add($"{d.Id}/{g.Grade}");
                 }
                 if (r.Type is 3 or 4) Assert.That(lines.Select(l => l.Kind), Is.EqualTo(new[] { TalkKind.SystemNotice }));
+                if (r.Type == 8 && want > 0)
+                {
+                    // each colour's notice and Auth line name it (string table 0x48), and the reward text has one line per colour
+                    paletteNotices += want;
+                    Assert.That(lines.Select(l => l.Kind), Is.EqualTo(Enumerable.Repeat(TalkKind.Auth, want)), $"{d.Id}/{g.Grade}: the coloring lines");
+                    var names = texts.RewardColors(d.Id, g.Grade, r.Code).Select(c => texts.TableString(0x48, c.StringKey)).ToList();
+                    for (int i = 0; i < want; i++)
+                        if (names[i].Length == 0 || !lines[i].Text.Contains(names[i], StringComparison.Ordinal)
+                            || !toasts.Log[i].Contains(names[i], StringComparison.Ordinal))
+                            unnamedColors.Add($"{d.Id}/{g.Grade} colour {i}");
+                    if (texts.FindDesc(d.Id) != null && texts.FindSpecialReward(d.Id, g.Grade) == null)
+                        Assert.That(texts.RewardText(d.Id, g.Grade).Split('\n'), Has.Length.EqualTo(want), $"{d.Id}/{g.Grade}: a reward line per colour");
+                }
                 if (r.Type == 12)
                 {
                     // the dynamic action's name (string table 4 skillName) in the notice line and the reward text
@@ -264,6 +349,11 @@ public class AchieveDataTests
         TestContext.Progress.WriteLine($"dynamic action rewards: {dynamicActions}, {unnamedSkills.Count} without the skill's name: {string.Join(", ", unnamedSkills.Take(5))}");
         Assert.That(dynamicActions, Is.GreaterThan(0), "the dynamic action rewards");
         Assert.That(unnamedSkills, Is.Empty, "every dynamic action reward names its skill");
+        // only the GMS2 data ties palette colours to trophies (table/na/colorpalette_achieve.xml's achieveID rows)
+        TestContext.Progress.WriteLine($"palette reward notices: {paletteNotices}, {unnamedColors.Count} unnamed: {string.Join(", ", unnamedColors.Take(5))}");
+        bool achievePalettes = packs.Exists("Xml", "table/na/colorpalette_achieve.xml");
+        Assert.That(paletteNotices, achievePalettes ? Is.GreaterThan(100) : Is.Zero, "the palette reward notices");
+        Assert.That(unnamedColors, Is.Empty, "every palette notice names its colour");
         Assert.That(byType.GetValueOrDefault(1) + byType.GetValueOrDefault(3), Is.GreaterThan(100), "the item and stat rewards");
     }
 

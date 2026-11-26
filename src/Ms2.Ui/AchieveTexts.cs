@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Quest;
+using Ms2.Ui.Items;
 using ReservedWords = Ms2.Formats.World.ReservedWords;
 
 namespace Ms2.Ui;
@@ -42,6 +43,8 @@ public sealed class AchieveTexts
     public Func<int, bool> FeatureOn = _ => false;
     /// <summary>The local player's PC::GetGender (0 male), null when there is no local player.</summary>
     public Func<int?> Gender = () => null;
+    /// <summary>CItemDataTable::GetPaletteColors (itemdatatable.cpp:820): a palette's colours in file order.</summary>
+    public Func<int, IReadOnlyList<ColorPaletteTable.Color>> PaletteColors = _ => Array.Empty<ColorPaletteTable.Color>();
 
     public AchieveTexts(Dictionary<int, Desc> descs, Dictionary<ulong, SpecialReward> specials)
     {
@@ -233,7 +236,7 @@ public sealed class AchieveTexts
     /// <summary>
     /// FUN_14093ce70: the reward line of a grade (a description row must exist): the special reward's text, else by
     /// reward type: item 1, title 2, stat point 3, skill point 4, buy authority 5-7; with feature 0xbb also a dynamic action
-    /// 12, colouring 8 and beauty 10/11 (by the local player's gender); with feature 0xbc beauty 9.
+    /// 12, colouring 8 (s_achieve_reward_coloring of each colour's name, string table 0x48, joined by newlines) and beauty 10/11 (by the local player's gender); with feature 0xbc beauty 9.
     /// </summary>
     public string RewardText(int id, int grade)
     {
@@ -257,9 +260,7 @@ public sealed class AchieveTexts
             {
                 case 12: return CommonKeyF("s_achieve_reward_dynamicaction", TableString(4, code));
                 case 8:
-                    // STILL-OPEN: CItemDataTable::GetPaletteColors(code) (the ItemColorEx rows of the trophy and grade, each
-                    // s_achieve_reward_coloring of palette name table 0x48) is not ported; the line stays empty.
-                    return "";
+                    return string.Join("\n", RewardColors(id, grade, code).Select(c => CommonKeyF("s_achieve_reward_coloring", TableString(0x48, c.StringKey))));
                 case 10:
                 case 11:
                     if (Gender() is { } gender10) return BeautyText(r, gender10);
@@ -270,6 +271,13 @@ public sealed class AchieveTexts
             return Gender() is { } gender9 ? BeautyText(r, gender9) : "";
         return "";
     }
+
+    /// <summary>
+    /// The colours a type 8 reward unlocks (achievemanager.cpp:1114, :654; uiachievedialog.cpp:881): the rows of
+    /// CItemDataTable::GetPaletteColors(code) in file order whose achieveID is the trophy and achieveGrade the grade.
+    /// </summary>
+    public IEnumerable<ColorPaletteTable.Color> RewardColors(int id, int grade, uint code) =>
+        PaletteColors((int)code).Where(c => c.AchieveId == id && c.AchieveGrade == grade);
 
     string BeautyText(AchieveReward r, int gender)
     {

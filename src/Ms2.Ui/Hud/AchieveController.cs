@@ -13,8 +13,7 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// STILL-OPEN (each answered by a delegate that defaults to "none"): the game events of CheckRequire and the category
 /// filters (GameEventManagerCli); the collection marks of reqCondition (DAT_143ab30e0 items, CFishingManager, CPetManager,
-/// the dungeon record); IsDebugMode (CInputKeyHandler); the item-coloring palette members of the reward line and the
-/// getTooltipColor / getTooltipAchieve tooltips (CItemDataTable palettes, ASTooltip::SetAchieveTooltip); OnUseLink (FUN_140d2cca0, raised as <see cref="UseLink"/>); vfunc_80, the platform's late search answer
+/// the dungeon record); IsDebugMode (CInputKeyHandler); the getTooltipAchieve tooltip (ASTooltip::SetAchieveTooltip); OnUseLink (FUN_140d2cca0, raised as <see cref="UseLink"/>); vfunc_80, the platform's late search answer
 /// (KR's vfunc_37 answers at once, so it is not reached).
 /// </para>
 /// </summary>
@@ -34,6 +33,8 @@ public sealed class AchieveController : UiController
     public Func<int> GmLevel = () => 0;
     /// <summary>CInputKeyHandler::IsDebugMode (FUN_14025e7c0). STILL-OPEN: no debug mode; false.</summary>
     public Func<bool> DebugMode = () => false;
+    /// <summary>CItemDataTable::GetPaletteColorBySN(palette, colorSN): null without the colour.</summary>
+    public Func<uint, uint, Items.ColorPaletteTable.Color> Colors = (_, _) => null;
     /// <summary>WorldService::GetLocalPlayer() != null.</summary>
     public Func<bool> HasPlayer = () => true;
     /// <summary>PCBase::IsDead of the local player.</summary>
@@ -272,8 +273,8 @@ public sealed class AchieveController : UiController
     /// <summary>FUN_1418acd10: the player has the trophy and its progress is below the start grade's goal.</summary>
     bool CanDebugUp(int id) => Book.Find(id) is { } a && a.Count < a.GradeGoal(a.StartGrade);
 
-    /// <summary>vfunc_45 (:498): getFilter(kind) = the kind's mark (1 when unknown). getTooltipColor and getTooltipAchieve are
-    /// STILL-OPEN (no palette table or achieve tooltip yet): no value.</summary>
+    /// <summary>vfunc_45 (:498): getFilter(kind) = the kind's mark (1 when unknown); getTooltipColor (:509) and
+    /// getTooltipAchieve (:536), compared without case.</summary>
     public override object GetUserValue(string name, object[] args)
     {
         if (name == "getFilter")
@@ -281,7 +282,30 @@ public sealed class AchieveController : UiController
             int k = AchieveData.ParseRewardType(args is { Length: > 0 } ? Rt.ToString(args[0]) : "");
             return !kinds.TryGetValue(k, out int v) || v != 0;
         }
+        if (string.Equals(name, "getTooltipColor", StringComparison.OrdinalIgnoreCase)) return TooltipColor(args);
         return null;
+    }
+
+    /// <summary>
+    /// getTooltipColor (:509): four uints, then the palette object of a reward row (its paletteID and colorSN). Without the
+    /// colour (GetPaletteColorBySN) or its name key there is no value; else the text tooltip (ASTooltip(1, 2)) of
+    /// s_beauty_tooltip_color_desc of the colour's name (string table 0x48) and description (0x49) and a newline, aligned 1,
+    /// none when the name is empty.
+    /// </summary>
+    AsTooltip TooltipColor(object[] args)
+    {
+        if (args is not { Length: > 4 }) return null;
+        uint palette = Rt.ToUint32(Host.Get(args[4], "paletteID"));
+        uint sn = Rt.ToUint32(Host.Get(args[4], "colorSN"));
+        if (Colors(palette, sn) is not { } c || c.StringKey <= 0) return null;
+        string desc = "";
+        string colorName = Texts.TableString(0x48, c.StringKey);
+        if (colorName.Length != 0)
+            desc = Texts.CommonKeyF("s_beauty_tooltip_color_desc", colorName, Texts.TableString(0x49, c.StringKey)) + "\n";
+        var tip = new AsTooltip();
+        if (!tip.ApplyTextTooltip(desc)) return null;
+        tip.SetTooltipAlign(1);
+        return tip;
     }
 
     // ---- refresh -------------------------------------------------------------------------------------------------
@@ -564,15 +588,30 @@ public sealed class AchieveController : UiController
     }
 
     /// <summary>FUN_1418ab000 (:872): "reward" = s_achieve_reward of the start grade's reward text, or
-    /// s_achieve_reward_item_coloring for an item-coloring reward with feature 0xbb on. STILL-OPEN: the coloring reward's
-    /// palette{n} members (CItemDataTable::GetPaletteColors).</summary>
+    /// s_achieve_reward_item_coloring for an item-coloring reward with feature 0xbb on, which also gives palette0,
+    /// palette1, ... for the reward palette's colours of the trophy and its start grade (:881-903): paletteID, realColor
+    /// (ch0), visibleColor (the palette colour), ch2Color (ch2) and colorSN, with show2color also realColor2 and
+    /// visibleColor2 (both ch2). The colours are uints (FUN_1409c4990), colorSN an int and paletteID a uint.</summary>
     void RewardLine(Dictionary<string, object> row, Achieve a)
     {
         string r = Texts.StartRewardText(a.Data.Id);
         if (r.Length == 0) return;
         string text = Texts.CommonKeyF("s_achieve_reward", r);
-        if (Texts.FeatureOn(0xbb) && a.Reward is { Type: 8 })
+        if (Texts.FeatureOn(0xbb) && a.Reward is { Type: 8 } reward)
+        {
             text = Texts.CommonKeyF("s_achieve_reward_item_coloring", r);
+            int index = 0;
+            foreach (var c in Texts.RewardColors(a.Data.Id, a.StartGrade, reward.Code))
+            {
+                var palette = new Dictionary<string, object>
+                {
+                    ["paletteID"] = reward.Code, ["realColor"] = c.Ch0, ["visibleColor"] = c.Visible, ["ch2Color"] = c.Ch2,
+                    ["colorSN"] = c.ColorSN,
+                };
+                if (c.Show2Color) { palette["realColor2"] = c.Ch2; palette["visibleColor2"] = c.Ch2; }
+                row["palette" + index++.ToString(System.Globalization.CultureInfo.InvariantCulture)] = palette;
+            }
+        }
         row["reward"] = text;
     }
 

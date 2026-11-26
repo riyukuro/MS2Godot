@@ -105,8 +105,8 @@ public sealed class AchieveNotices
     /// NotifyReward (@0x1409372b0), the reward of <paramref name="grade"/> taken: nothing without the trophy's data, the grade
     /// or the reward notify. A special reward row gives its own icon notice and the s_system_achieve_reward_auth_notify_manual
     /// line of its text; else by the reward type: an item's toast (1); stat points (3) and skill points (4) with their lines; a
-    /// shop's buy authority (5 weapon, 6 build, 7 ride) with the item's name; with feature 0xbb a palette (8, STILL-OPEN:
-    /// CItemDataTable::GetPaletteColors is not ported, so nothing shows), a beauty item by the local player's gender (10/11)
+    /// shop's buy authority (5 weapon, 6 build, 7 ride) with the item's name; with feature 0xbb a palette (8: one notice and line per colour of
+    /// the palette tied to this trophy and grade, by the colour's name, string table 0x48), a beauty item by the local player's gender (10/11)
     /// and a dynamic action (12) with the skill's icon; with feature 0xbc a beauty item (9), where no local player ends the
     /// notice before the trigger. Last the guide's AchieveReward trigger (3) of the reward type.
     /// </summary>
@@ -145,7 +145,10 @@ public sealed class AchieveNotices
                 switch (r.Type)
                 {
                     case 8:
-                        break;      // STILL-OPEN: GetPaletteColors(code), one notice per ItemColorEx row of this trophy and grade
+                        foreach (var c in Texts.RewardColors(id, grade, r.Code))
+                            Unlock(toasts, EtcImage + "colorpalette_unlock.png", "s_system_achieve_reward_coloring",
+                                   "s_system_achieve_reward_coloring_auth_notify", Texts.TableString(0x48, c.StringKey));
+                        break;
                     case 10:
                     case 11:
                         if (Texts.Gender() is { } gender10) Beauty(toasts, r, gender10);

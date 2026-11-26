@@ -148,6 +148,7 @@ public partial class HudScene
         achieveTexts.TableString = hudModel.Tables.StringTableText;
         achieveTexts.TitleName = hudModel.Tables.TitleName;
         achieveTexts.FeatureOn = hudModel.IsFeatureEnabled;
+        achieveTexts.PaletteColors = hudModel.Tables.ColorPalettes.Rows;
         achieveTexts.Gender = () => Ms2Godot.Net.LiveSession.Instance is { } live ? live.Me.User?.Gender : hudModel.HasLocalPlayer ? 0 : null;
         return achieveTexts;
     }
@@ -174,6 +175,7 @@ public partial class HudScene
                 QuestName = id => questTable?.QuestName((int)id) ?? "",
                 QuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
                 Room = id => (dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable != null ? questTable.Available : _ => true)).GetRoom((int)id),
+                Colors = (palette, sn) => hudModel.Tables.ColorPalettes.BySN((int)palette, (int)sn),
                 ItemCollected = id => live != null && live.CollectionGrades.ContainsKey((uint)id),   // DAT_143ab30e0.Lookup(id) != 0: the one-key CAtlMap::Lookup returns the pair, so a present id, any grade
                 Send = packet =>
                 {
