@@ -1448,7 +1448,7 @@ public partial class HudScene : Node, IUiStageHost
         // has its mark, and the later registers and removes add and remove marks. Offline the xblock's portals stand in.
         unwatchMinimapPortals?.Invoke();
         unwatchMinimapPortals = null;
-        minimapXblockPortals = fc.Portals.All.Select(p => p.Id).ToArray();
+        minimapXblockPortals = fc.Portals.All.Select(p => p.Id).ToArray();      // perf-ok: once per field load, read only by the scripted minimap check
         if (Ms2Godot.Net.LiveSession.Instance is { } live)
         {
             if (live.Portals is { } lps && lps.FieldId == fc.FieldId) unwatchMinimapPortals = c.WatchPortals(lps, icons, fc.FieldId);
