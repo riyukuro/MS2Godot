@@ -333,6 +333,36 @@ public partial class LiveSession
                 Check($"quest {id} is given up (state {live.Quests.Get(id)?.State})", live.Quests.Get(id) is not { State: 1 });
                 continue;
             }
+            if (step.StartsWith("gmquest:"))      // gmquest:<quest id>:<Started|Completed>[:<times>]: the server's GM quest command (a GM account), then until the quest's packet; with times, Started then Completed that many times (each completion's rewards, the fame among them)
+            {
+                var parts = step[8..].Split(':');
+                int id = int.Parse(parts[0]);
+                int times = parts.Length > 2 ? int.Parse(parts[2]) : 0;
+                async Task<bool> To(string state, int want)
+                {
+                    // the command starts a quest the character does not hold even when asked to complete it
+                    for (int tries = 0; tries < 2 && live.Quests.Get(id)?.State != want; tries++)
+                    {
+                        int was = live.Quests.Get(id)?.State ?? -1;
+                        hud.SubmitChatLine($"/quest {id} --state {state}");
+                        await until(() => (live.Quests.Get(id)?.State ?? -1) != was, 60 * 5); await frames(20);
+                    }
+                    return live.Quests.Get(id)?.State == want;
+                }
+                if (times == 0) Check($"quest {id} is {parts[1]} (state {live.Quests.Get(id)?.State})", await To(parts[1], parts[1] == "Completed" ? 2 : 1));
+                else
+                {
+                    int done = 0;
+                    for (int i = 0; i < times; i++)
+                    {
+                        hud.SubmitChatLine($"/quest {id} --state Started");
+                        await until(() => live.Quests.Get(id)?.State == 1, 60 * 5); await frames(20);
+                        if (await To("Completed", 2)) done++;
+                    }
+                    Check($"quest {id} started and completed {done}/{times} times", done == times);
+                }
+                continue;
+            }
             if (step.StartsWith("loggiveup:"))      // loggiveup:<quest id>: the quest log's give-up button (its movie's onGiveUpQuest) for an untimed quest, then until the server's answer
             {
                 int id = int.Parse(step[10..]);
