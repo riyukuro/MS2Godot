@@ -183,6 +183,12 @@ public class LoginReturnTests {
             .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(u => u.Address)
             .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a));
 
+    /// <summary>Every connection <see cref="ReturnServer"/> accepted, kept until the fixture ends. Its connection tasks park on
+    /// Task.Delay(Timeout.Infinite), which has no timer: nothing else references such a task, so without this a collection frees the
+    /// TcpClient and its finalizer closes the connection, and a wait that should time out sees the close instead.</summary>
+    static readonly System.Collections.Concurrent.ConcurrentQueue<TcpClient> Held = new();
+    [OneTimeTearDown] public void CloseHeld() { while (Held.TryDequeue(out var c)) c.Dispose(); }
+
     /// <summary>A login server for the return on <paramref name="bind"/>: it waits <paramref name="helloDelayMs"/> before the hello, and
     /// with <paramref name="silent"/> says nothing after it. Each accepted connection's local address (where the client connected) is kept.</summary>
     static (TcpListener l, int port, System.Collections.Concurrent.ConcurrentQueue<IPAddress> to) ReturnServer(IPAddress bind, int helloDelayMs = 0, bool silent = false) {
@@ -193,6 +199,7 @@ public class LoginReturnTests {
             try {
                 while (true) {
                     var c = await l.AcceptTcpClientAsync();
+                    Held.Enqueue(c);
                     to.Enqueue(((IPEndPoint) c.Client.LocalEndPoint).Address);
                     _ = Task.Run(async () => {
                         try {
@@ -239,8 +246,11 @@ public class LoginReturnTests {
         l.Stop();
     }
 
-    // a hello and then nothing: the timeout names the endpoint it waited on; with no hello at all it says so
+    // a hello and then nothing: the timeout names the endpoint it waited on; with no hello at all it says so. Collections run
+    // through the wait, as under a loaded suite: the silent server's connection must stay open until the timeout.
     [Test] public async Task AReturnTimeoutNamesTheEndpoint() {
+        using var stopGc = new CancellationTokenSource();
+        var gc = Task.Run(async () => { while (!stopGc.IsCancellationRequested) { GC.Collect(); GC.WaitForPendingFinalizers(); await Task.Delay(10); } });
         var (l, port, _) = ReturnServer(IPAddress.Loopback, silent: true);
         using (var t = new TcpTransport()) {
             var e = Assert.ThrowsAsync<TimeoutException>(async () => await new LoginClient(t).ReturnAsync("127.0.0.1", (ushort) port, 1, 1, null, timeoutMs: 500));
@@ -253,7 +263,7 @@ public class LoginReturnTests {
             Assert.That(e.Message, Is.EqualTo($"login return timed out (127.0.0.1:{port2}, no hello)"));
         }
         l2.Stop();
-        await Task.CompletedTask;
+        stopGc.Cancel(); await gc;
     }
 
     // a retry is a new transport: what the dropped attempt's connection still had queued is never read by the next one
