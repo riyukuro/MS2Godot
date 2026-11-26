@@ -71,6 +71,7 @@ public partial class CreativeMenu : Control
 
     int tab = -1, firstRow = -1, shownTab = -1;
     readonly int[] tabCounts = new int[ItemCatalog.TabKeys.Length];
+    readonly int[] visibleTabs = new int[ItemCatalog.TabKeys.Length];
     readonly string[] tabText = new string[ItemCatalog.TabKeys.Length];
     string lastLine = "", lastAnswer = "";
     long scrollEvents, scrollBytes, iconLoads;
@@ -345,19 +346,25 @@ public partial class CreativeMenu : Control
     }
 
     /// <summary>
-    /// The all-tabs view names the group at the top of the list (the entries are sorted by bag tab, so every tab's items
-    /// sit together): a label above the grid says which tab the first visible row belongs to. The text of a tab is built
-    /// when the filter changes, so scrolling sets a label only at a tab boundary and never builds a string.
+    /// The all-tabs view names the group on screen (the entries are sorted by bag tab, so every tab's items sit together):
+    /// the label above the grid takes the tab most of the visible cells belong to, so a group boundary inside the top row
+    /// does not label a screenful of the next group with the sliver above it. The text of each tab is built when the
+    /// filter changes, so scrolling sets a label only when the shown group changes and never builds a string.
     /// </summary>
     void UpdateGroup()
     {
         if (tab >= 0 || matches.Count == 0) { group.Visible = false; shownTab = -1; return; }
+        Array.Clear(visibleTabs);
+        int start = Math.Max(0, firstRow) * Columns, end = Math.Min(matches.Count, (Math.Max(0, firstRow) + PoolRows) * Columns);
+        for (int i = start; i < end; i++) visibleTabs[catalog.Entries[matches[i]].Tab]++;
+        int best = -1;
+        for (int t = 0; t < visibleTabs.Length; t++)
+            if (visibleTabs[t] > 0 && (best < 0 || visibleTabs[t] > visibleTabs[best])) best = t;
+        if (best < 0) { group.Visible = false; shownTab = -1; return; }
         group.Visible = true;
-        int at = Math.Clamp(firstRow, 0, (matches.Count - 1) / Columns) * Columns;
-        int tabOf = catalog.Entries[matches[at]].Tab;
-        if (tabOf == shownTab) return;
-        shownTab = tabOf;
-        group.Text = tabText[tabOf] ?? "";
+        if (best == shownTab) return;
+        shownTab = best;
+        group.Text = tabText[best] ?? "";
     }
 
     void Assign(Cell c, int entryIndex)
@@ -446,7 +453,7 @@ public partial class CreativeMenu : Control
     {
         if (!Visible) return;
         string text = n.Text.Formatted ? ClientFormat.Format(tables.Common(n.Text.Id), n.Text.Args) : n.Text.Text ?? "";
-        text = StripTags(text);
+        text = System.Net.WebUtility.HtmlDecode(StripTags(text));   // the command output is html-encoded (&#39; for a quote)
         if (text.Length == 0) return;
         lastAnswer = text;
         ShowStatus("server: " + text, error: true);
