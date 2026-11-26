@@ -101,6 +101,7 @@ public enum Inbound : ushort {
     NewsNotification = 0x9F,    // RecvOp NewsNotification: CSceneStateGame::OnNewsNotification (scenestategame.cpp:3789)
     PlaySystemSound = 0xC3,     // RecvOp PlaySystemSound: CSceneStateGame::OnPlaySystemSound (scenestategame.cpp:4389)
     RecallScroll = 0xBC,        // RecvOp RecallScroll (commonfiles/opcodes.h:195): CSceneStateGame::OnRecallScroll (scenestategame.cpp:8038)
+    EnchantScroll = 0xBF,       // RecvOp EnchantScroll (commonfiles/opcodes.h:198): CSceneStateGame::OnEnchantScroll (scenestategame.cpp:8080, @0x141734950)
     GlobalPortal = 0xC1,        // RecvOp GlobalPortal (commonfiles/opcodes.h:200): CSceneStateGame::OnGlobalPortal (scenestategame.cpp:4369)
     NoticeDialog = 0xCF,        // RecvOp NoticeDialog: UINoticeDialog::OnNoticeDialog (uinoticedialog.cpp:224)
     SmartPush = 0xD7,           // RecvOp SmartPush: CSceneStateGame::OnSmartPush (scenestategame.cpp:7335)
@@ -268,6 +269,7 @@ public enum Outbound : ushort {
     Party = 0x2C,
     PartySearch = 0x6E,     // SendOp PartySearch (commonfiles/opcodes.h:415): CPartyManager::SendMatchPartyMode0/1/2
     RecallScroll = 0x6F,    // SendOp RecallScroll (commonfiles/opcodes.h:416): UIMessageBox::HandleRecallscrollconfirmButton (uimessagebox.cpp:1641)
+    EnchantScroll = 0x71,   // SendOp EnchantScroll (commonfiles/opcodes.h:418): EnchantScrollSlot (enchantscrollslot.cpp:95), UIEnchantScrollDialog (uienchantscrolldialog.cpp:157)
     GlobalPortal = 0x72,    // SendOp GlobalPortal (commonfiles/opcodes.h:419): UIGlobalPortalDialog::SendGlobalPortal (uiglobalportaldialog.cpp:233)
     RoomDungeon = 0x2B,
     DungeonReward = 0x9D,

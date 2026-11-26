@@ -536,6 +536,9 @@ public partial class LiveSession : Node
     {
         if (game != null) Send(packet);
     }
+    /// <summary>The enchant scroll window's model (UIEnchantScrollDialog 0x4ee0): the EnchantScroll packets and sends. The
+    /// client's dialog object always exists, so every packet is applied whether the window is open or not.</summary>
+    public readonly Ms2.Ui.Items.EnchantScrollBook ScrollBook = new();
     /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
     /// <summary>The field properties 0xCA sets (FieldProperties); a new field clears them.</summary>
@@ -2570,6 +2573,19 @@ public partial class LiveSession : Node
                     GD.Print($"live: item enchant {m.GetType().Name}");
                 }
                 catch (Exception e) { GD.PushWarning($"live: item enchant packet: {e.Message}"); }
+            }
+            else if (game.Is(p, Inbound.EnchantScroll))
+            {
+                try
+                {
+                    ScrollBook.Send = SendEnchant;
+                    ScrollBook.Find = Items.Get;
+                    ScrollBook.StoreItem = i => Items.Apply(new ItemMessage.Update(i.Uid, i));
+                    var m = EnchantScrollMessage.Read(p.Reader(), ScrollBook.Context, game.Profile);   // CSceneStateGame::OnEnchantScroll (scenestategame.cpp:8081)
+                    ScrollBook.Apply(m);
+                    GD.Print($"live: enchant scroll {m.GetType().Name}");
+                }
+                catch (Exception e) { GD.PushWarning($"live: enchant scroll packet: {e.Message}"); }
             }
             else if (game.Is(p, Inbound.StorageInventory))
             {

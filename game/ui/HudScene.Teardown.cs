@@ -23,6 +23,8 @@ public partial class HudScene
         unwatchOwnSkill = null;
         unwatchStorage?.Invoke();
         unwatchStorage = null;
+        unwatchEnchantScroll?.Invoke();
+        unwatchEnchantScroll = null;
         unwatchAttend?.Invoke();
         unwatchAttend = null;
         CinematicUnwire();

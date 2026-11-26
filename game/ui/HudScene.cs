@@ -2137,6 +2137,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemBreakKeys(k)) return true;
         if (ItemMergeKeys(k)) return true;
         if (ItemEnchantKeys(k)) return true;
+        if (EnchantScrollKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
         if (GachaBoxKeys(k)) return true;
@@ -3368,6 +3369,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchMails();
         WatchTrades();
         WatchStorage();
+        WatchEnchantScroll();
         WatchBlackMarket();
         WatchShop();
         WatchBeauty();
@@ -3963,7 +3965,7 @@ public partial class HudScene : Node, IUiStageHost
         c.OpenGachaBox = OpenGachaBoxDialog;
         c.OpenLulluBox = OpenLulluBoxDialog;
         // CUIService::IsDialogOpen of the ported item use dialogs
-        c.IsDialogOpen = id => id == ItemGachaBoxDialogController.UiId ? GachaBoxOpen : id == ItemLulluBoxDialogController.UiId && LulluBoxOpen;
+        c.IsDialogOpen = id => id == ItemGachaBoxDialogController.UiId ? GachaBoxOpen : id == EnchantScrollDialogController.UiId ? EnchantScrollOpen : id == ItemLulluBoxDialogController.UiId && LulluBoxOpen;
         // OpenDungeonItemBox (@0x140d24e70): DungeonRoomTable::GetRoom, then the record of the room's reward room
         c.DungeonRewardCount = roomId =>
         {

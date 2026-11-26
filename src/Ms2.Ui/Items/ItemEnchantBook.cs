@@ -124,7 +124,10 @@ public sealed class ItemEnchantBook
     public void Complete() { Step(3); Restore(); }
 
     /// <summary>FUN_141902660: a charge of an older version asks the refund first.</summary>
-    static bool NeedsRefund(Item i) => i.Record?.Enchant is { } e && e.Version != ChargeVersion && e.Charge != 0;
+    static bool NeedsRefund(Item i) => i.Record != null && NeedsRefund(i.Record);
+
+    /// <summary>FUN_141902660 (uicommon.cpp:2009) on an item record: its enchant info NeedsChargeVersionUpdate.</summary>
+    public static bool NeedsRefund(Ms2.Net.Packets.EquipItem r) => r.Enchant is { } e && e.Version != ChargeVersion && e.Charge != 0;
 
     /// <summary>OnLoadComplete: mode 0.</summary>
     public void Load() => Out(new ItemEnchantLoadRequest());

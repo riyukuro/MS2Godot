@@ -120,10 +120,10 @@ public sealed partial class ItemTooltip
     }
 
     /// <summary>CItemStatus::IsRatioStat (itemsocketsystemutil.cpp:2125).</summary>
-    static bool IsRatioStat(int stat) => stat is 0x1b or 0x1c or 0x14;
+    internal static bool IsRatioStat(int stat) => stat is 0x1b or 0x1c or 0x14;
 
     /// <summary>ScaleValue (itemsocketsystemutil.cpp:2288).</summary>
-    static long ScaleValue(long value, float rate) => (long)((double)value * (double)rate + 0.000001);
+    internal static long ScaleValue(long value, float rate) => (long)((double)value * (double)rate + 0.000001);
 
     /// <summary>
     /// CItemStatus::GetStatValue(stat, 3, sub) (itemsocketsystemutil.cpp:1900): the option group sub's value (sub 5: the
