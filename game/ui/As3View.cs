@@ -1035,7 +1035,9 @@ public partial class As3View : Node2D
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown) Player.Wheel(-3);
                 // `over`: whether the press is on this movie's shapes is asked at the press, not read from the 50 ms sample: the client's
                 // dialogs are clips of one movie, whose hit test finds the entity under the press, so a press next to a dialog the cursor
-                // left a moment ago reaches the dialog under it. (MouseOverUi stays the client's sampled flag the game reads.)
+                // left a moment ago reaches the dialog under it. Only the dialogs among themselves are decided here; what the game takes
+                // is the sampled flag (MouseOverUi, AnyMouseOverUi) its own input handlers read, as CMouseController does
+                // (MouseMove, the zoom and cube lift wheels), so a press the sample holds from the game is held although no view has shapes there.
                 if (!over) return;   // the click goes on to the views below and the game
                 if (mb.Pressed && mb.ButtonIndex == MouseButton.Left) ClearOtherFocus();
                 break;

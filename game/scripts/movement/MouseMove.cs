@@ -53,9 +53,24 @@ public partial class MouseMove : Node
         ProcessPriority = -5;      // before the player reads its input (Player.ProcessPriority -1)
     }
 
-    public override void _UnhandledInput(InputEvent e)
+    readonly Ms2.Ui.MouseReleaseGate gate = new();
+
+    /// <summary>
+    /// CMouseController::OnMouseMessage (@0x140ad1da0): the press and the release read the UI movie's sampled flag
+    /// (<see cref="Ui.As3View.AnyMouseOverUi"/>), not what any view's event handler did, so this sees the event before the views
+    /// (_Input runs before every _UnhandledInput): a press over a dialog's sample is ignored, with its release (m_nIgnoreRelease);
+    /// a press taken in the field walks on its release even when it ends over a dialog (<see cref="Ms2.Ui.MouseReleaseGate"/>).
+    /// </summary>
+    public override void _Input(InputEvent e)
     {
-        if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mb) return;
+        if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
+        bool over = Ui.As3View.AnyMouseOverUi(GetViewport());
+        if (mb.Pressed) { gate.Press(over); return; }
+        if (gate.Release(over)) Release(mb);
+    }
+
+    void Release(InputEventMouseButton mb)
+    {
         if (Ms2.Ui.FieldMoveCover.Up) return;       // no field to click under a move's loading screen
         var from = camera.ProjectRayOrigin(mb.Position);
         var normal = camera.ProjectRayNormal(mb.Position);

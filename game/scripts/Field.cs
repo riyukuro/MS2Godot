@@ -1104,6 +1104,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         if (Ms2.Ui.FieldMoveCover.Up) return;       // no field under a move's loading screen
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
+            if (Ui.As3View.AnyMouseOverUi(GetViewport())) return;   // the UI movie's sampled flag (FUN_1422aeed0(2)) holds the wheel from the game
             // Unk_PCMove::IsActionKeyDown: wheel forward reads as zoom in (300008), back as zoom out (300009), for the one
             // frame whose mouse delta holds it; zoom in wins when both come in one frame
             if (mb.ButtonIndex == MouseButton.WheelUp) zoomInput = 1;

@@ -15,17 +15,24 @@ namespace Ms2Godot.Tests;
 /// The client's dialogs are clips of one movie, so a press is the top entity's under the press itself. Two
 /// <see cref="As3View"/>s (two dialogs of ours) and a game node under them take presses through the viewport's own input routing:
 /// a press at a point of the lower dialog reaches it though the upper dialog's 50 ms sample of the cursor (MouseOverUi) still says
-/// "over" (the cursor left it a moment ago), a press at a point of the upper dialog reaches it though its sample says "not over"
-/// (the cursor came in a moment ago), and a press at neither reaches the game. Quits with 0 when all hold, else 1.
+/// "over" (the cursor left it a moment ago), and a press at a point of the upper dialog reaches it though its sample says "not over"
+/// (the cursor came in a moment ago). The game is not a view: like CMouseController it reads the UI movie's sampled flag
+/// (<see cref="As3View.AnyMouseOverUi"/>) at the press and the release (<see cref="Ms2.Ui.MouseReleaseGate"/>), so a press at no
+/// dialog is still held from it while the sample says "over", and a press taken while the sample says "not over" walks on its
+/// release though a dialog took the press. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PressRoutingCheck : Node
 {
     sealed partial class Game : Node
     {
-        public int Presses;
-        public override void _UnhandledInput(InputEvent ev)
+        public int Presses;                                // releases that run the click to move (MouseMove._Input's)
+        readonly Ms2.Ui.MouseReleaseGate gate = new();
+        public override void _Input(InputEvent ev)
         {
-            if (ev is InputEventMouseButton { Pressed: true }) Presses++;
+            if (ev is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
+            bool over = As3View.AnyMouseOverUi(GetViewport());
+            if (mb.Pressed) gate.Press(over);
+            else if (gate.Release(over)) Presses++;
         }
     }
 
@@ -88,19 +95,25 @@ public partial class PressRoutingCheck : Node
             g0 = game.Presses; lowerDown = upperDown = 0;
             Press(250, 50);
             Is(upperDown == 1, "a press on the upper dialog (moved) did not reach it");
-            // 3. a press at neither goes to the game
+            // 3. a press at neither dialog while the sample says "over": the client's flag (m_10) holds it from the game
             g0 = game.Presses; lowerDown = upperDown = 0;
             Press(700, 500);
-            Is(lowerDown == 0 && upperDown == 0 && game.Presses == g0 + 1, $"a press at no dialog did not reach the game (lower {lowerDown}, upper {upperDown}, game +{game.Presses - g0})");
+            Is(lowerDown == 0 && upperDown == 0 && game.Presses == g0, $"a press at no dialog reached the game while the sample said over (lower {lowerDown}, upper {upperDown}, game +{game.Presses - g0})");
         }
         if (frames == 40)
         {
-            // 4. the sample is "not over" now (the dialog stands at x 200, the cursor at 0); the dialog moves under the cursor and a press follows at once
+            // 4. the sample is "not over" now (the dialog stands at x 200, the cursor at 0); the dialog moves under the cursor and a press follows at once:
+            //    the dialog gets it (its hit test) and the game takes it too (the flag read at the press is clear: mode 3, the release runs)
+            // 5. a press at no dialog with the sample "not over" walks
             Is(!upper.MouseOverUi, "setup: the upper dialog still samples the cursor over it");
             upperBox.x = 0;
             int g0 = game.Presses; lowerDown = upperDown = 0;
             Press(50, 50);
-            Is(upperDown == 1 && game.Presses == g0, $"a press on the upper dialog whose sample was not over did not reach it (upper {upperDown}, game +{game.Presses - g0})");
+            Is(upperDown == 1 && game.Presses == g0 + 1, $"a press on the upper dialog whose sample was not over: upper {upperDown} (want 1), game +{game.Presses - g0} (want 1)");
+            upperBox.x = 200;
+            g0 = game.Presses; lowerDown = upperDown = 0;
+            Press(700, 500);
+            Is(lowerDown == 0 && upperDown == 0 && game.Presses == g0 + 1, $"a press at no dialog with the sample not over did not reach the game (game +{game.Presses - g0})");
             foreach (var f in fails) GD.PrintErr("press routing: " + f);
             GD.Print(fails.Count == 0 ? "press routing: ok" : $"press routing: {fails.Count} failed");
             GetTree().Quit(fails.Count == 0 ? 0 : 1);

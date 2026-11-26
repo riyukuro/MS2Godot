@@ -19,6 +19,7 @@ public partial class LiveSession
     {
         if (e is not InputEventMouseButton { Pressed: true } mb || !CubeCraft.InCubeMode) return;
         if (mb.ButtonIndex is not (MouseButton.WheelUp or MouseButton.WheelDown)) return;
+        if (Ms2Godot.Ui.As3View.AnyMouseOverUi(GetViewport())) return;
         var (up, down) = LiftLimits;
         int refused = CubeCraft.LiftStep(mb.ButtonIndex == MouseButton.WheelUp, up, down);
         GD.Print($"live: cube lift {(mb.ButtonIndex == MouseButton.WheelUp ? "up" : "down")}: {(refused == 0 ? $"lift {CubeCraft.Current?.Lift}" : $"refused (notice 0x{refused:x})")}");
