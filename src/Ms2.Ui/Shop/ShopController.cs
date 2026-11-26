@@ -11,11 +11,11 @@ namespace Ms2.Ui.Shop;
 /// the tab bar, the category list, the product list and the restock bar. This feeds it Inbound 0x51 (commands 0, 1, 2, 4,
 /// 6, 7, 8, 9, 11, 12, 13, 14, 15), the tabs and category tree (CShopCategoryTable), the product rows, tooltips (vfunc_49),
 /// vfunc_28 callbacks, and the buy, buyback, sell, restock and new-items flows over Outbound 0x28 (<see cref="Send"/>).
-/// <para>STILL-OPEN: the merat bill dialog's unported parts (see MarketBillDialogController), 3D preview avatar render target,
+/// <para>STILL-OPEN: the merat bill dialog's unported parts (see MarketBillDialogController), the avatar's unported previews (see ShopAvatarPreview),
 /// search ban-word check (vfunc_80), give-point event, and live state sources for fame grade, guild championship
 /// season rank table, and guild NPC levels (their buy gates refuse as the client does when state is absent).</para>
 /// </summary>
-public sealed class ShopController : UiController, Hud.IMessageBoxListener
+public sealed partial class ShopController : UiController, Hud.IMessageBoxListener
 {
     public override string Movie => "uishopdialog";
     protected override string EntityMethod => "initShop";
@@ -108,8 +108,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// <summary>Gacha shop preview (uishopdialog.cpp:3448): try an item on the preview avatar.</summary>
     public Action<Item> PreviewGachaItemRequested;
     /// <summary>Gacha shop main items for the active category (RefreshCategories, uishopdialog.cpp:2698-2731: m_spPreview->InitWithItems).
-    /// STILL-OPEN: the shop's own ItemPreview avatar (new ItemPreview(pMyPC, this, 1), uishopdialog.cpp:888) needs the avatar in a
-    /// render target, which the item preview window does not have either; nothing subscribes, so no avatar is drawn.</summary>
+    /// The shop's own ItemPreview (new ItemPreview(pMyPC, this, 1), uishopdialog.cpp:888) is <see cref="Preview"/>; the HUD's avatar view
+    /// follows it (see ShopController.Avatar.cs), so this event is for a listener that wants the list itself.</summary>
     public Action<IReadOnlyList<Item>> PreviewMainItems;
     /// <summary>onClickUnequipAll (uishopdialog.cpp:3489).</summary>
     public Action PreviewUnequipAll;
@@ -683,6 +683,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             data.Add(("coinAmount", GachaCoinValue()));
         }
         Host.Invoke(shop, "initData", Host.Obj(data.ToArray()));
+        OpenAvatar();
         UpdateMoney();
         var reset = new List<(string, object)> { ("resetEnable", info.ResetEnable && info.ResetType != 99) };
         reset.Add(("resetNotice", info.ResetByAccount ? Common("s_shop_notice_reset_by_account") : ""));
@@ -707,6 +708,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// </summary>
     public override void Close()
     {
+        if (shop != null && Preview != null) Host.Invoke(shop, "unloadRenderTarget");
+        CloseAvatar();
         base.Close();
         Purchases.Cancel();                                                              // OnDialogClosed: Finish(1)
         headerRead = false;
@@ -1066,6 +1069,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             foreach (var p in items)
                 if (p?.Item != null && p.Record.MainItem) main.Add(p.Item);
         }
+        PreviewMainItemsNow(main);
         PreviewMainItems?.Invoke(main);
         if (shop != null) Host.Invoke(shop, "visibleMainItem", main.Count > 0);
     }
@@ -1537,6 +1541,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// </summary>
     public override bool OnCallback(string name, object[] args)
     {
+        if (AvatarCallback(name, args)) return true;
         switch (name.ToLowerInvariant())
         {
             case "onchangetab":
@@ -1638,9 +1643,11 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                 return true;
             }
             case "onclickunequipall":
+                UnequipAllNow();
                 PreviewUnequipAll?.Invoke();
                 return true;
             case "onclickshowmyequip":
+                ShowMyEquipNow();
                 PreviewShowMyEquip?.Invoke();
                 return true;
             case "onclickshowmainitems":
@@ -1652,6 +1659,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                 ulong uid = 0;
                 if (Arg(args, 1) is { } row && row is not Undefined)
                     ulong.TryParse(Rt.ToString(Host.Get(row, "itemGUID")) ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out uid);
+                UnequipNow(slot, uid);
                 PreviewUnequipSlot?.Invoke(slot, uid);
                 return true;
             }
@@ -1696,6 +1704,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         var p = FindCurrentProduct(serial);
         if (p?.Item == null) return;
         if (!CanPreviewItem(p.Item)) { SystemNotice?.Invoke(Common(0xf9)); return; }
+        PreviewGachaItemNow(p.Item);
         PreviewGachaItemRequested?.Invoke(p.Item);
     }
 

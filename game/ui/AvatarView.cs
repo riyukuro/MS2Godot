@@ -32,7 +32,9 @@ public sealed partial class AvatarView : Node
     Node3D copy;
     float pivot;
     AvatarControl control;
-    readonly AvatarZoom zoom = new(EyeDistance, MinDistance, MaxDistance, ZoomSpeed, ZoomSteps);
+    AvatarZoom zoom;
+    Func<IReadOnlyList<Ms2.Net.Packets.EquipItem>, IReadOnlyList<Ms2.Net.Packets.EquipItem>> dress;
+    bool redrawQueued;
     PackSet packs;
     string nifXml;
     object dressedWith;
@@ -53,10 +55,14 @@ public sealed partial class AvatarView : Node
 
     /// <summary>The view for <paramref name="control"/>'s avatar at <paramref name="size"/>, or null when the model cannot
     /// be built. The node has to stay in the tree to render.</summary>
-    public static AvatarView Create(PackSet packs, string nifXml, Vector2I size, AvatarControl control)
+    /// <param name="minDistance">The farthest the camera zooms out (the character window's 300; the shop preview's 1000).</param>
+    /// <param name="dress">Changes the items the model is dressed in (the shop preview's items over the player's own); null: as they are.</param>
+    public static AvatarView Create(PackSet packs, string nifXml, Vector2I size, AvatarControl control,
+        float minDistance = MinDistance, Func<IReadOnlyList<Ms2.Net.Packets.EquipItem>, IReadOnlyList<Ms2.Net.Packets.EquipItem>> dress = null)
     {
         if (string.IsNullOrEmpty(nifXml) || control == null) return null;
-        var av = new AvatarView { Name = "AvatarView", control = control, packs = packs, nifXml = nifXml };
+        var av = new AvatarView { Name = "AvatarView", control = control, packs = packs, nifXml = nifXml, dress = dress,
+            zoom = new AvatarZoom(EyeDistance, minDistance, MaxDistance, ZoomSpeed, ZoomSteps) };
         av.dressedWith = av.Worn();
         if (!av.BuildModel(packs, nifXml, size)) { av.QueueFree(); return null; }
         control.Turned += av.Turn;
@@ -97,7 +103,7 @@ public sealed partial class AvatarView : Node
     void Dress(PackSet packs, string nifXml)
     {
         var builder = ModelBuilder.Ui(packs, nifXml);
-        var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs);
+        var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs, dress);
         copy = visual;
         view.AddChild(copy);
         if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
@@ -107,6 +113,27 @@ public sealed partial class AvatarView : Node
 
     /// <summary>The live equip lists the model was dressed from (replaced, not edited, on a put-on / put-off).</summary>
     object Worn() => Ms2Godot.Net.LiveSession.Active && Ms2Godot.Net.LiveSession.Instance.Me is { } m ? (m.Equips, m.Outfit2) : null;
+
+    /// <summary>The worn items changed (the shop preview's list): the model is built again once, on the main thread, keeping the turn and
+    /// the zoom. Nothing is polled; an idle view costs no allocation.</summary>
+    public void Refresh()
+    {
+        if (redrawQueued || !IsInstanceValid(this) || view == null) return;
+        redrawQueued = true;
+        Callable.From(() =>
+        {
+            redrawQueued = false;
+            if (!IsInstanceValid(this) || view == null) return;
+            try
+            {
+                var old = copy;
+                Dress(packs, nifXml);
+                old?.QueueFree();
+                Turn();
+            }
+            catch (Exception ex) { GD.PushWarning("avatar view: refresh: " + ex.Message); }
+        }).CallDeferred();
+    }
 
     /// <summary>MyCharacter.Changed: a new model when the equip lists changed (on the main thread).</summary>
     void Redress()

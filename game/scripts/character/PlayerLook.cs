@@ -19,7 +19,12 @@ public static class PlayerLook
     public static int OfflineGender { get; private set; } = 1;
     public static int OfflineJob { get; private set; } = 10;
 
-    public static (Node3D visual, AnimationPlayer anim, ModelData body, string bodyDir) Build(ModelBuilder builder, PackSet packs)
+    /// <summary>
+    /// The model in the live (or chosen, or starter) look. <paramref name="dress"/> changes the items the model is dressed in: the gacha
+    /// shop's avatar puts its preview items over the player's own (null: the look as it is).
+    /// </summary>
+    public static (Node3D visual, AnimationPlayer anim, ModelData body, string bodyDir) Build(ModelBuilder builder, PackSet packs,
+        Func<IReadOnlyList<EquipItem>, IReadOnlyList<EquipItem>> dress = null)
     {
         int gender = 1, job = 10, skinRow = 0;
         var rows = new Dictionary<string, int>();
@@ -56,6 +61,7 @@ public static class PlayerLook
                     for (int i = 0; i < items.Count; i++) if (items[i].Uid == 0) items[i].Uid = 2001 + i;
                     OfflineWorn = items; OfflineGender = gender; OfflineJob = job;
                 }
+                if (dress != null) items = dress(items);
                 var equip = new EquipApplier(packs, builder) { Palettes = palettes };
                 equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
                 visual.SetMeta(FaceTexture.FaceItemMeta, equip.FaceItem(visual));

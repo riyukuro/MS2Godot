@@ -142,6 +142,7 @@ public partial class HudScene
             if (shopMovie == m) shopMovie = null;
         }
         shop = liveShop; shopMovie = m;
+        HookShopAvatar(m, liveShop);
         uiRoot.AddChild(m);
         liveShop.PlaceBesideInventory(inventory, inventory != null && !inventory.IsClosed);
     }
@@ -181,7 +182,36 @@ public partial class HudScene
             if (shopMovie == m) shopMovie = null;
         };
         shop = c; shopMovie = m;
+        HookShopAvatar(m, c);
         uiRoot.AddChild(m);
+    }
+
+    /// <summary>
+    /// The gacha shop's avatar (UIShopDialog's ItemPreview over the player, uishopdialog.cpp:888): the movie's loadRenderTarget loads
+    /// "img://&lt;movie&gt;:avatar/&lt;w&gt;/&lt;h&gt;"; the view is the character window's paper doll (<see cref="AvatarView"/>) with the farthest
+    /// zoom ItemPreview::ResetCamera sets (<see cref="ShopController.PreviewMinDistance"/>), dressed in the player's own items with
+    /// the preview items over them. It is built again only when the preview's list changes.
+    /// </summary>
+    void HookShopAvatar(MovieDialog m, ShopController c)
+    {
+        string avatar = "img://" + m.Host.Id + ":avatar/";
+        AvatarView view = null;
+        c.RotateLimit = avatarLimit ??= Ms2.Ui.Hud.AvatarRotateLimit.FromConstants(assets.Packs);
+        foreach (var n in m.GetChildren())
+            if (n is As3View v) v.ImageLookup = url =>
+            {
+                if (!url.StartsWith(avatar, StringComparison.OrdinalIgnoreCase) || c.Avatar == null || c.Preview == null) return null;
+                if (view == null && AvatarView.SizeOf(url) is { } size
+                    && (view = AvatarView.Create(assets.Packs, Settings.NifXml, size, c.Avatar, ShopController.PreviewMinDistance,
+                        own => c.Preview?.Dress(own, null) ?? own)) != null)
+                {
+                    AddChild(view);
+                    var shown = view;
+                    c.Preview.Changed += shown.Refresh;
+                }
+                return view?.Image;
+            };
+        c.Unloaded += () => { view?.QueueFree(); view = null; };
     }
 
     /// <summary>The shot's filter or tab, picked through the movie's own list and tab bar (their change events call back).</summary>
