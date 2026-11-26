@@ -390,7 +390,7 @@ public partial class LiveSession
                 Shot(step[5..] + ".png");
                 continue;
             }
-            if (step.StartsWith("openwin:"))      // openwin:inventory|quest|sysmenu: the window opens (the others shut), then settles for a shot
+            if (step.StartsWith("openwin:"))      // openwin:inventory|quest|sysmenu|achieve|fame|famemenu: the window opens (the others shut), then settles for a shot
             {
                 Check($"the {step[8..]} window opens", hud.OpenWindowScripted(step[8..]));
                 await frames(90);
@@ -399,6 +399,12 @@ public partial class LiveSession
             if (step.StartsWith("achievetab:"))      // achievetab:<category id>: the open trophy window's category row clicked; what its page shows
             {
                 GD.Print($"live: combat achieve tab {step[11..]}: {hud.AchieveTabScripted(int.Parse(step[11..])) ?? "no window or row"}");
+                await frames(30);
+                continue;
+            }
+            if (step.StartsWith("fametab:"))      // fametab:<alliance id>: the open fame point board's tab of that alliance clicked; what its page shows
+            {
+                GD.Print($"live: combat fame tab {step[8..]}: {hud.FameTabScripted(int.Parse(step[8..])) ?? "no board or tab"}");
                 await frames(30);
                 continue;
             }

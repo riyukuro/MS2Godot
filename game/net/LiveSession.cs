@@ -917,6 +917,15 @@ public partial class LiveSession : Node
     /// <summary>UserEnv mode 3 (OnUserEnv, scenestategame.cpp:4441-4458): the grades were replaced; the trophy dialog redraws
     /// (FUN_1418a8f80).</summary>
     public event Action CollectionChanged;
+    /// <summary>The fame points per alliance and the fame log (UserEnv modes 0xa-0xd, DAT_143ab3220 / DAT_143ab31e8);
+    /// session-lived.</summary>
+    public readonly Ms2.Ui.FameBook Fame = new();
+    /// <summary>A UserEnv fame mode after it was applied to <see cref="Fame"/>; mode 0xd (LogEntry) gives the
+    /// s_fame_point_update chat line (scenestategame.cpp:4520).</summary>
+    public event Action<Ms2.Ui.FameBook.Change> FameChanged;
+    /// <summary>A Quest packet after it was applied to <see cref="Quests"/>, with whether a Complete's quest was
+    /// known before (mode 4 returns early without it, questmanager_2.cpp:1037).</summary>
+    public event Action<QuestMessage, bool> QuestReceived;
     /// <summary>The trophy dialog's sends (Achieve 0x46, RequestUserEnv 0x69).</summary>
     public void SendAchieve(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>GetTally()->Sum(); 0 before an Achieve packet (the data is not read for it).</summary>
@@ -2499,8 +2508,10 @@ public partial class LiveSession : Node
             {
                 var q = ReadQuest(p);
                 bool known = GuideQuests.KnownBefore(Quests, q);   // RemoveQuest's early return on an unknown quest
+                bool had = q is QuestMessage.Complete done && Quests.Get(done.Id) != null;   // mode 4's vfunc_o10_3 lookup
                 Quests.Apply(q);
                 GuideOnQuest(q, known);
+                QuestReceived?.Invoke(q, had);
                 if (LiveCheck) GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
             }
             else if (game.Is(p, Inbound.Party))
@@ -3013,7 +3024,17 @@ public partial class LiveSession : Node
             {
                 var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept
                 if (m is UserEnvMessage.Collection c) { CollectionGrades = c.Grades; CollectionChanged?.Invoke(); }
-                else if (m != null) { Me.Apply(m); if (Mastery.Apply(m)) MasteryEnvChanged?.Invoke(); }
+                else if (m != null)
+                {
+                    Me.Apply(m);
+                    if (Mastery.Apply(m)) MasteryEnvChanged?.Invoke();
+                    if (Fame.Apply(m) is var fame && fame != Ms2.Ui.FameBook.Change.None)    // modes 0xa-0xd
+                    {
+                        if (LiveCheck)
+                            GD.Print($"live: fame {fame}: points {string.Join(",", Fame.Points.Select(kv => $"{kv.Key}={kv.Value}"))}, log {Fame.Log.Count()}");
+                        FameChanged?.Invoke(fame);
+                    }
+                }
                 GD.Print($"live: user env {m?.GetType().Name ?? "other mode"} ({Me.Titles.Count} titles)");
             }
             else if (game.Is(p, Inbound.HomeCommand))

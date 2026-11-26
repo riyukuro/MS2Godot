@@ -117,6 +117,8 @@ public partial class HudScene
             case "quest": ToggleQuestLog(); return questLogSide is { IsClosed: false };
             case "sysmenu": OpenSystemMenu(); return systemMenu is { IsClosed: false };
             case "achieve": OpenAchieve(); return AchieveOpen;
+            case "fame": OpenFamePointBoard(); return FamePointBoardOpen;
+            case "famemenu": FamePointBoardMenu(); return FamePointBoardOpen;    // the game menu entry: s_fame_point_board_warn2 without a tab
         }
         return false;
     }
@@ -148,6 +150,23 @@ public partial class HudScene
             ? $", first {row["name"]} {(row.TryGetValue("cur", out var cur) ? cur : "-")}/{(row.TryGetValue("max", out var max) ? max : "-")}"
             : "";
         return $"{name}: {n} rows, {shown.Count} by the filter{first}";
+    }
+
+    /// <summary>The open fame point board switched to the tab of <paramref name="alliance"/> as the tab bar's click does
+    /// (selectedIndex, whose INDEX_CHANGE calls onChangeTab); what the page then shows, for the log. Null when the board is
+    /// shut or has no such tab.</summary>
+    public string FameTabScripted(int alliance)
+    {
+        if (!FamePointBoardOpen || famePointBoard.Host?.Entity is null) return null;
+        int index = famePointBoard.Tabs.ToList().IndexOf(alliance);
+        var h = famePointBoard.Host;
+        if (index < 0 || h.Child("m_tab") is not { } bar) return null;
+        h.Set(bar, "selectedIndex", index);
+        string Text(string name) => h.Child(name) is { } t ? Ms2.Avm2.Rt.ToString(h.Get(t, "text")) : "-";
+        var contents = h.Child("m_fameLog") is { } log ? h.Get(log, "m_contents") : null;
+        int lines = contents == null ? -1 : Ms2.Avm2.Rt.ToInt32(h.Get(contents, "numChildren"));
+        var (cur, max, point) = famePointBoard.Fame.Progress(alliance);
+        return $"shown {famePointBoard.Shown}: {Text("m_allianceName")} / {Text("m_allianceGrade")}, fame {cur}/{max} {point}, {lines} log lines";
     }
 
     /// <summary>The player's trophy <paramref name="id"/> as the book has it, for the log.</summary>

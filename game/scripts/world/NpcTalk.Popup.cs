@@ -109,7 +109,11 @@ public sealed partial class NpcTalk
             },
         };
         c.OpenRequested += OpenPopupMovie;
-        c.OpeningBanner += q => GD.Print($"npc talk popup: quest {q}: the fame contents opening banner (UIFameContentsNotify 0x4f5a) is not ported");
+        c.OpeningBanner += q =>
+        {
+            GD.Print($"npc talk popup: quest {q}: the fame contents opening banner");
+            (GetTree()?.CurrentScene as Ms2Godot.Ui.HudScene)?.FameNotify?.QueueOpening(q);     // FindFameContentsNotify(0x4f5a)
+        };
         c.SendComplete += q =>
         {
             if (live != null) { GD.Print($"npc talk popup: quest {q} complete sent"); live.SendTalk(new QuestCompleteRequest(q, 0, 0)); }

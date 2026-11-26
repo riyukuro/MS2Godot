@@ -259,6 +259,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchDungeonRoom = null;
         unwatchAchieves?.Invoke();
         unwatchAchieves = null;
+        unwatchFame?.Invoke();
+        unwatchFame = null;
         unwatchMails?.Invoke();
         unwatchMails = null;
         unwatchTrades?.Invoke();
@@ -453,6 +455,7 @@ public partial class HudScene : Node, IUiStageHost
         TargetHpBar(uiRoot);
         ActionTooltipPane(uiRoot, constants);
         SystemTextLines(uiRoot);
+        FameContentsNotify(uiRoot);
         CastingGauge(uiRoot);
         GuideEventPane(uiRoot);
         ReconnectNotifySlot(uiRoot);
@@ -708,6 +711,7 @@ public partial class HudScene : Node, IUiStageHost
         if (inventory?.IsClosed == false) inventory.Close();
         if (myInfo?.IsClosed == false) myInfo.Close();
         if (AchieveOpen) achieve.Close();
+        if (FamePointBoardOpen) famePointBoard.Close();
         if (MailOpen) mail.Close();
         if (MailSendOpen) mailSend.Close();
         if (PcInfoOpen) pcInfo.Close();
@@ -3367,6 +3371,7 @@ public partial class HudScene : Node, IUiStageHost
             if (def.Action == GameMenuActions.OpenLearningQuest) OpenLearningQuest();
             else if (def.Action == GameMenuActions.ToggleSystemShop) ToggleShopTab(9);   // uigamemenudialog.cpp:2209
             else if (def.Action == GameMenuActions.ToggleChangeJob) ToggleChangeJob();   // FUN_14193d590, uigamemenudialog.cpp:2200
+            else if (def.Action == GameMenuActions.ToggleFamePointBoard) FamePointBoardMenu();   // FUN_14193cea0, uigamemenudialog.cpp:2101
         };
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         slot.AddSibling(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));

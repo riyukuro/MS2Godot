@@ -21,6 +21,9 @@ public static class GameMenuActions
     public const string OpenLearningQuest = "OpenLearningQuestDialog";
     /// <summary>The jobchange entry's handler, ToggleDialog(0x4f6b) (@0x14193d590, uigamemenudialog.cpp:2200).</summary>
     public const string ToggleChangeJob = "FUN_14193d590";
+    /// <summary>The fame entry's handler: the warn2 notice without an open alliance, else ToggleDialog(0x4f54)
+    /// (@0x14193cea0, uigamemenudialog.cpp:2101).</summary>
+    public const string ToggleFamePointBoard = "FUN_14193cea0";
 }
 
 /// <summary>One CGameMenuItem: a table/gamemenu.xml menu or child, with its filter.</summary>

@@ -11,8 +11,9 @@ namespace Ms2.Ui.Hud;
 /// It opens on its own: when the loading screen fades in on a field (NotifyFadeInComplete), the first active field quest of
 /// the field not opened before; when the server starts a field quest of this field (UIQuestEventListener slot 1); and when a
 /// quest's progress makes it ready to complete remotely (slot 3, CQuest::FUN_140d738d0).
-/// STILL-OPEN: UIFameContentsNotify (0x4f5a, QueueOpeningBanner) is not ported: <see cref="OpeningBanner"/> is raised for
-/// the host to log. CQuestManager::FUN_1416cf870 (questmanager_2.cpp:1472) starts the popup from the quest dialog too; that
+/// <see cref="OpeningBanner"/> is UIFameContentsNotify::QueueOpeningBanner (0x4f5a), which the host's
+/// FameContentsNotifyController answers.
+/// STILL-OPEN: CQuestManager::FUN_1416cf870 (questmanager_2.cpp:1472) starts the popup from the quest dialog too; that
 /// caller is not ported.
 /// </summary>
 public sealed class PopupNpcTalkController : UiController
@@ -61,7 +62,7 @@ public sealed class PopupNpcTalkController : UiController
 
     /// <summary>Quest mode 4 (Encode1 4, Encode4 quest, Encode4 0, Encode4 0): the quest's complete, past the last line.</summary>
     public event Action<int> SendComplete;
-    /// <summary>UIFameContentsNotify::QueueOpeningBanner(quest) (not ported).</summary>
+    /// <summary>UIFameContentsNotify::QueueOpeningBanner(quest).</summary>
     public event Action<int> OpeningBanner;
     /// <summary>FUN_141924680 on a dialog whose movie is not loaded (m_30 null): the host opens the movie.</summary>
     public event Action OpenRequested;

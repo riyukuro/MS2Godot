@@ -121,9 +121,10 @@ public sealed record AttributePointResetRequest : IOutPacket {
 /// after it), 8 the gathering counts (g_143ab3150: i32 count, then i32 id, i32 count each, the mastery recipes' success
 /// odds), 9 the mastery grade rewards received (DAT_143ab31a0: i32 count, then i32 id, u8 value each;
 /// scenestategame.cpp:4469-4490), 4 the template ids (DAT_143ab3128: i32 count, i32 each), 0xa the fame per alliance
-/// (DAT_143ab3220: i32 count, then u16 alliance, i32 fame), 0xb one alliance's fame, 0xc the fame per character (DAT_143ab31e8:
-/// i32 count, then i32 fame, i64 character id), 0xd one character's fame. Every mode is read to its end. Mode 5 has no handler in
-/// the client (its packet is an i32 count, 0 in the sniffs): it is read as null with the rest skipped. Other modes are read as null.
+/// (DAT_143ab3220: i32 count, then u16 alliance, i32 fame), 0xb one alliance's fame, 0xc the fame log (DAT_143ab31e8:
+/// i32 count, then i32 log id, i64 time; the fame point board reads the key as the entry's time and the value as its
+/// fameLog id, uifamepointboarddialog.cpp SetAllianceData), 0xd one log entry (and the s_fame_point_update notice). Every
+/// mode is read to its end. Mode 5 has no handler in the client (its packet is an i32 count, 0 in the sniffs): it is read as null with the rest skipped. Other modes are read as null.
 /// </summary>
 public abstract record UserEnvMessage {
     public sealed record TitleAdded(int Id) : UserEnvMessage;
@@ -136,9 +137,10 @@ public abstract record UserEnvMessage {
     }
     public sealed record MasteryRewards(IReadOnlyDictionary<uint, byte> Received) : UserEnvMessage;
     public sealed record Templates(IReadOnlyList<int> Ids) : UserEnvMessage;
-    /// <summary>Fame by alliance (modes 0xa, 0xb) or by character id (0xc, 0xd); Replace is the 0xa/0xc whole-table forms.</summary>
+    /// <summary>Fame by alliance (modes 0xa, 0xb); Replace is the 0xa whole-table form.</summary>
     public sealed record FameByAlliance(bool Replace, IReadOnlyDictionary<ushort, int> Fame) : UserEnvMessage;
-    public sealed record FameByCharacter(bool Replace, IReadOnlyDictionary<long, int> Fame) : UserEnvMessage;
+    /// <summary>The fame log, fameLog id by time (modes 0xc, 0xd); Replace is the 0xc whole-table form.</summary>
+    public sealed record FameLog(bool Replace, IReadOnlyDictionary<long, int> LogIds) : UserEnvMessage;
 
     public static UserEnvMessage Read(ByteReader r) {
         var m = ReadBody(r);
@@ -167,10 +169,10 @@ public abstract record UserEnvMessage {
             case 0xc: {
                 uint n = (uint) r.ReadInt();
                 var f = new Dictionary<long, int>();
-                for (uint i = 0; i < n; i++) { int fame = r.ReadInt(); f[r.ReadLong()] = fame; }
-                return new FameByCharacter(true, f);
+                for (uint i = 0; i < n; i++) { int logId = r.ReadInt(); f[r.ReadLong()] = logId; }
+                return new FameLog(true, f);
             }
-            case 0xd: { int fame = r.ReadInt(); return new FameByCharacter(false, new Dictionary<long, int> { [r.ReadLong()] = fame }); }
+            case 0xd: { int logId = r.ReadInt(); return new FameLog(false, new Dictionary<long, int> { [r.ReadLong()] = logId }); }
             case 2: {
                 int n = r.ReadInt();
                 var a = new List<uint>();

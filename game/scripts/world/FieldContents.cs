@@ -367,6 +367,7 @@ public partial class FieldContents : Node3D
         GD.Print("loading screen closed");
         Ms2.Ui.FieldMoveCover.Lower();      // NotifyFadeInComplete: the field takes input
         talk?.OnFadeInComplete();       // UIPopupNpcTalkDialog's NotifyFadeInComplete
+        (GetTree()?.CurrentScene as HudScene)?.FameNotify?.OnFadeInComplete();   // UIFameContentsNotify's
     }
 
     /// <summary>

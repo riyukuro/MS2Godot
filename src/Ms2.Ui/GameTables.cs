@@ -277,8 +277,8 @@ public sealed class GameTables
         // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
         XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
         r.Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
-        // CFameTable::LoadFameDef (famegradedata.cpp:606): GetXmlPath("Table", "fameDef.xml")
-        r.Fame = new FameTable(Xml("table/famedef.xml"), e => FeatureElements.IsAvailable(packs, e));
+        // CFameTable::Load (famegradedata.cpp): GetXmlPath("Table", "fame.xml"), "fameLog.xml" and "fameDef.xml"
+        r.Fame = new FameTable(Xml("table/famedef.xml"), Xml("table/fame.xml"), Xml("table/famelog.xml"), e => FeatureElements.IsAvailable(packs, e));
         // MentoringDataTable::Load (mentoringdatatable.cpp:55): GetXmlPath("Table", "MentoringConfig.xml"), <ms2>, <MentoringConfig>
         if (Xml("table/mentoringconfig.xml")?.Root is { Name.LocalName: "ms2" } mentoring && mentoring.Element("MentoringConfig") is { } mentoringConfig)
             Ms2.Ui.Items.ItemData.Bool(mentoringConfig, "isShowIcon", ref r.MentoringShowIcon);
@@ -1180,7 +1180,7 @@ public sealed class GameTables
 
     /// <summary>
     /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 3 mapName, 38 GuildEventDesc, 1 itemName, 4 skillName,
-    /// 11 stringInteractObjectAction, 14 actionName (the talk key's caption by npc), 15 mapNamePortalTooltip, 20 stringFieldEnterance (0x15: its uiDescription), 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 49 stringRideeName, 51 stringUgc, 59 petName, 74 achieveCategoryName, and 80
+    /// 11 stringInteractObjectAction, 14 actionName (the talk key's caption by npc), 15 mapNamePortalTooltip, 20 stringFieldEnterance (0x15: its uiDescription), 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 49 stringRideeName, 51 stringUgc, 59 petName, 67 stringFameLog (the fame point board's log), 74 achieveCategoryName, and 80
     /// specialQuestType (string/&lt;lang&gt;/specialquesttype.xml, the character ability dialog's); "" for an unknown id or
     /// another table.
     /// </summary>
@@ -1193,7 +1193,8 @@ public sealed class GameTables
             0x26 => "guildeventdesc",
             1 => "itemname", 0x2f => "stringmasteryreceipename", 0x30 => "stringmasteryreceipedesc", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname", 0x1e => "stringfishdesc", 0x1f => "stringfishdetaildesc",
             0xb => "stringinteractobjectaction", 0xe => "actionname", 0xf => "mapnameportaltooltip",
-            0x3b => "petname", 0x31 => "stringrideename", 0x33 => "stringugc", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
+            0x3b => "petname", 0x31 => "stringrideename", 0x33 => "stringugc", 0x4a => "achievecategoryname", 0x50 => "specialquesttype",
+            0x43 => "stringfamelog", _ => null,
         };
         string attr = "name";
         if (table == 0x15) { file = "stringfieldenterance"; attr = "uiDescription"; }   // the room's description (uidungeonroomdialog.cpp:631)
