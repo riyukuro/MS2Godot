@@ -159,7 +159,9 @@ public partial class CreativeMenu : Control
         search.GrabFocus();
         Refilter(true);
         RaiseTooltipLayer();
-        if (serverSupport == null) AskServerSupport(); else ApplySupport(serverSupport);
+        // Asked again when the game session is another one (a reconnect, possibly to another server).
+        if (serverSupport == null || !ReferenceEquals(supportFrom, live?.GameSession)) AskServerSupport();
+        else ApplySupport(serverSupport);
         return true;
     }
 

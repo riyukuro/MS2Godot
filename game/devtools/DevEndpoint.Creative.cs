@@ -10,7 +10,7 @@ public partial class DevEndpoint
 {
     /// <summary>
     /// creative {action=toggle|open|close|search|tab|spawn|click|hover|amount|enhance|gem|bonus|status, search, tab, spawn,
-    /// amount, rarity, stack, field, value, index, id, kind}: the debug item browser (game/devtools/CreativeMenu.cs). "spawn" sends the same chat line a click does and
+    /// amount, rarity, stack, field, value, index, gemid, kind, statid}: the debug item browser (game/devtools/CreativeMenu.cs). "spawn" sends the same chat line a click does and
     /// returns it with the menu's state; "click" clicks the first visible cell (the real amount/rarity/shift path), "hover"
     /// hovers it (which must not touch the amount box) and "amount" sets the amount box. Every action returns the state, so
     /// a run can open it, filter it and spawn without the mouse. The catalog is built on the first open (once per pack set).

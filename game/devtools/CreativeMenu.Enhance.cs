@@ -24,8 +24,10 @@ public partial class CreativeMenu
     readonly ItemBrowserSettings settings = new();
     ItemCommandSupport support = ItemCommandSupport.Fork;
     ItemCommandSupport serverSupport;                  // the live server's reply; null until it comes
+    object supportFrom;                                // the game session that reply came from
     readonly System.Text.StringBuilder helpText = new();
     bool awaitingHelp;
+    int helpAsk;                                       // the latest ask; an earlier ask's timer is ignored
 
     SpinBox enchantBox, limitBox, socketBox;
     readonly LineEdit[] gemEdits = new LineEdit[ItemBrowserLimits.MaxSockets];
@@ -135,17 +137,16 @@ public partial class CreativeMenu
         row.AddChild(remove);
         var entry = (stat, value);
         bonus.Add(entry);
-        stat.ItemSelected += _ => { StoreBonus(entry); ShowRange(stat); };
-        value.ValueChanged += _ => StoreBonus(entry);
+        stat.ItemSelected += _ => { StoreAllBonuses(); ShowRange(stat); };
+        value.ValueChanged += _ => StoreAllBonuses();
         remove.Pressed += () =>
         {
             bonus.Remove(entry);
             row.QueueFree();
             StoreAllBonuses();
         };
-        StoreBonus(entry);
+        StoreAllBonuses();
         ShowRange(stat);
-        SettingsChanged();
     }
 
     void FillStatBox(OptionButton box, bool special)
@@ -188,20 +189,18 @@ public partial class CreativeMenu
 
     int EffectiveRarity(ItemData d) => ItemBrowserModel.EffectiveRarity(d, settings.Rarity);
 
-    void StoreBonus((OptionButton Stat, SpinBox Value) row)
-    {
-        int id = (int)row.Stat.GetItemId(row.Stat.Selected);
-        bool special = (id & 0x10000) != 0;
-        id &= 0xffff;
-        settings.BonusLines.RemoveAll(b => b.Special == special && b.Id == id);
-        if (row.Value.Value > 0) settings.BonusLines.Add(new ItemBrowserSettings.Bonus(special, id, (int)row.Value.Value));
-        SettingsChanged();
-    }
-
+    /// <summary>The bonus lines from every row as it is now: a row whose stat was changed no longer leaves its earlier
+    /// stat's line behind, and a row never removes another row's line of the same stat.</summary>
     void StoreAllBonuses()
     {
         settings.BonusLines.Clear();
-        foreach (var row in bonus) StoreBonus(row);
+        foreach (var row in bonus)
+        {
+            int id = (int)row.Stat.GetItemId(row.Stat.Selected);
+            if (row.Value.Value > 0)
+                settings.BonusLines.Add(new ItemBrowserSettings.Bonus((id & 0x10000) != 0, id & 0xffff, (int)row.Value.Value));
+        }
+        SettingsChanged();
     }
 
     /// <summary>A field set by the debug endpoint (for a scripted run): enchant, limit, socket or rarity.</summary>
@@ -245,9 +244,8 @@ public partial class CreativeMenu
         int at = row.Stat.GetItemIndex(coded);
         if (at >= 0) row.Stat.Select(at);
         row.Value.Value = Math.Clamp(value, 0, 1_000_000);
-        StoreBonus(row);
+        StoreAllBonuses();
         ShowRange(row.Stat);
-        SettingsChanged();
     }
 
     /// <summary>The settings changed: the hovered cell's tooltip is rebuilt (it is the item as it would spawn now).</summary>
@@ -399,10 +397,12 @@ public partial class CreativeMenu
         if (live?.GameSession == null) { ApplySupport(ItemCommandSupport.Fork); return; }
         awaitingHelp = true;
         helpText.Clear();
+        supportFrom = live.GameSession;
+        int ask = ++helpAsk;
         live.SendChat(new Ms2.Net.Packets.UserChatRequest(0, "/item --help", "", 0));
         // The reply is a run of console notices (one per help line); wait for the whole run before parsing, as the first
-        // lines are the usage alone.
-        GetTree().CreateTimer(1.2).Timeout += FinishHelp;
+        // lines are the usage alone. A close and reopen inside the wait asks again; the first ask's timer does nothing.
+        GetTree().CreateTimer(1.2).Timeout += () => { if (ask == helpAsk) FinishHelp(); };
     }
 
     /// <summary>One notice while the help is awaited: the reply comes as console notices, possibly several, and is parsed
@@ -419,6 +419,14 @@ public partial class CreativeMenu
     {
         if (!awaitingHelp || !Visible) return;
         awaitingHelp = false;
+        // No reply in the wait (a slow server): nothing is known, so nothing is kept; the fork's set stays offered and
+        // the next open asks again, instead of every option staying locked for the session.
+        if (helpText.Length == 0)
+        {
+            ApplySupport(ItemCommandSupport.Fork);
+            status.Text = "server: no reply to /item --help yet; asked again on the next open";
+            return;
+        }
         var parsed = ItemCommandSupport.Parse(helpText.ToString());
         serverSupport = parsed;
         ApplySupport(parsed);
