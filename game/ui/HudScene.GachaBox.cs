@@ -9,8 +9,8 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// UIItemGachaBoxDialog (0x4f8b, <see cref="ItemGachaBoxDialogController"/>), the capsule machine OpenGachaBox opens
 /// (@0x140d25e10: GetItemUseDialog(0x4f8b), open: nothing; else SetBoxItemId and open). Live only. The server's ItemScript
-/// mode 5 goes to it while it is open (its vfunc_79). Its sounds play by handle (<see cref="FieldAudio.PlayUiHandle"/>), so
-/// the rolling sound stops on the idle state's restart and the unload.
+/// mode 5 goes to it while it is open (its vfunc_79). Its sounds play by handle (<see cref="FieldAudio.PlayUiHandle"/>): the
+/// rolling sound's event loops, so it plays until the idle state's restart or the unload stops it.
 /// STILL-OPEN: the shop link box's dialog 0x4ec1 (the Merat market).
 /// </summary>
 public partial class HudScene

@@ -135,6 +135,11 @@ public sealed class FevEvent
     public float MinDistance, MaxDistance;   // 3D attenuation (0 when the record has none)
     public List<int> Defs = new();
     public List<float> DefVolumes = new();   // the sound's own volume (parallel to Defs)
+    /// <summary>Whether the sound loops until the event is stopped (parallel to <see cref="Defs"/>): a sound instance's loop
+    /// mode (<see cref="FevProject.LoopModeOneShot"/> plays once, the other two loop).</summary>
+    public List<bool> DefLoops = new();
+    /// <summary>The event has a looping sound, so it plays until stopped (FMOD_EVENT_INFO.lengthms is -1 for it).</summary>
+    public bool Loops => DefLoops.Contains(true);
     /// <summary>The client's category slot of <see cref="Category"/> (<see cref="SoundCategories.TryResolve"/>), resolved
     /// at the event's first play: -2 until then, -1 for none.</summary>
     internal int CategorySlot = -2;
@@ -472,9 +477,9 @@ public sealed class FevProject
         p = start + 0xa8;
         if (etype == 0x10)
         {
-            // Simple event: u32 flags, then one 54-byte sound entry (u32 defIdx, u16 flags, f32 volume, ...).
+            // Simple event: u32 flags, then one 54-byte sound entry (u32 defIdx, u16 flags, f32 volume, u32 at +14 the loop mode, ...).
             p += 4;
-            AddEventDef(ev, U32(p), F32(p + 6));
+            AddEventDef(ev, U32(p), F32(p + 6), U32(p + 14));
             p += 54;
         }
         else if (etype == 8)
@@ -488,7 +493,7 @@ public sealed class FevProject
                 p += 10;
                 for (int s = 0; s < nSnd; s++)
                 {
-                    AddEventDef(ev, U32(p), F32(p + 6));
+                    AddEventDef(ev, U32(p), F32(p + 6), U32(p + 14));   // the 58-byte sound instance, laid out as the simple one
                     p += 58;
                 }
                 for (int e = 0; e < nEnv; e++)
@@ -522,11 +527,23 @@ public sealed class FevProject
         return p;
     }
 
-    void AddEventDef(FevEvent ev, int ord, float vol)
+    /// <summary>A sound instance's loop mode (its u32 at +14): FMOD Designer's three, one-shot and the two loops. Every voice
+    /// and hit sound of the KMS2 and GMS2 projects is a one-shot; the keep, remain, idle and loop sounds are 0 or 2 (2 only in
+    /// layered events). A loop plays until the event stops, which is what FMOD's own lengthms of -1 reports.</summary>
+    public const int LoopModeOneShot = 1;
+
+    /// <summary>The instances read by loop mode: [0], [1], [2] for the three modes, [3] for any other value (counted as a loop).</summary>
+    public readonly int[] LoopModeCounts = new int[4];
+
+    void AddEventDef(FevEvent ev, int ord, float vol, int loopMode)
     {
+        LoopModeCounts[loopMode is >= 0 and <= 2 ? loopMode : 3]++;
         if (ord < 0 || ord >= defs.Count || defs[ord].Entries.Count == 0) return;
         if (!(vol > 0 && vol <= 4)) vol = 1f;
-        if (!ev.Defs.Contains(ord)) { ev.Defs.Add(ord); ev.DefVolumes.Add(vol); }
+        bool loops = loopMode != LoopModeOneShot;
+        int at = ev.Defs.IndexOf(ord);
+        if (at < 0) { ev.Defs.Add(ord); ev.DefVolumes.Add(vol); ev.DefLoops.Add(loops); }
+        else if (loops) ev.DefLoops[at] = true;
     }
 
     bool PlainName(int o, out int len)

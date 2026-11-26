@@ -11,6 +11,8 @@ public sealed class SoundClip
     public int LoopStartSample = -1;
     public int LoopEndSample = -1;
     public float Volume = 1f;
+    /// <summary>The event's sound loops until it is stopped (<see cref="FevEvent.DefLoops"/>); a music segment's loop is the cue's.</summary>
+    public bool Loops;
     public float MinDistance, MaxDistance;   // 3D events: attenuation range in world units (0 = not 3D)
     /// <summary>The client's category slot the event plays in (<see cref="SoundCategories"/>); -1 for none (a music
     /// segment, which the music system plays).</summary>
@@ -187,6 +189,7 @@ public sealed class SoundLibrary
         var clip = FromWave(waves[rng.Next(waves.Count)]);
         if (clip == null) return null;
         clip.Volume = ev.Volume * ev.DefVolumes[0];
+        clip.Loops = ev.DefLoops[0];
         TakeCategory(ev, clip);
         clip.MinDistance = ev.MinDistance;
         clip.MaxDistance = ev.MaxDistance;

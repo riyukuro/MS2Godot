@@ -676,7 +676,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         var clip = library?.ResolveEvent(eventName);
         if (clip == null) return false;
         PlayClip(clip);
-        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: event {eventName} -> {clip.Name} volume {clip.Volume:F2}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: event {eventName} -> {clip.Name} volume {clip.Volume:F2}{(clip.Loops ? " loops" : "")}");
         return true;
     }
 
@@ -696,6 +696,9 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// group's (gender 0 and job 1 without one; SystemSoundTable.Resolve), with the job sounds off under the KR region's
     /// disableJobSound (IsJobSoundDisabled @0x141260470); a row with a cooltimeID plays only when CooltimeManager::Use lets it.
     /// The event's waves come from the banks of the voice language (SoundLibrary). Returns false when nothing is played.
+    /// An event with a looping sound loops (FMOD keeps it until its handle is stopped); without a handle here it loops until
+    /// the next UI sound takes the shared player. Of the table's looping rows only the gacha machine's rolling sound is
+    /// played, by <see cref="PlayUiHandle"/>. STILL-OPEN: the client keeps a dropped handle's looping sound playing beside the next.
     /// </summary>
     public bool PlayUi(string key, string arg = "") => UiSoundPath(key, arg) is { } path && PlayEvent(path);
 
@@ -883,7 +886,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         var pcm = SafeDecode.Decode(clip);
         if (pcm == null) return;
-        ui.Stream = Stream(pcm, pcm.ToBytes(), false);
+        ui.Stream = Stream(pcm, pcm.ToBytes(), clip.Loops);   // a looping event plays until the next UI sound takes the player
         ui.VolumeDb = Mathf.LinearToDb(clip.Volume);
         ui.Bus = SoundBuses.Of(clip.Category);
         if (Ms2Godot.Net.LiveSession.LiveCheck) LogGain("ui", clip, clip.Volume, ui.Bus);
