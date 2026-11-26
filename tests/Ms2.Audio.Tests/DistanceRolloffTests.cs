@@ -145,7 +145,7 @@ public class DistanceRolloffTests
     [Test]
     public void SetsAVolumeOnlyWhenItChanges()
     {
-        var c = new DistanceRolloff(new[] { 0f, 4500f }, new[] { 1f, 0f });
+        var c = new DistanceRolloff(new[] { 0f, 4500f }, new[] { 1f, 0f }, panLevel: 0);   // 2D: no pan level gain (PanLevelTests)
         var g = new RolloffGains(2);
         g.Set(0, c, 1f, new Vector3(2250, 0, 0));
         Assert.That(g.Update(0, Vector3.Zero, out float db), Is.True);

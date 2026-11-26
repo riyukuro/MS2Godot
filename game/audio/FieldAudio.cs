@@ -814,7 +814,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             LoopsStoppedWithNode++;
         }
     }
-    readonly Dictionary<string, AudioStreamWav> decoded = new();
+    /// <summary>The event voices' sounds by clip and fade-in (a clip can be played by events with different fade-ins).</summary>
+    readonly Dictionary<(string, int), AudioStreamWav> decoded = new();
     /// <summary>Looping sounds stopped because <see cref="EffectVoiceSlots.MaxLooping"/> voices looped already.</summary>
     public int LoopsTaken;
     public int PositionalPlayed;
@@ -887,10 +888,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         var clip = library?.ResolveEvent(path);
         if (clip == null) return 0;
-        if (!decoded.TryGetValue(clip.Name, out var wav))
+        if (!decoded.TryGetValue((clip.Name, clip.Event?.FadeIn ?? 0), out var wav))
         {
             var pcm = SafeDecode.Decode(clip);
-            decoded[clip.Name] = wav = pcm == null ? null : Stream(pcm, pcm.ToBytes(), clip.Loops);   // a looping event loops until stopped
+            decoded[(clip.Name, clip.Event?.FadeIn ?? 0)] = wav = pcm == null ? null : EventStream(pcm, clip);   // a looping event loops until stopped
         }
         if (wav == null) return 0;
         // the event's instance is taken as the effect is made, so it is held through the start delay too
@@ -939,13 +940,16 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// <summary>Print each event sound's voice choice (the play log of the pickup sound check).</summary>
     public static bool LogVoices;
 
-    /// <summary>The new sound's volume at the listener for the quietest choices: its gain over the inverse distance
-    /// attenuation its voice is given, measured from the camera's actor where the listener stands (Field's listener,
-    /// soundservice.cpp:975-999); its gain alone without a viewer.</summary>
+    /// <summary>The new sound's volume at the listener for the quietest choices, measured from the camera's actor where the
+    /// listener stands (Field's listener, soundservice.cpp:975-999). That is its gain times its curve's gain at that distance
+    /// (the attenuation its voice is given; the curve starts at FMOD's 3D min of 0), or without a curve times the inverse
+    /// distance from the event's range. Without a viewer it is the gain alone.</summary>
     float Audibility(SoundClip clip, float gain, Vector3 position)
     {
         if (Viewer?.Invoke() is not { } at) return gain;
-        float d = at.DistanceTo(position), max = clip.MaxDistance > 0 ? clip.MaxDistance : 3000, unit = clip.MinDistance > 0 ? clip.MinDistance : 300;
+        float d = at.DistanceTo(position);
+        if (clip.Rolloff is { } curve) return gain * curve.GainAt(d);
+        float max = clip.MaxDistance > 0 ? clip.MaxDistance : 3000, unit = clip.MinDistance > 0 ? clip.MinDistance : 300;
         return d >= max ? 0 : d <= unit ? gain : gain * unit / d;
     }
 
@@ -974,7 +978,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         var pcm = SafeDecode.Decode(clip);
         if (pcm == null) return;
-        ui.Stream = Stream(pcm, pcm.ToBytes(), clip.Loops);   // a looping event plays until the next UI sound takes the player
+        ui.Stream = EventStream(pcm, clip);   // a looping event plays until the next UI sound takes the player
         ui.VolumeDb = Mathf.LinearToDb(clip.Volume);
         ui.Bus = SoundBuses.Of(clip.Category);
         if (Ms2Godot.Net.LiveSession.LiveCheck) LogGain("ui", clip, clip.Volume, ui.Bus);
@@ -992,4 +996,14 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         LoopBegin = 0,
         LoopEnd = pcm.Frames,
     };
+
+    /// <summary>The stream of an event's sound: looping as the event does, with the event's fade-in baked into its start
+    /// (<see cref="EventFadeIn"/>).</summary>
+    internal static AudioStreamWav EventStream(Pcm16 pcm, SoundClip clip)
+    {
+        var wav = Stream(pcm, EventFadeIn.Bytes(pcm, clip.Event?.FadeIn ?? 0, clip.Loops, out int begin, out int end), clip.Loops);
+        wav.LoopBegin = begin;
+        wav.LoopEnd = end;
+        return wav;
+    }
 }

@@ -114,13 +114,16 @@ public partial class FootstepSounds : Node
                 v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
                 v.MaxDistance = Player3DOutput.CurveMaxDistance(curve);
                 v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
-                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d));
+                float level = curve.PanLevelAt(d);
+                v.PanningStrength = Player3DOutput.PanningStrength(level);   // FMOD's pan level, its gain on the volume
+                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d) * Player3DOutput.PanLevelGain(level));
             }
             else
             {
                 v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance;
                 v.MaxDistance = 3000;
                 v.AttenuationFilterDb = Player3DOutput.DefaultFilterDb;
+                v.PanningStrength = 1;
             }
             v.Bus = SoundBuses.Of(clip.Category);
             v.Play();

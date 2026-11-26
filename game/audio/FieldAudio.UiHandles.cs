@@ -20,7 +20,7 @@ public partial class FieldAudio
         if (UiSoundPath(key, arg) is not { } path || library?.ResolveEvent(path) is not { } clip) return 0;
         var pcm = SafeDecode.Decode(clip);
         if (pcm == null) return 0;
-        var player = new AudioStreamPlayer { Stream = Stream(pcm, pcm.ToBytes(), clip.Loops), VolumeDb = Mathf.LinearToDb(clip.Volume), Bus = SoundBuses.Of(clip.Category) };
+        var player = new AudioStreamPlayer { Stream = EventStream(pcm, clip), VolumeDb = Mathf.LinearToDb(clip.Volume), Bus = SoundBuses.Of(clip.Category) };
         AddChild(player);
         long handle = ++lastUiHandle;
         uiHandles[handle] = (player, System.Environment.TickCount64);

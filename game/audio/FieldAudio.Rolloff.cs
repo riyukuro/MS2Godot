@@ -58,6 +58,7 @@ public partial class FieldAudio
         for (int i = 0; i < EffectVoiceSlots.ClientChannels; i++)
         {
             if (gains3d.Update(i, l, out float db)) voices3d[i].VolumeDb = db;
+            if (gains3d.PanChanged(i, out float pan)) voices3d[i].PanningStrength = pan;
             if (gains3d.PastSilentChanged(i, out bool past))
             {
                 if (past) voices3d[i].Stop();
@@ -69,7 +70,8 @@ public partial class FieldAudio
 
     /// <summary>A voice's attenuation for <paramref name="clip"/> at <paramref name="own"/> gain: its curve's gain from the
     /// listener with Godot's attenuation, max distance fade and filter off, or without a curve Godot's inverse distance and
-    /// filter from the event's range (3000 / 300 when it has none). The voice is reused, so each branch sets all of them.</summary>
+    /// filter from the event's range (3000 / 300 when it has none). The curve also gives the panning strength (its pan level).
+    /// The voice is reused, so each branch sets all of them.</summary>
     void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position)
     {
         started3d[slot] = false;
@@ -80,11 +82,13 @@ public partial class FieldAudio
             v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
             gains3d.Set(slot, c, own, ToNumerics(position), stopsPastSilent: clip.Loops);
             v.VolumeDb = HasListener && gains3d.Update(slot, ToNumerics(ListenerAt), out float db) ? db : Mathf.LinearToDb(own);
+            if (gains3d.PanChanged(slot, out float pan)) v.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
             return;
         }
         gains3d.Clear(slot);
         v.AttenuationFilterDb = Player3DOutput.DefaultFilterDb;
         v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance;
+        v.PanningStrength = 1;
         v.VolumeDb = Mathf.LinearToDb(own);
         v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
         v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;

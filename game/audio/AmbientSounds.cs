@@ -49,6 +49,7 @@ public partial class AmbientSounds : Node3D
         {
             var s = rolled[i];
             if (gains.Update(s.Index, listener, out float db)) s.Player.VolumeDb = db;
+            if (gains.PanChanged(s.Index, out float pan)) s.Player.PanningStrength = pan;
             if (gains.PastSilentChanged(s.Index, out bool past))
             {
                 // a loop: stopped while silent, played again on the way back
@@ -164,7 +165,7 @@ public partial class AmbientSounds : Node3D
             if (failure != null) EngineCalls.Warn(failure);
             return pcm;
         });
-        task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; var data = pcm.ToBytes(); started.Enqueue(() => Start(sound, pcm, data)); });
+        task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; var data = EventFadeIn.Bytes(pcm, clip.Event?.FadeIn ?? 0, true, out int begin, out int end); started.Enqueue(() => Start(sound, pcm, data, begin, end)); });
     }
 
     /// <summary>The clips decoded on the pool threads, started on the main thread (<see cref="_Process"/>): a pool thread makes
@@ -189,19 +190,22 @@ public partial class AmbientSounds : Node3D
     {
         if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(s.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z), out float db))
             s.Player.VolumeDb = db;
+        if (gains.PanChanged(s.Index, out float pan)) s.Player.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
     }
 
     /// <summary>A curve sound past its silent distance: not played until the listener comes back.</summary>
     bool Past(Sound s) => s.Clip.Rolloff != null && gains.IsPast(s.Index);
 
-    void Start(Sound s, Pcm16 pcm, byte[] data)
+    /// <summary>The decoded loop played: <paramref name="data"/> with the event's fade-in on its first pass, looping over
+    /// [<paramref name="loopBegin"/>, <paramref name="loopEnd"/>) frames (<see cref="EventFadeIn"/>).</summary>
+    void Start(Sound s, Pcm16 pcm, byte[] data, int loopBegin, int loopEnd)
     {
         var p = s.Player;
         if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
         p.Stream = new AudioStreamWav
         {
             Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = data,
-            LoopMode = AudioStreamWav.LoopModeEnum.Forward, LoopBegin = 0, LoopEnd = pcm.Frames,
+            LoopMode = AudioStreamWav.LoopModeEnum.Forward, LoopBegin = loopBegin, LoopEnd = loopEnd,
         };
         if (s.On && !Past(s)) p.Play();
     }

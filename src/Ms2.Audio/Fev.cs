@@ -148,6 +148,10 @@ public sealed class FevEvent
     /// <summary>The volume by listener distance of a complex 3D event (<see cref="DistanceRolloff"/>): its built-in volume
     /// envelope (effect 0xc) on the "(distance)" parameter; null for 2D and simple events.</summary>
     public DistanceRolloff Rolloff;
+    /// <summary>The event's 3D pan level property, record +0x9c (FMOD_EVENTPROPERTY_3D_PANLEVEL; fmod_event64's event
+    /// loader 0x180014168 reads it into event+0x168 after the fields of +0x6c..+0x98, read in order). 1 on every
+    /// MS2Sound.fev 3D event.</summary>
+    public float PanLevel = 1f;
     public List<int> Defs = new();
     public List<float> DefVolumes = new();   // the sound's own volume (parallel to Defs)
     /// <summary>Whether the sound loops until the event is stopped (parallel to <see cref="Defs"/>): a sound instance's loop
@@ -163,6 +167,11 @@ public sealed class FevEvent
     /// .fdp and .fev): +0x28 priority (0 the most important), +0x2c max playbacks, +0x78 max playbacks behavior
     /// (FMOD_EVENTPROPERTY_PRIORITY, _MAX_PLAYBACKS, _MAX_PLAYBACKS_BEHAVIOR, fmod_event.h:185-187).</summary>
     public int Priority, MaxPlaybacks, MaxPlaybacksBehavior;
+    /// <summary>The event's fade-in and fade-out in milliseconds, record +0x8c and +0x90 (FMOD_EVENTPROPERTY_FADEIN, _FADEOUT,
+    /// fmod_event.h, ints). These match what the client's fmod_event64 runtime reports for property indexes 36 / 37, for
+    /// example 5 / 5 for the meso pickup event (MS2Sound/Sound/Item/09200002). The fade-in is baked into the sound's start
+    /// (<see cref="EventFadeIn"/>). The fade-out is unused because the client's stops are immediate.</summary>
+    public int FadeIn, FadeOut;
 }
 
 /// <summary>
@@ -341,31 +350,45 @@ public sealed class FevProject
 
     /// <summary>The effect id of an event's volume envelope.</summary>
     const int EnvelopeVolume = 0xc;
+    /// <summary>The envelope flags word's bits (fmod_event64's per-layer envelope loop 0x180025590): disabled, 3D Pan Level.</summary>
+    const int EnvelopeDisabled = 0x1, EnvelopePanLevel = 0x400;
     float[] envX, envY;
+    int[] envShape;
 
-    // EPRP: u32 count, then 12-byte envelope points (f32 x as a fraction of the parameter's range, f32 value, u32 shape).
+    // EPRP: u32 count, then 12-byte envelope points (f32 x as a fraction of the parameter's range, f32 value, u32 shape: the
+    // segment's curve, DistanceRolloff.PointCurve / PointLinear).
     void ReadEnvelopePoints(int o)
     {
         int n = U32(o);
         envX = new float[n];
         envY = new float[n];
-        for (int i = 0; i < n; i++) { envX[i] = F32(o + 4 + 12 * i); envY[i] = F32(o + 8 + 12 * i); }
+        envShape = new int[n];
+        for (int i = 0; i < n; i++) { envX[i] = F32(o + 4 + 12 * i); envY[i] = F32(o + 8 + 12 * i); envShape[i] = U32(o + 12 + 12 * i); }
     }
 
-    DistanceRolloff Rolloff(int env, float min, float max)
+    /// <summary>An envelope's points as distances (its x is a fraction of the parameter's range <paramref name="min"/>..<paramref name="max"/>)
+    /// values and shapes; false when there is none or a point index is out of the EPRP table.</summary>
+    bool Points(int env, float min, float max, out float[] dist, out float[] value, out int[] shape)
     {
-        if (envX == null || !(max > min)) return null;
+        dist = value = null;
+        shape = null;
+        if (env < 0 || envX == null || !(max > min)) return false;
         int n = U32(env + 20);
-        var dist = new float[n];
-        var gain = new float[n];
+        var dd = new float[n];
+        var vv = new float[n];
+        var ss = new int[n];
         for (int i = 0; i < n; i++)
         {
             int k = U32(env + 24 + 4 * i);
-            if ((uint)k >= (uint)envX.Length) return null;
-            dist[i] = min + envX[k] * (max - min);
-            gain[i] = envY[k];
+            if ((uint)k >= (uint)envX.Length) return false;
+            dd[i] = min + envX[k] * (max - min);
+            vv[i] = envY[k];
+            ss[i] = envShape[k];
         }
-        return new DistanceRolloff(dist, gain);
+        dist = dd;
+        value = vv;
+        shape = ss;
+        return true;
     }
 
     void ReadStrings(int o)
@@ -504,6 +527,9 @@ public sealed class FevProject
         return p;
     }
 
+    /// <summary>A fade time from the record (ms); 0 for anything past a minute, which no event has.</summary>
+    static int Ms(int v) => v is > 0 and <= 60000 ? v : 0;
+
     int ParseEvent(int p, string groupPath, List<FevEvent> groupList)
     {
         int start = p;
@@ -521,6 +547,8 @@ public sealed class FevProject
             Priority = U32(p + 0x28),
             MaxPlaybacks = U32(p + 0x2c),
             MaxPlaybacksBehavior = U32(p + 0x78),
+            FadeIn = Ms(U32(p + 0x8c)),
+            FadeOut = Ms(U32(p + 0x90)),
         };
         ev.Mode = U32(p + 0x34);
         ev.Is3D = (ev.Mode & 0x10) != 0;
@@ -529,6 +557,8 @@ public sealed class FevProject
             float a = F32(p + 0x38), b = F32(p + 0x3c);
             if (a >= 0 && b > a && b < 1e6f) { ev.MinDistance = a; ev.MaxDistance = b; }
         }
+        float pan = F32(p + 0x9c);
+        if (pan >= 0 && pan <= 1) ev.PanLevel = pan;   // set3DPanLevel takes 0..1 only
         p = start + 0xa8;
         if (etype == 0x10)
         {
@@ -540,6 +570,7 @@ public sealed class FevProject
         else if (etype == 8)
         {
             volumeEnvs.Clear();
+            panEnvs.Clear();
             int nLayers = U32(p);
             p += 4;
             for (int l = 0; l < nLayers; l++)
@@ -561,30 +592,35 @@ public sealed class FevProject
                     // u32 unit (-1 built-in, else a DSP unit), u32 name length (0 here), u32 sub-index (the occlusion's
                     // direct 0 / reverb 1), u32 effect, u32, u32 point count, the points; the envelope's parameter is its layer's
                     if (ev.Is3D && U32(p) == -1 && U32(p + 12) == EnvelopeVolume && nPts > 0) volumeEnvs.Add((p, layerParam));
+                    int flags = U32(p + 12);
+                    if (ev.Is3D && nPts > 0 && (flags & EnvelopePanLevel) != 0 && (flags & EnvelopeDisabled) == 0) panEnvs.Add((p, layerParam));
                     p += 24 + 4 * nPts + 8;
                 }
             }
             int nParams = U32(p);
             // 32-byte parameters: u32 name (STRR), u32, f32 min, f32 max, ...
             // the curve is the first volume envelope of a layer driven by the "(distance)" parameter
-            for (int q = 0; q < nParams && volumeEnvs.Count > 0; q++)
+            // and the pan level the first 3D Pan Level envelope of such a layer
+            float[] vd = null, vg = null, pd = null, pv = null;
+            int[] vs = null, ps = null;
+            for (int q = 0; q < nParams && volumeEnvs.Count + panEnvs.Count > 0; q++)
             {
                 int r = p + 4 + 32 * q;
                 if (strr[U32(r)] != "(distance)") continue;
+                float min = F32(r + 8), max = F32(r + 12);
                 foreach (var (env, param) in volumeEnvs)
-                    if (param == q) { ev.Rolloff = Rolloff(env, F32(r + 8), F32(r + 12)); break; }
+                    if (param == q) { Points(env, min, max, out vd, out vg, out vs); break; }
+                foreach (var (env, param) in panEnvs)
+                    if (param == q) { Points(env, min, max, out pd, out pv, out ps); break; }
                 break;
             }
             p += 4 + 32 * nParams;
+            if (vd != null && ev.RolloffModel == RolloffModel.Custom)
+                ev.Rolloff = new DistanceRolloff(vd, vg, shape: vs, panLevel: ev.PanLevel, panDistance: pd, panValue: pv, panShape: ps);
             // a linear, linear square or inverse event: FMOD's model on its range, times its "(distance)" envelope when it has one
-            if (ev.Is3D && ev.RolloffModel != RolloffModel.Custom && ev.MaxDistance > ev.MinDistance)
-            {
-                var c = ev.Rolloff;
-                var cd = new float[c?.Count ?? 0];
-                var cg = new float[cd.Length];
-                for (int i = 0; i < cd.Length; i++) { cd[i] = c.DistanceOf(i); cg[i] = c.GainOf(i); }
-                ev.Rolloff = new DistanceRolloff(cd, cg, ev.RolloffModel, ev.MinDistance, ev.MaxDistance);
-            }
+            else if (ev.Is3D && ev.RolloffModel != RolloffModel.Custom && ev.MaxDistance > ev.MinDistance)
+                ev.Rolloff = new DistanceRolloff(vd ?? Array.Empty<float>(), vg ?? Array.Empty<float>(), ev.RolloffModel, ev.MinDistance, ev.MaxDistance,
+                    ev.PanLevel, pd, pv, vs, ps);
         }
         else
         {
@@ -618,7 +654,7 @@ public sealed class FevProject
     public const int InverseRolloff = 0x00100000, LinearRolloff = 0x00200000, LinearSquareRolloff = 0x00400000, CustomRolloff = 0x04000000;
 
     /// <summary>The 3D volume envelopes of the event being read, with their layer's parameter.</summary>
-    readonly List<(int Offset, int Param)> volumeEnvs = new();
+    readonly List<(int Offset, int Param)> volumeEnvs = new(), panEnvs = new();
 
     /// <summary>The instances read by loop mode: [0], [1], [2] for the three modes, [3] for any other value (counted as a loop).</summary>
     public readonly int[] LoopModeCounts = new int[4];
