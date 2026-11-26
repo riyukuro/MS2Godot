@@ -1121,7 +1121,8 @@ public class InventoryTests
         var t = NewModel().Tables;
         var pc = new PcItemUse.Pc { CharacterId = 1, ServerTime = () => 1000 };
         int shop = 0, bang = 0, vip = 0, wedding = 0, any = 0;
-        foreach (int id in Enumerable.Range(10000000, 50000000))
+        // The millions that hold shop items on every data set (a wider scan would fill the GMS2 per-item cache with misses).
+        foreach (int id in new[] { 20, 22, 30, 32, 40 }.SelectMany(m => Enumerable.Range(m * 1000000, 1000000)))
         {
             if (t.Items.Get(id) is not { ShopId: > 0 } d) continue;
             shop++;
