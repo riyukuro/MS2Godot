@@ -11,6 +11,12 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class FrameRateMeter
 {
+    /// <summary>
+    /// CMainSystem's own meter: one for the process, ticked every frame from start-up whatever the scene (the game's frame
+    /// rate clock), so a dialog opened at game entry already has a rate.
+    /// </summary>
+    public static FrameRateMeter Process { get; } = new();
+
     double lastTime, fpsTime;
     uint frames;
 

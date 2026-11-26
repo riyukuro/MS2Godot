@@ -10,6 +10,7 @@ config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
 QuitFinalizers="*res://scripts/QuitFinalizers.cs"
 GammaGuard="*res://scripts/GammaGuard.cs"
+FrameRateClock="*res://scripts/FrameRateClock.cs"
 
 [display]
 

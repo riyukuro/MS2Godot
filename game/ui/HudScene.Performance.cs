@@ -14,8 +14,6 @@ public partial class HudScene
 {
     PerformanceDialogController performance;
     MovieDialog performanceMovie;
-    /// <summary>CMainSystem's m_fFps, ticked every frame whether the dialog is open or not, as OnTick is.</summary>
-    readonly FrameRateMeter frameRate = new();
 
     bool PerformanceOpen => performance != null && !performance.IsClosed;
 
@@ -63,12 +61,12 @@ public partial class HudScene
         if (PerformanceOpen) performance.Close();
     }
 
-    /// <summary>CMainSystem::OnTick's frame count, then UIPerformanceDialog::vfunc_72 while the dialog is open.</summary>
+    /// <summary>UIPerformanceDialog::vfunc_72 while the dialog is open, over the process meter (<see cref="FrameRateMeter.Process"/>,
+    /// ticked by <see cref="Ms2Godot.FrameRateClock"/> before this in the frame).</summary>
     void TickPerformance()
     {
-        frameRate.Tick(Time.GetTicksUsec() / 1_000_000.0);
         if (PerformanceOpen)
-            performance.Update(frameRate.Fps, Ms2Godot.Net.LiveSession.Instance?.GameSession?.Latency.Average ?? 0);
+            performance.Update(FrameRateMeter.Process.Fps, Ms2Godot.Net.LiveSession.Instance?.GameSession?.Latency.Average ?? 0);
     }
 
     /// <summary>
