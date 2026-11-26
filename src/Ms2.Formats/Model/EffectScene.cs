@@ -531,6 +531,19 @@ public sealed class ForceDef
     public double StrengthAt(double t) => StrengthAnim != null ? StrengthAnim.At(t) : Strength;
 }
 
+/// <summary>A particle collider (NiPSPlanarCollider / NiPSSphericalCollider, read by NiPSCollider::LoadBinary and the two
+/// LoadBinary overrides). The colliders step hands the kernel only the active ones (NiPSSimulatorCollidersStep::Update,
+/// NiPSSimulatorCollidersStep.cpp:231-262). Node is the "Collider Object", -1 without one: a plane without one stays
+/// through the system's origin with its own axes and size, a sphere at the system's origin with its own radius
+/// (NiPSPlanarCollider::Update, NiPSPlanarCollider.cpp:72-128; NiPSSphericalCollider.cpp:41-44, :80-92).</summary>
+public sealed class ColliderDef
+{
+    public bool Sphere, Active = true, SpawnOnCollide, DieOnCollide;
+    public double Bounce = 1, Width = 1, Height = 1, Radius = 1;
+    public Vec3 XAxis = new(1, 0, 0), YAxis = new(0, 1, 0);
+    public int Node = -1, Spawner = -1; public string Type;
+}
+
 public sealed class ParticleSystemDef
 {
     public int Node; public string Name;
@@ -556,6 +569,8 @@ public sealed class ParticleSystemDef
     public int MaxParticles = 100; public bool WorldSpace;
     public bool PreRpi = true;                   // "Pre RPI": the emitters' direction method (EmitterDef.Direction)
     public int Colliders, Spawners;
+    /// <summary>The colliders of the system's NiPSSimulatorCollidersStep, in its order (ParticleColliders).</summary>
+    public List<ColliderDef> ColliderList = new();
     /// <summary>The system's material and colour terms, read as an effect mesh's: the material name, maps, NiAlphaProperty,
     /// NiMaterialProperty and NiVertexColorProperty, and the NiMaterialColorControllers on that material (Material.Colors).
     /// The client draws the particle quads through the material the block names, as a mesh's: an _HO technique
@@ -785,7 +800,7 @@ public sealed class EffectScene
         "NiPSParticleSystem", "NiPSSimulator", "NiPSSimulatorGeneralStep", "NiPSSimulatorForcesStep", "NiPSSimulatorCollidersStep", "NiPSSimulatorFinalStep",
         "NiPSSimulatorMeshAlignStep", "NiPSMeshEmitter", "NiPSBoxEmitter", "NiPSSphereEmitter", "NiPSCylinderEmitter", "NiPSAlignedQuadGenerator",
         "NiPSFacingQuadGenerator", "NiPSBoundUpdater", "NiPSBombForce", "NiPSGravityForce", "NiPSDragForce", "NiPSEmitParticlesCtlr", "NiPSForceActiveCtlr",
-        "NiPSGravityStrengthCtlr",
+        "NiPSGravityStrengthCtlr", "NiPSPlanarCollider", "NiPSSphericalCollider",
     };
 
     /// <summary>The NiPSEmitterFloatCtlr types and the emitter value each sets (each one's SetTargetFloatValue, line 40 of its .cpp).</summary>
@@ -1020,7 +1035,26 @@ public sealed class EffectScene
                             d.Forces.Add(fd);
                         }
                         break;
-                    case "NiPSSimulatorCollidersStep": d.Colliders += (int)st.IntOr("Num Colliders", 0); break;
+                    case "NiPSSimulatorCollidersStep":
+                        d.Colliders += (int)st.IntOr("Num Colliders", 0);
+                        foreach (var ci in st.Ints("Colliders"))
+                        {
+                            if (ci < 0 || ci >= B.Count) continue;
+                            var c = B[(int)ci];
+                            if (c.Type != "NiPSPlanarCollider" && c.Type != "NiPSSphericalCollider") { Unsupported.Add(c.Type); continue; }
+                            var cd = new ColliderDef
+                            {
+                                Type = c.Type, Sphere = c.Type == "NiPSSphericalCollider", Active = c.IntOr("Active", 1) != 0,
+                                Bounce = c.Float("Bounce"), SpawnOnCollide = c.IntOr("Spawn on Collide", 0) != 0,
+                                DieOnCollide = c.IntOr("Die on Collide", 0) != 0, Spawner = (int)c.IntOr("Spawner", -1),
+                            };
+                            if (cd.Sphere) cd.Radius = c.Float("Radius");
+                            else { cd.Width = c.Float("Width"); cd.Height = c.Float("Height"); cd.XAxis = V3(c.Struct("X Axis")); cd.YAxis = V3(c.Struct("Y Axis")); }
+                            long co = c.IntOr("Collider Object", -1);
+                            if (co >= 0 && NodeOfBlock.TryGetValue((int)co, out int cn)) cd.Node = cn;
+                            d.ColliderList.Add(cd);
+                        }
+                        break;
                 }
             }
 

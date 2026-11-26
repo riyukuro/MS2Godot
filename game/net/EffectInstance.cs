@@ -50,6 +50,7 @@ public sealed partial class EffectInstance : Node3D
         public int Cap, LastCount;                                // the MultiMesh's instance count (live particles fit) and last frame's live count
         public Aabb Box; public bool HasBox;                      // the MultiMesh's CustomAabb: every quad drawn so far, grown only (Step)
         public MeshState Shading;                                 // the system's material (ParticleSystemDef.Material) and its shader parameters
+        public ParticleColliders.Collider[] Colliders; public int[] Tried; // the active colliders on this step (Step), and the kernel's scratch
     }
 
     readonly EffectScene scene; readonly ModelBuilder mb;
@@ -568,6 +569,9 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             int n = d.MaxParticles;
             ps.Pos = new Vector3[n]; ps.Vel = new Vector3[n]; ps.Age = new float[n]; ps.Life = new float[n]; ps.Size = new float[n]; ps.Rot = new float[n]; ps.RotSpeed = new float[n]; ps.Variance = new float[n]; ps.Tex = new AlignedQuad.TexAnim(d);
             ps.Accum = new double[d.Emitters.Count];
+            int nc = 0;
+            foreach (var c in d.ColliderList) if (c.Active) nc++;
+            if (nc > 0) { ps.Colliders = new ParticleColliders.Collider[nc]; ps.Tried = new int[nc]; }
             // the quads draw through the system's _HO technique (EffectMesh.Ho on Material), else the standard shader
             var ho = d.Material.Ho;
             var mat = new ShaderMaterial { Shader = ho != null ? HoShader(ho, "cull_disabled, depth_draw_never", true, BlendOn(d.AlphaFlags), d.Additive)
@@ -1021,6 +1025,28 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 });
             }
         }
+        // Colliders: the step hands the kernel the active ones (NiPSSimulatorCollidersStep.cpp:231-262), each in the
+        // system's space from its object's transform (ColliderDef). Here that space is the effect's, so a collider takes
+        // its object's world position, rotation and scale; one without an object stays at the system's origin, turned and
+        // scaled by the system's transform.
+        int nColl = 0;
+        if (ps.Colliders != null)
+            foreach (var c in d.ColliderList)
+            {
+                if (!c.Active) continue;
+                var w = c.Node >= 0 ? World(c.Node, t, camLocal) : sysWorld;
+                var rb = w.Basis.Orthonormalized();
+                float sc = w.Basis.Scale.X;
+                var o = new System.Numerics.Vector3(w.Origin.X, w.Origin.Y, w.Origin.Z);
+                if (c.Sphere) ps.Colliders[nColl++] = ParticleColliders.Collider.Ball(o, sc, (float)c.Radius, (float)c.Bounce, c.DieOnCollide);
+                else
+                {
+                    var axX = rb * new Vector3((float)c.XAxis.X, (float)c.XAxis.Y, (float)c.XAxis.Z);
+                    var axY = rb * new Vector3((float)c.YAxis.X, (float)c.YAxis.Y, (float)c.YAxis.Z);
+                    ps.Colliders[nColl++] = ParticleColliders.Collider.Plane(o, new(axX.X, axX.Y, axX.Z), new(axY.X, axY.Y, axY.Z), sc,
+                        (float)c.Width, (float)c.Height, (float)c.Bounce, c.DieOnCollide);
+                }
+            }
         // simulate: the forces in their order, each on the velocity the one before left, against the step's start
         // position (ParticleForces), then the move. The forces take the step's dt, where the kernel takes each particle's
         // time since its last update (NiPSSimulatorForcesKernel.cpp:33, NiPSForceHelpers.inl). Every live particle is
@@ -1028,8 +1054,6 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         int nForces = forcesNow.Count;
         for (int i = ps.Count - 1; i >= 0; i--)
         {
-            ps.Age[i] += dt;
-            if (ps.Age[i] >= ps.Life[i]) { Swap(ps, i, ps.Count - 1); ps.Count--; continue; }
             var v = ps.Vel[i];
             if (nForces > 0)
             {
@@ -1039,8 +1063,24 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 vn = ParticleForces.Apply(vn, pn, forcesNow, dt);
                 v = new Vector3(vn.X, vn.Y, vn.Z);
             }
+            // then the colliders (ParticleColliders.Step): a particle that hits one moves to the hit and bounces, and the
+            // final step moves it and ages it by the time left after the hit, then kills it past its life
+            // (NiPSSimulatorKernelHelpers.inl:19-27, :242-264); one that hits a collider that kills on contact is removed.
+            // The rotation is the general step's, before the colliders, so it takes the whole step.
+            float tLast = 0f;
+            if (nColl > 0)
+            {
+                var p0 = ps.Pos[i];
+                var pn = new System.Numerics.Vector3(p0.X, p0.Y, p0.Z);
+                var vn = new System.Numerics.Vector3(v.X, v.Y, v.Z);
+                if (ParticleColliders.Step(new ReadOnlySpan<ParticleColliders.Collider>(ps.Colliders, 0, nColl), ps.Tried, ref pn, ref vn, ref tLast, dt))
+                { Swap(ps, i, ps.Count - 1); ps.Count--; continue; }
+                ps.Pos[i] = new Vector3(pn.X, pn.Y, pn.Z); v = new Vector3(vn.X, vn.Y, vn.Z);
+            }
+            ps.Age[i] += dt - tLast;
+            if (ps.Age[i] >= ps.Life[i]) { Swap(ps, i, ps.Count - 1); ps.Count--; continue; }
             ps.Vel[i] = v;
-            ps.Pos[i] += v * dt;
+            ps.Pos[i] += v * (dt - tLast);
             ps.Rot[i] += ps.RotSpeed[i] * dt;
         }
         // emit
