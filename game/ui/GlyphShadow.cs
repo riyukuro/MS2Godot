@@ -80,7 +80,6 @@ public partial class GlyphShadow : Node2D
         {
             foreach (var a in atlases.Values) a.Dispose();
             atlases.Clear();
-            foreach (var p in pages) p.Upload();
         }
     }
 
@@ -131,7 +130,8 @@ public partial class GlyphShadow : Node2D
     /// 1024 x 1024 textures with the slots packed in them (render_glyphcacheconfig.h, the client's copy at 0x1422f5320).
     /// A field's shadow glyphs then draw from one texture, so the renderer batches them in one draw call; one texture per
     /// glyph cost a draw call per glyph (a gear tooltip and its compare tooltip: 360 glyphs, 410 more draw calls a frame).
-    /// Slots are packed on shelves of one height class; the page is uploaded once per draw that put new rasters in it.
+    /// Slots are packed on shelves of one height class. A page that got new rasters is uploaded once a frame, after the
+    /// frame's draws and before it renders (Flush), however many fields drew into it.
     /// The pages are 512 x 512, not the client's 1024: the client updates a 256 x 512 part of a texture
     /// (TexUpdWidth/Height), but an ImageTexture updates whole, so a smaller page keeps that upload at 0.5 MB.
     /// </summary>
@@ -173,20 +173,39 @@ public partial class GlyphShadow : Node2D
         public void Write(int x, int y, int w, int h, byte[] data)
         {
             for (int r = 0; r < h; r++) System.Array.Copy(data, r * w * 2, pixels, ((y + r) * Width + x) * 2, w * 2);
+            if (dirty) return;
             dirty = true;
+            dirtyPages.Add(this);
+            if (dirtyPages.Count == 1) FlushCall.CallDeferred();
         }
 
         /// <summary>
-        /// Uploads the page if a raster went in since the last upload. A new Image each time: under GL Compatibility with a
-        /// separate render thread the update keeps a reference to it, so it must not change after the call.
+        /// Uploads the page. A new Image each time: under GL Compatibility with a separate render thread the update keeps a
+        /// reference to it, so it must not change after the call.
         /// </summary>
         public void Upload()
         {
-            if (!dirty) return;
             dirty = false;
             using var image = Image.CreateFromData(Width, Height, false, Image.Format.La8, pixels);
             Texture.Update(image);
         }
+    }
+
+    /// <summary>
+    /// The pages written since the last flush. A page dropped by a reset stays here until it is uploaded, so the nodes that
+    /// drew from it this frame still show their glyphs.
+    /// </summary>
+    static readonly List<Page> dirtyPages = new();
+    static readonly Callable FlushCall = Callable.From(Flush);
+
+    /// <summary>
+    /// Uploads every page written this frame, once. It is a deferred call queued by the frame's first write, so it runs after
+    /// the queued redraws that wrote it and before the frame renders.
+    /// </summary>
+    static void Flush()
+    {
+        for (int i = 0; i < dirtyPages.Count; i++) dirtyPages[i].Upload();
+        dirtyPages.Clear();
     }
 
     static readonly List<Page> pages = new();
@@ -196,7 +215,8 @@ public partial class GlyphShadow : Node2D
     /// One raster per (font, shadow ramp size, glyph, blur, strength). That set is bounded by the glyphs the HUD's fonts can
     /// draw times the shadow parameters the movies use, not by the strings: dynamic text (counts, timers, chat) reuses the
     /// glyphs. Free text could still reach many distinct glyphs (a font's whole Hangul set), so the cache is dropped whole
-    /// when MaxPages pages are full; a node keeps the pages its last draw used until it draws again.
+    /// when MaxPages pages are full; a node keeps the pages its last draw used until it draws again. A node that does not
+    /// redraw after a reset (a hidden, kept dialog) so keeps old pages alive, up to MaxPages x 0.5 MB, until it draws.
     /// It lives for the session as the client's does: the shadow rasters sit in the renderer's GlyphCache
     /// (Renderer2D::pGlyphCache, render_renderer2d.h:171), which outlives the movies and is only emptied by ClearCache or
     /// SetParams (render_glyphcache.h:207-208). So a dialog's first close keeps its new glyphs' rasters in the pages.
@@ -289,14 +309,14 @@ public partial class GlyphShadow : Node2D
         int px = 0, py = 0;
         Page page = null;
         // one empty texel between slots, so the scaled draw's filter reads no neighbour
-        if (pages.Count > 0 && pages[^1].Place(W + 1, H + 1, out px, out py)) page = pages[^1];
-        else
+        for (int i = 0; i < pages.Count; i++)
+            if (pages[i].Place(W + 1, H + 1, out px, out py)) { page = pages[i]; break; }
+        if (page == null)
         {
             if (pages.Count >= MaxPages)
             {
                 // full: start over, as the client's cache does when it has no slot left. The nodes keep the pages
-                // their last draw used until they draw again, so the rasters put in them in this draw go up first.
-                foreach (var old in pages) old.Upload();
+                // their last draw used until they draw again; a page written this frame stays in dirtyPages until the flush.
                 pages.Clear();
                 cache.Clear();
             }
