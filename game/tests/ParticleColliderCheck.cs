@@ -20,7 +20,7 @@ public partial class ParticleColliderCheck : Node
 {
     const float Speed = 40f, PlaneZ = 10f;
 
-    static EffectScene Scene(bool die, float lifespan, float speed)
+    static EffectScene Scene(bool die, float lifespan, float speed, float rotSpeed = 0)
     {
         var sc = new EffectScene { Duration = 10 };
         sc.Nodes.Add(new EffectNode { Name = "system" });
@@ -40,7 +40,7 @@ public partial class ParticleColliderCheck : Node
             {
                 new EmitterDef
                 {
-                    Kind = EmitterKind.Box, Speed = speed, Size = 1, Lifespan = lifespan, Rate = _ => 100,
+                    Kind = EmitterKind.Box, Speed = speed, Size = 1, Lifespan = lifespan, Rate = _ => 100, RotSpeed = rotSpeed,
                     RateCtl = new TimeCtl { Stop = 10 },
                 },
             },
@@ -74,9 +74,24 @@ public partial class ParticleColliderCheck : Node
         return list;
     }
 
-    EffectInstance Start(bool die, float lifespan, float speed = Speed)
+    /// <summary>The live particles' positions and quad x axes (the MultiMesh rows' first column).</summary>
+    static List<(Vector3 P, Vector3 X)> Quads(EffectInstance fx)
     {
-        var fx = new EffectInstance(Scene(die, lifespan, speed), new ModelBuilder(null, null), 10, 1);
+        var list = new List<(Vector3, Vector3)>();
+        foreach (var c in fx.FindChildren("*", nameof(MultiMeshInstance3D), true, false))
+        {
+            var mm = ((MultiMeshInstance3D)c).Multimesh;
+            if (mm == null) continue;
+            var buf = mm.Buffer;
+            for (int i = 0; i < mm.VisibleInstanceCount; i++)
+                list.Add((new Vector3(buf[i * 20 + 3], buf[i * 20 + 7], buf[i * 20 + 11]), new Vector3(buf[i * 20], buf[i * 20 + 4], buf[i * 20 + 8])));
+        }
+        return list;
+    }
+
+    EffectInstance Start(bool die, float lifespan, float speed = Speed, float rotSpeed = 0)
+    {
+        var fx = new EffectInstance(Scene(die, lifespan, speed, rotSpeed), new ModelBuilder(null, null), 10, 1);
         AddChild(fx);
         fx.FileSpace = Transform3D.Identity;
         return fx;
@@ -119,12 +134,26 @@ public partial class ParticleColliderCheck : Node
         // a bounced particle ages by the time after the hit only: at speed 30 with 0.1 s steps a particle born at a step's
         // end is at z 3, 6, 9, then hits the plane 1/30 s into its fourth step and ends it at z 8 with age 0.3 + 0.0667.
         // With a life of 0.38 it lives there; aged by the whole step (0.4) it would die. No unbounced particle is at z 8.
-        fx = Start(false, 0.38f, 30);
+        // The angle follows the age too (initial angle + speed x age, UpdateParticleRotation): at 3 rad/s the bounced
+        // particle (age 0.3667) is 0.2 rad past one at z 9 (age 0.3), not 0.3 as when it turned by the whole step.
+        fx = Start(false, 0.38f, 30, 3);
         int at8 = 0;
         for (int f = 0; f < 10; f++) fx._Process(0.1);
-        foreach (var p in Positions(fx)) if (MathF.Abs(p.Z - 8) < 0.01f) at8++;
+        Vector3 x8 = default, x9 = default;
+        foreach (var (p, x) in Quads(fx))
+        {
+            if (MathF.Abs(p.Z - 8) < 0.01f) { at8++; x8 = x; }
+            if (MathF.Abs(p.Z - 9) < 0.01f) x9 = x;
+        }
         GD.Print($"particle collider: short life: {at8} bounced particles alive at z 8");
         if (at8 == 0) fails.Add("short life: no bounced particle lives at z 8; the hit's time was counted in its age");
+        else if (x9 == default) fails.Add("short life: no particle at z 9 to compare the angle with");
+        else
+        {
+            float turn = MathF.Acos(Math.Clamp(x8.Dot(x9) / (x8.Length() * x9.Length()), -1f, 1f));
+            GD.Print($"particle collider: bounced angle {turn:F4} rad past the z 9 particle");
+            if (MathF.Abs(turn - 0.2f) > 0.005f) fails.Add($"short life: the bounced particle turned {turn:F4} rad past the z 9 one, want 0.2 (its age's)");
+        }
         fx.QueueFree();
     }
 }

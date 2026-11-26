@@ -19,7 +19,8 @@ static class FxParam
 /// A playing effect NIF: its node tree with the transform controllers, its static meshes with the alpha, uv-scroll and flipbook controllers, and its
 /// particle systems simulated on the CPU (emitters, gravity, drag and bomb forces, size / color keys over the particle's age, grow and shrink ramps)
 /// and drawn as camera-facing or aligned quads (AlignedQuad) in one MultiMesh per system. All of it lives in MS2 file space (Z up) under one rotated node.
-/// A mesh's morph controller moves its vertices (EffectMorph). Not simulated: the other forces, colliders, spawners (death
+/// A mesh's morph controller moves its vertices (EffectMorph). The planar and spherical colliders bounce or kill the particles (ParticleColliders). Not
+/// simulated: the other forces, spawners (death
 /// spawns), emitter-radius / color controllers, mesh particles (drawn as quads).
 /// </summary>
 public sealed partial class EffectInstance : Node3D
@@ -1066,7 +1067,8 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             // then the colliders (ParticleColliders.Step): a particle that hits one moves to the hit and bounces, and the
             // final step moves it and ages it by the time left after the hit, then kills it past its life
             // (NiPSSimulatorKernelHelpers.inl:19-27, :242-264); one that hits a collider that kills on contact is removed.
-            // The rotation is the general step's, before the colliders, so it takes the whole step.
+            // The angle follows the age: the general kernel draws it as the initial angle plus the speed times the age
+            // (UpdateParticleRotation, NiPSSimulatorKernelHelpers.inl:238), so it turns by the same time the age takes.
             float tLast = 0f;
             if (nColl > 0)
             {
@@ -1081,7 +1083,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             if (ps.Age[i] >= ps.Life[i]) { Swap(ps, i, ps.Count - 1); ps.Count--; continue; }
             ps.Vel[i] = v;
             ps.Pos[i] += v * (dt - tLast);
-            ps.Rot[i] += ps.RotSpeed[i] * dt;
+            ps.Rot[i] += ps.RotSpeed[i] * (dt - tLast);
         }
         // emit
         if (t <= emitUntil)
