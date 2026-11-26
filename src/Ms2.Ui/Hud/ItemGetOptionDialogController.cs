@@ -10,13 +10,14 @@ namespace Ms2.Ui.Hud;
 /// flags, sent back as RequestPet mode 6 (STILL-OPEN: the port has no pet info, so mode 0 loads the defaults and its OK is
 /// raised as <see cref="Button"/>).
 /// </summary>
-public sealed class ItemGetOptionDialogController : UiController
+public sealed class ItemGetOptionDialogController : ModalDialogController
 {
     public override string Movie => "uiitemgetoptiondialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemGetOptionDialog";
 
     public const int UiId = 0x4e6c;
+    public override int TypeId => UiId;
 
     /// <summary>The dropdown's rows are the grades 1 to 6.</summary>
     public const int GradeRows = 6;

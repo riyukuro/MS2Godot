@@ -551,7 +551,7 @@ public partial class Player
     /// </summary>
     void UpdateRunEffects(bool moving)
     {
-        if (!(AttackKeyDown?.Invoke() ?? (!Ms2.Ui.InputBlock.Active && Input.IsPhysicalKeyPressed(Key.X)))) { RunX = false; return; }
+        if (!(AttackKeyDown?.Invoke() ?? (!Ms2.Ui.InputBlock.OwnKeysBlocked && Input.IsPhysicalKeyPressed(Key.X)))) { RunX = false; return; }
         var d = Mount.Data;
         if (!moving)
         {

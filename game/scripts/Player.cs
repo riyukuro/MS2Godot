@@ -199,6 +199,7 @@ public partial class Player : CharacterBody3D
         ProcessPriority = -1;
         SetMeta(Ms2Godot.Net.EffectAttach.PcMeta, true);    // a PC owner for the effects on it
         MoveProof.Attach(this);
+        AttachKeyInput();
     }
 
     /// <summary>Back to StateIdle with no motion (after a teleport).</summary>
@@ -307,7 +308,7 @@ public partial class Player : CharacterBody3D
             // Offline attack key (defaultkey.xml keyAttack = X): StateSkill::vfunc_4 (@0x1417e5350, stateskill.cpp:432)
             // enters battle stance for UserBattleDurationTick (5 s); the key is read as MyPC reads it, not while
             // Unk_PCMove::FUN_141683ef0 holds input back (Ms2.Ui.InputBlock: a focused text field, the loading screen)
-            bool attackKey = !Live && !Ms2.Ui.InputBlock.Active && Input.IsPhysicalKeyPressed(Key.X);
+            bool attackKey = !Live && !Ms2.Ui.InputBlock.OwnKeysBlocked && Input.IsPhysicalKeyPressed(Key.X);
             if (attackKey && !prevAttackKey && GetViewport()?.GuiGetFocusOwner() == null)
                 SetBattleStance(true, DefaultBattleStanceSeconds);
             prevAttackKey = attackKey;

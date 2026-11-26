@@ -17,3 +17,28 @@ public partial class Player
     /// <summary>PCBase::vfunc_63 (@0x14166ce00; MyPC::vfunc_63 @0x141521670 is the same): no state flag held.</summary>
     public bool CanAct => Ms2.Ui.MoveGate.CanAct(StateFlags);
 }
+
+public partial class Player
+{
+    // WorldService::GetLocalPlayer for the key input channels (Ms2.Ui.KeyInput) and the own key reads: the player in the field.
+    // A new player starts with no flags, as a new PC does in the client.
+    static Player own;
+
+    void AttachKeyInput()
+    {
+        own = this;
+        Ms2.Ui.InputBlock.OwnStateFlags = () => own is { } p && IsInstanceValid(p) ? p.StateFlags : 0;
+        // CMyPCKeyInputController::FUN_141901070 (@0x141901070): AddStateFlags(0x20) or RemoveStateFlags(0x20) on the local pc, if any
+        Ms2.Ui.KeyInput.Shared.LocalPcFlag = block =>
+        {
+            if (own is not { } p || !IsInstanceValid(p)) return;
+            if (block) p.AddStateFlags(Ms2.Ui.KeyInputLayers.MoveStateFlag);
+            else p.RemoveStateFlags(Ms2.Ui.KeyInputLayers.MoveStateFlag);
+        };
+    }
+
+    public override void _ExitTree()
+    {
+        if (own == this) own = null;
+    }
+}

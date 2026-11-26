@@ -13,9 +13,10 @@ namespace Ms2.Ui.Hud;
 /// STILL-OPEN: the guild's members (CollectGuildMembers, CGuildManager m_info.GetMembers) are not kept by the port's guild
 /// book, so none are listed; the rows' image (FUN_141028be0, the UGC picture) is "".
 /// </summary>
-public sealed class InviteGroupDialogController : UiController
+public sealed class InviteGroupDialogController : ModalDialogController
 {
     public const int UiId = 0x4e90;
+    public override int TypeId => UiId;
     public override string Movie => "uiinvitegroupdialog";
     protected override string EntityMethod => "updateUserCount";
     /// <summary>GetTypeName (@0x14199f820).</summary>

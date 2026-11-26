@@ -338,6 +338,12 @@ public abstract class UiController
     /// </summary>
     public virtual bool LoadSetsVisibility => true;
 
+    /// <summary>
+    /// What a subclass's vfunc_8(nVisible) does besides setting the entity's visibility, which the host calls after it set it
+    /// (UIModalDialog takes and gives back the s_keyInput layers, <see cref="ModalDialogController"/>).
+    /// </summary>
+    public virtual void SetEntityVisible(bool visible) { }
+
     /// <summary>UIDialog::OnLoadComplete (uidialog.cpp:696): open (m_c0 0), shown, and startOpen when the tween is on (m_c4).</summary>
     public virtual void OnLoadComplete()
     {

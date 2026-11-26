@@ -185,7 +185,7 @@ public partial class HudScene
     {
         if (beautyMovie != null) { beautyMovie.Host.Unload(); beautyMovie.QueueFree(); beautyMovie = null; }
         var m = beautyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        m.View.Blocked = () => BillOpen || c.InputOff;   // the bill is modal (UIModalDialog vfunc_8 @0x141a55380): no mouse or key reaches the shop; after a buy the root's input stays off until the answer (:1860)
+        m.View.Blocked = () => BillOpen || c.InputOff;   // the bill is modal (UIModalDialog vfunc_8 @0x141a55380): no mouse reaches the shop, and its move and attack channels of s_keyInput are held (BillDialogController is a ModalDialogController); after a buy the root's input stays off until the answer (:1860)
         c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (beautyMovie == m) beautyMovie = null; };
         GD.Print($"beauty shop: load={m.Loaded}");
         uiRoot.AddChild(m);

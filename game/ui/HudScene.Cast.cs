@@ -61,7 +61,7 @@ public partial class HudScene
     /// </summary>
     bool CastKeys(InputEvent e)
     {
-        if (e is not InputEventKey { Pressed: true, Echo: false } k || Ms2.Ui.InputBlock.Active || hudModel?.Keys == null) return false;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k || Ms2.Ui.InputBlock.OwnKeysBlocked || hudModel?.Keys == null) return false;
         for (int dik = 1; dik < 0xd4; dik++)
         {
             if (GodotKeyOfDik(dik) != k.PhysicalKeycode) continue;
@@ -409,7 +409,7 @@ public partial class HudScene
     int PollOwnKey(out bool pressed)
     {
         pressed = framePressFrame == Engine.GetProcessFrames();
-        if (hudModel?.Keys is not { } keys || Ms2.Ui.InputBlock.Active) return 0;   // the keys read nothing then (OwnKeyDown)
+        if (hudModel?.Keys is not { } keys || Ms2.Ui.InputBlock.OwnKeysBlocked) return 0;   // the keys read nothing then (OwnKeyDown)
         keys.GetBoundKeys(boundKeys, hudModel.ServerKeys);
         castKeyWorld = OwnPollWorld();
         castKeyHeld = ownPollHeld;
@@ -1180,7 +1180,7 @@ public partial class HudScene
     /// is down (IsKeyDown, <see cref="OwnKeyDown"/>).</summary>
     bool OwnSkillKeyHeld(int originId)
     {
-        if (Ms2.Ui.InputBlock.Active || hudModel?.Keys is not { } keys) return false;
+        if (Ms2.Ui.InputBlock.OwnKeysBlocked || hudModel?.Keys is not { } keys) return false;
         var slots = hudModel.ServerKeys;
         for (int dik = 1; dik < 0xd4; dik++)
             if (keys.IsKeyOfSkill(dik, originId, slots) && GodotKeyOfDik(dik) is { } g && OwnKeyDown(g)) return true;
@@ -1192,7 +1192,7 @@ public partial class HudScene
     /// held, but nothing is while FUN_141683ef0 (@0x141683ef0) finds CInputKeyHandler::FUN_14116d7a0(0xf) set, a focused
     /// text field (a movie's or an engine control's) or the loading screen (<see cref="Ms2.Ui.InputBlock"/>).
     /// </summary>
-    static bool OwnKeyDown(Key g) => !Ms2.Ui.InputBlock.Active && Input.IsPhysicalKeyPressed(g);
+    static bool OwnKeyDown(Key g) => !Ms2.Ui.InputBlock.OwnKeysBlocked && Input.IsPhysicalKeyPressed(g);
 
     /// <summary>The hold check's world: the quick slots' one, taken once per state, with the player's level, hp, sp, ep and
     /// meso read again each call (the cost check, FUN_14176a380).</summary>

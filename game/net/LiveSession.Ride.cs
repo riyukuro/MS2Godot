@@ -53,7 +53,7 @@ public partial class LiveSession
     /// (FUN_141275260(0x48, 1, 0), then PlaySystemSound).</summary>
     void WireRunX(Player p)
     {
-        p.AttackKeyDown = () => AttackKeyHeld && !Ms2.Ui.InputBlock.Active;
+        p.AttackKeyDown = () => AttackKeyHeld && !Ms2.Ui.InputBlock.OwnKeysBlocked;
         p.CurrentEp = () => Ms2Godot.Ui.StubHudData.Instance.EpCurrent;
         p.FieldUsesEp = FieldUsesEp;
         p.RideAbilityRate = type => OwnAbilityRate(type);

@@ -1981,7 +1981,7 @@ public partial class HudScene : Node, IUiStageHost
     void TrackPickupKey(InputEvent e)
     {
         if (e is not InputEventKey { Echo: false } k) return;
-        if (k.Pressed && Ms2.Ui.InputBlock.Active) return;
+        if (k.Pressed && Ms2.Ui.InputBlock.OwnKeysBlocked) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         foreach (int dik in hudModel.Keys.KeysOfAction(PickupAction))
             if (GodotKeyOfDik(dik) is { } g && g == k.PhysicalKeycode) { live.PickupKeyHeld = k.Pressed; break; }
@@ -2102,7 +2102,7 @@ public partial class HudScene : Node, IUiStageHost
         if (SkillCompactKeys(k)) return true;
         PerformanceKeys(k);                                   // CUIService::FUN_141aec690: left Ctrl+P, the key goes on
         if (PartyDpsKeys(k)) return true;
-        bool actions = !Ms2.Ui.InputBlock.Active;   // FUN_141431fc0 (m_nMode taken as on)
+        bool actions = Ms2.Ui.InputBlock.ActionKeys;   // FUN_141431fc0
         if (actions && k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }   // a DirectInput key code is a physical key
         if (actions && k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }  // action 400006, DIK 50 (keytable.cpp:744)
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;

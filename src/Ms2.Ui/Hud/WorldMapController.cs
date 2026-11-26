@@ -15,6 +15,9 @@ namespace Ms2.Ui.Hud;
 public sealed class WorldMapController : UiController, IMessageBoxListener
 {
     public override string Movie => "uiworldmapdialog";
+
+    /// <summary>The dialog's UI id (uiworldmapdialog.cpp), the layer it holds on s_keyInput.</summary>
+    public const int UiId = 0x4e42;
     protected override string EntityMethod => "initializeIsland";
     public override string TypeName => "WorldMapDialog";
 
@@ -117,7 +120,8 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
         visited.Clear();
         missionMode = false;
         missionAttack = false;
-        TaxiMode = 0;                 // m_194 = 0; vfunc_47(true)
+        TaxiMode = 0;                 // m_194 = 0
+        KeyInput.MoveAndSkill(true, UiId);   // vfunc_47(m_194 == 0)
     }
 
     /// <summary>m_194: set by <see cref="SetTaxiMode"/>; a found station's tile then shows "default" here and "active"
@@ -125,12 +129,15 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
     public int TaxiMode { get; private set; }
 
     /// <summary>
-    /// SetTaxiMode (@0x141b5af80, uiworldmapdialog.cpp:1502): m_194 = n, then vfunc_47(m_194 == 0). Tiles built after the
-    /// call read it.
-    /// STILL-OPEN: vfunc_47 (FUN_141901420 with vfunc_48, the s_keyInput layer release FUN_141901070 / FUN_141900f70) is not
-    /// ported.
+    /// SetTaxiMode (@0x141b5af80, uiworldmapdialog.cpp:1502): m_194 = n, then vfunc_47(m_194 == 0): UIObject::vfunc_47
+    /// (@0x14131edb0) is FUN_141901420, the move and skill channels of s_keyInput (<see cref="KeyInput"/>) with the dialog's id as
+    /// the layer, held while the taxi mode is on. Tiles built after the call read it.
     /// </summary>
-    public void SetTaxiMode(int n) => TaxiMode = n;
+    public void SetTaxiMode(int n)
+    {
+        TaxiMode = n;
+        KeyInput.MoveAndSkill(TaxiMode == 0, UiId);
+    }
 
     // ---- the exploration panel (m_fieldMission) ----
 

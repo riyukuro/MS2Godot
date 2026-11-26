@@ -17,7 +17,7 @@ public static class MoveInput
     /// field has the focus (a movie's or an engine control's) or under a field move's loading screen
     /// (<see cref="Ms2.Ui.InputBlock"/>) the movement and jump keys are ignored.
     /// </summary>
-    public static Func<bool> Blocked = () => Ui.UiFocus.IsTyping || Ms2.Ui.InputBlock.Active;
+    public static Func<bool> Blocked = () => Ui.UiFocus.IsTyping || Ms2.Ui.InputBlock.OwnKeysBlocked;
 
     public struct State
     {

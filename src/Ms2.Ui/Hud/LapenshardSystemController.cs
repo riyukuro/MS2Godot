@@ -52,13 +52,14 @@ public abstract class LapenshardTabPage
 /// <para>STILL-OPEN: the pages (equip, upgrade) are added by later slices; the item events listener
 /// (FUN_1419cae20) and vfunc_3's inventory notification; the tab menu (OnTabMenu) has no client handler.</para>
 /// </summary>
-public sealed class LapenshardSystemController : UiController, IDragSlotOwner
+public sealed class LapenshardSystemController : ModalDialogController, IDragSlotOwner
 {
     public override string Movie => "uilapenshardsystemdialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "LapenshardSystemDialog";       // GetTypeName (@0x140c612a0)
 
     public const int UiId = 0x4f6d;
+    public override int TypeId => UiId;
     /// <summary>vfunc_75 (@0x140c62390): the feature that gates the window.</summary>
     public const int FeatureId = 0xd3;
 

@@ -19,4 +19,20 @@ public static class InputBlock
 
     /// <summary>FUN_14116d7a0(0xf): the loading screen is up or a text field has the focus.</summary>
     public static bool Active => FieldMoveCover.Up || TextFieldFocused();
+
+    /// <summary>The own pc's PCBase m_unk_158 (AddStateFlags), 0 without a pc; the game sets it.</summary>
+    public static Func<uint> OwnStateFlags = () => 0;
+
+    /// <summary>
+    /// What Unk_PCMove::FUN_141683ef0 (@0x141683ef0) asks before every own key read (move, jump, casts, pickup, the attack key):
+    /// input held (<see cref="Active"/>) or PCBase::vfunc_63 is 0, a state flag held (the move channel of s_keyInput, flag
+    /// 0x20, <see cref="KeyInputLayers"/>; the auto find camera, 0x100).
+    /// </summary>
+    public static bool OwnKeysBlocked => Active || OwnStateFlags() != 0;
+
+    /// <summary>
+    /// CKeyTable::FUN_141431fc0 (@0x141431fc0, keytable.cpp:2620): m_nMode is not 0 (the attack channel of s_keyInput holds it at
+    /// 0) and no held input. ExecuteActionKey, the quick slot item keys and FUN_14142bb10 ask it.
+    /// </summary>
+    public static bool ActionKeys => KeyInput.ActionKeyMode != 0 && !Active;
 }

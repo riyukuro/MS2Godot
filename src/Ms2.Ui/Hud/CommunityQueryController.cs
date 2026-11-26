@@ -16,8 +16,11 @@ namespace Ms2.Ui.Hud;
 /// HomeBlock packet (0x138) closing the dialog on its results 2, 3 and 5 is <see cref="OnHomeBlockResult"/>; vfunc_8(1) at the
 /// end of InitData is left out.
 /// </summary>
-public sealed class CommunityQueryController : UiController, IMessageBoxListener
+public sealed class CommunityQueryController : ModalDialogController, IMessageBoxListener
 {
+    public const int UiId = 0x4e4e;
+    public override int TypeId => UiId;
+
     public override string Movie => "uicommunityquerydialog";
     protected override string EntityMethod => "initData";
     /// <summary>GetTypeName (@0x1418da870).</summary>

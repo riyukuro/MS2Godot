@@ -13,13 +13,14 @@ namespace Ms2.Ui.Hud;
 /// <para>STILL-OPEN: the skill window's vfunc_55 test before ApplyDistribute (OnMessage @0x140ec4660, meaning not recovered; the
 /// window is taken as passing it), the BigData log "skll_auto_distribute", and the modal dialog's own blocking of the screen.</para>
 /// </summary>
-public sealed class SkillBookAutoDistributeController : UiController
+public sealed class SkillBookAutoDistributeController : ModalDialogController
 {
     public override string Movie => "uiskillbookautodistributedialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "SkillBookAutoDistributeDialog";
 
     public const int UiId = 0x4f20;
+    public override int TypeId => UiId;
     /// <summary>UpdateDistributeButtons: the buttons m_distribute1..3.</summary>
     public const int Buttons = 3;
 

@@ -11,12 +11,13 @@ namespace Ms2.Ui.Hud;
 /// STILL-OPEN: the item info slot (CreateItemInfoSlot / the movie's setItem, OnLoadComplete @0x140c3f600), the inventory
 /// dialog's flag AddFlags(2) on close (vfunc_67), the movie's close tween.
 /// </summary>
-public sealed class ItemMultiOpenBoxController : UiController
+public sealed class ItemMultiOpenBoxController : ModalDialogController
 {
     public override string Movie => "uiitemmultiopenboxdialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemMultiOpenBoxDialog";   // @0x140c3f470
     public const int UiId = 0x4f88;
+    public override int TypeId => UiId;
 
     public readonly ItemMultiOpenBox State;
     /// <summary>The server time in ms (GetTickCountMs2 is the client's own tick; both only order the due times).</summary>

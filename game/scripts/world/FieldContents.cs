@@ -639,7 +639,7 @@ public partial class FieldContents : Node3D
         // the action key reads nothing while a text field has the focus: the key table runs no action key then
         // (CKeyTable::FUN_141431fc0) and the actions test the move gate themselves (Unk_PCMove::FUN_141683ef0 in
         // TaxiStationAction::vfunc_1 and HoldAction's, actionkeyobject.cpp:776, 2211, 2257, 2315)
-        bool action = !Ms2.Ui.InputBlock.Active && Input.IsKeyPressed(Key.Space);
+        bool action = Ms2.Ui.InputBlock.ActionKeys && Input.IsKeyPressed(Key.Space);
         bool pressed = action && !actionHeld;
         actionHeld = action;
         if (!offline)

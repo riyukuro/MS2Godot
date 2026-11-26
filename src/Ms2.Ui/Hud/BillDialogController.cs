@@ -40,9 +40,10 @@ public sealed class BillData
 /// (<see cref="BeautyShopDialogController.BillIsOpen"/>) and closes it with the shop. STILL-OPEN: the wedding hall's price
 /// (shop kind 3) needs the hall dialog and is the unchanged price.
 /// </summary>
-public sealed class BillDialogController : UiController
+public sealed class BillDialogController : ModalDialogController
 {
     public const int UiId = 0x4e7b;
+    public override int TypeId => UiId;
 
     public override string Movie => "uibilldialog";
     protected override string EntityMethod => "buildList";

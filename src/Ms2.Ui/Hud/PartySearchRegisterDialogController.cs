@@ -13,9 +13,10 @@ namespace Ms2.Ui.Hud;
 /// removal. m_190, the last title and check used, outlives the window, so the HUD keeps one controller.
 /// STILL-OPEN: the random title list (BuildRandomTitleList, common 0xc48-0xc4c) is built by the client but never used.
 /// </summary>
-public sealed class PartySearchRegisterDialogController : UiController, IMessageBoxListener
+public sealed class PartySearchRegisterDialogController : ModalDialogController, IMessageBoxListener
 {
     public const int UiId = 0x4edb;
+    public override int TypeId => UiId;
     /// <summary>GetSelectedMaxUserCount's value for no valid row.</summary>
     public const int DefaultMaxMembers = 10;
 

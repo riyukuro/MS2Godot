@@ -56,12 +56,13 @@ public sealed class MarketBillParam
 /// FUN_140eabdc0), the payback manager (FUN_140a8b490), the block notice (FindBlockedAction 0x26), the basket mode's rows,
 /// tooltips (m_dgTooltip) and the map order of the sums (the client's CAtlMap order).</para>
 /// </summary>
-public sealed class MarketBillDialogController : UiController
+public sealed class MarketBillDialogController : ModalDialogController
 {
     public override string Movie => "uimarketbilldialog";
     protected override string EntityMethod => "initData";
     public override string TypeName => "MarketBillDialog";
     public const int UiId = 0x4f17;
+    public override int TypeId => UiId;
 
     /// <summary>GetCommon text by key / id (the strings of the notices and the fee lines).</summary>
     public Func<string, string> Text;
