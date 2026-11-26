@@ -130,7 +130,7 @@ public partial class HudScene
     void OpenLiveShop()
     {
         if (GuideRefusesOpen("ShopDialog") || liveShop == null) return;
-        if (shopMovie != null) { shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
+        if (shopMovie != null) { ReleaseShopAvatar(); shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
         BindBoxAnswers();
         var m = new MovieDialog(assets, liveShop, hudModel, ScreenMode.PixelSize(GetWindow()));
         liveShop.Unloaded += OnLiveShopUnloaded;
@@ -167,7 +167,7 @@ public partial class HudScene
     void OpenShop()
     {
         if (GuideRefusesOpen("ShopDialog")) return;
-        if (shopMovie != null) { shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
+        if (shopMovie != null) { ReleaseShopAvatar(); shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
         long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var (info, products) = UiFixture.GearShop(Now());
         var c = CreateShopController(null);
@@ -211,7 +211,37 @@ public partial class HudScene
                 }
                 return view?.Image;
             };
-        c.Unloaded += () => { view?.QueueFree(); view = null; };
+        c.Unloaded += OnUnloaded;
+        releaseShopAvatar = () =>
+        {
+            c.Unloaded -= OnUnloaded;
+            view?.QueueFree();
+            view = null;
+            c.CloseAvatar();
+        };
+
+        void OnUnloaded()
+        {
+            c.Unloaded -= OnUnloaded;
+            view?.QueueFree();
+            view = null;
+            releaseShopAvatar = null;
+        }
+    }
+
+    /// <summary>The teardown of the shop avatar the open shop has (view freed, preview dropped), or null.</summary>
+    Action releaseShopAvatar;
+
+    /// <summary>
+    /// The shop's movie is taken away without a Close (a second shop open, the old dialog freed at once): its avatar goes with it
+    /// (UIShopDialog::vfunc_26 / vfunc_67 unload the render target and release m_spPreview, uishopdialog.cpp:1366-1375, 708), so the old
+    /// view stops rendering and a new dialog starts from no preview.
+    /// </summary>
+    void ReleaseShopAvatar()
+    {
+        var release = releaseShopAvatar;
+        releaseShopAvatar = null;
+        release?.Invoke();
     }
 
     /// <summary>The shot's filter or tab, picked through the movie's own list and tab bar (their change events call back).</summary>

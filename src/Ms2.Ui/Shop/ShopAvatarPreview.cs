@@ -14,8 +14,10 @@ namespace Ms2.Ui.Shop;
 /// DoNotPreview), CreatePreviewItem, IsGenderAllowed and a generated uid.</item>
 /// <item><see cref="TryOnItem"/> (@0x140d3f400): an item whose id is already worn (IsItemWorn @0x140d3fda0) is refused; else
 /// ApplyItemToAvatar and AddWornItem (@0x140d3fea0: the item of the same slot is replaced).</item>
-/// <item><see cref="ResetAvatarOutfit"/> (@0x140d3f9a0) and <see cref="ShowMyEquip"/> (@0x140d3fa30): the list is cleared, the player's own
-/// equipment shows again.</item>
+/// <item><see cref="ResetAvatarOutfit"/> (@0x140d3f9a0, Unequip All): the list is cleared and the slots the preview items covered stay bare
+/// (UIAvatarPC::ClearPreview takes off only what was not the player's own, uiavatarbase.cpp:1214, customize.cpp:1315);
+/// <see cref="ShowMyEquip"/> (@0x140d3fa30): the list is cleared and the player's own equipment is put back (RestoreAll, customize.cpp:1753).
+/// Both reset the camera (ResetCamera @0x140d3e130).</item>
 /// <item><see cref="Unequip"/> (@0x140d3fac0): an equipment item is taken off the avatar and the list (the player's own item of the slot
 /// shows again); any other kind rebuilds from the list (InitWithItems).</item>
 /// </list>
@@ -23,13 +25,19 @@ namespace Ms2.Ui.Shop;
 /// FUN_1418bd050, FUN_1418bc110, FUN_1418bb2a0) are not ported: such an item stays in the list and has its icon, the avatar shows nothing
 /// for it. CreatePreviewItem's ItemChangeBeauty package and the gem's CreateGem are not ported (no preview item is made). InitWithItem's
 /// cube and pet avatars (mode 0) are not ported. The exact UIAvatarPC::ApplyItem result when a preview item is taken off (FUN_1418bc380)
-/// is taken as the own item showing again. The hand slot of a dual-wield item (UIEquipIconContainer::GetHandSlot, :133) follows the icons
+/// is taken as the own item showing again. ItemPreview::SetupCameraForItem (itempreview.cpp:364-447) is not ported and ResetCamera's angle
+/// is taken as the angle the avatar control starts from: both read the table FUN_141b48480 and FUN_141b48710, which have no body in
+/// the decompiled source (ResetCamera's zoom, 1000 and 5 steps, is ported). Unequip of an item the preview rebuilt through
+/// InitWithItems (new uids, FUN_140d3fac0 :752-790) and of a non-equipment kind (the avatar rebuilt) keep the uids here. The hand slot of a dual-wield item (UIEquipIconContainer::GetHandSlot, :133) follows the icons
 /// the list would hold.</para>
 /// </summary>
 public sealed class ShopAvatarPreview
 {
     readonly ItemModelTable models;
     readonly List<Item> items = new();
+    /// <summary>The slots Unequip All took the preview items' coverage off and left bare until Show My Equip or a new avatar
+    /// (the own items UIAvatarPC::UnequipSlot took off stay off, uiavatarbase.cpp:1198).</summary>
+    readonly HashSet<int> stripped = new();
     long nextUid = 1L << 40;
 
     /// <summary>The player's gender (the PC the avatar is a copy of).</summary>
@@ -42,8 +50,14 @@ public sealed class ShopAvatarPreview
     /// <summary>m_items: the items on the avatar, in the order they were put on.</summary>
     public IReadOnlyList<Item> Items => items;
 
+    /// <summary>The slots left bare by Unequip All.</summary>
+    public IReadOnlyCollection<int> BareSlots => stripped;
+
     /// <summary>Raised when what the avatar wears changed.</summary>
     public event Action Changed;
+
+    /// <summary>ItemPreview::ResetCamera (@0x140d3e130) ran: the view's angle and zoom go back to their start.</summary>
+    public event Action CameraReset;
 
     /// <summary>
     /// ItemPreview::InitWithItems (@0x140d3c3c0): the list again from <paramref name="source"/>. The player's avatar is made new, so the
@@ -52,6 +66,7 @@ public sealed class ShopAvatarPreview
     public void InitWithItems(IReadOnlyList<Item> source)
     {
         items.Clear();
+        stripped.Clear();                    // CreatePcAvatar: the copy of the player starts again
         if (source != null)
             foreach (var item in source)
             {
@@ -82,8 +97,12 @@ public sealed class ShopAvatarPreview
 
     /// <summary>The slot CItem::FUN_140523c40 sets (item.cpp:2783): 5 for FUN_14053d510 (dual-wield OH, equip subtype 0x1f / 0x22),
     /// else FUN_140527a20, the model's first group type (0 without a model).</summary>
-    public int SlotOf(ItemData d) =>
-        d.EquipSubtype is 0x1f or 0x22 ? 5 : models.ForItem(d)?.FirstSlotType ?? 0;
+    public int SlotOf(ItemData d)
+    {
+        if (d.EquipSubtype is 0x1f or 0x22) return 5;
+        int type = models.ForItem(d)?.FirstSlotType ?? 0;
+        return type == 0x13 ? 5 : type;      // ApplyItemToAvatar sets slot 5 for an OH group (itempreview.cpp:595-653) before AddWornItem
+    }
 
     /// <summary>The kinds ApplyItemToAvatar's last branch dresses: the ones with no special path (STILL-OPEN above) and a model.</summary>
     public bool IsDressed(ItemData d) =>
@@ -103,13 +122,22 @@ public sealed class ShopAvatarPreview
     /// ItemPreview::TryOnItem (@0x140d3f400): false for an item already worn (same id) or one no preview item can be made of; else the
     /// item is put on and the list replaces the item of its slot (AddWornItem).
     /// </summary>
-    public bool TryOnItem(Item item)
+    public bool TryOnItem(Item item) => TryOnItem(item, out _);
+
+    /// <summary>
+    /// TryOnItem with the item the icon is made of (<paramref name="shown"/>): the preview copy, or the product itself when no preview
+    /// item can be made of it: the client returns true after the IsItemWorn check then (itempreview.cpp:685-720) and
+    /// PreviewGachaItem adds the product's icon with nothing on the avatar.
+    /// </summary>
+    public bool TryOnItem(Item item, out Item shown)
     {
+        shown = null;
         if (item?.Data == null || IsItemWorn(item)) return false;
         var preview = CreatePreviewItem(item);
-        if (preview == null) return false;
+        if (preview == null) { shown = item; return true; }
         preview.Uid = nextUid++;
         AddWornItem(preview);
+        shown = preview;
         Changed?.Invoke();
         return true;
     }
@@ -121,6 +149,7 @@ public sealed class ShopAvatarPreview
     public bool InitWithItem(Item item)
     {
         items.Clear();
+        stripped.Clear();
         var preview = CreatePreviewItem(item);
         if (preview != null) { preview.Uid = nextUid++; AddWornItem(preview); }
         Changed?.Invoke();
@@ -135,16 +164,27 @@ public sealed class ShopAvatarPreview
         items.Add(item);
     }
 
-    /// <summary>ItemPreview::ResetAvatarOutfit (@0x140d3f9a0, onClickUnequipAll) and FUN_140d3fa30 (onClickShowMyEquip): the preview is
-    /// cleared, the player's own equipment shows again, the camera resets.</summary>
+    /// <summary>ItemPreview::ResetAvatarOutfit (@0x140d3f9a0, onClickUnequipAll): ClearPreview, the pose again, ResetCamera, m_items cleared.
+    /// ClearPreview takes off the preview items only (Equipment::ClearPreview, customize.cpp:1315): the player's own items the preview items
+    /// had covered stay off, so those slots are bare until <see cref="ShowMyEquip"/>.</summary>
     public void ResetAvatarOutfit()
     {
+        foreach (var item in items)
+            foreach (int s in CoveredSlots(item)) stripped.Add(s);
         items.Clear();
+        CameraReset?.Invoke();
         Changed?.Invoke();
     }
 
-    /// <summary>ItemPreview::FUN_140d3fa30 (@0x140d3fa30, onClickShowMyEquip): RestoreAll, the pose again, the camera reset, m_items cleared.</summary>
-    public void ShowMyEquip() => ResetAvatarOutfit();
+    /// <summary>ItemPreview::FUN_140d3fa30 (@0x140d3fa30, onClickShowMyEquip): RestoreAll (the player's own items on again), the pose again,
+    /// the camera reset, m_items cleared.</summary>
+    public void ShowMyEquip()
+    {
+        items.Clear();
+        stripped.Clear();
+        CameraReset?.Invoke();
+        Changed?.Invoke();
+    }
 
     /// <summary>
     /// ItemPreview::FUN_140d3fac0 (@0x140d3fac0, UIShopDialog::Unequip, uishopdialog.cpp:3507): the item of this uid leaves the list and
@@ -185,12 +225,13 @@ public sealed class ShopAvatarPreview
     }
 
     /// <summary>
-    /// What the avatar wears: <paramref name="own"/> without the items of the slots the preview items cover, then the preview items in
+    /// What the avatar wears: <paramref name="own"/> without the items of the slots the preview items cover and the slots Unequip All left
+    /// bare (<see cref="BareSlots"/>), then the preview items in
     /// the order they were put on, each as an equip record of its slot, uid and rarity with the colour <paramref name="colour"/> gives.
     /// </summary>
     public List<EquipItem> Dress(IReadOnlyList<EquipItem> own, Func<Item, EquipColor> colour)
     {
-        var covered = new HashSet<int>();
+        var covered = new HashSet<int>(stripped);
         foreach (var item in items)
             foreach (int s in CoveredSlots(item)) covered.Add(s);
         var worn = new List<EquipItem>(own?.Count ?? 0);

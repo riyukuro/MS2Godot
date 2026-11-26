@@ -118,10 +118,121 @@ public class ShopAvatarTests
         p.TryOnItem(item);
         p.ResetAvatarOutfit();                                                           // onClickUnequipAll
         Assert.That(p.Items, Is.Empty);
+        p.ShowMyEquip();
         p.TryOnItem(item);
         Assert.That(p.Unequip(p.Items[0].Uid), Is.True);                                 // OnUnEquip
         Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 111, 222 }), "the own item shows again");
         Assert.That(p.Unequip(12345), Is.False);
+    }
+
+    [Test]
+    public void UnequipAllLeavesTheSlotsThePreviewCoveredBareUntilShowMyEquip()
+    {
+        // onClickUnequipAll -> ResetAvatarOutfit -> UIAvatarPC::ClearPreview (uiavatarbase.cpp:1214) -> Equipment::ClearPreview
+        // (customize.cpp:1315): the preview items come off, the own items they had taken off stay off. onClickShowMyEquip -> RestoreAll
+        // (customize.cpp:1753) puts them back.
+        Packs();
+        var model = NewModel();
+        var p = NewPreview(model);
+        var item = Dressable(model, p)[0];
+        var covered = model.Tables.ItemModels.ForItem(item.Data).SlotTypes.Select(t => t == 0x13 ? 5 : t).ToList();
+        int free = Enumerable.Range(1, 60).First(s => !covered.Contains(s));
+        var own = new List<EquipItem> { Own(111, covered[0]), Own(222, free) };
+
+        p.TryOnItem(item);
+        p.ResetAvatarOutfit();
+        Assert.That(p.Items, Is.Empty);
+        Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 222 }), "Unequip All: the covered slot stays bare");
+        Assert.That(p.BareSlots, Is.EquivalentTo(covered));
+
+        p.TryOnItem(item);                                                               // a new try-on dresses the bare slot again
+        Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 222, item.ItemId }));
+        p.Unequip(p.Items[0].Uid);
+        Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 222 }), "still bare: only RestoreAll brings the own item back");
+
+        p.ShowMyEquip();
+        Assert.That(p.BareSlots, Is.Empty);
+        Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 111, 222 }), "Show My Equip: the own items again");
+
+        p.TryOnItem(item);
+        p.ResetAvatarOutfit();
+        p.InitWithItems(null);                                                           // CreatePcAvatar: a new copy of the player
+        Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 111, 222 }), "a new avatar starts from the own look");
+    }
+
+    [Test]
+    public void ResetAndShowMyEquipResetTheCamera()
+    {
+        // ResetAvatarOutfit (@0x140d3f9a0) and FUN_140d3fa30 (@0x140d3fa30) end in ResetCamera (@0x140d3e130)
+        Packs();
+        var model = NewModel();
+        var (h, c) = LoadGacha(model, true);
+        c.OnCallback("OnAvatarMouseDown", new object[] { 1 });
+        c.OnCallback("OnAvatarMouseMove", new object[] { 40, 20, 1 });
+        var turned = c.Avatar.Angle;
+        Assert.That(turned, Is.Not.EqualTo((0f, 0f, 90f)));
+        int resets = 0, turns = 0;
+        c.Avatar.CameraReset += () => resets++;
+        c.Avatar.Turned += () => turns++;
+        c.OnCallback("onClickUnequipAll", Array.Empty<object>());
+        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 90f)), "the angle is back at the start");
+        Assert.That((resets, turns), Is.EqualTo((1, 1)));
+        c.OnCallback("OnAvatarMouseDown", new object[] { 1 });
+        c.OnCallback("OnAvatarMouseMove", new object[] { 40, 20, 1 });
+        c.OnCallback("onClickShowMyEquip", Array.Empty<object>());
+        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 90f)));
+        Assert.That(resets, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void ASecondLoadOfTheDialogKeepsItsPreviewAndACloseDropsIt()
+    {
+        // uishopdialog.cpp:888 makes the preview only while m_spPreview is 0; the render target never outlives the dialog (vfunc_26)
+        Packs();
+        var model = NewModel();
+        var (h, c) = LoadGacha(model, true);
+        var preview = c.Preview;
+        var avatar = c.Avatar;
+        Assert.That(preview, Is.Not.Null);
+        c.OnLoadComplete();
+        Assert.That(c.Preview, Is.SameAs(preview), "no second preview over the first");
+        Assert.That(c.Avatar, Is.SameAs(avatar));
+
+        c.CloseAvatar();                                                                 // the host took the movie away: no Close
+        Assert.That(c.Preview, Is.Null);
+        Assert.That(c.Avatar, Is.Null);
+        Assert.That(c.PreviewIconSlots, Is.Empty);
+        int turned = 0;
+        avatar.Turned += () => turned++;
+        preview.TryOnItem(Dressable(model, preview)[0]);                                 // the old preview no longer reaches the controller
+        c.OnCallback("OnAvatarMouseDown", new object[] { 1 });
+        Assert.That(turned, Is.Zero);
+        Assert.That(c.PreviewIconSlots, Is.Empty, "the dropped preview adds no icons");
+
+        c.OnLoadComplete();
+        Assert.That(c.Preview, Is.Not.Null.And.Not.SameAs(preview), "a new dialog load makes a new preview");
+        Assert.That(c.Avatar, Is.Not.SameAs(avatar));
+    }
+
+    [Test]
+    public void AnItemNoPreviewItemCanBeMadeOfStillGetsItsIconAndLeavesTheAvatarAlone()
+    {
+        // TryOnItem (@0x140d3f400) returns true after the IsItemWorn check even when CreatePreviewItem gives null (itempreview.cpp:685-720)
+        Packs();
+        var model = NewModel();
+        var p = NewPreview(model);
+        var item = Dressable(model, p)[0];
+        var own = new List<EquipItem> { Own(111, 3) };
+        string fn = item.Data.FunctionName;
+        try
+        {
+            item.Data.FunctionName = "ItemChangeBeauty";                                 // CreatePreviewItem's package branch: not ported, null
+            Assert.That(p.TryOnItem(item, out var shown), Is.True);
+            Assert.That(shown, Is.SameAs(item), "the product's own icon");
+            Assert.That(p.Items, Is.Empty);
+            Assert.That(p.Dress(own, null).Select(e => e.Id), Is.EqualTo(new[] { 111 }));
+        }
+        finally { item.Data.FunctionName = fn; }
     }
 
     [Test]
@@ -250,7 +361,7 @@ public class ShopAvatarTests
     }
 
     [Test]
-    public void AnIdleAvatarPreviewAllocatesNothingPerTick()
+    public void AnIdleAvatarPreviewControllerAllocatesNothingPerTick()
     {
         Packs();
         var model = NewModel();

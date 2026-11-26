@@ -90,6 +90,7 @@ public sealed class AvatarControl
     readonly AvatarRotateLimit limit;
     float ax, ay, az;           // m_kAngle: the angle when the drag started
     float bx, by, bz;           // m_kAngleBase: the avatar's angle
+    readonly float sx, sy, sz;  // the angles the control started from
 
     /// <summary>The avatar's angles to start from (the facing the copy of the player is created with).</summary>
     public AvatarControl(AvatarRotateLimit limit, float x, float y, float z)
@@ -97,6 +98,23 @@ public sealed class AvatarControl
         this.limit = limit;
         bx = x; by = y; bz = z;
         ax = x; ay = y; az = z;
+        sx = x; sy = y; sz = z;
+    }
+
+    /// <summary>Raised by <see cref="ResetCamera"/>: the view puts its zoom back to the start.</summary>
+    public event Action CameraReset;
+
+    /// <summary>
+    /// ItemPreview::ResetCamera (@0x140d3e130): the avatar's angle set (vfunc_19(FUN_141b48480(1, 0))) and the camera back to its
+    /// start (ApplyCharCamera's distance, the range m_fMinDistance 1000 and m_nSteps 5 again). STILL-OPEN: FUN_141b48480's angle (a table with no
+    /// body in the decompiled source) is taken as the angle the control started from.
+    /// </summary>
+    public void ResetCamera()
+    {
+        bx = ax = sx; by = ay = sy; bz = az = sz;
+        Mode = 0;
+        Turned?.Invoke();
+        CameraReset?.Invoke();
     }
 
     /// <summary>m_nMode: 0 none, 1 turning (the right button), 2 the left button's (moving, locked views only).</summary>

@@ -41,10 +41,12 @@ public sealed partial class ShopController
     /// </summary>
     void OpenAvatar()
     {
-        if (info.ShopType != 4 || shop == null || !Model.HasLocalPlayer) return;
+        // the client makes the preview only while there is none (uishopdialog.cpp:888, m_spPreview == 0)
+        if (Preview != null || info.ShopType != 4 || shop == null || !Model.HasLocalPlayer) return;
         Preview = new ShopAvatarPreview(Model.Tables.ItemModels) { Gender = () => Pc.Gender, Now = ServerTime };
         Preview.Changed += OnPreviewChanged;
         Avatar = new AvatarControl(RotateLimit ?? new AvatarRotateLimit(0, 360), 0, 0, 90);
+        Preview.CameraReset += Avatar.ResetCamera;
         Host.Invoke(shop, "loadRenderTarget");
         InitAvatarData(null);
     }
@@ -53,10 +55,15 @@ public sealed partial class ShopController
     void InitAvatarData(ItemData shown) =>
         Host.Invoke(shop, "initAvatarData", Host.Obj(("showActionList", shown == null || ItemPreviewController.ShowsActionList(shown))));
 
-    /// <summary>vfunc_16 / vfunc_26 / vfunc_67: UnloadRenderTarget, the preview dropped.</summary>
-    void CloseAvatar()
+    /// <summary>vfunc_16 / vfunc_26 / vfunc_67: UnloadRenderTarget, the preview dropped. The host calls it too when it takes the shop's movie
+    /// away without a Close (a second shop open), after it has freed the avatar's view.</summary>
+    public void CloseAvatar()
     {
-        if (Preview != null) Preview.Changed -= OnPreviewChanged;
+        if (Preview != null)
+        {
+            Preview.Changed -= OnPreviewChanged;
+            if (Avatar != null) Preview.CameraReset -= Avatar.ResetCamera;
+        }
         Preview = null;
         Avatar = null;
         previewIcons.Clear();
@@ -109,7 +116,7 @@ public sealed partial class ShopController
         {
             // m_70 stays 0: EquipItem returns before setting it for a call with no outfit (:84)
             int hand = ShopAvatarPreview.HandSlot(item.Data, previewIcons.ContainsKey(4), previewIcons.ContainsKey(5), 0);
-            if (hand != 0) { slot = hand; item.Slot = hand; }
+            if (hand != 0) slot = hand;      // the icon's slot only: the item (m_items) keeps its own (PreviewGachaItem passes the product)
         }
         if (slot == 0) slot = IconClass(item.Data);
         var value = Host.Obj(slotData.ToArray());
@@ -151,6 +158,7 @@ public sealed partial class ShopController
         if (Preview == null) return;
         Preview.InitWithItems(main);
         RebuildPreviewIcons();
+        if (Preview.Items.Count == 0) Avatar?.ResetCamera();      // FUN_140d3d0d0: an empty list resets the camera (itempreview.cpp:310-352)
     }
 
     /// <summary>
@@ -160,17 +168,17 @@ public sealed partial class ShopController
     void PreviewGachaItemNow(Item item)
     {
         if (Preview == null) return;
-        bool shown;
+        bool on;
+        Item worn = null;
         if (!ItemPreviewController.ShowsActionList(item.Data))
         {
             UnEquipAllIcons();
-            shown = Preview.InitWithItem(item);
+            on = Preview.InitWithItem(item);
+            if (on && Preview.Items.Count > 0) worn = Preview.Items[^1];
         }
-        else shown = Preview.TryOnItem(item);
+        else on = Preview.TryOnItem(item, out worn);
         InitAvatarData(item.Data);
-        if (!shown) return;
-        var worn = Preview.Items.Count > 0 ? Preview.Items[^1] : null;
-        if (worn != null) AddPreviewIcon(worn);
+        if (on && worn != null) AddPreviewIcon(worn);
     }
 
     /// <summary>onClickShowMyEquip (@0x141b04410): FUN_140d3fa30, UnEquipAll.</summary>

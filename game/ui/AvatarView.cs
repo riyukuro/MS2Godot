@@ -33,6 +33,7 @@ public sealed partial class AvatarView : Node
     float pivot;
     AvatarControl control;
     AvatarZoom zoom;
+    float minDistance = MinDistance;
     Func<IReadOnlyList<Ms2.Net.Packets.EquipItem>, IReadOnlyList<Ms2.Net.Packets.EquipItem>> dress;
     bool redrawQueued;
     PackSet packs;
@@ -61,12 +62,13 @@ public sealed partial class AvatarView : Node
         float minDistance = MinDistance, Func<IReadOnlyList<Ms2.Net.Packets.EquipItem>, IReadOnlyList<Ms2.Net.Packets.EquipItem>> dress = null)
     {
         if (string.IsNullOrEmpty(nifXml) || control == null) return null;
-        var av = new AvatarView { Name = "AvatarView", control = control, packs = packs, nifXml = nifXml, dress = dress,
+        var av = new AvatarView { Name = "AvatarView", control = control, packs = packs, nifXml = nifXml, dress = dress, minDistance = minDistance,
             zoom = new AvatarZoom(EyeDistance, minDistance, MaxDistance, ZoomSpeed, ZoomSteps) };
         av.dressedWith = av.Worn();
         if (!av.BuildModel(packs, nifXml, size)) { av.QueueFree(); return null; }
         control.Turned += av.Turn;
-        control.Zoom += av.zoom.Start;
+        control.Zoom += av.StartZoom;
+        control.CameraReset += av.ResetZoom;
         if (Ms2Godot.Net.LiveSession.Active && Ms2Godot.Net.LiveSession.Instance.Me is { } me)
         {
             av.me = me;
@@ -115,7 +117,8 @@ public sealed partial class AvatarView : Node
     object Worn() => Ms2Godot.Net.LiveSession.Active && Ms2Godot.Net.LiveSession.Instance.Me is { } m ? (m.Equips, m.Outfit2) : null;
 
     /// <summary>The worn items changed (the shop preview's list): the model is built again once, on the main thread, keeping the turn and
-    /// the zoom. Nothing is polled; an idle view costs no allocation.</summary>
+    /// the zoom. Nothing is polled; an idle view costs no allocation. A burst of changes (a try-on and a MyCharacter change in one frame)
+    /// is one rebuild.</summary>
     public void Refresh()
     {
         if (redrawQueued || !IsInstanceValid(this) || view == null) return;
@@ -141,18 +144,17 @@ public sealed partial class AvatarView : Node
         var worn = Worn();
         if (Equals(worn, dressedWith)) return;
         dressedWith = worn;
-        Callable.From(() =>
-        {
-            if (!IsInstanceValid(this) || view == null) return;
-            try
-            {
-                var old = copy;
-                Dress(packs, nifXml);
-                old?.QueueFree();
-                Turn();
-            }
-            catch (Exception ex) { GD.PushWarning("avatar view: re-dress: " + ex.Message); }
-        }).CallDeferred();
+        Refresh();
+    }
+
+    /// <summary>A wheel turn: the zoom starts (the handler is a method so the view can take it off again).</summary>
+    void StartZoom(bool zoomIn) => zoom.Start(zoomIn);
+
+    /// <summary>ItemPreview::ResetCamera: the zoom again at the farthest step and the camera there.</summary>
+    void ResetZoom()
+    {
+        zoom = new AvatarZoom(EyeDistance, minDistance, MaxDistance, ZoomSpeed, ZoomSteps);
+        if (camera != null) Place();
     }
 
     /// <summary>The bound's centre height, at most <see cref="PivotRaise"/> above Eff_Body.</summary>
@@ -218,6 +220,7 @@ public sealed partial class AvatarView : Node
         if (me != null) { me.Changed -= Redress; me = null; }
         if (control == null) return;
         control.Turned -= Turn;
-        control.Zoom -= zoom.Start;
+        control.Zoom -= StartZoom;
+        control.CameraReset -= ResetZoom;
     }
 }
