@@ -116,6 +116,7 @@ public sealed class ItemLulluBoxDialogController : UiController
         base.OnLoadComplete();
         if (Data() is not { } data) { Close(); return; }
         multi = Sent = simple = false;
+        BindCloseButton("m_closeButton");   // UIDialog::BindCloseButton (@0x141925ec0): the X closes the dialog (vfunc_67); the web guide button (FUN_1419260d0) is STILL-OPEN (WebGuideTable)
         string theme = data.HasFunctionXmlKey("boxTheme") ? data.FunctionXmlString("boxTheme") : "default";
         title = Host.Child("m_title");
         if ((singleOpen = Host.Child("m_singleOpenButton")) != null) Click(singleOpen, () => OnSelectMode(0));
@@ -139,6 +140,13 @@ public sealed class ItemLulluBoxDialogController : UiController
         UpdateTitle();
         if (simple) InitSimpleBox();
         else UpdateAutoPay();
+    }
+
+    /// <summary>BindCloseButton (uidialog.cpp:977): the button's click handler is the close.</summary>
+    void BindCloseButton(string name)
+    {
+        if (Host.Child(name) is not { } b) { Host.RT.NoteMissing("lullu box dialog: " + name); return; }
+        Click(b, Close);
     }
 
     void Click(object button, Action a)

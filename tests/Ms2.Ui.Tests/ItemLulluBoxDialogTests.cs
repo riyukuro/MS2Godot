@@ -110,13 +110,19 @@ public class ItemLulluBoxDialogTests
 
     static int FirstLullu(string function, bool needPrice = false)
     {
+        int id = FindLullu(function, needPrice);
+        if (id == 0) Assert.Ignore($"no {function} item{(needPrice ? " with a box price" : "")} in this data");
+        return id;
+    }
+
+    static int FindLullu(string function, bool needPrice = false)
+    {
         Packs();
         var t = new GameTables(packs, "en");
         foreach (int id in ItemFunctionSweepTests.ItemIds(packs))
             if (t.Items.Get(id) is { } d && d.FunctionName == function && ItemTags.ByName(d.FunctionXmlString("keyItemTag")) != 0
                 && (!needPrice || d.HasFunctionXmlKey("boxPrice") && d.FunctionXmlInt("boxPrice") >= 0))
                 return id;
-        Assert.Ignore($"no {function} item{(needPrice ? " with a box price" : "")} in this data");
         return 0;
     }
 
@@ -202,6 +208,27 @@ public class ItemLulluBoxDialogTests
         Assert.That(r.Uses, Is.EqualTo(new[] { "single", "multi", "single" }));
         Assert.That(r.C.Sent, Is.False, "a use not sent is not waited for");
         Assert.That(r.C.SlotBinds, Is.Empty, "and the dialog closed (vfunc_67 releases the slots)");
+    }
+
+    [Test]
+    public void TheCloseButtonClosesTheDialog()
+    {
+        int checkedFunctions = 0;
+        foreach (var function in new[] { ItemLulluBoxDialogController.BoxFunction, ItemLulluBoxDialogController.SimpleFunction })
+        {
+            int id = FindLullu(function);
+            if (id == 0) continue;   // the data has no item of this function
+            checkedFunctions++;
+            var r = new Rig(id);
+            r.Keys = 1;
+            var close = r.Host.Child("m_closeButton");
+            Assert.That(close, Is.Not.Null, "the movie has the X");
+            Assert.That(r.C.IsClosed, Is.False);
+            r.Host.Player.Call(close, "dispatchEvent", new object[] { r.Host.RT.GetClass("flash.events.Event").Construct("buttonClick", false, false) });
+            for (int i = 0; i < 120 && !r.C.IsClosed; i++) r.Host.Player.Tick();   // the close tween (startClose) ends in onEndClose
+            Assert.That(r.C.IsClosed, Is.True, function + ": the X's click closes it (BindCloseButton)");
+        }
+        Assert.That(checkedFunctions, Is.GreaterThan(0));
     }
 
     [Test]
