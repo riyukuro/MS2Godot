@@ -33,7 +33,8 @@ public sealed class GameStrings
     }
 
     /// <summary>
-    /// One table as id -> attribute (first language that has the id wins). In each language the table is
+    /// One table as id -> attribute (the first language's text wins, but a localisation marker left where a language has
+    /// no translation is filled in from the next language that has a real text). In each language the table is
     /// string/&lt;lang&gt;/&lt;name&gt;.xml and then its parts &lt;name&gt;_&lt;n&gt;.xml in number order: the GMS2 data
     /// keeps most skill names in skillname_&lt;job&gt;.xml next to a skillname.xml without them (no id in both). In the
     /// KMS data no table read here has such parts (only the kor*description tables, which are not), so its tables read
@@ -57,7 +58,9 @@ public sealed class GameStrings
         foreach (var r in Text.XmlRows.Elements(packs.Read("Xml", entry), "key"))    // Descendants("key"), streamed
         {
             var id = r.GetAttribute(idAttr);
-            if (id != null && !d.ContainsKey(id)) d[id] = r.GetAttribute(valueAttr);
+            if (id == null) continue;
+            string value = r.GetAttribute(valueAttr);
+            if (!d.TryGetValue(id, out string had) || (IsUntranslated(had) && !IsUntranslated(value))) d[id] = value;
         }
     }
 
@@ -141,12 +144,16 @@ public sealed class GameStrings
     }
 
     /// <summary>
-    /// A text the data's own localisation step left as its marker, "KORFLASH_&lt;KEY&gt;_VALUE" (the other languages' korFlash.xml of the
-    /// KMS2 data hold 122 of them, e.g. the limit break button, with the feature name after a ":[F]"). The client never reads
-    /// these as text: the game runs in the kr folder, where every row is real. STILL-OPEN: what the retail client shows for
-    /// them when its language is not KR is not in the decompile.
+    /// A text the data's own localisation step left as its marker: "KORFLASH_&lt;KEY&gt;_VALUE" in the Flash tables (the other
+    /// languages' korFlash.xml of the KMS2 data hold 122 of them, e.g. the limit break button, with the feature name after
+    /// a ":[F]"), and "STRINGCOMMON_&lt;KEY&gt;_VALUE:[F]&lt;Feature&gt;" in stringcommon.xml (the en table's limit break label is
+    /// one; the kr table's is real). The client never reads these as text: the game runs in the kr folder, where every row
+    /// is real. <see cref="Table"/> takes the next language's text for a marker, as <see cref="FillUntranslated"/> does for
+    /// the Flash tables. STILL-OPEN: what the retail client shows for them when its language is not KR is not in the decompile.
     /// </summary>
-    public static bool IsUntranslated(string text) => text != null && text.StartsWith("KORFLASH_", StringComparison.Ordinal);
+    public static bool IsUntranslated(string text) =>
+        text != null && (text.StartsWith("KORFLASH_", StringComparison.Ordinal)
+                         || (text.StartsWith("STRING", StringComparison.Ordinal) && text.Contains("_VALUE:[F]", StringComparison.Ordinal)));
 
     /// <summary>A row that is only the localisation marker takes the same key's text from <paramref name="fallback"/> (the kr folder's
     /// table: the data's own text, or the patch package's English), so a language without a translation shows words instead of the
