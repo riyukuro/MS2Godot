@@ -63,6 +63,7 @@ public partial class HudScene
             // PlotIndoorSize stays null: the plot's indoor size (FUN_1408a0d30) is not ported
             c.UgcHome = () => new ShopController.UgcHomeState(live.Home.HasInfo, live.Home.PlotId, null, live.Home.HasNoHome);
             c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));
+            c.PlayerTalking = () => live.IsTalking();     // MyPC::FUN_141527e60 (UIShopDialog::vfunc_72 closes the shop once it is false)
             BindMeratQueue(live, c);
         }
         else

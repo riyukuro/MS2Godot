@@ -820,6 +820,37 @@ public class ShopTests
         Assert.That(sysClose, Is.EqualTo((8, 0)));
     }
 
+    /// <summary>UIShopDialog::vfunc_72 (@0x141af3460, uishopdialog.cpp:733): a shop with SortKind 0 closes itself (CloseShop, which sends
+    /// the talk end) on the first frame the player is no longer talking (MyPC::FUN_141527e60); a system shop (SortKind above 0) stays,
+    /// and so does a shop that is not tied to a talk.</summary>
+    [Test]
+    public void TheShopClosesOnceThePlayerStopsTalking()
+    {
+        Packs();
+        var (_, c) = Load(NewModel());
+        int talkEnds = 0;
+        bool talking = true;
+        c.SendNpcTalkEnd = () => talkEnds++;
+        Assert.That(c.ShopView, Is.Not.Null);
+
+        c.Process();                                    // not tied to a talk: stays open
+        Assert.That(c.IsClosed, Is.False);
+
+        c.PlayerTalking = () => talking;
+        c.Process();                                    // talking: stays open
+        Assert.That(c.IsClosed, Is.False);
+
+        talking = false;
+        c.SortKind = 8;                                 // a system shop is not closed by the talk
+        c.Process();
+        Assert.That(c.IsClosed, Is.False);
+        c.SortKind = 0;
+
+        c.Process();                                    // the talk is over: closes, the talk end is sent
+        Assert.That(c.ShopView, Is.Null, "the shop's movie is released by the close");
+        Assert.That(talkEnds, Is.EqualTo(1));
+    }
+
     [Test]
     public void BuybackTabReceivesAddsRepurchasesAndRemovesProducts()
     {

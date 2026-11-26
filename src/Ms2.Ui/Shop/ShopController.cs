@@ -761,14 +761,21 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         else PlaceSideBySide(this, place, inventory);
     }
 
+    /// <summary>MyPC::FUN_141527e60 (@0x141527e60, mypc.cpp:2086): the player is talking to an npc (UITalkManager::GetTalking), or the
+    /// cube-home mark FUN_141527f60 is set (housing only, not ported). Null for a shop that is not tied to a live talk (the offline
+    /// fixtures), which then never closes by walking away.</summary>
+    public Func<bool> PlayerTalking;
+
     /// <summary>
-    /// vfunc_72 (@0x141af3460, uishopdialog.cpp:726), per frame: once the reset time has passed, invokes endTime, clears
-    /// group 0 products and sends Shop mode 10; on a limited-reset shop when the local day rolls over (IsEarlierDay),
-    /// clears group 0 and sends Shop mode 10. Zero heap allocations per frame.
+    /// vfunc_72 (@0x141af3460, uishopdialog.cpp:726), per frame: a shop that is not a system shop (m_nSortKind 0) closes (CloseShop)
+    /// once the player is no longer talking (the npc walked out of range, was removed, or the talk ended); otherwise, once the
+    /// reset time has passed, invokes endTime, clears group 0 products and sends Shop mode 10; on a limited-reset shop when the
+    /// local day rolls over (IsEarlierDay), clears group 0 and sends Shop mode 10. Zero heap allocations per frame.
     /// </summary>
     public void Process()
     {
         if (shop == null || !Model.HasLocalPlayer) return;
+        if (sortKind == 0 && PlayerTalking != null && !PlayerTalking()) { CloseShop(); return; }
         if (!resetPending) return;
         long now = ServerTime();
         if (now == 0 || info.ResetType == 99) return;
