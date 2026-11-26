@@ -1207,8 +1207,9 @@ public sealed class GameTables
             if (!d.TryGetValue(key, out n)) return "";
         }
         if (n == null) return "";
-        // CStringTable::Load @0x141810f70 runs the object words over every table at load (stringtable.cpp:640)
-        if (attr != "name" && n.Contains('$')) d[key] = n = ReservedWords.ReplaceObjectWords(n);
+        // CStringTable::Load @0x141810f70 runs the object words over every table at load (stringtable.cpp:640), the name
+        // tables too (achievename's "$map:61000001$ Participant")
+        if (n.Contains('$')) d[key] = n = ReservedWords.ReplaceObjectWords(n);
         return n;
     }
     readonly Dictionary<string, Dictionary<string, string>> numberedTables = new();

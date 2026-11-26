@@ -38,6 +38,13 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     public override void Layout(double stageW, double stageH)
         => Host.Align(Host.Entity, 2, 0, -(BottomBarHeight - 2 + (Model.IsFeatureEnabled(AdventureLevelFeature) ? AdventureBarHeight - 2 : 0)));
 
+    /// <summary>AppendMessage (@0x1419f0ef0): the movie's appendMessage(message, type) once it is loaded (m_30), the
+    /// trophy progress lines' type "achieve" (FUN_1419f0bb0).</summary>
+    public void AppendMessage(string message, string type)
+    {
+        if (Host?.Entity != null) Host.Invoke(Host.Entity, "appendMessage", new object[] { message, type });
+    }
+
     object PlayerInfo => Host.Child("m_playerInfo");
     object Slot => Host.Child("m_slot");
 

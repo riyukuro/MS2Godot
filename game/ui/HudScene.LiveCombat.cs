@@ -116,8 +116,52 @@ public partial class HudScene
             case "inventory": return OpenInventoryScripted();
             case "quest": ToggleQuestLog(); return questLogSide is { IsClosed: false };
             case "sysmenu": OpenSystemMenu(); return systemMenu is { IsClosed: false };
+            case "achieve": OpenAchieve(); return AchieveOpen;
         }
         return false;
+    }
+
+    /// <summary>The open trophy window switched to the category row <paramref name="categoryId"/> as its tree's click does
+    /// (onTabChange of the row's index and id); what the page then shows, for the log. Null when the window is shut or has no
+    /// such row.</summary>
+    public string AchieveTabScripted(int categoryId)
+    {
+        if (!AchieveOpen || achieve.Host?.Entity == null) return null;
+        var rows = achieveCategories.GetRows();
+        int index = rows.FindIndex(r => r.Id == categoryId);
+        if (index < 0) return null;
+        achieve.OnCallback("onTabChange", new object[] { (double)index, (double)categoryId });
+        var h = achieve.Host;
+        string name = achieveTexts.TableString(0x4a, categoryId);
+        if (rows[index].Tab == 1)
+            return $"{name}: the summary, score {achieve.Book.Sum} ({string.Join("/", achieve.Book.Tally)})";
+        if (h.Child("m_heroTrophy") is not { } hero || h.Child("m_list", hero) is not { } list) return $"{name}: no list";
+        var dp = h.Get(list, "dataProvider");
+        int n = Ms2.Avm2.Rt.ToInt32(h.Get(dp, "length"));
+        var opts = new Ms2.Ui.Hud.AchieveController.FilterOptions
+        {
+            Survival = rows[index].Tab == 2, CategoryTag = rows[index].CategoryTag, ContentsTag = rows[index].ContentsTag, Filter = 4,
+        };
+        var shown = achieve.Book.GetListFromTable(0, 0, false, false).Where(a => achieve.RowFilter(a, "", opts)).ToList();
+        var started = shown.FirstOrDefault(a => a.State == 2 && a.IsStarted) ?? shown.FirstOrDefault();
+        string first = started != null && achieve.Row(started) is { } row
+            ? $", first {row["name"]} {(row.TryGetValue("cur", out var cur) ? cur : "-")}/{(row.TryGetValue("max", out var max) ? max : "-")}"
+            : "";
+        return $"{name}: {n} rows, {shown.Count} by the filter{first}";
+    }
+
+    /// <summary>The player's trophy <paramref name="id"/> as the book has it, for the log.</summary>
+    public string AchieveStateScripted(int id) =>
+        Ms2Godot.Net.LiveSession.Instance?.Achieves.Find(id) is { } a
+            ? $"state {a.State} grade {a.CurGrade} start {a.StartGrade} count {a.Count} rewards waiting {a.RewardCount}"
+            : "none";
+
+    /// <summary>The trophy window's reward button of trophy <paramref name="id"/> (onReward); the window opened when it is shut.
+    /// Whether the request went out.</summary>
+    public bool AchieveRewardScripted(int id)
+    {
+        if (!AchieveOpen) OpenAchieve();
+        return AchieveOpen && achieve.OnCallback("onReward", new object[] { (double)id });
     }
 
     /// <summary>The open inventory switched to a tab (<see cref="Ms2.Ui.Hud.InventoryController.ShowTab"/>); whether it shows it.</summary>

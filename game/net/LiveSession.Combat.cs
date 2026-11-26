@@ -396,6 +396,26 @@ public partial class LiveSession
                 await frames(90);
                 continue;
             }
+            if (step.StartsWith("achievetab:"))      // achievetab:<category id>: the open trophy window's category row clicked; what its page shows
+            {
+                GD.Print($"live: combat achieve tab {step[11..]}: {hud.AchieveTabScripted(int.Parse(step[11..])) ?? "no window or row"}");
+                await frames(30);
+                continue;
+            }
+            if (step.StartsWith("achievestate:"))      // achievestate:<trophy id>: the player's trophy as the book has it
+            {
+                GD.Print($"live: combat achieve {step[13..]}: {hud.AchieveStateScripted(int.Parse(step[13..]))}");
+                continue;
+            }
+            if (step.StartsWith("achievereward:"))      // achievereward:<trophy id>: the trophy window's reward button; waits for the start grade to move
+            {
+                int id = int.Parse(step[14..]);
+                int before = live.Achieves.Find(id)?.StartGrade ?? -1;
+                Check($"trophy {id}'s reward is asked ({hud.AchieveStateScripted(id)})", hud.AchieveRewardScripted(id));
+                await until(() => (live.Achieves.Find(id)?.StartGrade ?? -1) != before, 60 * 10); await frames(60);
+                Check($"trophy {id}'s reward is taken ({hud.AchieveStateScripted(id)})", (live.Achieves.Find(id)?.StartGrade ?? -1) != before);
+                continue;
+            }
             if (step.StartsWith("keys:"))      // keys:N: the action key pressed N times, a second apart (a talk's Next pages)
             {
                 for (int i = int.Parse(step[5..]); i > 0; i--) { await PressActionKey(frames); await frames(60); }

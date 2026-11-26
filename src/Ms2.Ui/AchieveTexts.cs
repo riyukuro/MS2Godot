@@ -109,6 +109,8 @@ public sealed class AchieveTexts
     {
         [0x76d] = "s_achieve_adventure", [0x76e] = "s_achieve_combat", [0x76f] = "s_achieve_life",
         [0x770] = "s_achieve_reward_item", [0x774] = "s_achieve_reward_title",
+        [0x77c] = "s_achieve_get_achieve_hero_progress", [0x77d] = "s_achieve_get_achieve_hero_complete",
+        [0x77f] = "s_achieve_state_progress", [0x780] = "s_achieve_state_complete",
         [0x778] = "s_achieve_meter", [0x779] = "s_achieve_killometer", [0x77a] = "s_achieve_killometer_f",
         [0x781] = "s_achieve_tooltip_comment", [0x784] = "s_achieve_category_reward_count",
         [0x7ff] = "s_achieve_renderer_count", [0x800] = "s_achieve_renderer_count_time",
@@ -276,7 +278,7 @@ public sealed class AchieveTexts
     }
 
     /// <summary>ParseUInt: strtoul base 10 of the leading digits (0 without).</summary>
-    static uint ParseUInt(string s)
+    internal static uint ParseUInt(string s)
     {
         s = s.TrimStart();
         ulong n = 0;

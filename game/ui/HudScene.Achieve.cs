@@ -66,10 +66,60 @@ public partial class HudScene
         void Collection() { if (AchieveOpen) achieve.Refresh(); }
         live.AchievesChanged += Changed;
         live.CollectionChanged += Collection;
-        unwatchAchieves = () => { live.AchievesChanged -= Changed; live.CollectionChanged -= Collection; achievesWatched = false; };
+        var notices = AchieveNoticesFor(live.Achieves);
+        live.Achieves.Notices = notices;
+        unwatchAchieves = () =>
+        {
+            live.AchievesChanged -= Changed; live.CollectionChanged -= Collection; achievesWatched = false;
+            if (live.Achieves.Notices == notices) live.Achieves.Notices = null;
+        };
+    }
+
+    /// <summary>
+    /// The mode 2 notices of <paramref name="book"/> on this HUD: the reward notify's toasts, the chat log's system lines, the
+    /// guide's triggers and limit, the local player (the chat link's name, the beauty reward's gender), the skill icons, the
+    /// main player info's progress lines and the dynamic action window's refresh on a clear.
+    /// </summary>
+    AchieveNotices AchieveNoticesFor(AchieveBook book)
+    {
+        var n = new AchieveNotices(AchieveTextsFor(book))
+        {
+            Toasts = () => Ms2Godot.Net.LiveSession.LiveCheck ? new LoggedToasts(EnsureRewardNotify()) : EnsureRewardNotify(),
+            Line = (text, kind) =>
+            {
+                ChatLog.AddSystemLine(text, kind);
+                if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: achieve line {kind:x} {text}");
+            },
+            Trigger = (type, value) => Ms2.Ui.Guide.GuideManager.Current?.AddTrigger((Ms2.Ui.Guide.GuideTrigger)type, value),
+            ProgressRestricted = () => Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ProgressAchieve) == true,
+            PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null,
+            SkillIcon = code => hudModel.Tables.Skills.GetSkillData(code)?.Icon,
+            AppendMessage = (msg, type) =>
+            {
+                playerInfo?.AppendMessage(msg, type);
+                if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: achieve progress {type} {msg}");
+            },
+            HasPlayerInfo = () => playerInfo != null,
+        };
+        n.Cleared += id =>
+        {
+            dynamicAction?.Refresh();
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: achieve clear notice {id}");
+        };
+        return n;
     }
 
     Action unwatchAchieves;
+
+    /// <summary>The reward notify's trophy toasts, each also printed for the scripted run's log.</summary>
+    sealed class LoggedToasts(IAchieveToasts inner) : IAchieveToasts
+    {
+        public void ShowAchieve(string name, string icon, int achieveType) { GD.Print($"live: achieve toast {name} {icon} {achieveType}"); inner.ShowAchieve(name, icon, achieveType); }
+        public void ShowItemReward(int itemId, int grade) { GD.Print($"live: achieve toast item {itemId} {grade}"); inner.ShowItemReward(itemId, grade); }
+        public void ShowStatPoint(int points) { GD.Print($"live: achieve toast stat points {points}"); inner.ShowStatPoint(points); }
+        public void ShowSkillPoint(int points, int kind) { GD.Print($"live: achieve toast skill points {points} {kind}"); inner.ShowSkillPoint(points, kind); }
+        public void ShowIconNotice(string icon, string msg, int effect) { GD.Print($"live: achieve toast icon {icon} {msg}"); inner.ShowIconNotice(icon, msg, effect); }
+    }
 
     /// <summary>UIAchieveDialog::vfunc_13 (:425) while it is shown: Escape (closePopup, else close) and Enter (the search).</summary>
     bool AchieveKeys(InputEventKey k)

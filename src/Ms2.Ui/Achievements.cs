@@ -44,6 +44,9 @@ public sealed record AchieveData(int Id, int Type, int Category, int FirstGrade,
     public bool Survival { get; init; }
     /// <summary>m_strIcon ("icon").</summary>
     public string Icon { get; init; } = "";
+    /// <summary>m_nNoticePercent ("noticePercent", ctor 1, achievedata.cpp:729/899): the step of the progress lines
+    /// (UIMainPlayerInfo::FUN_1419f0bb0).</summary>
+    public int NoticePercent { get; init; } = 1;
     /// <summary>m_mapGrade's full rows (conditions and rewards); empty for a record built from the condition types only.</summary>
     public IReadOnlyDictionary<int, AchieveGrade> Grades { get; init; } = new Dictionary<int, AchieveGrade>();
 
@@ -158,6 +161,7 @@ public sealed record AchieveData(int Id, int Type, int Category, int FirstGrade,
                 ContentsTag = contents,
                 Survival = contents.Contains("Survival", StringComparison.Ordinal),
                 Icon = (string)e.Attribute("icon") ?? "",
+                NoticePercent = e.Attribute("noticePercent") != null ? (int)Atoi(e, "noticePercent") : 1,
                 Grades = grades,
             };
         }
@@ -195,6 +199,9 @@ public sealed class Achieve
     public int StartGrade { get; internal set; }
     /// <summary>m_d8 (GetBookmark / SetBookmark).</summary>
     public bool Bookmark { get; set; }
+    /// <summary>m_18 (ctor 0, achievecondition.cpp:55): the percentage of the last progress line
+    /// (UIMainPlayerInfo::FUN_1419f0bb0 sets it).</summary>
+    public float LastNotifiedPercent { get; set; }
     /// <summary>m_cond.m_nCount: the condition's count (IsStarted when not 0; the dialog's progress).</summary>
     public long Count { get; internal set; }
     /// <summary>m_cond's data: the condition of the grade Init set the trophy up on.</summary>
@@ -358,9 +365,18 @@ public sealed class AchieveBook
         Find(id) is { } a && (a.State == 3 ? a.CurGrade >= grade : a.CurGrade > grade);
 
     /// <summary>
-    /// OnPacket (@0x140936a50). True when the client refreshes the character window (mode 2 on a trophy the player has
-    /// whose type is not 8: UIMyInfoDialog::FUN_141a5a560). Mode 2 marks the id in <see cref="Pending"/>. STILL-OPEN:
-    /// mode 2's NotifyClear (the clear toast and system line), NotifyReward and the main player info refresh are not ported.
+    /// The notices of a mode 2 update (achievemanager.cpp:525-556), in the client's order: <see cref="AchieveNotices.NotifyClear"/>
+    /// on a new grade or the last one completed (before RebuildTally), then for a trophy not of type 8
+    /// <see cref="AchieveNotices.NotifyReward"/> of the old start grade when the start grade moved (the reward taken) and
+    /// <see cref="AchieveNotices.Progress"/> (UIMainPlayerInfo::FUN_1419f0bb0). Null sends none.
+    /// </summary>
+    public AchieveNotices Notices;
+
+    /// <summary>
+    /// OnPacket (@0x140936a50). True when the client refreshes the character window and the game menu's count (mode 2 on a
+    /// trophy the player has whose type is not 8: UIMyInfoDialog::FUN_141a5a560, UIGameMenuDialog::FUN_141937ea0). Mode 2
+    /// marks the id in <see cref="Pending"/> and sends its <see cref="Notices"/>. STILL-OPEN: NotifyClear's
+    /// CMeratMarketMan::PushAdProducts (the merat market's ad products) is not ported.
     /// </summary>
     public bool Apply(AchieveMessage m)
     {
@@ -382,11 +398,17 @@ public sealed class AchieveBook
             {
                 Pending.Add(u.Id);                                              // DAT_143af0f30.SetAt(nId, 1)
                 if (!map.TryGetValue(u.Id, out var a)) return false;
-                int oldGrade = a.CurGrade, oldState = a.State;
+                int oldStart = a.StartGrade, oldGrade = a.CurGrade, oldState = a.State;
                 a.Decode(u.Progress);
                 if (oldGrade != a.CurGrade || (oldState != 3 && a.State == 3))
-                    RebuildTally();                                             // after NotifyClear
-                return a.Data.Type != 8;
+                {
+                    Notices?.NotifyClear(a);
+                    RebuildTally();
+                }
+                if (a.Data.Type == 8) return false;
+                if (oldStart != a.StartGrade) Notices?.NotifyReward(u.Id, oldStart);
+                Notices?.Progress(a);                                           // UIMainPlayerInfo::FUN_1419f0bb0
+                return true;
             }
         }
         return false;

@@ -10,7 +10,7 @@ namespace Ms2.Ui.Hud;
 /// merat notices (ShowMeratNotice @0x141ac0860, ShowMeratRedNotice @0x141ac0990) and the movie's two callbacks
 /// (vfunc_28 @0x141abe8b0).
 /// </summary>
-public sealed class RewardNotifyController : UiController
+public sealed class RewardNotifyController : UiController, IAchieveToasts
 {
     public const int UiId = 0x4e5d;
     /// <summary>The sub scene id AppendReward and vfunc_15 hold the toasts back in.</summary>

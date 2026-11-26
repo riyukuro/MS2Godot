@@ -12,7 +12,8 @@ namespace Ms2.Ui.Hud;
 /// STILL-OPEN: onFocusIn /
 /// onFocusOut and vfunc_13's key bind flow (the 0x84f confirm box, the 0x84c notice, FUN_14192df00
 /// SetKeyBindingAndSync), onShiftRClick (PreviewAction @0x14192ca10, the skill preview dialog 0x4ec3), the tooltip
-/// (vfunc_49 @0x14192bb30) and NotifyClearAchieve (FUN_14192c660 refreshes; its sender is not ported) do nothing here.
+/// (vfunc_49 @0x14192bb30) do nothing here. NotifyClearAchieve (FUN_14192c660) is <see cref="Refresh"/>, which the HUD
+/// calls on a trophy clear.
 /// </summary>
 public sealed class DynamicActionDialogController : UiController
 {

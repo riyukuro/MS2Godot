@@ -19,6 +19,8 @@ public static class TalkKind
     public const int Item = 9;
     /// <summary>RequireSetting "merat" and "token" (FUN_1414818b0): the merat lines (OnMeret, OnMeretUse) and the token gain lines (FUN_141361460).</summary>
     public const int Merat = 6, Token = 7;
+    /// <summary>RequireSetting "auth" (FUN_1414818b0): the trophy reward lines of a buy or use authority (CAchieveManager::NotifyReward).</summary>
+    public const int Auth = 0x1c;
     /// <summary>NoticeSetting "friend" (FUN_141481040, messengerdata.cpp:299): the buddy lines (CBuddyManager::OnBuddy's
     /// FUN_1412751b0(.., 12)).</summary>
     public const int Friend = 0xc;
