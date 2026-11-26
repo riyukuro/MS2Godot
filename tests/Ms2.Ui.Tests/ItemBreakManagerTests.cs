@@ -347,13 +347,13 @@ public class ItemBreakManagerTests
     {
         Make(1);
         m.OnPacket(new ItemDismantlePacket(1) { Slots = new[] { new DismantleSlot(2, 1, 1) } });
-        ItemDismantlePacket got = null; int refreshed = 0;
-        m.ResultForwarded += p => got = p; m.RefreshDialog += () => refreshed++;
+        ItemDismantlePacket got = null; int refreshed = 0, active = 0;
+        m.ResultForwarded += p => got = p; m.RefreshDialog += () => refreshed++; m.RefreshActive += () => active++;
         m.OnPacket(new ItemDismantlePacket(3) { Type = 2 });
         Assert.That((m.Contains(1), got), Is.EqualTo((true, (ItemDismantlePacket)null)), "another type");
         var rewards = new[] { new DismantleReward(5, 2) };
         m.OnPacket(new ItemDismantlePacket(3) { Type = 1, Rewards = rewards });
-        Assert.That((m.Contains(1), got.Rewards, refreshed), Is.EqualTo((false, rewards, 1)));
+        Assert.That((m.Contains(1), got.Rewards, refreshed, active), Is.EqualTo((false, rewards, 1, 0)), "RefreshActiveDialog only, not FUN_140532220");
     }
 
     [TestCase(1, 0x8f6, int.MinValue)]
@@ -369,15 +369,15 @@ public class ItemBreakManagerTests
     [Test]
     public void ModeFourOtherAnswers()
     {
-        int reset = 0, refresh = 0;
-        m.ResetBreak += () => reset++; m.RefreshActive += () => refresh++;
+        int reset = 0, refresh = 0, dialog = 0;
+        m.ResetBreak += () => reset++; m.RefreshActive += () => refresh++; m.RefreshDialog += () => dialog++;
         m.OnPacket(new ItemDismantlePacket(4) { Result = 4 });
         Assert.That((noticeIds.Count, noticeKeys.Count, reset, refresh), Is.EqualTo((0, 0, 0, 1)));
         m.OnPacket(new ItemDismantlePacket(4) { Result = 5 });
         Assert.That(noticeKeys, Is.EqualTo(new[] { "s_itembreak_empty" }));
         m.BreakInProgress = true;
         m.OnPacket(new ItemDismantlePacket(4) { Result = 4 });
-        Assert.That((reset, refresh), Is.EqualTo((1, 3)));
+        Assert.That((reset, refresh, dialog), Is.EqualTo((1, 3, 0)), "FUN_140532220 only, not RefreshActiveDialog");
     }
 
     [Test]

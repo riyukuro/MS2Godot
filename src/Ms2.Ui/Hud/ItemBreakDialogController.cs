@@ -215,7 +215,8 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     /// max(last row - 2, 0), else to the row of <paramref name="index"/> when it is not among the 3 rows shown.</summary>
     void ScrollBag(bool reset, int index)
     {
-        if (Host?.Entity == null || closing || Mgr == null) return;
+        // UIItemBreakDonationDialog::vfunc_85 (@0x1419a5030) is empty: the donation dialog neither scrolls its bag nor sets m_break
+        if (Host?.Entity == null || closing || Mgr == null || donation) return;
         if (Host.Child("m_break") is { } b) Host.Set(b, "enabled", Mgr.HasBreakItems);
         if (Host.Child("m_itemBag") is not { } bag || Host.Get(bag, "instance") is not { } list || Rt.IsNullish(list)) return;
         int top = Rt.ToInt32(Host.Get(list, "scrollPosition"));      // ASTileList::GetScrollPosition (astilelist.cpp:100)

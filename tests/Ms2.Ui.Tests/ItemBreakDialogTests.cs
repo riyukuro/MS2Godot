@@ -340,8 +340,6 @@ public class ItemBreakDialogTests
 
     int Scroll(Rig r) => Rt.ToInt32(r.Host.Get(r.Host.Get(r.Host.Child("m_itemBag"), "instance"), "scrollPosition"));
 
-    /// <summary>A staged item below the 3 rows the bag shows scrolls the bag to its row (vfunc_85(false, index) from OnBagSlotChanged);
-    /// one in the shown rows leaves it; one above scrolls back; the bag shows the top rows again after a break (RefreshActiveDialog).</summary>
     static (double X, double Y) At(Rig r) =>
         (Rt.ToNumber(r.Host.Get(r.Host.Entity, "x")), Rt.ToNumber(r.Host.Get(r.Host.Entity, "y")));
 
@@ -377,6 +375,8 @@ public class ItemBreakDialogTests
         Assert.That(y, Is.EqualTo(90).Within(0.01));
     }
 
+    /// <summary>A staged item below the 3 rows the bag shows scrolls the bag to its row (vfunc_85(false, index) from OnBagSlotChanged);
+    /// one in the shown rows leaves it; one above scrolls back; the bag shows the top rows again after a break (RefreshActiveDialog).</summary>
     [Test]
     public void TheBagScrollsToAStagedItemOutsideItsRowsAndBackAfterABreak()
     {
@@ -392,10 +392,24 @@ public class ItemBreakDialogTests
         for (int i = 0; i < 5; i++) r.Host.Player.Tick();
         Assert.That(Scroll(r), Is.EqualTo(0), "above the top row");
         r.Put(500, 52);     // row 10
+        Assert.That(Scroll(r), Is.EqualTo(10), "row 10, below the shown rows");
         r.M.OnPacket(new ItemDismantlePacket(3) { Type = 1 });
         for (int i = 0; i < 5; i++) r.Host.Player.Tick();
         Assert.That(Scroll(r), Is.EqualTo(0), "after the break nothing is staged: the top rows");
         Assert.That(r.M.HasBreakItems, Is.False);
+    }
+
+    /// <summary>UIItemBreakDonationDialog::vfunc_85 (@0x1419a5030) is empty: a staged item below the shown rows leaves the donation
+    /// bag where it is, and m_break is not touched.</summary>
+    [Test]
+    public void TheDonationBagDoesNotScroll()
+    {
+        var r = new Rig(true);
+        r.Add(500);
+        r.Put(500, 27);     // row 5
+        for (int i = 0; i < 5; i++) r.Host.Player.Tick();
+        Assert.That(r.M.HasBreakItems, Is.True);
+        Assert.That(Scroll(r), Is.EqualTo(0));
     }
 
     [Test]
