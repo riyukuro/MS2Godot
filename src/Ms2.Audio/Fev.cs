@@ -132,7 +132,12 @@ public sealed class FevEvent
     public string Category;   // the event's own category: "effect", "environment", "UISound", "npcVoice/..."
     public bool IsSimple;     // true for simple events (type 0x10), false for complex events (type 0x08)
     public float Volume = 1f;
-    public float MinDistance, MaxDistance;   // 3D attenuation (0 when the record has none)
+    /// <summary>The record's mode at +0x34 has FMOD_3D (0x10; a 2D event has FMOD_2D, 0x08).</summary>
+    public bool Is3D;
+    /// <summary>3D min and max distance of a complex 3D event, from its record's +0x38 and +0x3c (FMOD_EVENTPROPERTY_3D_MINDISTANCE,
+    /// _3D_MAXDISTANCE; a 2D event holds FMOD's 1 / 10000 there). The min is 0 in every MS2Sound.fev 3D event. 0 / 0 when
+    /// the event has no range (2D, simple, or a record holding 1 / 1).</summary>
+    public float MinDistance, MaxDistance;
     public List<int> Defs = new();
     public List<float> DefVolumes = new();   // the sound's own volume (parallel to Defs)
     /// <summary>Whether the sound loops until the event is stopped (parallel to <see cref="Defs"/>): a sound instance's loop
@@ -476,10 +481,11 @@ public sealed class FevProject
             MaxPlaybacks = U32(p + 0x2c),
             MaxPlaybacksBehavior = U32(p + 0x78),
         };
-        if (etype == 8)
+        ev.Is3D = (U32(p + 0x34) & 0x10) != 0;
+        if (etype == 8 && ev.Is3D)
         {
-            float a = F32(p + 24 + 36), b = F32(p + 24 + 44);
-            if (a > 0 && b > 0 && a < 1e6f && b < 1e6f) { ev.MinDistance = Math.Min(a, b); ev.MaxDistance = Math.Max(a, b); }
+            float a = F32(p + 0x38), b = F32(p + 0x3c);
+            if (a >= 0 && b > a && b < 1e6f) { ev.MinDistance = a; ev.MaxDistance = b; }
         }
         p = start + 0xa8;
         if (etype == 0x10)

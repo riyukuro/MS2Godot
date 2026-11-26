@@ -191,7 +191,7 @@ public class AudioTests
         Assert.That(c, Is.Not.Null);
         TestContext.WriteLine($"AMB 11100003 -> {c.Name} volume {c.Volume:F2} min {c.MinDistance} max {c.MaxDistance}");
         Assert.That(c.MaxDistance, Is.GreaterThan(c.MinDistance));
-        Assert.That(c.MinDistance, Is.GreaterThan(0));
+        Assert.That(c.MinDistance, Is.EqualTo(0));   // the record's min (+0x38) is 0 in every 3D event; +0x44 is not a distance
     }
 
     [Test]
