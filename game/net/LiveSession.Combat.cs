@@ -2758,7 +2758,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("scroll"))      // the enchant scroll steps: scrolluse:<scroll id>, scrollput:<gear id>[:<result code>[:<rarity>]], scrollpress:<level>
+            if (step.StartsWith("scroll"))      // the enchant scroll steps: scrolluse:<scroll id>, scrollput:<gear id>[:<result code>[:<rarity>]], scrollpress:<level>, scrollwarp:<map>, scrollclose
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 long Count(int id) { long n = 0; foreach (var e in live.Items.All) if (e.Id == id) n += e.Amount; return n; }
@@ -2822,6 +2822,19 @@ public partial class LiveSession
                             await until(() => !hud.EnchantScrollStateScripted().Open, 60 * 3); await frames(60);
                             Check("the result box's OK closed the window", !hud.EnchantScrollStateScripted().Open);
                             Shot("scroll_closed.png");
+                            break;
+                        }
+                        case "scrollwarp":      // scrollwarp:<map>: a field change with the window open; the window goes with the HUD (vfunc_67), so the next scrolluse opens it again
+                        {
+                            bool open0 = hud.EnchantScrollStateScripted().Open && book.IsOpen;
+                            int entered = 0; void Entered(int map, long ms) => entered++;
+                            live.FieldEntered += Entered;
+                            GD.Print($"live: combat scroll warp {arg} (window open {open0}): {(hud.SubmitChatLine("/warp " + arg) ? "sent" : "no chat window")}");
+                            await until(() => entered > 0, 60 * 90); await frames(240);
+                            live.FieldEntered -= Entered;
+                            if (flow.GetTree().CurrentScene is Ui.HudScene next) hud = next;
+                            Check($"scroll warp {arg}: the window was open, the field entered (map {live.CurrentEntry?.MapId}), the window closed with the HUD (book open {book.IsOpen})",
+                                open0 && entered > 0 && !book.IsOpen && !hud.EnchantScrollStateScripted().Open);
                             break;
                         }
                         case "scrollclose":
