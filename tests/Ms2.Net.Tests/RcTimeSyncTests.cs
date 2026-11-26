@@ -10,6 +10,13 @@ namespace Ms2.Net.Tests;
 /// is the one-byte request. GMS2 mode 0 leaves the trailing i32 sequence, mode 2 leaves the 17-byte body and mode 3 is not
 /// read; the 22-byte KMS body leaves the same sequence. Layouts: the GMS2 packet layout notes §B1.</summary>
 public class RcTimeSyncTests {
+    // ApplyTimeSync sets the process-wide CMsTime zone; each test puts it back as it found it, so the order of tests does not matter.
+    MsTime.State savedZone;
+    [SetUp] public void SaveZone() => savedZone = MsTime.Save();
+    [TearDown] public void RestoreZone() => MsTime.Restore(savedZone);
+    // ServerTime is time() plus the offset the sync took at its own time(): a second can tick between the two reads.
+    const string Clock = "the server time, within the seconds the test took";
+
     // gms2 recording: packet 2246, 22 bytes
     static readonly byte[] Gms2Cmd0 = RcPkt.Hex(
         "00CB89E006B049A25E0000000000000000004F330000");
@@ -40,50 +47,42 @@ public class RcTimeSyncTests {
     [Test] public void Gms2Command1ReadsTheTickAndZone() {
         var session = new ClientSession(new MapleChannel(new MemoryStream()));
         var r = new ByteReader(Gms2Cmd1);
-        try {
-            MsTime.SetTimeZone(0, 0);
-            Assert.That(session.ApplyTimeSync(r), Is.True);
-            Assert.That(session.ServerTime, Is.EqualTo(1587694000));
-            Assert.That(MsTime.ZoneSeconds, Is.EqualTo(0));
-            Assert.That(r.Available, Is.EqualTo(0));
-        } finally { MsTime.SetTimeZone(0, 0); }
+        MsTime.SetTimeZone(0, 0);
+        Assert.That(session.ApplyTimeSync(r), Is.True);
+        Assert.That(session.ServerTime, Is.InRange(1587694000L, 1587694000L + 2), Clock);
+        Assert.That(MsTime.ZoneSeconds, Is.EqualTo(0));
+        Assert.That(r.Available, Is.EqualTo(0));
     }
 
     [Test] public void KmsCommand1ReadsTheTickAndZone() {
         var session = new ClientSession(new MapleChannel(new MemoryStream()));
         var r = new ByteReader(KmsCmd1);
-        try {
-            MsTime.SetTimeZone(0, 0);
-            Assert.That(session.ApplyTimeSync(r), Is.True);
-            Assert.That(session.ServerTime, Is.EqualTo(1727412631));
-            Assert.That(MsTime.ZoneSeconds, Is.EqualTo(-32400));
-            Assert.That(r.Available, Is.EqualTo(0));
-        } finally { MsTime.SetTimeZone(0, 0); }
+        MsTime.SetTimeZone(0, 0);
+        Assert.That(session.ApplyTimeSync(r), Is.True);
+        Assert.That(session.ServerTime, Is.InRange(1727412631L, 1727412631L + 2), Clock);
+        Assert.That(MsTime.ZoneSeconds, Is.EqualTo(-32400));
+        Assert.That(r.Available, Is.EqualTo(0));
     }
 
     [Test] public void Gms2Command0ReadsTheLatencySequence() {
         foreach (var (bytes, serverTime) in new[] { (Gms2Cmd0, 1587694000L), (Gms2Cmd0b, 1589311195L) }) {
             var session = new ClientSession(new MapleChannel(new MemoryStream()));
             var r = new ByteReader(bytes);
-            try {
-                MsTime.SetTimeZone(0, 0);
-                session.ApplyTimeSync(r);
-                Assert.That(session.ServerTime, Is.EqualTo(serverTime));
-                Assert.That(r.Available, Is.EqualTo(0), "the trailing i32 latency sequence is left unread");
-            } finally { MsTime.SetTimeZone(0, 0); }
+            MsTime.SetTimeZone(0, 0);
+            session.ApplyTimeSync(r);
+            Assert.That(session.ServerTime, Is.InRange(serverTime, serverTime + 2), Clock);
+            Assert.That(r.Available, Is.EqualTo(0), "the trailing i32 latency sequence is left unread");
         }
     }
 
     [Test] public void KmsCommand0ReadsTheLatencySequence() {
         var session = new ClientSession(new MapleChannel(new MemoryStream()));
         var r = new ByteReader(KmsCmd0);
-        try {
-            MsTime.SetTimeZone(0, 0);
-            session.ApplyTimeSync(r);
-            Assert.That(session.ServerTime, Is.EqualTo(1727412632));
-            Assert.That(MsTime.ZoneSeconds, Is.EqualTo(-32400));
-            Assert.That(r.Available, Is.EqualTo(0), "the trailing i32 latency sequence is left unread");
-        } finally { MsTime.SetTimeZone(0, 0); }
+        MsTime.SetTimeZone(0, 0);
+        session.ApplyTimeSync(r);
+        Assert.That(session.ServerTime, Is.InRange(1727412632L, 1727412632L + 2), Clock);
+        Assert.That(MsTime.ZoneSeconds, Is.EqualTo(-32400));
+        Assert.That(r.Available, Is.EqualTo(0), "the trailing i32 latency sequence is left unread");
     }
 
     [Test] public void Gms2Command2IgnoresTheBody() {
@@ -103,7 +102,7 @@ public class RcTimeSyncTests {
             long before = session.ServerTime;
             session.ApplyTimeSync(r);
             Assert.That(session.SetTime, Is.EqualTo(serverTime), "cmd 3 sets m_tA0, not the server clock (FUN_141473530)");
-            Assert.That(session.ServerTime, Is.EqualTo(before));
+            Assert.That(session.ServerTime, Is.InRange(before, before + 2), Clock);
             Assert.That(r.Available, Is.EqualTo(0), "cmd 3 carries an i64 time");
         }
     }

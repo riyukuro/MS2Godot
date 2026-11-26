@@ -18,6 +18,19 @@ public static class MsTime {
         DstHours = dstHours;
     }
 
+    /// <summary>The zone state: whether a zone was set, its seconds and the daylight hours.</summary>
+    public readonly record struct State(bool Set, int Seconds, int Dst);
+
+    /// <summary>The zone state now, to put back with <see cref="Restore"/> (the zone is process-wide).</summary>
+    public static State Save() => new(ZoneSet, ZoneSeconds, DstHours);
+
+    /// <summary>Puts back a zone state from <see cref="Save"/>, including "no zone set yet".</summary>
+    public static void Restore(State s) {
+        ZoneSet = s.Set;
+        ZoneSeconds = s.Seconds;
+        DstHours = s.Dst;
+    }
+
     /// <summary>CMsTime::CalcZoneOffset: zone seconds - dst hours * 3600.</summary>
     public static long CalcZoneOffset => ZoneSeconds - DstHours * 3600L;
 

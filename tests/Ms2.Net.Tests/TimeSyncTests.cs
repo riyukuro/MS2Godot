@@ -5,6 +5,11 @@ using NUnit.Framework;
 namespace Ms2.Net.Tests;
 
 public class TimeSyncTests {
+    // ApplyTimeSync sets the process-wide CMsTime zone; each test puts it back as it found it, so the order of tests does not matter.
+    MsTime.State savedZone;
+    [SetUp] public void SaveZone() => savedZone = MsTime.Save();
+    [TearDown] public void RestoreZone() => MsTime.Restore(savedZone);
+
     static ByteReader Body(byte cmd, int time) {
         var w = new ByteWriter();
         w.WriteByte(cmd); w.WriteInt(time); w.WriteLong(0); w.WriteInt(0); w.WriteByte(0);
@@ -52,13 +57,23 @@ public class TimeSyncTests {
         var s = new ClientSession(new MapleChannel(new MemoryStream()));
         // 2026-11-17 23:30 UTC: 11-17 with no zone, 11-18 in KST (GetLocalTm: gmtime(t - CalcZoneOffset))
         long t = new DateTimeOffset(2026, 11, 17, 23, 30, 0, TimeSpan.Zero).ToUnixTimeSeconds();
-        try {
-            MsTime.SetTimeZone(0, 0);
-            Assert.That(MsTime.LocalTm(t).Day, Is.EqualTo(17));
-            Assert.That(s.ApplyTimeSync(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())), Is.False);
-            Assert.That(MsTime.ZoneSeconds, Is.EqualTo(-32400));
-            Assert.That(MsTime.LocalTm(t), Is.EqualTo(new DateTime(2026, 11, 18, 8, 30, 0)));
-        } finally { MsTime.SetTimeZone(0, 0); }
+        MsTime.SetTimeZone(0, 0);
+        Assert.That(MsTime.LocalTm(t).Day, Is.EqualTo(17));
+        Assert.That(s.ApplyTimeSync(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())), Is.False);
+        Assert.That(MsTime.ZoneSeconds, Is.EqualTo(-32400));
+        Assert.That(MsTime.LocalTm(t), Is.EqualTo(new DateTime(2026, 11, 18, 8, 30, 0)));
+    }
+
+    [Test]
+    public void RestorePutsBackTheZoneIncludingNoneSet() {
+        MsTime.Restore(new MsTime.State(false, 0, 0));
+        var w = new ByteWriter();
+        w.WriteByte(1); w.WriteInt(0); w.WriteLong(1_000_000_000); w.WriteInt(-32400); w.WriteByte(1);
+        var before = MsTime.Save();
+        new ClientSession(new MapleChannel(new MemoryStream())).ApplyTimeSync(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(MsTime.Save(), Is.EqualTo(new MsTime.State(true, -32400, 1)));
+        MsTime.Restore(before);
+        Assert.That((MsTime.ZoneSet, MsTime.ZoneSeconds, MsTime.DstHours), Is.EqualTo((false, 0, 0)));
     }
 
     [Test]

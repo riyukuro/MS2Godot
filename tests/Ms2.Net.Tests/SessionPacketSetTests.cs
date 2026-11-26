@@ -12,6 +12,11 @@ namespace Ms2.Net.Tests;
 /// </summary>
 public class SessionPacketSetTests
 {
+    // ApplyTimeSync sets the process-wide CMsTime zone; each test puts it back as it found it, so the order of tests does not matter.
+    MsTime.State savedZone;
+    [SetUp] public void SaveZone() => savedZone = MsTime.Save();
+    [TearDown] public void RestoreZone() => MsTime.Restore(savedZone);
+
     public sealed record InboundRow(Inbound Op, ushort KmsOpcode, ushort? Gms2Opcode, string ClientCite, string Modes);
     public sealed record OutboundRow(Outbound Op, ushort KmsOpcode, ushort? Gms2Opcode, string ClientCite, string Modes);
 
