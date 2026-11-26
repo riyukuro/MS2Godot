@@ -11,6 +11,8 @@ static class ShaderParam
         AlphaClip = "alpha_clip",
         FadeAlpha = "fade_alpha",
         NodeAlpha = "node_alpha",
+        ChaosOn = "chaos_on", ChaosColor = "chaos_color", ChaosBoost = "chaos_boost", ChaosExponent = "chaos_exponent",
+        ChaosDimmer = "chaos_dimmer",
         MatAlpha = "mat_alpha",
         AlphaAnimCount = "alpha_anim_count",
         AlphaAnimType = "alpha_anim_type",

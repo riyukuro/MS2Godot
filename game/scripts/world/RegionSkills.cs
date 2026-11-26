@@ -381,6 +381,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeLightning && (actor == null || !LightningEffect.Makes(all, part, points))) continue;
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeBeam && (actor == null || !BeamEffect.Makes(all, part, points))) continue;
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate && !CameraShakes.Makes(all, part, owner)) continue;
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeChaosLight && (actor == null || part.ChaosLight == null)) continue;
             made++;
         }
         if (made == 0 && all.Count > 0) return null;
@@ -424,6 +425,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 // CreateEffect's view test at the target's place (effectservice.cpp:316-330), counted by the pre-pass above
                 if (eye != null && skipTable.PartOutOfView(part, casterKind, N(world.T), eye)) continue;
                 CameraShakes.Play(all, part, owner);   // the camera shake (CVibrateEffect::vfunc_3)
+                continue;
+            }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeChaosLight)
+            {
+                // the rim light on the actor's character meshes (ChaosLightEffect::vfunc_3: none without an owner)
+                if (ChaosLightEffect.Make(part, actor) is not { } cl) continue;
+                actor.AddChild(cl);
+                if (keep) nodes.Add(cl);
+                if (keep && part.Loop) looping.Add(handle);
+                Spawned++;
                 continue;
             }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh)

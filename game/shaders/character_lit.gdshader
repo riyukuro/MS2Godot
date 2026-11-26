@@ -45,6 +45,13 @@ instance uniform vec3 own_ambient = vec3(0.0);
 instance uniform vec3 own_sun_color = vec3(0.0);
 instance uniform vec3 own_sun_ambient = vec3(0.0);
 instance uniform vec3 own_sun_specular = vec3(0.0);
+// A chaoslight effect's top layer on this mesh (ChaosLightEffectLayer: the ChaosLightColor, ChaosFresnelBoost,
+// ChaosFresnelExponent and ChaosDimmer extra data of the chaos material). With chaos_on 0, the default, nothing changes.
+instance uniform float chaos_on = 0.0;
+instance uniform vec3 chaos_color = vec3(0.0);
+instance uniform float chaos_boost = 0.0;
+instance uniform float chaos_exponent = 1.0;
+instance uniform float chaos_dimmer = 1.0;
 
 uniform sampler2D base_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D ctrl_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -206,10 +213,17 @@ void fragment() {
 	vec3 dif_m = vc_diffuse ? COLOR.rgb : mat_diffuse;
 	vec3 lit = clamp(lighting_e ? emi : emi + (own ? own_ambient : ms2_ambient) * amb_m + diffuse * dif_m, 0.0, 1.0);
 	vec3 c = lit * t.rgb;
-	if (has_glow) {
+	bool chaos = chaos_on > 0.5;
+	// a chaos material applies no glow map (GLOWMAPCOUNT && !m_bChaos)
+	if (has_glow && !chaos) {
 		c += texture(glow_tex, UV).rgb * glow_scale;
 	}
 	c += spec;
+	// HandleChaosRim: after the lit composite, before the fog, the colour dimmed and the chaos colour added along the rim
+	if (chaos) {
+		float cf = chaos_boost * pow(1.0 - abs(dot(n, v)), chaos_exponent);
+		c = c * chaos_dimmer + chaos_color * (max(0.0, -dot(rim_dir, n)) * cf);
+	}
 	// Fog after the composite of diffuse and specular, before the alpha (MS2StandardMaterial::HandleMS2FinalPixelOutputs,
 	// ms2standardmaterial.cpp:774-776): first the height fog, as field_lit's (the character materials take their
 	// descriptor from NiStandardMaterial::GenerateDescriptor too, so HEIGHTFOG is on unless additive), then the depth fog

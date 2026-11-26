@@ -147,6 +147,8 @@ public sealed class EffectPart
     public EffectStripParam Strip;
     /// <summary>An afterImage part's own values; null for other parts.</summary>
     public EffectAfterImageParam AfterImage;
+    /// <summary>A chaoslight part's values and keys (<see cref="EffectChaosLightParam"/>); null for other parts.</summary>
+    public EffectChaosLightParam ChaosLight;
     /// <summary>A status part's category (statuseffectparam.cpp:101-105); null for other parts.</summary>
     public string StatusCategory;
     /// <summary>type="weather" fallType: the sky object WeatherEffect::vfunc_4 hands CEffectService::SetSkyObject
@@ -232,6 +234,7 @@ public sealed class EffectTable
             if (p.TypeId is EffectSkipTable.TypeSwoosh or EffectSkipTable.TypeRibbon or EffectSkipTable.TypeLightning or EffectSkipTable.TypeBeam)
                 p.Strip = EffectStripParam.Read(p.TypeId, e);
             else if (p.TypeId == EffectSkipTable.TypeAfterImage) p.AfterImage = EffectAfterImageParam.Read(e);
+            else if (p.TypeId == EffectSkipTable.TypeChaosLight) p.ChaosLight = EffectChaosLightParam.Read(e, p.StartDelay);
             else if (p.TypeId == EffectSkipTable.TypeVibrate)
             {
                 p.VibrateFrequency = F((string)e.Attribute("freq"));

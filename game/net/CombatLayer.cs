@@ -186,6 +186,13 @@ void fragment() {
                 if (!CameraShakes.Play(parts, part, owner)) EffectsNotNif++;   // the camera shake (CVibrateEffect::vfunc_3)
                 continue;
             }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeChaosLight)
+            {
+                // the rim light on the actor's character meshes (ChaosLightEffect::vfunc_3: none without an owner)
+                if (ChaosLightEffect.Make(part, actor) is { } cl) actor.AddChild(cl);
+                else EffectsNotNif++;
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
             Transform3D place; Node3D host; bool own = true;
             if (actor == null) { place = new Transform3D(rotation, at); host = parent; }

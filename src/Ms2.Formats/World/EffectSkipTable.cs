@@ -97,7 +97,7 @@ public sealed class EffectSkipTable
     /// <summary>The effect param kinds (effectservice.h): CreateEffect's view tests for the screen kinds (:322-330) and the rows
     /// above.</summary>
     public const int TypeNif = 1, TypeSoundEvent = 2, TypeMonochrome = 4, TypeSwoosh = 7, TypeStatus = 8, TypeLight = 9, TypeFog = 10,
-        TypeRandom = 11, TypeVibrate = 12, TypeRibbon = 13, TypeTextureOverride = 15, TypeLightning = 16, TypeBeam = 21, TypeAfterImage = 22;
+        TypeRandom = 11, TypeVibrate = 12, TypeRibbon = 13, TypeChaosLight = 14, TypeTextureOverride = 15, TypeLightning = 16, TypeBeam = 21, TypeAfterImage = 22;
 
     static readonly string[] TypeNames =
     {

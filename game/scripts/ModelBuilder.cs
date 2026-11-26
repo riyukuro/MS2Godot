@@ -918,6 +918,9 @@ public sealed class ModelBuilder
             // no NiMaterialProperty of its own: it draws with the root's added one (EnsureAlphaProperties :426-441)
             if (m.Diffuse == null) mi.SetMeta(NodeFade.Inherit, true);
         }
+        // ChaosLightEffect::AddLayers puts its layers on the character materials
+        if (Net.ChaosLightEffect.TakesLayer(m) && mi.Mesh?.SurfaceGetMaterial(0) is ShaderMaterial chaos && IsCharacterShader(chaos.Shader))
+            mi.SetMeta(Net.ChaosLayers.Meta, true);
         CharacterAlphaSort.Register(mi, m, skel, skelBone);
     }
 

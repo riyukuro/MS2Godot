@@ -194,6 +194,9 @@ public sealed class ModelMesh
     /// <summary>The active CLAMP NiTextureTransformControllers. Not APP_INIT, so a field model's app time is past their stop
     /// when the field is entered, and each holds its last key: a constant on the map's transform (ModelBuilder).</summary>
     public List<UvAnim> UvHolds = new();
+    /// <summary>An NiTextureTransformController on the texturing property drives the glow slot (any flags): a chaoslight
+    /// part puts no layer on such a mesh when it has a glow map (ChaosLightEffect::AddLayers).</summary>
+    public bool GlowMapDriven;
 
     /// <summary>The static transform the field shaders draw a map with (ModelBuilder.SetUvTransforms), or null for none:
     /// the map's own NiTextureTransform, or the controller default one (NiTextureTransformController.cpp:146-151,
@@ -746,6 +749,9 @@ public sealed class ModelData
             {
                 var cb = B[(int)c];
                 c = cb.IntOr("Next Controller", -1);
+                // ChaosLightEffect::AddLayers: any NiTextureTransformController on the glow map, active or not
+                if (cb.Type == "NiTextureTransformController" && cb.IntOr("Shader Map", 0) == 0 && cb.IntOr("Texture Slot", -1) == 4)
+                    mesh.GlowMapDriven = true;
                 long flags = cb.IntOr("Flags", 0);
                 int cycle = (int)((flags >> 1) & 3);
                 if ((flags & 8) == 0 || cycle is not (0 or 2)) continue;   // inactive, or REVERSE
