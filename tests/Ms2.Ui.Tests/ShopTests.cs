@@ -515,10 +515,16 @@ public class ShopTests
         Fund(0);
         Assert.That(c.CanPayFee(kind, 77, 1), Is.False, "an empty wallet does not");
         var notices = new List<string>();
+        int asks = 0;
         c.SystemNotice = notices.Add;
+        c.ShowLackMeratAsk = () => asks++;
         c.ShowLackCurrency(kind, 77, 1);
-        Assert.That(notices, Has.Count.EqualTo(1), "the lack of every kind is told");
-        Assert.That(notices[0], Is.Not.Empty);
+        // ShowLackCurrencyMessage (uicommon.cpp:1068) with nOpt 1: a merat shortfall (currency 3, 10) asks in a box
+        // (CUIService::ShowLackMeratAsk), every other kind tells it as a notice
+        bool merat = currency is 3 or 10;
+        Assert.That(asks, Is.EqualTo(merat ? 1 : 0), "the merat ask box");
+        Assert.That(notices, Has.Count.EqualTo(merat ? 0 : 1), "the lack of every other kind is told");
+        if (!merat) Assert.That(notices[0], Is.Not.Empty);
     }
 
     /// <summary>The whole tab list (table/shopcategory.xml and meratmarketcategory.xml): every category id loads a tab tree, and every
@@ -938,9 +944,74 @@ public class ShopTests
         Assert.That(c.IsClosed, Is.False);
         c.SortKind = 0;
 
-        c.Process();                                    // the talk is over: closes, the talk end is sent
+        c.Process();                                    // the talk is over: closes
+        Assert.That(c.ShopView, Is.Null, "the shop's movie is released by the close");
+        // SendNpcTalkMode0 (uitalkcinematic.cpp:1441) sends nothing once the talk is over: the close sends no second talk end
+        Assert.That(talkEnds, Is.Zero, "the talk had already ended");
+    }
+
+    /// <summary>The close while the player still talks (the close button, Esc) sends the one talk end, as SendNpcTalkMode0 does.</summary>
+    [Test]
+    public void ClosingTheShopWhileTalkingSendsTheTalkEndOnce()
+    {
+        Packs();
+        var (_, c) = Load(NewModel());
+        int talkEnds = 0;
+        c.SendNpcTalkEnd = () => talkEnds++;
+        c.PlayerTalking = () => true;
+        c.CloseShop();
         Assert.That(c.ShopView, Is.Null, "the shop's movie is released by the close");
         Assert.That(talkEnds, Is.EqualTo(1));
+    }
+
+    /// <summary>The header only fills the shop; the dialog opens from the talk window's answer (CNpc::OpenTalkUi) or the system shop
+    /// answer. The server sends the header and the items before its answer and the packets are drained once per frame, so with the
+    /// answer a frame later the shop must not have opened (and closed again by the per-frame talk check, with a stray talk end),
+    /// and the header must still be there when the answer opens it.</summary>
+    [Test]
+    public void TheShopOpensFromTheAnswerEvenWhenItLandsAFrameAfterTheHeader()
+    {
+        Packs();
+        var c = new ShopController { Categories = new ShopCategoryTable(Packs()), Npcs = new Ms2.Formats.World.NpcTable(Packs()) };
+        var gate = new ShopOpenGate();
+        int talkEnds = 0, opens = 0;
+        var sent = new List<IOutPacket>();
+        c.SendNpcTalkEnd = () => talkEnds++;
+        c.Send = sent.Add;
+        c.PlayerTalking = () => false;                  // the answer has not been handled: no talk is open yet
+
+        // frame 1: the header and the items
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteInfo(Header()))));
+        if (gate.OnHeader(open: false)) opens++;
+        c.Process();
+        Assert.That(opens, Is.Zero, "the header does not open the dialog");
+        Assert.That(c.Info.ShopId, Is.EqualTo(106));
+
+        // frames in between: nothing opens, nothing closes, nothing is sent
+        for (int i = 0; i < 3; i++) c.Process();
+        Assert.That(talkEnds, Is.Zero);
+        Assert.That(sent, Is.Empty);
+        Assert.That(c.Info.ShopId, Is.EqualTo(106), "the header is kept for the open");
+
+        // frame 2: the answer opens it
+        Assert.That(gate.OnAnswer(headerRead: c.Info.ShopId != 0, open: false), Is.True);
+        Assert.That(gate.OnAnswer(headerRead: true, open: true), Is.False, "an open dialog is not opened twice");
+    }
+
+    /// <summary>The answer before the header (the other drain order): the open waits for the header, and a talk that ended first
+    /// drops the wait.</summary>
+    [Test]
+    public void TheShopOpensFromTheHeaderWhenTheAnswerCameFirstAndNotAfterTheTalkEnded()
+    {
+        var gate = new ShopOpenGate();
+        Assert.That(gate.OnAnswer(headerRead: false, open: false), Is.False, "no header yet");
+        Assert.That(gate.OnHeader(open: false), Is.True, "the header completes the open");
+        Assert.That(gate.OnHeader(open: false), Is.False, "once");
+
+        gate.OnAnswer(headerRead: false, open: false);
+        gate.Cancel();                                  // the talk ended before the header
+        Assert.That(gate.OnHeader(open: false), Is.False);
+        Assert.That(gate.OnHeader(open: true), Is.False, "a header for an open dialog only refreshes it");
     }
 
     [Test]

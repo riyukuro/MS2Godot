@@ -719,7 +719,9 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         resetPrice = 0;
         shop = null;
         shopEnabled = true;
-        SendNpcTalkEnd?.Invoke();
+        // SendNpcTalkMode0 (@0x141b1feb0, uitalkcinematic.cpp:1441) returns at once when no talk is open: a close after the talk
+        // ended (walking away) sends nothing
+        if (PlayerTalking == null || PlayerTalking()) SendNpcTalkEnd?.Invoke();
         if (sortKind > 0) SendSystemShop?.Invoke(sortKind, 0);
         sortKind = 0;
     }
@@ -1679,9 +1681,13 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             case 0xe: SystemNotice?.Invoke(Common("s_err_lack_mentee_token")); break;
             case 0xf: SystemNotice?.Invoke(Common("s_err_lack_star_point")); break;
             case 0x10: SystemNotice?.Invoke(Common(0x41)); break;
-            case 3: case 10: SystemNotice?.Invoke(Common("s_err_lack_merat")); break;
+            case 3: case 10: ShowLackMeratAsk?.Invoke(); break;   // nOpt 1 (FUN_14134a120): CUIService::ShowLackMeratAsk (uicommon.cpp:1086)
         }
     }
+
+    /// <summary>CUIService::ShowLackMeratAsk (@0x141add210, uiservice.cpp:1108): the box asking about the lack of merat that a
+    /// merat or blue merat shortfall shows (ShowLackCurrencyMessage, currency 3 and 10, uicommon.cpp:1084).</summary>
+    public Action ShowLackMeratAsk;
 
     /// <summary>
     /// CNpcShopProductCli::FUN_140db8580 (npcshopproductbase.cpp:492-500): computes price * count and truncates to 32 bits

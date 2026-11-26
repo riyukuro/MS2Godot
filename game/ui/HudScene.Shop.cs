@@ -20,6 +20,7 @@ public partial class HudScene
     ShopController liveShop;
     string shopShot;                            // --shop all|weapons|armor|buyback: the fixture gear shop on that filter or tab
     bool shopWatched;
+    readonly ShopOpenGate openGate = new();
     Action unwatchShop;
 
     bool ShopOpen => shop != null && !shop.IsClosed;
@@ -62,7 +63,8 @@ public partial class HudScene
                 () => live.Items.All, () => live.PlayingScoreUid, hudModel.Tables.Items, itemUse.Error);
             // PlotIndoorSize stays null: the plot's indoor size (FUN_1408a0d30) is not ported
             c.UgcHome = () => new ShopController.UgcHomeState(live.Home.HasInfo, live.Home.PlotId, null, live.Home.HasNoHome);
-            c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));
+            c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));   // Close sends it only while a talk is open
+            c.ShowLackMeratAsk = () => SmartPushNotices.ShowLackMeratAsk();
             c.PlayerTalking = () => live.IsTalking();     // MyPC::FUN_141527e60 (UIShopDialog::vfunc_72 closes the shop once it is false)
             BindMeratQueue(live, c);
         }
@@ -91,18 +93,20 @@ public partial class HudScene
         void OnPacket(ShopPacket p)
         {
             liveShop.OnShopPacket(p);
-            if (p.Command == 0 && !ShopOpen) OpenLiveShop();
+            if (p.Command == 0 && openGate.OnHeader(ShopOpen)) OpenLiveShop();       // the header only fills the shop (uishopdialog.cpp:1580)
         }
         void OnOpen(int id)
         {
-            if (id == ShopController.UiId && !ShopOpen && liveShop.Info.ShopId != 0) OpenLiveShop();
+            if (id == ShopController.UiId && openGate.OnAnswer(liveShop.Info.ShopId != 0, ShopOpen)) OpenLiveShop();
         }
         void OnClose(int id)
         {
-            if (id == ShopController.UiId && ShopOpen) shop.Close();
+            if (id != ShopController.UiId) return;
+            openGate.Cancel();
+            if (ShopOpen) shop.Close();
         }
         void OnSystemShop(SystemShopPacket p) => SystemShopFlow.OnSystemShop(p, liveShop, key => hudModel.Tables.Common(key),
-            () => { if (!ShopOpen) OpenLiveShop(); }, MessageBoxQueue.Show);
+            () => { if (openGate.OnAnswer(liveShop.Info.ShopId != 0, ShopOpen)) OpenLiveShop(); }, MessageBoxQueue.Show);
         live.ShopReceived += OnPacket;
         live.MeretMarketReceived += liveShop.OnMeretMarket;
         live.SystemShopReceived += OnSystemShop;
