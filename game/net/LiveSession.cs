@@ -288,6 +288,29 @@ public partial class LiveSession : Node
         return Hex(b);
     }
 
+    /// <summary>The live run's raw guild join request for the own guild: one that arrived (KMS 0x2d, GMS2 45: the
+    /// CGuildJoinRequestForGuild fields, GMS2 in the upstream GuildApplication.WriteTo order) or was withdrawn (KMS 0x2e,
+    /// GMS2 46: the i64 request id). The character and account ids are 0 and the job fields equal, so both orders hold.</summary>
+    internal string GuildRequestBytes(bool arrived, long id, string name, int level)
+    {
+        bool gms2 = game.Profile.IsGms2;
+        var b = new List<byte>();
+        Op(b, game.Profile.Number(Ms2.Net.Inbound.Guild));
+        b.Add((byte)(arrived ? (gms2 ? 45 : 0x2d) : (gms2 ? 46 : 0x2e)));
+        I32(b, (int)id); I32(b, (int)(id >> 32));
+        if (arrived)
+        {
+            long guild = Guilds.Info?.Id ?? 0, now = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            I32(b, (int)guild); I32(b, (int)(guild >> 32));
+            I32(b, 0); I32(b, 0); I32(b, 0); I32(b, 0);     // the character and account ids
+            Unicode(b, name); Unicode(b, "");
+            I32(b, 1); I32(b, 1); I32(b, level);           // the job and job code, the level
+            I32(b, 0); I32(b, 0); I32(b, 0);               // the trophy counts
+            I32(b, (int)now); I32(b, (int)(now >> 32));
+        }
+        return Hex(b);
+    }
+
     /// <summary>The live run's raw Insignia for the own pc (OnNametag: i32 object, u16 symbol, u8 shown).</summary>
     internal string OwnInsigniaBytes(ushort symbol, bool shown)
     {
@@ -3424,6 +3447,46 @@ public partial class LiveSession : Node
                     guildHud.GuildDialog.OpenCategoryPage("Member");
                     await Frames(180);
                     Shot("guild_members_after_join.png");
+                    break;
+                }
+                case "menuaccept":
+                case "menuraw":
+                {
+                    // The game menu's guild count (UIGameMenuDialog::FUN_1419381c0, GetGuildNotificationCount) while the menu
+                    // stays up. menuaccept: the first request accepted from the accept page, the server's 0x2f drops it.
+                    // menuraw: a request arrives (0x2d) and is withdrawn (0x2e) by the server's debug packet command, for a
+                    // server whose applications send neither.
+                    var g = Instance?.Guilds;
+                    void Count(string at) => GD.Print($"live: guild menu count {at} {g?.NotificationCount} (requests {g?.RequestsForGuild.Count}, check-in {g?.CanAttend})");
+                    await Until(() => g?.InGuild ?? false, 60 * 10);
+                    if (step == "menuaccept") await Until(() => g?.RequestsForGuild.Count > 0, 60 * 20);
+                    await Frames(120);
+                    // the HUD's per-frame call on the real server time: what N calls allocate
+                    long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+                    for (int i = 0; i < 100_000; i++) g?.Update();
+                    GD.Print($"live: guild Update {System.GC.GetAllocatedBytesForCurrentThread() - a0} B over 100000 calls (in a guild {g?.InGuild})");
+                    Count("before");
+                    Shot("menu_before.png");
+                    if (step == "menuaccept")
+                    {
+                        guildHud.GuildDialog.OpenCategoryPage("AcceptMember");
+                        await Frames(180);
+                        GD.Print($"live: guild accept row {(guildHud.ClickGuild(guildHud.GuildDialog.AcceptRequestPage, "m_list", "row:0", "m_accept") ? "clicked" : "not there")}");
+                        await Until(() => g?.RequestsForGuild.Count == 0, 60 * 10); await Frames(120);
+                        Count("after");
+                        Shot("menu_after.png");
+                        break;
+                    }
+                    int n0 = g?.RequestsForGuild.Count ?? 0;
+                    const long rawId = 7_700_000_001;
+                    bool sent = guildHud.SubmitChatLine("/debug packet " + Instance.GuildRequestBytes(true, rawId, "Applicant", 10));
+                    await Until(() => g?.RequestsForGuild.Count > n0, 60 * 10); await Frames(120);
+                    Count($"after the arrival (sent {sent})");
+                    Shot("menu_after.png");
+                    sent = guildHud.SubmitChatLine("/debug packet " + Instance.GuildRequestBytes(false, rawId, "", 0));
+                    await Until(() => g?.RequestsForGuild.Count == n0, 60 * 10); await Frames(120);
+                    Count($"after the withdrawal (sent {sent})");
+                    Shot("menu_withdrawn.png");
                     break;
                 }
                 case "look":

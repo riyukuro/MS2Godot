@@ -1257,4 +1257,30 @@ public class GuildBookTests {
         t += 86400; r.B.Update();
         Assert.That((r.B.InGuild, r.Calls.Count), Is.EqualTo((false, 0)), "outside a guild");
     }
+    /// <summary>The HUD calls Update each frame once the guild is watched: in a guild with a new server second each call (the
+    /// day check and its two calendar days every time, the worst case; all within the guild info's day, so no redraw) and
+    /// outside a guild, it allocates nothing.</summary>
+    [Test]
+    public void TheFrameUpdateAllocatesNothingInOrOutsideAGuild() {
+        var r = new Rig();
+        long t = Now;
+        r.B.ServerTime = () => t;
+        var info = r.B.Info;
+        r.Apply(0, m => m with { GuildId = 7, Info = info });
+        r.Calls.Clear();
+        const int N = 100_000;
+        long Measure() {
+            for (int i = 0; i < 1000; i++) { t = Now + 1 + i % 50; r.B.Update(); }
+            long a = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < N; i++) { t = Now + 1 + i % 50; r.B.Update(); }
+            return GC.GetAllocatedBytesForCurrentThread() - a;
+        }
+        long inGuild = Measure();
+        TestContext.Out.WriteLine($"in a guild: {inGuild} B over {N} calls, {r.Calls.Count} redraws");
+        r.Calls.Clear();
+        r.B.LeaveGame();
+        long outside = Measure();
+        TestContext.Out.WriteLine($"outside a guild: {outside} B over {N} calls");
+        Assert.That((inGuild, outside, r.Calls.Count), Is.EqualTo((0L, 0L, 0)));
+    }
 }
