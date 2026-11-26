@@ -576,6 +576,17 @@ public partial class CreativeMenu : Control
         return null;
     }
 
+    /// <summary>The bag slots the items with the search's item id occupy (the packet's InventorySlot), for a scripted
+    /// bag hover; "" for a name search or no live inventory.</summary>
+    string BagSlots()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live == null || !int.TryParse(search.Text.Trim(), out int id)) return "";
+        var slots = new List<int>();
+        foreach (var e in live.Items.All) if (e.Id == id) slots.Add(e.InventorySlot);
+        return string.Join(",", slots);
+    }
+
     public System.Text.Json.Nodes.JsonObject StatusJson()
     {
         var o = new System.Text.Json.Nodes.JsonObject
@@ -590,6 +601,7 @@ public partial class CreativeMenu : Control
             ["support"] = $"enchant={support.Enchant},limit={support.LimitBreak},socket={support.Socket},gem={support.Gem},stat={support.Stat},special={support.Special}",
             ["field"] = Ms2Godot.Net.LiveSession.Instance?.FieldId ?? 0,
             ["tooltipBuilds"] = tooltipBuilds, ["tooltipBuildBytes"] = tooltipBuildBytes,
+            ["bagSlots"] = BagSlots(),
         };
         return o;
     }
