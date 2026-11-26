@@ -103,6 +103,32 @@ public sealed class KfAnimation
         return o;
     }
 
+    /// <summary>
+    /// Bezier quaternion keys (NiBezRotKey::FillDerivedVals, NiBezRotKey.cpp:82-108): each key's squad control point, used
+    /// both ways, is Quaternion::Intermediate(q[i-1], q[i], q[i+1]) = q[i] * exp(-(log(q[i]^-1 q[i-1]) + log(q[i]^-1
+    /// q[i+1])) / 4) (efd Quaternion.cpp), the end keys standing in for their missing neighbour. First, as for every
+    /// rotation key (NiRotKey::FillDerivedVals, NiRotKey.cpp:229-253), a key is negated where it makes an obtuse angle
+    /// with the one before and w is clamped to [-1, 1]. A pair of keys is then squad-interpolated
+    /// (NiBezRotKey::Interpolate, :71-79), as SquadKeys does.
+    /// </summary>
+    static (Quat a, Quat b)[] BezControls(List<(double t, Quat q)> keys)
+    {
+        int n = keys.Count;
+        var q = new Quat[n];
+        for (int i = 0; i < n; i++) q[i] = keys[i].q;
+        for (int i = 1; i < n; i++) if (q[i - 1].Dot(q[i]) < 0) q[i] = -q[i];
+        for (int i = 0; i < n; i++) { q[i] = q[i] with { W = Math.Clamp(q[i].W, -1, 1) }; keys[i] = (keys[i].t, q[i]); }
+        var o = new (Quat a, Quat b)[n];
+        if (n < 2) return o;
+        for (int i = 0; i < n; i++)
+        {
+            Quat p = q[Math.Max(0, i - 1)], c = q[i], nx = q[Math.Min(n - 1, i + 1)], inv = c.Conjugate();
+            var m = c * (((inv * p).Log() + (inv * nx).Log()) * -0.25).Exp();
+            o[i] = (m, m);
+        }
+        return o;
+    }
+
     static Quat SquadKeys(List<(double t, Quat q)> keys, (Quat a, Quat b)[] c, double t)
     {
         if (t <= keys[0].t) return keys[0].q;
@@ -221,10 +247,11 @@ public sealed class KfAnimation
                     euler = data.Structs("XYZ Rotations").Select(g => KeyGroup(g, Scalar)).ToArray();
                 else
                 {
-                    if (rt != 1 && rt != 3 && rt != 5) throw new NotSupportedException("rotation key type " + rt);
+                    if (rt < 1 || rt > 5) throw new NotSupportedException("rotation key type " + rt);
                     var qk = data.Structs("Quaternion Keys");
                     keysR = qk.Select(k => ((double)k.Float("Time"), QuatOf(k.Struct("Value")))).ToList();
                     if (rt == 3) tbcR = TbcControls(keysR, qk.Select(k => k.Struct("TBC")).ToList());
+                    else if (rt == 2) tbcR = BezControls(keysR);
                 }
             }
             keysT = KeyGroup(data.TryGetValue("Translations", out var tg) ? tg as NifStruct : null, VecConv);
