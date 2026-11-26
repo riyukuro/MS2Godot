@@ -68,12 +68,25 @@ public sealed class ClientSession {
     long versionTime;
 
     /// <summary>
+    /// CNetworkService::m_latency: the time sync round trips. Its average is the m_i74 that SetServerTickBase keeps
+    /// (CMainSystem::FUN_141473460), the frame rate dialog's number in parentheses; 0 before the first answer.
+    /// </summary>
+    public readonly TimeSyncLatency Latency = new();
+
+    /// <summary>SendTimeSyncRequest (networkservice.cpp:750): the next sequence, noted in m_latency.Sent, then RequestTimeSync.</summary>
+    public RequestTimeSync NextTimeSyncRequest() {
+        int seq = ++timeSyncSeq;
+        Latency.Sent((uint)seq, (uint)ElapsedMs);
+        return new RequestTimeSync(seq);
+    }
+
+    /// <summary>
     /// Applies a time sync command (ResponseTimeSync body, CNetworkService::OnTimeSyncResponse @0x14153a380, networkservice.cpp:756);
     /// returns true when the client must answer with a RequestTimeSync. The wire is the same on KMS and GMS2.
     /// Command 0: i32 tick, i64 server time, i32 zone, u8 flag, i32 latency sequence; sets the bases, no answer.
     /// Command 1: the same without the sequence; sets the bases and answers. Command 2: reads nothing (the GMS2 server appends a
     /// 17-byte body the client ignores) and answers. Commands 3 and 4: an i64 time.
-    /// STILL-OPEN: the latency statistics (m_latency.Received(sequence), the min/max/average given to SetServerTickBase) are not kept.
+    /// Command 0 adds the answered request's round trip to <see cref="Latency"/> (m_latency.Received); command 1 resets it.
     /// </summary>
     public bool ApplyTimeSync(ByteReader r) {
         byte cmd = r.ReadByte();
@@ -83,7 +96,8 @@ public sealed class ClientSession {
                 int time = r.ReadInt();
                 long serverTime = r.ReadLong();
                 int zone = r.ReadInt(); byte flag = r.ReadByte();
-                if (cmd == 0) r.ReadInt();                // the sequence of the request this answers (m_latency.Received)
+                if (cmd == 0) Latency.Received((uint)r.ReadInt(), (uint)ElapsedMs);   // the request this answers: its round trip
+                else Latency.Reset();                     // SetServerTickBase(time, 0, 0, 0)
                 Interlocked.Exchange(ref serverTimeOffset, serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds());   // SyncServerTime
                 MsTime.SetTimeZone(zone, flag);           // CMsTime::SetTimeZone(zone, flag) (networkservice.cpp:756-779)
                 serverTickBase = time; localTickBase = ElapsedMs; hasServerTick = true;   // volatile write publishes the bases
@@ -149,7 +163,7 @@ public sealed class ClientSession {
                     await Send(new ResponseClientTickSync(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
                     break;
                 case Inbound.ResponseTimeSync:
-                    if (ApplyTimeSync(p.Reader())) await Send(new RequestTimeSync(++timeSyncSeq), ct);
+                    if (ApplyTimeSync(p.Reader())) await Send(NextTimeSyncRequest(), ct);
                     break;
             }
             if (!answered) PacketReceived?.Invoke(p);
