@@ -13,42 +13,89 @@ namespace Ms2.Audio.Tests;
 /// </summary>
 public class DistanceRolloffTests
 {
-    [TestCase("MS2_DATA", 5906, 5900, 5881)]
-    [TestCase("MS2_GMS2_DATA", 5734, 5728, 5709)]
-    public void EveryComplex3DEventHasItsCurve(string variable, int complex3d, int startFull, int endSilent)
+    /// <summary>Every 3D event has a curve: the complex ones their "(distance)" envelopes, the simple ones (and complex
+    /// Voice/ko/Monster/60000700, which has no "(distance)" parameter, its record holding 1 / 1) a flat one, gain 1 at every
+    /// distance as FMOD's custom rolloff without points; 2D events none. The 3D Pan Level (0x400) and direct occlusion
+    /// (0x2000, sub-index 0) envelopes are on every complex 3D event that has them, and the pan level property is 1 on all.</summary>
+    [TestCase("MS2_DATA", 5906, 45, 5900, 5881, 5905, 4481)]
+    [TestCase("MS2_GMS2_DATA", 5734, 10, 5728, 5709, 5733, 4384)]
+    public void Every3DEventHasItsCurve(string variable, int complex3d, int simple3d, int startFull, int endSilent, int withPan, int withOcclusion)
     {
         var fev = Fev(variable);
-        int n3d = 0, withCurve = 0, full = 0, silent = 0, withSound = 0, soundNoCurve = 0;
+        int n3d = 0, nSimple = 0, withPoints = 0, flat = 0, full = 0, silent = 0, pan = 0, occlusion = 0, panProperty = 0;
         var bad = new List<string>();
         foreach (var ev in fev.AllEvents)
         {
-            if (ev.IsSimple || !ev.Is3D)
-            {
-                if (ev.Rolloff != null) bad.Add($"2D or simple with a curve: {ev.FullPath}");
-                continue;
-            }
-            n3d++;
-            if (ev.Defs.Count > 0) withSound++;
             var c = ev.Rolloff;
-            if (c == null)
+            if (!ev.Is3D)
             {
-                if (ev.Defs.Count > 0) { soundNoCurve++; TestContext.Out.WriteLine($"no curve: {ev.FullPath} {ev.MinDistance}..{ev.MaxDistance}"); }
+                if (c != null) bad.Add($"2D with a curve: {ev.FullPath}");
                 continue;
             }
-            withCurve++;
+            if (ev.IsSimple) nSimple++; else n3d++;
+            if (c == null) { bad.Add($"3D without a curve: {ev.FullPath}"); continue; }
+            if (c.PanLevel != 1) panProperty++;
+            if (c.HasPanLevelEnvelope) pan++;
+            if (c.HasOcclusion) occlusion++;
+            if (c.Count == 0)
+            {
+                flat++;
+                if (c.GainAt(0) != 1 || c.GainAt(1e5f) != 1) bad.Add($"flat curve not 1: {ev.FullPath} {c}");
+                continue;
+            }
+            withPoints++;
             if (c.GainOf(0) == 1) full++;
             if (c.GainOf(c.Count - 1) == 0) silent++;
             if (c.DistanceOf(0) < ev.MinDistance || c.DistanceOf(c.Count - 1) > ev.MaxDistance + 0.01f)
                 bad.Add($"curve outside {ev.MinDistance}..{ev.MaxDistance}: {ev.FullPath} {c}");
             for (int i = 1; i < c.Count; i++)
                 if (c.DistanceOf(i) < c.DistanceOf(i - 1) || c.GainOf(i) < 0 || c.GainOf(i) > 1) { bad.Add($"bad points: {ev.FullPath} {c}"); break; }
+            for (float d = 0; d <= ev.MaxDistance; d += ev.MaxDistance / 64)
+            {
+                float g = c.GainAt(d), l = c.PanLevelAt(d);
+                if (!(g >= 0 && g <= 1 && l >= 0 && l <= 1)) { bad.Add($"gain {g} pan {l} at {d}: {ev.FullPath} {c}"); break; }
+            }
         }
-        TestContext.Out.WriteLine($"{variable}: {n3d} complex 3D, {withSound} with a sound, {withCurve} with a curve ({full} start at 1, {silent} end at 0), {soundNoCurve} sounding without");
+        TestContext.Out.WriteLine($"{variable}: {n3d} complex 3D, {nSimple} simple 3D; {withPoints} with points ({full} start at 1, {silent} end at 0), "
+            + $"{flat} flat; {pan} with a 3D pan level envelope, {occlusion} with a direct occlusion one, {panProperty} pan level property under 1");
+        foreach (var g in fev.AllEvents.Where(e => e.Is3D && e.Rolloff?.Count == 0).GroupBy(e => e.Group).OrderBy(g => g.Key))
+            TestContext.Out.WriteLine($"flat: {g.Key} {g.Count()} ({string.Join(" ", g.Take(4).Select(e => e.Name))})");
+        foreach (var ev in fev.AllEvents.Where(e => e.Is3D && e.IsSimple))
+            TestContext.Out.WriteLine($"simple 3D: {ev.FullPath} mode 0x{ev.Mode:x} sounds {ev.Defs.Count} vol {ev.Volume} {ev.Rolloff}");
+        foreach (var ev in fev.AllEvents.Where(e => e.Rolloff?.HasOcclusion == true).GroupBy(e => e.Rolloff.ToString()).OrderByDescending(g => g.Count()).Take(12))
+            TestContext.Out.WriteLine($"occlusion x{ev.Count()}: {ev.First().FullPath} {ev.First().MinDistance}..{ev.First().MaxDistance} {ev.Key}");
         foreach (var b in bad.Take(20)) TestContext.Out.WriteLine(b);
         Assert.That(bad, Is.Empty);
-        // Voice/ko/Monster/60000700 has no "(distance)" parameter (its record holds 1 / 1): it keeps the old falloff
-        Assert.That((n3d, withCurve, full, silent), Is.EqualTo((complex3d, complex3d - 1, startFull, endSilent)));
-        Assert.That(soundNoCurve, Is.EqualTo(1));
+        Assert.That((n3d, nSimple, withPoints, flat, full, silent), Is.EqualTo((complex3d, simple3d, complex3d - 1, simple3d + 1, startFull, endSilent)));
+        Assert.That((pan, occlusion, panProperty), Is.EqualTo((withPan, withOcclusion, 0)));
+    }
+
+    /// <summary>The direct occlusion takes 1 - occ of the whole voice, not blended by the 3D Pan Level envelope: Copy 06102549 (the loader's census row: volume full to 34.4%, 0 at 68%; pan 0 to 16.3%, 0.466 at 41.1%
+    /// and on; occlusion 0 to 1 at 99.6%). The old curve was the volume envelope only, and a simple 3D event had none.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void PanLevelAndOcclusionShapeTheGain(string variable)
+    {
+        var fev = Fev(variable);
+        var ev = fev.AllEvents.FirstOrDefault(e => e.Name == "06102549 Copy" && !e.IsSimple && e.Is3D);
+        if (ev == null) Assert.Ignore("no 06102549 Copy");
+        var c = ev.Rolloff;
+        TestContext.Out.WriteLine($"{ev.FullPath} {ev.MinDistance}..{ev.MaxDistance} {c}");
+        Assert.That((c.HasPanLevelEnvelope, c.HasOcclusion), Is.EqualTo((true, true)));
+        // the volume points are at 0 and 1 of the "(distance)" parameter: its range
+        float at = c.DistanceOf(0), r = c.DistanceOf(c.Count - 1) - at;
+        Assert.That(c.PanLevelAt(at), Is.EqualTo(0f));
+        Assert.That(c.PanLevelAt(at + 0.5f * r), Is.EqualTo(0.466f).Within(1e-3f));
+        Assert.That(c.GainAt(at + 0.1f * r), Is.EqualTo(1f - S(0.1f / 0.996f)).Within(2e-3f)); // pan 0: the occlusion still applies
+        Assert.That(c.GainAt(at + 0.68f * r), Is.EqualTo(0f).Within(1e-3f));       // the volume envelope is not blended
+        // at 30%: volume 1, occlusion S(0.3 / 0.996) (the points' shape is smoothstep), whatever the pan level
+        Assert.That(c.GainAt(at + 0.3f * r), Is.EqualTo(1f - S(0.3f / 0.996f)).Within(2e-3f));
+        // at 50%: the volume envelope's 1 - S(0.156 / 0.336) (the old gain), times 1 - S(0.502)
+        Assert.That(c.GainAt(at + 0.5f * r), Is.EqualTo((1f - S(0.156f / 0.336f)) * (1f - S(0.5f / 0.996f))).Within(2e-3f));
+        var simple = fev.AllEvents.First(e => e.IsSimple && e.Is3D);
+        Assert.That(simple.Rolloff, Is.Not.Null, simple.FullPath);
+        Assert.That(simple.Rolloff.GainAt(1e5f), Is.EqualTo(1f));
+        Assert.That(simple.Rolloff.Silent, Is.EqualTo(float.PositiveInfinity));
     }
 
     /// <summary>The rolloff bits of every event's mode word (+0x34): custom on every complex 3D event and on most others,
@@ -114,8 +161,25 @@ public class DistanceRolloffTests
     public void AmbientIsHalfVolumeHalfWay()
     {
         var c = Event("MS2_DATA", "AMB", "11100001");
+        TestContext.Out.WriteLine($"11100001 {c}");
         Assert.That(c.GainAt(0), Is.EqualTo(1f));
-        Assert.That(c.GainAt(2250), Is.EqualTo(0.5f).Within(1e-4f));   // the old falloff: 60 / 2250 = 0.027
+        // the volume envelope is half way at 2250 (the old falloff: 60 / 2250 = 0.027); the direct occlusion (0 -> 1 at 4467.4)
+        // takes 1 - S(0.504) of that, not blended by its pan level (0.447 from 1008.2)
+        Assert.That(c.GainOf(c.Count - 1), Is.EqualTo(0f));
+        Assert.That(c.GainAt(2250), Is.EqualTo(0.5f * (1 - S(2250f / 4467.4f))).Within(1e-3f));
+        // the FMOD probe's render with the sound to the side: the far channel (only the 1 - L centre part of the mix) over the
+        // listener-at-0 render, divided by 1 - L from Channel::get3DPanLevel, is the voice's gain
+        var far = new (float D, float Ratio, float Pan)[]
+        {
+            (500, 0.7256f, 0.2208f), (1000, 0.4213f, 0.4471f), (1500, 0.3019f, 0.4472f), (2000, 0.1862f, 0.4472f),
+            (2250, 0.1364f, 0.4472f), (2500, 0.0948f, 0.4472f), (3000, 0.0363f, 0.4472f),
+        };
+        foreach (var (d, ratio, pan) in far)
+        {
+            TestContext.Out.WriteLine($"{d}: gain {c.GainAt(d):F4}, FMOD {ratio / (1 - pan):F4}, pan level {c.PanLevelAt(d):F4} / {pan:F4}");
+            Assert.That(c.PanLevelAt(d), Is.EqualTo(pan).Within(2e-3f));
+            Assert.That(c.GainAt(d), Is.EqualTo(ratio / (1 - pan)).Within(ratio / (1 - pan) * 0.015f));
+        }
         Assert.That(c.GainAt(4500), Is.EqualTo(0f));
         Assert.That(c.GainAt(9000), Is.EqualTo(0f));
         Assert.That(c.Silent, Is.EqualTo(4500f));
@@ -130,16 +194,19 @@ public class DistanceRolloffTests
         TestContext.Out.WriteLine($"00001001 {a}");
         float zero = a.Silent;
         Assert.That(a.GainAt(0), Is.EqualTo(1f));
-        Assert.That(a.GainAt(zero / 2), Is.EqualTo(0.5f).Within(1e-3f));
+        // the volume envelope's half way, times 1 - occlusion (0 -> 1 at 97.7%, smoothstep)
+        Assert.That(a.GainAt(zero / 2), Is.EqualTo(0.5f * (1 - S(zero / 2 / (0.977f * a.DistanceOf(a.Count - 1))))).Within(2e-3f));
         Assert.That(a.GainAt(zero + 1), Is.EqualTo(0f));
         Assert.That(zero / a.DistanceOf(a.Count - 1), Is.EqualTo(0.689f).Within(0.001f));
         // full to 34.4%, then -> 0 at 68% (1550 events), e.g. Hit/00008001
         var b = Event(variable, "Hit", "00008001");
         TestContext.Out.WriteLine($"00008001 {b}");
         float max = b.DistanceOf(b.Count - 1);
-        Assert.That(b.GainAt(0.34f * max), Is.EqualTo(1f));
+        // its volume envelope: 1 at 34%, 0 at 68%, half at 51.2%; times 1 - occlusion (0 -> 1 at 99.6%, smoothstep)
+        Assert.That(b.GainOf(2), Is.EqualTo(1f));
+        Assert.That(b.GainAt(0.34f * max), Is.EqualTo(1 - S(0.34f / 0.996f)).Within(2e-3f));
         Assert.That(b.GainAt(0.68f * max), Is.EqualTo(0f).Within(1e-3f));
-        Assert.That(b.GainAt(0.512f * max), Is.EqualTo(0.5f).Within(0.01f));
+        Assert.That(b.GainAt(0.512f * max), Is.EqualTo(0.5f * (1 - S(0.512f / 0.996f))).Within(0.01f));
     }
 
     [Test]
@@ -179,6 +246,17 @@ public class DistanceRolloffTests
             if (ev.Rolloff is not { } c || !ev.Is3D) continue;
             events++;
             float maxDistance = Player3DOutput.CurveMaxDistance(c);
+            if (c.Count == 0)
+            {
+                // a flat curve: the event's volume at every distance, with no max-distance fade
+                foreach (float at in new[] { 0f, 500f, 5000f, 50000f })
+                {
+                    points++;
+                    float output = Player3DOutput.Gain(RolloffGains.ToDb(ev.Volume), maxDistance, at);
+                    if (MathF.Abs(20 * MathF.Log10(output / ev.Volume)) > 0.05f) bad.Add($"{ev.FullPath} flat at {at:F0}: Godot puts out {output:F4} for {ev.Volume:F4}");
+                }
+                continue;
+            }
             for (int i = 0; i <= c.Count; i++)
             {
                 float last = c.DistanceOf(c.Count - 1);
@@ -201,8 +279,9 @@ public class DistanceRolloffTests
         // the old setup: max distance = silent distance, Godot's filter
         var amb = Event(variable, "AMB", "11100001");
         float old = Player3DOutput.Gain(RolloffGains.ToDb(amb.GainAt(2250)), amb.Silent, 2250);
-        Assert.That(old, Is.EqualTo(0.25f).Within(0.01f));
-        Assert.That(Player3DOutput.ShelfDb(Player3DOutput.DefaultFilterDb, old), Is.EqualTo(-18f).Within(0.3f));
+        TestContext.Out.WriteLine($"ambient at 2250: curve {amb.GainAt(2250):F4}, old setup {old:F4}, shelf {Player3DOutput.ShelfDb(Player3DOutput.DefaultFilterDb, old):F2} dB");
+        Assert.That(old, Is.EqualTo(amb.GainAt(2250) / 2).Within(0.01f));
+        Assert.That(Player3DOutput.ShelfDb(Player3DOutput.DefaultFilterDb, old), Is.LessThan(-15f));
     }
 
     /// <summary>A looping voice stops once as the listener passes its curve's silent distance and plays once as it comes
@@ -237,7 +316,11 @@ public class DistanceRolloffTests
     [TestCase(EffectVoiceSlots.ClientChannels)]
     public void LiveVoicesAllocateNothing(int voices)
     {
-        var c = new DistanceRolloff(new[] { 0f, 0f, 1548f, 3060f, 4500f }, new[] { 1f, 1f, 1f, 0f, 0f });
+        // a hit event's shape: volume, 3D pan level and direct occlusion envelopes, all read per update
+        var c = new DistanceRolloff(new[] { 0f, 0f, 1548f, 3060f, 4500f }, new[] { 1f, 1f, 1f, 0f, 0f },
+            panDistance: new[] { 0f, 733f, 1850f }, panValue: new[] { 0f, 0f, 0.466f },
+            occlusionDistance: new[] { 0f, 4482f }, occlusionValue: new[] { 0f, 1f });
+        Assert.That((c.HasPanLevelEnvelope, c.HasOcclusion), Is.EqualTo((true, true)));
         var g = new RolloffGains(voices);
         for (int i = 0; i < voices; i++) g.Set(i, c, 0.8f, new Vector3(100 * i, 0, 50 * i), stopsPastSilent: i % 2 == 0);
         int sets = 0, stopsOrPlays = 0;
@@ -261,6 +344,9 @@ public class DistanceRolloffTests
         Assert.That(bytes, Is.Zero);
         Assert.That(stopsOrPlays, Is.GreaterThan(0));
     }
+
+    /// <summary>FMOD's smoothstep point shape over a segment's fraction t.</summary>
+    static float S(float t) => t * t * (3 - 2 * t);
 
     static DistanceRolloff Event(string variable, string groupPart, string name)
     {

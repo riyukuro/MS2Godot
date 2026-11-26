@@ -31,6 +31,24 @@ public enum RolloffModel { Custom, Linear, Inverse, LinearSquare }
 /// distance gain here) to f * L + (1 - L) (its 3D volume, 0x1800c50b9). The event's volume envelope is not a 3D factor and
 /// is not blended. <see cref="PanLevelAt"/> is that L.
 /// </para>
+/// <para>
+/// The event's direct Occlusion envelope (flags bit 0x2000, sub-index 0, on the same parameter; any Occlusion envelope is
+/// built-in whatever its unit field says, fmod_event64's loader 0x1800229c9) goes to Channel::set3DOcclusion as the direct
+/// occlusion (the call at 0x18002599f; fmodex's set3DOcclusion 0x1800c6ee0 holds it to 0..1). The gain is times
+/// 1 - occlusion on the whole voice (<see cref="OcclusionAt"/>): Channel::getAudibility blends the occlusion by the pan level
+/// (1 - occlusion * L), but the mix does not. The FMOD probe's renders of AMB/11100001 (pan level 0.447, occlusion 0 -> 1
+/// at 4467.4) to the side give the far channel, which has only the 1 - L centre part, vol * (1 - occ) * (1 - L) within 0.5%
+/// from 500 to 3000 (0.1364 at 2250, the blend would give 0.214), and the total in front follows vol * (1 - occ) to 4000
+/// (0.0011, the blend 0.019). The client's EventSystem::init (soundservice.cpp:523) does not ask for
+/// FMOD_INIT_OCCLUSION_LOWPASS, so the occlusion is volume only. The reverb occlusion (sub-index 1) is not ported: the port
+/// has no reverb.
+/// </para>
+/// <para>
+/// A custom rolloff event without a volume envelope on "(distance)" (every simple 3D event, and a complex one without that
+/// parameter) has gain 1 at every distance: fmodex's custom rolloff without a point array is a distance factor of 1
+/// (0x1800c46ee), fmod_event64 sets no rolloff callback or custom points, and the listener loop starts from FLT_MAX, so no
+/// max distance cuts it (<see cref="Count"/> 0).
+/// </para>
 /// </summary>
 public sealed class DistanceRolloff
 {
@@ -39,10 +57,10 @@ public sealed class DistanceRolloff
     public const int PointCurve = 0x1, PointLinear = 0x2;
 
     readonly float[] distance, gain;
-    readonly float[] panDistance, panValue;
-    readonly int[] shape, panShape;
+    readonly float[] panDistance, panValue, occlusionDistance, occlusionValue;
+    readonly int[] shape, panShape, occlusionShape;
 
-    /// <param name="distance">The envelope's distances (may be empty for a linear, linear square or inverse rolloff without one).</param>
+    /// <param name="distance">The envelope's distances (empty: none, gain 1 with a custom rolloff).</param>
     /// <param name="gain">The envelope's gains.</param>
     /// <param name="model">The event's rolloff bit.</param>
     /// <param name="min">The event's min distance (the models other than custom).</param>
@@ -52,12 +70,17 @@ public sealed class DistanceRolloff
     /// <param name="panValue">Its values.</param>
     /// <param name="shape">The volume envelope's point shapes (null: linear).</param>
     /// <param name="panShape">The pan level envelope's point shapes (null: linear).</param>
+    /// <param name="occlusionDistance">The direct Occlusion envelope's distances (null: none).</param>
+    /// <param name="occlusionValue">Its values.</param>
+    /// <param name="occlusionShape">Its point shapes (null: linear).</param>
     public DistanceRolloff(float[] distance, float[] gain, RolloffModel model = RolloffModel.Custom, float min = 0, float max = 0,
-        float panLevel = 1, float[] panDistance = null, float[] panValue = null, int[] shape = null, int[] panShape = null)
+        float panLevel = 1, float[] panDistance = null, float[] panValue = null, int[] shape = null, int[] panShape = null,
+        float[] occlusionDistance = null, float[] occlusionValue = null, int[] occlusionShape = null)
     {
-        if (distance.Length != gain.Length || distance.Length == 0 && model == RolloffModel.Custom
-            || (panDistance?.Length ?? 0) != (panValue?.Length ?? 0)
-            || shape != null && shape.Length != distance.Length || panShape != null && panShape.Length != (panDistance?.Length ?? 0))
+        if (distance.Length != gain.Length
+            || (panDistance?.Length ?? 0) != (panValue?.Length ?? 0) || (occlusionDistance?.Length ?? 0) != (occlusionValue?.Length ?? 0)
+            || shape != null && shape.Length != distance.Length || panShape != null && panShape.Length != (panDistance?.Length ?? 0)
+            || occlusionShape != null && occlusionShape.Length != (occlusionDistance?.Length ?? 0))
             throw new ArgumentException("rolloff needs matching points");
         if (model != RolloffModel.Custom && !(max > min && min >= 0)) throw new ArgumentException("rolloff needs a min under the max");
         this.distance = distance;
@@ -68,6 +91,8 @@ public sealed class DistanceRolloff
         Max = max;
         PanLevel = Math.Clamp(panLevel, 0f, 1f);
         if (panDistance?.Length > 0) { this.panDistance = panDistance; this.panValue = panValue; this.panShape = panShape; }
+        if (occlusionDistance?.Length > 0)
+        { this.occlusionDistance = occlusionDistance; this.occlusionValue = occlusionValue; this.occlusionShape = occlusionShape; }
         Silent = float.PositiveInfinity;
         if (gain.Length > 0 && gain[^1] == 0)
         {
@@ -98,6 +123,11 @@ public sealed class DistanceRolloff
     public float PanLevel { get; }
     /// <summary>Whether the event has a 3D Pan Level envelope.</summary>
     public bool HasPanLevelEnvelope => panDistance != null;
+    /// <summary>Whether the event has a direct Occlusion envelope.</summary>
+    public bool HasOcclusion => occlusionDistance != null;
+
+    /// <summary>The direct occlusion at <paramref name="d"/>, held to 0..1 as set3DOcclusion does (0 without the envelope).</summary>
+    public float OcclusionAt(float d) => occlusionDistance == null ? 0f : Math.Clamp(At(occlusionDistance, occlusionValue, occlusionShape, d), 0f, 1f);
 
     /// <summary>The 3D pan level at <paramref name="d"/>: the property times the envelope, held to 0..1.</summary>
     public float PanLevelAt(float d) =>
@@ -123,11 +153,9 @@ public sealed class DistanceRolloff
             RolloffModel.Inverse => d <= Min ? 1f : Min / MathF.Min(d, Max),
             _ => 1f,
         };
-        if (Model != RolloffModel.Custom)
-        {
-            float l = PanLevelAt(d);
-            if (l < 1) g = g * l + (1 - l);
-        }
+        float l = PanLevelAt(d);
+        if (Model != RolloffModel.Custom && l < 1) g = g * l + (1 - l);
+        if (occlusionDistance != null) g *= 1 - OcclusionAt(d);
         return distance.Length == 0 ? g : g * At(distance, gain, shape, d);
     }
 
@@ -149,8 +177,9 @@ public sealed class DistanceRolloff
 
     public override string ToString() =>
         (Model == RolloffModel.Custom ? "" : $"{Model.ToString().ToLowerInvariant()} {Min:0.#}..{Max:0.#} ")
-        + Points(distance, gain)
-        + (PanLevel != 1 || panDistance != null ? $" pan {PanLevel:0.###}" + (panDistance != null ? " " + Points(panDistance, panValue) : "") : "");
+        + (distance.Length == 0 ? "flat" : Points(distance, gain))
+        + (PanLevel != 1 || panDistance != null ? $" pan {PanLevel:0.###}" + (panDistance != null ? " " + Points(panDistance, panValue) : "") : "")
+        + (occlusionDistance != null ? " occlusion " + Points(occlusionDistance, occlusionValue) : "");
 
     static string Points(float[] d, float[] v) => string.Join(" ", Enumerable.Range(0, d.Length).Select(i => $"({d[i]:0.#},{v[i]:0.###})"));
 }

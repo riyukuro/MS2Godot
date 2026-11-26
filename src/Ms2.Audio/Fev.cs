@@ -145,8 +145,9 @@ public sealed class FevEvent
     /// _3D_MAXDISTANCE; a 2D event holds FMOD's 1 / 10000 there). The min is 0 in every MS2Sound.fev 3D event. 0 / 0 when
     /// the event has no range (2D, simple, or a record holding 1 / 1).</summary>
     public float MinDistance, MaxDistance;
-    /// <summary>The volume by listener distance of a complex 3D event (<see cref="DistanceRolloff"/>): its built-in volume
-    /// envelope (effect 0xc) on the "(distance)" parameter; null for 2D and simple events.</summary>
+    /// <summary>The volume by listener distance of a 3D event (<see cref="DistanceRolloff"/>): a complex one's built-in volume
+    /// envelope (effect 0xc) on the "(distance)" parameter with its 3D Pan Level and direct Occlusion envelopes there; flat
+    /// (gain 1) for a custom rolloff event without that volume envelope (every simple 3D event); null for 2D events.</summary>
     public DistanceRolloff Rolloff;
     /// <summary>The event's 3D pan level property, record +0x9c (FMOD_EVENTPROPERTY_3D_PANLEVEL; fmod_event64's event
     /// loader 0x180014168 reads it into event+0x168 after the fields of +0x6c..+0x98, read in order). 1 on every
@@ -350,8 +351,10 @@ public sealed class FevProject
 
     /// <summary>The effect id of an event's volume envelope.</summary>
     const int EnvelopeVolume = 0xc;
-    /// <summary>The envelope flags word's bits (fmod_event64's per-layer envelope loop 0x180025590): disabled, 3D Pan Level.</summary>
-    const int EnvelopeDisabled = 0x1, EnvelopePanLevel = 0x400;
+    /// <summary>The envelope flags word's bits (fmod_event64's per-layer envelope loop 0x180025590): disabled, 3D Pan Level
+    /// (0x400, to set3DPanLevel at 0x180026614), Occlusion (0x2000, to set3DOcclusion at 0x18002599f: sub-index 0 the direct
+    /// occlusion, 1 the reverb one). The volume envelope's word is 0xc.</summary>
+    const int EnvelopeDisabled = 0x1, EnvelopePanLevel = 0x400, EnvelopeOcclusion = 0x2000;
     float[] envX, envY;
     int[] envShape;
 
@@ -566,11 +569,14 @@ public sealed class FevProject
             p += 4;
             AddEventDef(ev, U32(p), F32(p + 6), U32(p + 14));
             p += 54;
+            // no envelopes: a custom rolloff 3D one is heard at gain 1 at every distance (DistanceRolloff)
+            if (ev.Is3D && ev.RolloffModel == RolloffModel.Custom) ev.Rolloff = new DistanceRolloff(Array.Empty<float>(), Array.Empty<float>(), panLevel: ev.PanLevel);
         }
         else if (etype == 8)
         {
             volumeEnvs.Clear();
             panEnvs.Clear();
+            occlusionEnvs.Clear();
             int nLayers = U32(p);
             p += 4;
             for (int l = 0; l < nLayers; l++)
@@ -594,16 +600,20 @@ public sealed class FevProject
                     if (ev.Is3D && U32(p) == -1 && U32(p + 12) == EnvelopeVolume && nPts > 0) volumeEnvs.Add((p, layerParam));
                     int flags = U32(p + 12);
                     if (ev.Is3D && nPts > 0 && (flags & EnvelopePanLevel) != 0 && (flags & EnvelopeDisabled) == 0) panEnvs.Add((p, layerParam));
+                    // any Occlusion envelope is built-in whatever its unit says (fmod_event64's loader 0x1800229c9 makes an
+                    // envelope a DSP parameter only with none of 0x1f8 / 0xffff3e00 in its flags)
+                    if (ev.Is3D && nPts > 0 && (flags & EnvelopeOcclusion) != 0 && (flags & EnvelopeDisabled) == 0 && U32(p + 8) == 0)
+                        occlusionEnvs.Add((p, layerParam));
                     p += 24 + 4 * nPts + 8;
                 }
             }
             int nParams = U32(p);
             // 32-byte parameters: u32 name (STRR), u32, f32 min, f32 max, ...
             // the curve is the first volume envelope of a layer driven by the "(distance)" parameter
-            // and the pan level the first 3D Pan Level envelope of such a layer
-            float[] vd = null, vg = null, pd = null, pv = null;
-            int[] vs = null, ps = null;
-            for (int q = 0; q < nParams && volumeEnvs.Count + panEnvs.Count > 0; q++)
+            // and the pan level and direct occlusion the first 3D Pan Level / Occlusion envelope of such a layer
+            float[] vd = null, vg = null, pd = null, pv = null, od = null, ov = null;
+            int[] vs = null, ps = null, os = null;
+            for (int q = 0; q < nParams && volumeEnvs.Count + panEnvs.Count + occlusionEnvs.Count > 0; q++)
             {
                 int r = p + 4 + 32 * q;
                 if (strr[U32(r)] != "(distance)") continue;
@@ -612,15 +622,19 @@ public sealed class FevProject
                     if (param == q) { Points(env, min, max, out vd, out vg, out vs); break; }
                 foreach (var (env, param) in panEnvs)
                     if (param == q) { Points(env, min, max, out pd, out pv, out ps); break; }
+                foreach (var (env, param) in occlusionEnvs)
+                    if (param == q) { Points(env, min, max, out od, out ov, out os); break; }
                 break;
             }
             p += 4 + 32 * nParams;
-            if (vd != null && ev.RolloffModel == RolloffModel.Custom)
-                ev.Rolloff = new DistanceRolloff(vd, vg, shape: vs, panLevel: ev.PanLevel, panDistance: pd, panValue: pv, panShape: ps);
-            // a linear, linear square or inverse event: FMOD's model on its range, times its "(distance)" envelope when it has one
-            else if (ev.Is3D && ev.RolloffModel != RolloffModel.Custom && ev.MaxDistance > ev.MinDistance)
+            // custom: the "(distance)" volume envelope, or gain 1 without one; a linear, linear square or inverse event: FMOD's
+            // model on its range, times that envelope when it has one
+            if (ev.Is3D && ev.RolloffModel == RolloffModel.Custom)
+                ev.Rolloff = new DistanceRolloff(vd ?? Array.Empty<float>(), vg ?? Array.Empty<float>(), shape: vs, panLevel: ev.PanLevel,
+                    panDistance: pd, panValue: pv, panShape: ps, occlusionDistance: od, occlusionValue: ov, occlusionShape: os);
+            else if (ev.Is3D && ev.MaxDistance > ev.MinDistance)
                 ev.Rolloff = new DistanceRolloff(vd ?? Array.Empty<float>(), vg ?? Array.Empty<float>(), ev.RolloffModel, ev.MinDistance, ev.MaxDistance,
-                    ev.PanLevel, pd, pv, vs, ps);
+                    ev.PanLevel, pd, pv, vs, ps, od, ov, os);
         }
         else
         {
@@ -654,7 +668,7 @@ public sealed class FevProject
     public const int InverseRolloff = 0x00100000, LinearRolloff = 0x00200000, LinearSquareRolloff = 0x00400000, CustomRolloff = 0x04000000;
 
     /// <summary>The 3D volume envelopes of the event being read, with their layer's parameter.</summary>
-    readonly List<(int Offset, int Param)> volumeEnvs = new(), panEnvs = new();
+    readonly List<(int Offset, int Param)> volumeEnvs = new(), panEnvs = new(), occlusionEnvs = new();
 
     /// <summary>The instances read by loop mode: [0], [1], [2] for the three modes, [3] for any other value (counted as a loop).</summary>
     public readonly int[] LoopModeCounts = new int[4];
