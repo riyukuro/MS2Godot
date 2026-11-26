@@ -180,6 +180,9 @@ public partial class DevEndpoint
         if (r.GetString("mouse") is { } what)
         {
             var pos = new Vector2((float)r.GetDouble("x"), (float)r.GetDouble("y"));
+            // the viewport's mouse position (Viewport.GetMousePosition, what the movie views sample every 50 ms) follows only the
+            // pointer, not a parsed event: moved here too, so a click is at the point the game reads
+            GetViewport().WarpMouse(pos);
             if (what == "move")
             {
                 Godot.Input.ParseInputEvent(new InputEventMouseMotion { Position = pos, GlobalPosition = pos, Relative = Vector2.Zero });
