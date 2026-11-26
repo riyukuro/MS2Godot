@@ -40,6 +40,8 @@ public class EnchantScrollDialogTests
     sealed class Rig
     {
         public EnchantScrollDialogController C;
+        public EnchantScrollResults R;
+        public List<long> Refreshed = new();
         public EnchantScrollBook Book = new();
         public List<IOutPacket> Sent = new();
         public List<MessageBoxData> Boxes = new();
@@ -67,7 +69,11 @@ public class EnchantScrollDialogTests
             Book.Notice += NoticeIds.Add;
             C = new EnchantScrollDialogController { Book = Book, ShowData = Boxes.Add };
             C.FindItem = uid => Inv.TryGetValue(uid, out var e) ? Wrap(e) : null;
-            C.NoticeText += Notices.Add;
+            // as the HUD keeps it: over the book for the whole session, open window or not
+            R = new EnchantScrollResults(Book) { Model = Model, ShowData = Boxes.Add };
+            R.FindItem = C.FindItem;
+            R.NoticeText += Notices.Add;
+            R.InventorySlotRefresh += Refreshed.Add;
             Add(Scroll, ItemId); Add(Gear, ItemId, 3); Add(Other, ItemId, 1);
             if (!load) return;
             var (rt, p) = src.Open(C.Movie, r => r.Budget = 20_000_000);
@@ -374,7 +380,7 @@ public class EnchantScrollDialogTests
 
     /// <summary>vfunc_67 (:136) through the window's own Close, as the HUD's teardown runs it: the book's IsOpen clears and the
     /// window's handlers leave the session's book, so the next mode 0 asks OpenDialog again (FUN_140f3b920, :199) instead of
-    /// updating the gone window, and a later result raises no box of the old window.</summary>
+    /// updating the gone window, and a later result raises its one box from the dialog object, not from the old window.</summary>
     [Test]
     public void TheWindowsCloseLetsTheNextScrollOpenItAgain()
     {
@@ -387,6 +393,47 @@ public class EnchantScrollDialogTests
         Assert.That((r.Opens, r.Book.SlotRegistered), Is.EqualTo((1, false)), "OpenDialog, not the old window's UpdateScrollInfo");
         var body = Of(w => { var probe = new ByteReader(new byte[600]); ItemReader.ReadBodyInto(probe, new EquipItem { Id = 1 }); w.WriteBytes(new byte[probe.Position]); });
         r.Recv(Of(w => { w.WriteByte(3); w.WriteShort(0); w.WriteLong(Gear); w.WriteBytes(body); }));
-        Assert.That((r.Stored.Count, r.Boxes.Count, r.Sent.Count), Is.EqualTo((1, 0, 0)), "the book stores the item; the closed window shows no box");
+        Assert.That((r.Stored.Count, r.Boxes.Count, r.Sent.Count), Is.EqualTo((1, 1, 0)), "the book stores the item; one box, the closed window's none");
+    }
+
+    /// <summary>FUN_140f3c6c0 runs on the dialog object, which the client keeps whether the window is open or not
+    /// (OnEnchantScroll, scenestategame.cpp:8084): the enchant pressed, then the window closed before the answer. Code 0 still
+    /// stores the item, refreshes its bag slot and shows the "enchant_ok" box, once; its OK only resets the book (the closed
+    /// window has nothing to close) and sends nothing. An error code still shows its notice. With the window open the same
+    /// result shows one box and one refresh, not one per handler.</summary>
+    [Test]
+    public void AResultAfterTheWindowClosedStillShowsItsBoxAndRefreshesTheSlot()
+    {
+        var body = Of(w => { var probe = new ByteReader(new byte[600]); ItemReader.ReadBodyInto(probe, new EquipItem { Id = 1 }); w.WriteBytes(new byte[probe.Position]); });
+        byte[] ok = Of(w => { w.WriteByte(3); w.WriteShort(0); w.WriteLong(Gear); w.WriteBytes(body); });
+
+        var open = new Rig();
+        open.Open(1);
+        open.Preview(Gear, 1, new[] { (0x1b, 40) });
+        open.Recv(ok);
+        Assert.That((open.Boxes.Count, open.Refreshed.Count), Is.EqualTo((1, 1)), "the open window: one box, one refresh");
+
+        var r = new Rig();
+        r.Open(1);
+        r.Preview(Gear, 1, new[] { (0x1b, 40) });
+        r.C.OnCallback("onEnchant", new object[] { Gear.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        Assert.That(r.Sent, Has.Count.EqualTo(1));
+        r.C.Close();
+        Assert.That(r.Book.IsOpen, Is.False);
+        int closes = r.Closes;
+        r.Recv(ok);
+        Assert.That(r.Stored.Single().Uid, Is.EqualTo(Gear));
+        Assert.That(r.Refreshed, Is.EqualTo(new[] { Gear }), "FUN_141999e00 before the box");
+        var box = r.Boxes.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid), Is.EqualTo((0x11, EnchantScrollDialogController.ResultTag, Gear)));
+        box.InvokeCallback(0, null);
+        Assert.That((r.Closes, r.Book.SlotRegistered, r.Book.IsOpen, r.Sent.Count), Is.EqualTo((closes + 1, false, false, 1)), "the OK resets the book, sends nothing");
+
+        r.Recv(Of(w => { w.WriteByte(3); w.WriteShort(3); }));
+        Assert.That(r.NoticeIds.Last(), Is.EqualTo(EnchantScrollBook.FirstNotice + 2));
+        Assert.That(r.Notices, Has.Count.EqualTo(r.Model.Tables.Common(EnchantScrollBook.FirstNotice + 2) is { Length: > 0 } ? 1 : 0), "the closed window's code still shows its notice");
+        r.R.Detach();
+        r.Recv(ok);
+        Assert.That(r.Boxes, Has.Count.EqualTo(1), "after the HUD's teardown no box");
     }
 }

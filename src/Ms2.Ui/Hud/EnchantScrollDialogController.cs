@@ -11,7 +11,8 @@ namespace Ms2.Ui.Hud;
 /// "EnchantScrollDialog", movie uienchantscrolldialog) with its one EnchantScrollSlot (enchantscrollslot.cpp), bound by the
 /// movie's m_slot.enchantItem under the setData's bindID. The state is <see cref="EnchantScrollBook"/>; this controller
 /// writes the setData objects (UpdateScrollInfo @0x140f3cb10 and FUN_140f3bd10), handles onEnchant and the slot's
-/// NotifyDragSlot calls, and builds the result and refund boxes.
+/// NotifyDragSlot calls, and builds the result and refund boxes. The result's box, notice and slot refresh do not need the
+/// window, so <see cref="EnchantScrollResults"/> shows them (FUN_140f3c6c0 runs on the dialog object, open or not).
 /// <para>STILL-OPEN: GMS2 item records keep each enchant option as a rate and a value (upstream ItemEnchant.WriteTo); the
 /// GMS2 client's GetEnchantRatio is not decompiled, so here a GMS2 ratio is the rate plus value / 1000 (the KMS rule when
 /// the rate is 0).</para>
@@ -37,11 +38,7 @@ public sealed class EnchantScrollDialogController : UiController, IDragSlotOwner
     public Func<long, Item> FindItem = _ => null;
     /// <summary>Shift held (DragSlot::vfunc_13's check).</summary>
     public Func<bool> ShiftHeld = () => false;
-    /// <summary>FUN_141275260(id, 1, 1): the notice text.</summary>
-    public event Action<string> NoticeText;
     public event Action Closed;
-    /// <summary>FUN_140f3c6c0's inventory refresh (FUN_141999e00 on 0x4e2d) of the enchanted item, before the box.</summary>
-    public event Action<long> InventorySlotRefresh;
     /// <summary>CReservedWordTable::ReplaceValueWords on the scroll description.</summary>
     public Func<string, string> ReplaceValueWords = t => t;
 
@@ -61,8 +58,6 @@ public sealed class EnchantScrollDialogController : UiController, IDragSlotOwner
         Book.ScrollInfoChanged += ShowScrollInfo;
         Book.Previewed += ShowPreview;
         Book.Cleared += OnCleared;
-        Book.Notice += OnNotice;
-        Book.Succeeded += OnSucceeded;
         Book.CloseRequested += OnBookClosed;
         Book.SlotChanged += OnSlotChanged;
         Book.UpdateScrollInfo();
@@ -78,8 +73,6 @@ public sealed class EnchantScrollDialogController : UiController, IDragSlotOwner
             Book.ScrollInfoChanged -= ShowScrollInfo;
             Book.Previewed -= ShowPreview;
             Book.Cleared -= OnCleared;
-            Book.Notice -= OnNotice;
-            Book.Succeeded -= OnSucceeded;
             Book.CloseRequested -= OnBookClosed;
             Book.SlotChanged -= OnSlotChanged;
             Book.IsOpen = false;
@@ -94,19 +87,6 @@ public sealed class EnchantScrollDialogController : UiController, IDragSlotOwner
 
     void OnCleared() { if (Host?.Entity != null && !closing) Host.Invoke("clear"); }
     void OnSlotChanged() { if (Host?.Entity != null && !closing) Host.Push(Slot); }
-
-    void OnNotice(int id)
-    {
-        string text = T(id);
-        if (!string.IsNullOrEmpty(text)) NoticeText?.Invoke(text);
-    }
-
-    void OnSucceeded(long uid)
-    {
-        InventorySlotRefresh?.Invoke(uid);
-        if (Model == null || FindItem(uid) is not { } item) return;
-        ShowData(ResultBox(Model, item, () => Book?.Close()));
-    }
 
     void ShowScrollInfo() { if (Host?.Entity != null && !closing && ScrollInfoData() is { } d) Host.Invoke("setData", Host.Obj(d.ToArray())); }
     void ShowPreview(EnchantScrollMessage.Preview p) { if (Host?.Entity != null && !closing && PreviewData(p) is { } d) Host.Invoke("setData", Host.Obj(d.ToArray())); }
