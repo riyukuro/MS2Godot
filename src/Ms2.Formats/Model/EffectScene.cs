@@ -388,6 +388,10 @@ public sealed class EmitterDef
     public int MeshNode = -1;                    // node the mesh hangs from
     public MeshEmitFrom MeshEmission;            // NiPSMeshEmitter "Mesh Emission Type"
     public MeshVelocity MeshVelocityType;        // NiPSMeshEmitter "Initial Velocity Type"
+    /// <summary>Mesh emitter: the share of its mesh refs that are null. The client picks one ref at random per particle
+    /// and a null pick (or no refs at all) creates no particle (NiPSMeshEmitter.cpp:103-125, ComputeInitialPositionAndVelocity
+    /// false, NiPSEmitter.cpp:165-183 continue); 1 means the emitter emits nothing.</summary>
+    public double MeshNullShare;
     public Func<double, double> Rate; public TimeCtl RateCtl;           // births per second (NiPSEmitParticlesCtlr)
     public Func<double, double> On; public TimeCtl OnCtl;               // emitter active
     /// <summary>The emitter's float controllers by <see cref="EmitterField"/>, or null when it has none. Each NiPSEmitterFloatCtlr
@@ -1263,8 +1267,12 @@ public sealed class EffectScene
                 case "NiPSMeshEmitter":
                 {
                     ed.Kind = EmitterKind.Mesh;
-                    foreach (var mb in e.Ints("Mesh Emitters"))
+                    var refs = e.Ints("Mesh Emitters");
+                    int nulls = refs.Count(r => r < 0 || r >= n.Blocks.Count);
+                    ed.MeshNullShare = refs.Length == 0 ? 1 : (double)nulls / refs.Length;
+                    foreach (var mb in refs)
                     {
+                        if (mb < 0 || mb >= n.Blocks.Count) continue;
                         var mm = ModelData.MeshStreams(n, (int)mb);
                         if (!mm.TryGetValue("POSITION", out var pos) || pos.n != 3) continue;
                         // The client locks each stream's submesh 0 region only (NiDataStreamElementLock::begin/count,

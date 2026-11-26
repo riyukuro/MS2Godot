@@ -1732,6 +1732,8 @@ void fragment() {
         // emission is 0 here)
         float lifespan = (float)v.Lifespan + Spread((float)v.LifespanVar / 2);
         if (lifespan < 0) return;
+        // a mesh emitter's pick of a null mesh ref creates no particle (NiPSMeshEmitter.cpp:103-125)
+        if (e.MeshNullShare > 0 && (e.MeshNullShare >= 1 || R() < e.MeshNullShare)) return;
         int i = ps.Count++;
         ParticlesEmitted++;
         var ew = World(e.Node >= 0 ? e.Node : ps.Def.Node, t, camLocal);

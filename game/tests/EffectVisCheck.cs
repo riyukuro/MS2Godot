@@ -13,7 +13,9 @@ namespace Ms2Godot.Tests;
 /// a culled node with no keys hides its child's mesh all the time; another mesh stays shown. Before, the meshes under the
 /// vis nodes were drawn all the time and a culled parent's child was drawn. A system on a culled node simulates and draws
 /// nothing (its quads and a mesh system's clones are hidden). A mesh system whose reset controller loops every 0.5 s loses
-/// every particle at the wrap and its clones are reused (before, the particles lived on). The steps allocate 0 B.
+/// every particle at the wrap and its clones are reused (before, the particles lived on). A mesh emitter whose only mesh
+/// ref is null emits nothing and one with half its refs null about half (before, both emitted every particle from the
+/// emitter's node). The steps allocate 0 B.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class EffectVisCheck : Node
@@ -45,6 +47,7 @@ public partial class EffectVisCheck : Node
         try { Vis(fails); } catch (Exception e) { fails.Add("vis: " + e); }
         try { CulledSystems(fails); } catch (Exception e) { fails.Add("culled systems: " + e); }
         try { Reset(fails); } catch (Exception e) { fails.Add("reset: " + e); }
+        try { NullMesh(fails); } catch (Exception e) { fails.Add("null mesh: " + e); }
         foreach (var f in fails) GD.PrintErr("effect vis: " + f);
         GD.Print(fails.Count == 0 ? "effect vis: PASS" : $"effect vis: FAIL ({fails.Count})");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
@@ -167,5 +170,26 @@ public partial class EffectVisCheck : Node
         if (again < 40) fails.Add($"reset: {again} particles at 0.98 s, want the system emitting again");
         if (madeAgain > madeBefore + 4) fails.Add($"reset: {madeAgain} clones made by 0.98 s after {madeBefore}; the reset's clones are not reused");
         fx.QueueFree();
+    }
+
+    void NullMesh(List<string> fails)
+    {
+        int Emitted(double nullShare)
+        {
+            var sc = new EffectScene { Duration = 10 };
+            sc.Nodes.Add(new EffectNode { Name = "system" });
+            var em = Emitter(); em.Kind = EmitterKind.Mesh; em.MeshNullShare = nullShare;
+            sc.Systems.Add(new ParticleSystemDef { Node = 0, Name = "quads", MaxParticles = 256, Material = Material(), Emitters = { em } });
+            var fx = Start(sc);
+            for (int f = 0; f < 50; f++) fx._Process(0.02);     // 1 s at 100 a second
+            int n = fx.ParticlesEmitted;
+            fx.QueueFree();
+            return n;
+        }
+        int none = Emitted(1), half = Emitted(0.5), all = Emitted(0);
+        GD.Print($"effect vis: null mesh: {none} emitted with every ref null, {half} with half, {all} with none");
+        if (none != 0) fails.Add($"null mesh: {none} particles from an emitter whose mesh refs are all null, want 0");
+        if (all < 90) fails.Add($"null mesh: {all} particles with no null ref, want about 100");
+        if (half < all / 4 || half > all * 3 / 4) fails.Add($"null mesh: {half} particles with half the refs null, want about {all / 2}");
     }
 }
