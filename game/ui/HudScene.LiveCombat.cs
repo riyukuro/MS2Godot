@@ -68,6 +68,19 @@ public partial class HudScene
     /// <summary>Shuts every dialog, then opens one of the everyday windows the way its menu button does (inventory: the guide's
     /// InventoryDialog occurrence, quest: the quest log toggle, sysmenu: the system menu); whether it is open. A live shot of the
     /// same window in two builds compares how the whole swf UI draws.</summary>
+    /// <summary>The quest log's give-up button for a quest: the log opened when it is shut, then its movie's onGiveUpQuest
+    /// (GiveUpQuest, uiquestdialog.cpp:1792); whether the open log took it.</summary>
+    public bool QuestLogGiveUpScripted(int questId)
+    {
+        if (questLog == null || questLogSide == null || questLogSide.IsClosed) OpenQuestLog();
+        if (questLog?.Host == null || questLogSide is not { IsClosed: false }) return false;
+        questLog.Player.External?.Invoke(questLog.Host.Id, new object[] { "onGiveUpQuest", questId });
+        return true;
+    }
+
+    /// <summary>Whether the minimap's mark of a portal shows; null without the minimap or the mark.</summary>
+    public bool? MinimapPortalMarkScripted(int portalId) => minimapSide?.PortalMarkShown(portalId);
+
     public bool OpenWindowScripted(string name)
     {
         CloseAllDialogs();

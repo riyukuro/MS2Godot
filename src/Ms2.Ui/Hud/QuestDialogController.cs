@@ -26,8 +26,12 @@ public sealed class QuestDialogController : UiController
     /// <summary>CGameOption etc m_20 / m_21 / m_22: displayEpicQuest, displayWorldQuestV2, displayRepeatQuest.</summary>
     public bool DisplayEpic = true, DisplayWorld = true, DisplayRepeat = true;
 
-    /// <summary>onGiveUpQuest (GiveUpQuest, :1792: the confirm box, then the give-up packet).</summary>
-    public event Action<int> GiveUpQuest;
+    /// <summary>GiveUpQuest / OnGiveUpConfirm's packet (uiquestdialog.cpp:1813, :1826): Quest mode 6 with the quest id.</summary>
+    public event Action<int> SendGiveUp;
+    /// <summary>GiveUpQuest's confirm box (CreateMessageBox type 1, then FUN_140d73c60).</summary>
+    public Action<MessageBoxData> ShowMessageBox = MessageBoxQueue.Show;
+    /// <summary>The local player is in the world (WorldService::GetLocalPlayer, which vfunc_o178_2 needs).</summary>
+    public Func<bool> HasLocalPlayer = () => true;
     /// <summary>onRegister: CQuest::RequestTrackingState(regist) of the quest (the tracking packet, questmanager_1.cpp).</summary>
     public event Action<int, bool> RegisterQuest;
     /// <summary>
@@ -81,7 +85,7 @@ public sealed class QuestDialogController : UiController
                 RefreshDetail();
                 return true;
             case "ongiveupquest":
-                if (args.Length != 0) GiveUpQuest?.Invoke((int)UInt(0));
+                if (args.Length != 0) GiveUpQuest((int)UInt(0));
                 return true;
             case "onregister":
                 if (args.Length != 0) RegisterQuest?.Invoke((int)UInt(0), Bool(1));
@@ -129,6 +133,95 @@ public sealed class QuestDialogController : UiController
         int tab = GetTab();
         if (tab != 4) filter[tab] = Rt.ToBoolean(args[0]);
         RefreshTab();
+    }
+
+    /// <summary>
+    /// GiveUpQuest @0x141aa1b50 (uiquestdialog.cpp:1792): a taken quest with data; a time-limited one (FUN_14074b090) not
+    /// yet expired asks first (s_quest_giveup_warning, OnGiveUpConfirm @0x141aa1fa0 sends on button 0), else the packet goes
+    /// at once; RefreshDetail after the send.
+    /// </summary>
+    public void GiveUpQuest(int id)
+    {
+        if (Log?.State.Get(id) is not { } q) return;
+        if (Log.Table.Quest(id) is not { } d) return;
+        if (q.State != 1) return;
+        // IsExpired: the record's own flag (an unknown end time reads as not expired)
+        bool confirm = QuestCommon.IsTimeLimited(d) && !q.Expired;
+        if (confirm)
+        {
+            var box = MessageBoxQueue.CreateWithCallback(MessageBoxData.CommonByKey("s_quest_giveup_warning"), 1, (button, _) =>
+            {
+                if (button != 0) return true;
+                SendGiveUp?.Invoke(id);
+                RefreshDetail();
+                return true;
+            });
+            ShowMessageBox(box);
+            return;
+        }
+        SendGiveUp?.Invoke(id);
+        RefreshDetail();
+    }
+
+    /// <summary>vfunc_55 with the movie up: the dialog is open.</summary>
+    bool Open => !IsClosed && Host?.Entity != null;
+
+    /// <summary>vfunc_o178_1 @0x141a9aa90 (uiquestdialog.cpp:586): a quest taken goes into m_pinned; RefreshTab when open.</summary>
+    public void OnQuestAccepted(int id)
+    {
+        Log?.Pinned.Add(id);
+        if (Open) RefreshTab();
+    }
+
+    /// <summary>
+    /// vfunc_o178_2 @0x141a9ab10 (:594): a quest rewarded, with a local player: CloseChapter of its chapter (m_28); when
+    /// open, RefreshTab, SelectListIndex(-1), RefreshDetail and updatePaper(1).
+    /// </summary>
+    public void OnQuestRewarded(int chapter)
+    {
+        if (!HasLocalPlayer()) return;
+        CloseChapter(chapter);
+        if (Open) RefreshAll();
+    }
+
+    /// <summary>vfunc_o178_5 @0x141a9acc0 (:617): a quest given up or expired; when open, the same refresh as a reward.</summary>
+    public void OnQuestRemoved()
+    {
+        if (Open) RefreshAll();
+    }
+
+    /// <summary>vfunc_o178_6 @0x141a9ada0 (:630): a quest's tracking changed; RefreshTab when open. vfunc_o178_3 (progress)
+    /// is empty.</summary>
+    public void OnQuestTracking()
+    {
+        if (Open) RefreshTab();
+    }
+
+    void RefreshAll()
+    {
+        RefreshTab();
+        SelectListIndex(-1);
+        RefreshDetail();
+        if (Host.Entity != null) Host.Invoke("updatePaper", 1);
+    }
+
+    /// <summary>CloseChapter @0x141aa2520 (:1910) on the sub-tab GetSubTab reads (3, none, without the movie).</summary>
+    public void CloseChapter(int chapter)
+    {
+        if (Log == null) return;
+        Log.SubTab = Host?.Entity != null ? GetSubTab() : 3;
+        Log.CloseChapter(chapter);
+    }
+
+    /// <summary>SelectListIndex @0x141a9c0e0 (:832): m_questList's selected index, vfunc_24(true) (invalidate, validateNow),
+    /// then ScrollToSelected (scrollToSelected, ascorelist.cpp:133).</summary>
+    public void SelectListIndex(int index)
+    {
+        if (Host.Child("m_questList") is not { } list) return;
+        Host.Set(list, "selectedIndex", index);
+        Host.Invoke(list, "invalidate");
+        Host.Invoke(list, "validateNow");
+        Host.Invoke(list, "scrollToSelected");
     }
 
     /// <summary>GetSubTabFilter (:932): the sub-tab 0, 1 or 2, else 4.</summary>

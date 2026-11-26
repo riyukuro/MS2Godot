@@ -146,8 +146,9 @@ public sealed class QuestLog
     public bool ProgressOnly;
     /// <summary>m_188, the quest the dialog was opened to show (FocusQuest); 0 for none.</summary>
     public int Focus;
-    /// <summary>m_pinned, the quests marked new (HasPinned); OnSelectQuest takes a quest out (RemovePinned).</summary>
-    public readonly List<int> Pinned = new();
+    /// <summary>m_pinned, the quests marked new (HasPinned): each quest taken goes in (vfunc_o178_1), OnSelectQuest takes it
+    /// out (RemovePinned). The dialog keeps it from the start of the game, so a host may give the list it keeps.</summary>
+    public List<int> Pinned = new();
     /// <summary>m_flags: per sub-tab, per character id, each chapter's open flag (GetFlags).</summary>
     readonly Dictionary<long, Dictionary<int, bool>>[] flags = { new(), new(), new() };
 
@@ -504,6 +505,14 @@ public sealed class QuestLog
         if (!flags[SubTab].TryGetValue(State.CharacterId, out var f)) flags[SubTab][State.CharacterId] = f = new Dictionary<int, bool>();
         if (!f.ContainsKey(chapter)) f[chapter] = IsSubTabOne;
         return f;
+    }
+
+    /// <summary>CloseChapter @0x141aa2520 (uiquestdialog.cpp:1910): once every quest of the chapter is rewarded
+    /// (AreGroupQuestsComplete), its flag on the sub-tab is closed; nothing without a sub-tab.</summary>
+    public void CloseChapter(int chapter)
+    {
+        if (!AreGroupQuestsComplete(chapter)) return;
+        if (Flags(chapter) is { } f) f[chapter] = false;
     }
 
     /// <summary>IsChapterOpen: the focused quest's chapter is open, else its flag.</summary>

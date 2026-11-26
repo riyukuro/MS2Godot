@@ -1644,6 +1644,71 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    static bool ClipShown(UiHost h, AsObject clip) => clip is AsDisplayObject d ? d.visible : Ms2.Avm2.Rt.ToBoolean(h.Get(clip, "visible"));
+
+    [Test]
+    public void MinimapPortalMarkFollowsThePortalAtTheKind4Refresh()
+    {
+        // RefreshPortal @0x141a407c0 (uiminimapentity.cpp:3017) on the kind-4 refresh (m_47c): when the clip's visible is not
+        // the portal's FUN_14169d1d0, or the entities are invalid (InvalidateEntities, :2078), UpdatePortal(false); a moved
+        // visible, icon or state is changeEntityData. The other kinds leave a portal alone (UpdateProxyPosition returns).
+        bool shown = false;
+        int built = 0;
+        string icon = "portal";
+        Ms2.Formats.World.MinimapIcons.Entity Icon() => new(icon, "", "portal", "Exit", shown, false);
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) };
+        c.Marks.Add(new()
+        {
+            Entity = Icon(), Position = () => default, ShowGuide = true, HasPortal = true, PortalType = 1, PortalId = 5,
+            PortalVisible = () => shown, FromPortal = () => { built++; return Icon(); },
+        });
+        var h = Load(c, Model());
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        var mark = c.Marks[0];
+        Assert.That(mark.Clip, Is.Not.Null);
+        Assert.That(ClipShown(h, mark.Clip), Is.False, "a hidden portal has its proxy, hidden");
+        ulong now = 1000;
+        void Tick(int n) { for (int i = 0; i < n; i++) { c.Process(now); now += 100; } }
+
+        shown = true;
+        Tick(3);                                                                // kinds 1, 2, 3
+        Assert.That(built, Is.Zero);
+        Assert.That(ClipShown(h, mark.Clip), Is.False);
+        Tick(1);                                                                // kind 4
+        Assert.That(built, Is.EqualTo(1));
+        Assert.That(mark.Visible, Is.True);
+        Assert.That(ClipShown(h, mark.Clip), Is.True);
+        Tick(4);
+        Assert.That(built, Is.EqualTo(1), "the clip already shows what the portal does");
+
+        // a quest event with data invalidates: the next kind 4 runs UpdatePortal on an unchanged portal too
+        c.OnQuestEvent(false);
+        Tick(4);
+        Assert.That(built, Is.EqualTo(1), "a quest without data: nothing");
+        c.OnQuestEvent(true);
+        var clip = mark.Clip;
+        Tick(4);
+        Assert.That(built, Is.EqualTo(2));
+        Assert.That(mark.Clip, Is.SameAs(clip), "nothing moved: no changeEntityData");
+        Tick(4);
+        Assert.That(built, Is.EqualTo(2), "the invalid flag is cleared at its kind 4");
+
+        // a result invalidates too; a new icon is changeEntityData
+        icon = "event_portal";
+        c.OnQuestResult();
+        Tick(4);
+        Assert.That(built, Is.EqualTo(3));
+        Assert.That(mark.Entity.Icon, Is.EqualTo("event_portal"));
+        Assert.That(ClipShown(h, mark.Clip), Is.True);
+
+        shown = false;
+        Tick(4);
+        Assert.That(built, Is.EqualTo(4));
+        Assert.That(mark.Visible, Is.False);
+        Assert.That(ClipShown(h, mark.Clip), Is.False);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     static (MinimapController c, UiHost h) PingMinimap(bool allowed, List<string> sounds)
     {
         var m = Model();

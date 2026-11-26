@@ -230,6 +230,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchDamage = null;
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
+        UnwatchQuestEvents();
         MassiveEventUnwatch();
         TriggerTimerUnwatch();
         RoomTimerUnwatch();
@@ -1439,14 +1440,25 @@ public partial class HudScene : Node, IUiStageHost
             var npc = n;
             marks.Add(new() { Entity = e, Position = () => World.FieldPortals.ToMs2(npc.Position), Moves = true });
         }
-        // STILL-OPEN: in a live field the minimap still marks the xblock's portals (their own flags), not the server-listed
-        // ones (LivePortals: shown, minimap flag from FieldPortal 0x48)
+        // every portal of the field gets its proxy, a hidden one too: RefreshPortal shows it when FUN_14169d1d0 (the minimap
+        // flag and IsShown) turns true. In a live field those are the server-listed portal's (LivePortals: shown after the
+        // quest masks, minimap flag from FieldPortal 0x48), else the xblock's.
+        // STILL-OPEN: the marks are the xblock's portals: one only the server lists gets none, and one it never lists keeps
+        // the xblock's flags
+        var livePortals = Ms2Godot.Net.LiveSession.Instance?.Portals is { } lps && lps.FieldId == fc.FieldId ? lps : null;
         foreach (var p in fc.Portals.All)
         {
-            var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));
-            if (e == null || !e.Visible) continue;
+            int field = fc.FieldId, target = p.TargetField, type = (int)p.Entity.Number("PortalType"), id = p.Id;
+            bool own = p.Visible && p.Entity.Bool("MinimapIconVisible", true);
+            bool Flags() => livePortals?.ById(id) is { } lp ? lp.Minimap && lp.Shown : own;
+            var e = icons.Portal(field, target, type, Flags(), true);
+            if (e == null) continue;
             var at = p.Position;
-            marks.Add(new() { Entity = e, Position = () => at, ShowGuide = true, HasPortal = true, PortalType = (int)p.Entity.Number("PortalType"), PortalId = p.Id });
+            marks.Add(new()
+            {
+                Entity = e, Position = () => at, ShowGuide = true, HasPortal = true, PortalType = type, PortalId = id,
+                PortalVisible = Flags, FromPortal = () => icons.Portal(field, target, type, Flags(), true),
+            });
         }
         static bool IsModel(FieldEntity e, string model) =>
             string.Equals(e.ModelName, model, StringComparison.OrdinalIgnoreCase) || e.HasMixin(model);
@@ -2195,6 +2207,7 @@ public partial class HudScene : Node, IUiStageHost
             if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the quest log runs interpreted");
             var log = QuestLogSource();
             if (log == null) return;
+            log.Pinned = questListeners.Pinned;
             if (questState != null)
             {
                 var parts = questState.Split(':');
@@ -2220,6 +2233,7 @@ public partial class HudScene : Node, IUiStageHost
             };
             if (questShot != null) (questLogSide.OpenTab, questLogSide.OpenSubTab) = (questShot[0], questShot[1]);
             questLogSide.Unloaded += () => { questLog?.Host.Unload(); questLog?.QueueFree(); questLog = null; };
+            questLogSide.SendGiveUp += id => Ms2Godot.Net.LiveSession.Instance?.SendTalk(new Ms2.Net.Packets.QuestAbandonRequest(id));
         }
         var t = System.Diagnostics.Stopwatch.StartNew();
         questLog = new MovieDialog(assets, questLogSide, questLogModel, ScreenMode.PixelSize(GetWindow()));
@@ -3298,6 +3312,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchGuild();
         WatchChangeJob();
         WatchAttend();
+        WatchQuestEvents();
         var slot = new Control { Name = "GameMenuSlot", MouseFilter = Control.MouseFilterEnum.Ignore };
         ui.AddChild(slot);
         HudOpen().Open(() =>

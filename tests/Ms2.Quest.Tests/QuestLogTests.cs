@@ -122,6 +122,27 @@ public class QuestLogTests
     }
 
     [Test]
+    public void CloseChapterClosesTheFlagOnceEveryQuestOfTheChapterIsRewarded()
+    {
+        // CloseChapter @0x141aa2520 (uiquestdialog.cpp:1910): AreGroupQuestsComplete, then GetFlags' flag set false
+        var s = new FakeState();
+        s.Add(100, 2);
+        s.Add(101, 1, start: 5);
+        var log = Log(s, 0, 1);
+        Assert.That(log.IsChapterOpen(10), Is.True, "the in-progress sub-tab opens a chapter the first time");
+        log.CloseChapter(10);
+        Assert.That(log.IsChapterOpen(10), Is.True, "101 not rewarded: nothing");
+        s.Add(101, 2, start: 5, complete: 9);
+        log.CloseChapter(10);
+        Assert.That(log.IsChapterOpen(10), Is.False);
+        log.SubTab = 3;
+        log.CloseChapter(10);                                                  // no flags without a sub-tab
+        Assert.That(log.IsChapterOpen(10), Is.False);
+        log.SubTab = 1;
+        Assert.That(log.IsChapterOpen(10), Is.False);
+    }
+
+    [Test]
     public void EpicTabInProgress()
     {
         var s = new FakeState();

@@ -313,6 +313,20 @@ public partial class LiveSession
                 Check($"quest {id} is given up (state {live.Quests.Get(id)?.State})", live.Quests.Get(id) is not { State: 1 });
                 continue;
             }
+            if (step.StartsWith("loggiveup:"))      // loggiveup:<quest id>: the quest log's give-up button (its movie's onGiveUpQuest) for an untimed quest, then until the server's answer
+            {
+                int id = int.Parse(step[10..]);
+                Check($"the quest log takes the give-up of {id}", hud.QuestLogGiveUpScripted(id));
+                await until(() => live.Quests.Get(id) is not { State: 1 }, 60 * 10); await frames(60);
+                Check($"quest {id} is given up from the log (state {live.Quests.Get(id)?.State})", live.Quests.Get(id) is not { State: 1 });
+                continue;
+            }
+            if (step.StartsWith("minimapmark:"))      // minimapmark:<portal id>: whether the minimap's mark of the portal shows
+            {
+                int id = int.Parse(step[12..]);
+                GD.Print($"live: combat minimap mark of portal {id}: {hud.MinimapPortalMarkScripted(id)?.ToString() ?? "none"}");
+                continue;
+            }
             if (step.StartsWith("portalstate:"))      // portalstate:<portal id>: the field's portal of that id as the masks left it (shown, glow)
             {
                 int id = int.Parse(step[12..]);

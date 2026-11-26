@@ -68,6 +68,12 @@ public sealed class MinimapController : UiController
         /// <summary>The entity the movie made for it (null before the field image loads).</summary>
         public AsObject Clip { get; internal set; }
         internal bool Visible;
+        /// <summary>For a portal: CPortal::FUN_14169d1d0 now (its minimap flag and IsShown), which RefreshPortal tests against the
+        /// clip's visible.</summary>
+        public Func<bool> PortalVisible;
+        /// <summary>For a portal: UpdatePortal(false) (uiminimapentity.cpp:3275), the entity from the portal as it is now; null
+        /// when the destination has no field data (UpdatePortal returns before it changes the entity).</summary>
+        public Func<MinimapIcons.Entity> FromPortal;
     }
 
     /// <summary>The feature UIMinimapEntityProxy::vfunc_3 tests (IsFeatureEnabled(0x1a), uiminimapentity.cpp:682).</summary>
@@ -93,6 +99,15 @@ public sealed class MinimapController : UiController
 
     /// <summary>The marks in BuildEntities' order: non-portal proxies, the portals, then the taxi, named and map objects.</summary>
     public readonly List<Mark> Marks = new();
+
+    /// <summary>Whether the mark of the portal <paramref name="portalId"/> shows on the movie; null without such a mark or
+    /// before its entity is made.</summary>
+    public bool? PortalMarkShown(int portalId)
+    {
+        foreach (var m in Marks)
+            if (m.HasPortal && m.PortalId == portalId && m.Clip != null) return ClipVisible(m.Clip);
+        return null;
+    }
 
     /// <summary>
     /// EnableTaxiFrame (@0x141a3a780, uiminimapentity.cpp:1987), from OnTaxi's open branch: nothing in a house field
@@ -270,6 +285,9 @@ public sealed class MinimapController : UiController
     double centerX, centerY, scale = 1;                  // m_208, m_scale (OnUpdateCenter)
     ulong lastRefresh;                                   // m_timer474
     int refreshKind = 1;                                 // m_47c
+    bool entitiesInvalid, namedInvalid;                  // m_210, m_211 (InvalidateEntities)
+    /// <summary>m_210: the next kind 4 pass refreshes every portal mark.</summary>
+    public bool EntitiesInvalid => entitiesInvalid;
 
     /// <summary>
     /// OnLoadComplete (uiminimapentity.cpp:1104): UIDialog's, then BuildUIData and BuildField; last (:1127-1131), when the
@@ -549,13 +567,71 @@ public sealed class MinimapController : UiController
         int groupType = 1, Func<object[], object> userFunction = null)
     {
         if (string.IsNullOrEmpty(icon)) return null;
+        return Host.Invoke("createEntity", Data(icon, frame, layer, text, showText, showGuide, inFieldNpc, pos, visible, groupType, userFunction)) as AsObject;
+    }
+
+    /// <summary>UIMinimapEntity::BuildData (uiminimapentity.cpp:373).</summary>
+    AsObject Data(string icon, string frame, string layer, string text, bool showText, bool showGuide, bool inFieldNpc, Vec3 pos, bool visible,
+        int groupType, Func<object[], object> userFunction)
+    {
         bool inView = WorldToMinimap(pos, out var x, out var y);
-        var data = Host.Obj(("mcname", icon), ("frame", frame ?? ""), ("layer", layer ?? ""), ("showtext", showText),
+        var data = Host.Obj(("mcname", icon ?? ""), ("frame", frame ?? ""), ("layer", layer ?? ""), ("showtext", showText),
             ("showguide", showGuide), ("name", text), ("guideName", ""), ("inFieldNpc", inFieldNpc), ("groupType", groupType),
             ("x", (float)x), ("y", (float)y), ("visible", inView && visible));
         if (userFunction != null) Host.Set(data, "userFunction", userFunction);
-        return Host.Invoke("createEntity", data) as AsObject;
+        return data;
     }
+
+    /// <summary>
+    /// InvalidateEntities (uiminimapentity.cpp:2078): m_210, m_211 and m_212 set, so the next kind-4 refresh redraws every
+    /// portal (RefreshPortal) and the next refresh the named objects (RefreshNamed).
+    /// STILL-OPEN: RefreshNamed and the overlap pass (FUN_141a42bb0, which reads m_212) are not ported: m_211 is only
+    /// cleared, m_212 not kept.
+    /// </summary>
+    public void InvalidateEntities() => entitiesInvalid = namedInvalid = true;
+
+    /// <summary>
+    /// UIQuestEventListener vfunc_o178_1 / _2 / _3 / _5 (@0x141a38cb0, @0x141a38de0, @0x141a38f10, @0x141a390c0,
+    /// uiminimapentity.cpp:1737-1789): a quest taken, rewarded, updated or given up (types 3, 4, 5, 7 and 10 go to other
+    /// slots for the first three): when the dialog is open and the quest has data, InvalidateEntities.
+    /// </summary>
+    public void OnQuestEvent(bool hasData)
+    {
+        if (IsClosed) return;
+        if (hasData) InvalidateEntities();
+    }
+
+    /// <summary>vfunc_o178_7 @0x141a39060: a quest result; when the dialog is open, InvalidateEntities.</summary>
+    public void OnQuestResult()
+    {
+        if (IsClosed) return;
+        InvalidateEntities();
+    }
+
+    /// <summary>
+    /// RefreshPortal @0x141a407c0 (uiminimapentity.cpp:3017): when the entities are invalid or the clip's visible is not the
+    /// portal's FUN_14169d1d0, UpdatePortal(false); when that moved the entity's visible, icon or state, changeEntityData(clip,
+    /// BuildData), whose returned object is the clip from then on, shown by the entity's visible.
+    /// </summary>
+    void RefreshPortal(Mark m)
+    {
+        if (Host?.Entity == null || m.Clip == null || !m.HasPortal || m.PortalVisible == null || m.FromPortal == null) return;
+        if (!entitiesInvalid && ClipVisible(m.Clip) == m.PortalVisible()) return;
+        var was = m.Entity;
+        bool wasVisible = m.Visible;
+        if (m.FromPortal() is not { } e) return;
+        m.Entity = e;
+        m.Visible = e.Visible;
+        if (wasVisible == m.Visible && string.Equals(was?.Icon, e.Icon, StringComparison.Ordinal) && string.Equals(was?.Frame, e.Frame, StringComparison.Ordinal))
+            return;
+        var data = Data(e.Icon, e.Frame, e.Layer, e.Label ?? "", !string.IsNullOrEmpty(e.Label), m.ShowGuide && m.Visible, e.InFieldNpc,
+            m.Position(), m.Visible, 1, m.UserFunction);
+        if (Host.Invoke("changeEntityData", m.Clip, data) is not AsObject clip) return;
+        Show(clip, m.Visible);
+        m.Clip = clip;
+    }
+
+    bool ClipVisible(AsObject clip) => clip is Ms2.Avm2.Flash.AsDisplayObject d ? d.visible : Rt.ToBoolean(Host.Get(clip, "visible"));
 
     /// <summary>
     /// vfunc_15 (uiminimapentity.cpp:1173): once the field image is in and the dialog is not minimized, every 60 ms
@@ -576,13 +652,17 @@ public sealed class MinimapController : UiController
             if (refreshKind == 1) RefreshOtherPlayer(o);
             else if (o.Visible && o.Clip != null && !ProjectClip(o.Position(), o.Clip)) { o.Visible = false; Show(o.Clip, false); }
         }
-        if (++refreshKind >= 5) refreshKind = 1;
         foreach (var m in Marks)
         {
+            // kind 4 is a portal (RefreshProxy -> RefreshPortal); UpdateProxyPosition returns for one
+            if (m.HasPortal) { if (refreshKind == 4) RefreshPortal(m); continue; }
             // UpdateProxyPosition (uiminimapentity.cpp:2963): a shown entity that no longer projects is hidden
             if (!m.Moves || !m.Visible || m.Clip == null) continue;
             if (!ProjectClip(m.Position(), m.Clip)) { m.Visible = false; Show(m.Clip, false); }
         }
+        if (entitiesInvalid && refreshKind == 4) entitiesInvalid = false;
+        if (++refreshKind >= 5) refreshKind = 1;
+        if (namedInvalid) namedInvalid = false;
     }
 
     /// <summary>ProjectClip (uiminimapentity.cpp:2424): shown at the projected point; false when it does not project.</summary>
