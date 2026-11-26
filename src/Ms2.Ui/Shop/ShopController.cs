@@ -107,7 +107,9 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public Action<Item> PreviewItem;
     /// <summary>Gacha shop preview (uishopdialog.cpp:3448): try an item on the preview avatar.</summary>
     public Action<Item> PreviewGachaItemRequested;
-    /// <summary>Gacha shop main items for the active category (RefreshCategories, uishopdialog.cpp:2700).</summary>
+    /// <summary>Gacha shop main items for the active category (RefreshCategories, uishopdialog.cpp:2698-2731: m_spPreview->InitWithItems).
+    /// STILL-OPEN: the shop's own ItemPreview avatar (new ItemPreview(pMyPC, this, 1), uishopdialog.cpp:888) needs the avatar in a
+    /// render target, which the item preview window does not have either; nothing subscribes, so no avatar is drawn.</summary>
     public Action<IReadOnlyList<Item>> PreviewMainItems;
     /// <summary>onClickUnequipAll (uishopdialog.cpp:3489).</summary>
     public Action PreviewUnequipAll;
@@ -332,6 +334,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             case 14: ReadNewProducts(p.NewProducts); break;
             case 15: ReadShopError(p.Error); break;
         }
+        UpdateGachaCoin();
         selection.ResetIf(p.Command);
     }
 
@@ -668,18 +671,16 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         var data = new List<(string, object)> { ("iconName", icon) };
         if (gender.Length > 0) data.Add(("strGender", gender));
         data.Add(("checkEnableItems", checkEnableItems));
-        string title = Model.Tables.ShopTitle(info.ShopId);
-        if (title.Length == 0)
-        {
-            if (info.ShopType == 2) title = "$s_shop_title_star";
-            else if (info.ShopType == 4) throw new NotImplementedException("gacha shop title (ItemGachaBoxTable coin)");
-            // FormatStringId(0x45e) = s_title_shop (commonstringtable.cpp:2732); FUN_1401aa6a0: the npc's name
-            else if (info.NpcId > 0) title = Common("s_title_shop", Npcs?.Find(info.NpcId)?.Name ?? "");
-        }
+        string title = ShopTitleText();
         data.Add(("title", title));
         data.Add(("dpTab", DataProvider(FillTabs())));
         data.Add(("notice", info.ShopType == 3 ? Common("s_shop_text_notice_pssb") : ""));
-        if (info.ShopType == 4) throw new NotImplementedException("gacha shop coins");
+        if (info.ShopType == 4)
+        {
+            // gachaUIType and the coin count with its payment icon tag (uishopdialog.cpp:865-869)
+            data.Add(("gachaUIType", (uint)Model.Tables.GachaBoxes.UiByShopId(info.ShopId)));
+            data.Add(("coinAmount", GachaCoinAmount()));
+        }
         Host.Invoke(shop, "initData", Host.Obj(data.ToArray()));
         UpdateMoney();
         var reset = new List<(string, object)> { ("resetEnable", info.ResetEnable && info.ResetType != 99) };
@@ -764,14 +765,19 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// vfunc_66 (@0x141af2cb0, uishopdialog.cpp:626) after UIDialog's (the shop's position as it opens): with the inventory
     /// (0x4e2d) open, the two placed side by side, the shop on the left (FUN_141275c30; a gacha shop's inventory 180 lower);
     /// with it closed, the "openWindowPos" message with this id, which opens the inventory beside the shop
-    /// (UIInventoryDialog's OnMessage). The gacha coin check before the message (ItemGachaBoxTable::GetCoinItemIdByShopId)
-    /// is not ported.
+    /// (UIInventoryDialog's OnMessage), except for a shop with a gacha coin (ItemGachaBoxTable::GetCoinItemIdByShopId other than 0,
+    /// :635-637), which leaves the inventory closed.
     /// </summary>
     public void PlaceBesideInventory(UiController inventory, bool inventoryOpen)
     {
         if (Host?.Entity == null) return;
         var place = OpenPosition();
-        if (!inventoryOpen) { InventoryWindowPos?.Invoke(UiId); return; }
+        if (!inventoryOpen)
+        {
+            if (Model.Tables.GachaBoxes.CoinItemIdByShopId(info.ShopId) != 0) return;
+            InventoryWindowPos?.Invoke(UiId);
+            return;
+        }
         if (info.ShopType == 4) PlaceSideBySide(this, place, inventory, (0f, 0f), (0f, 180f));
         else PlaceSideBySide(this, place, inventory);
     }
@@ -1460,6 +1466,38 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             price = PriceText(info.ResetCurrency, info.ResetCurrencyItem, resetPrice, "");
         }
         Host.Invoke(shop, "updateResetData", show, price, original);
+    }
+
+    /// <summary>The dialog's title (uishopdialog.cpp:836-850): the shop's title row, else by type the star shop's, the gacha shop's
+    /// s_title_gacha_shop with the coin's name (:843-846), or for an npc s_title_shop with its name (FormatStringId(0x45e),
+    /// commonstringtable.cpp:2732; FUN_1401aa6a0).</summary>
+    internal string ShopTitleText()
+    {
+        string title = Model.Tables.ShopTitle(info.ShopId);
+        if (title.Length == 0)
+        {
+            if (info.ShopType == 2) title = "$s_shop_title_star";
+            else if (info.ShopType == 4) title = Common("s_title_gacha_shop", Model.Tables.ItemName(Model.Tables.GachaBoxes.CoinItemIdByShopId(info.ShopId)) ?? "");
+            else if (info.NpcId > 0) title = Common("s_title_shop", Npcs?.Find(info.NpcId)?.Name ?? "");
+        }
+        return title;
+    }
+
+    /// <summary>FUN_1418fec90(2, owned, paymentIconTag) (uishopdialog.cpp:866-869, :2126-2128): the coin item's count in the bag as an
+    /// item price whose icon is the shop's paymentIconTag.</summary>
+    internal string GachaCoinAmount()
+    {
+        int coin = Model.Tables.GachaBoxes.CoinItemIdByShopId(info.ShopId);
+        long owned = (uint)ItemCount(coin, 0);
+        return CurrencyPriceText(2, owned, Model.Tables.GachaBoxes.PaymentIconTagByShopId(info.ShopId));
+    }
+
+    /// <summary>UpdateGachaCoin (@0x141afbd10, uishopdialog.cpp:2120): a gacha shop's coin count, sent to the movie's gachaCoinAmount;
+    /// run at the end of every shop packet (OnShopPacket :1569).</summary>
+    void UpdateGachaCoin()
+    {
+        if (shop == null || info.ShopType != 4) return;
+        Host.Invoke(shop, "gachaCoinAmount", GachaCoinAmount());
     }
 
     /// <summary>UpdateMoney (@0x141b03800): the reset price; the reset-price sale event is not ported, so its original.</summary>

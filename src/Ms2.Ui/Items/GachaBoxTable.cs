@@ -9,7 +9,7 @@ namespace Ms2.Ui.Items;
 /// </summary>
 public sealed class GachaBoxTable
 {
-    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon, int IndividualDropBoxId, int CoinAmount, int Ui, int[] SaleEnd);
+    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon, int IndividualDropBoxId, int CoinAmount, int Ui, int[] SaleEnd, int PaymentIconTag);
 
     readonly PackSet packs;
     SortedDictionary<int, Box> boxes;
@@ -36,7 +36,8 @@ public sealed class GachaBoxTable
             int dropBox = ItemData.Atoi((string)e.Attribute("individualDropBoxID") ?? "");   // m_nIndividualDropBoxID (:111)
             int amount = e.Attribute("coinItemAmount") is { } am ? ItemData.Atoi((string)am) : 1;   // m_nCoinItemAmount (:114), 1 by the ctor
             int ui = ItemData.Atoi((string)e.Attribute("ui") ?? "");                                 // m_nUi (:110)
-            boxes[id] = new Box(id, season, coin, shopId, shows, dropBox, amount, ui, SaleEndOf((string)e.Attribute("saleEndDate")));               // m_map[nKey] = spBox
+            int tag = ItemData.Atoi((string)e.Attribute("paymentIconTag") ?? "");                      // m_nPaymentIconTag (:116)
+            boxes[id] = new Box(id, season, coin, shopId, shows, dropBox, amount, ui, SaleEndOf((string)e.Attribute("saleEndDate")), tag);               // m_map[nKey] = spBox
         }
         return boxes;
     }
@@ -65,6 +66,14 @@ public sealed class GachaBoxTable
     /// <summary>ItemGachaBoxTable::GetCoinItemIdByShopId (called at uishopdialog.cpp:635, :844, :866; its body is not in the
     /// restored source): the first box (by id) for that shop, else 0.</summary>
     public int CoinItemIdByShopId(int shopId) => Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.CoinItemId ?? 0;
+    /// <summary>ItemGachaBoxTable::GetUiByShopId (@0x14059e490, itemgachaboxtable.cpp:143): the first box (by id) of that shop: its ui,
+    /// else 0.</summary>
+    public int UiByShopId(int shopId) => Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.Ui ?? 0;
+    /// <summary>ItemGachaBoxTable::GetPaymentIconTagByShopId (@0x14059ee00, :273): the first box (by id) of that shop: its
+    /// paymentIconTag, else 0.</summary>
+    public int PaymentIconTagByShopId(int shopId) => Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.PaymentIconTag ?? 0;
+    /// <summary>The shop ids of the boxes (shopID other than 0), ascending: every shop a gacha coin shop can be.</summary>
+    public IEnumerable<int> ShopIds() => Boxes().Values.Where(b => b.ShopId != 0).Select(b => b.ShopId).Distinct().Order().ToList();
     /// <summary>GetBox != null.</summary>
     public bool HasBox(int boxId) => Boxes().ContainsKey(boxId);
     /// <summary>The box's m_nCoinItemID and m_nCoinItemAmount (what LoadGachaBoxes puts in the break table); null for no box.</summary>

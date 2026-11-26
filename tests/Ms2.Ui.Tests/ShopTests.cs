@@ -66,6 +66,88 @@ public class ShopTests
         return (h, c);
     }
 
+    static (UiHost, ShopController) LoadGacha(UiModel model, int shopId, Func<int, long> owned)
+    {
+        var c = new ShopController { Categories = new ShopCategoryTable(Packs()), Npcs = new Ms2.Formats.World.NpcTable(Packs()), ItemCount = (id, _) => owned(id) };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var h = new UiHost(p, c, model);
+        c.ReadShopInfo(new ShopInfo { NpcId = 0, ShopId = shopId, ShopType = 4, ProductCount = 3, TabShopId = 5, Icon = "" });
+        Assert.That(h.Load(), Is.True, $"shop {shopId} load: " + string.Join("; ", rt.Errors));
+        c.ReadProducts(Products());
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(rt.Errors, Is.Empty, $"shop {shopId}: " + string.Join("; ", rt.Errors));
+        return (h, c);
+    }
+
+    static List<string> ShownTexts(AsDisplayObject o)
+    {
+        var l = new List<string>();
+        void Walk(AsDisplayObject d)
+        {
+            if (d is AsTextField t && !string.IsNullOrEmpty(t.Text)) l.Add(t.Text);
+            if (d is AsContainer k) foreach (var ch in k.Children) Walk(ch);
+        }
+        Walk(o);
+        return l;
+    }
+
+    /// <summary>The gacha coin shop (ShopType 4, UIShopDialogGacha) opened with the NotImplementedException of its title; every shop
+    /// id of the gacha box table (both data sets, the gate runs the suite on each) opens with no error, its title carries the coin's
+    /// name and the movie shows the coin count with the payment icon tag (uishopdialog.cpp:843-869).</summary>
+    [Test]
+    public void EveryGachaCoinShopOpensWithItsTitleAndCoinCount()
+    {
+        Packs();
+        var table = NewModel().Tables.GachaBoxes;
+        var ids = table.ShopIds();
+        Assert.That(ids, Is.Not.Empty, "the data has gacha coin shops");
+        foreach (int shopId in ids)
+        {
+            var model = NewModel();
+            int coin = model.Tables.GachaBoxes.CoinItemIdByShopId(shopId);
+            Assert.That(coin, Is.Not.Zero, $"shop {shopId} has a coin item");
+            var (h, c) = LoadGacha(model, shopId, id => id == coin ? 70 : 0);
+            Assert.That(c.IsClosed, Is.False, $"shop {shopId} stays open");
+            string name = model.Tables.ItemName(coin) ?? "";
+            Assert.That(c.ShopTitleText(), Does.Contain(name), $"shop {shopId}: the title names the coin");
+            Assert.That(c.ShopTitleText().Length, Is.GreaterThan(name.Length), $"shop {shopId}: the title is s_title_gacha_shop with the coin");
+            var amount = c.GachaCoinAmount();
+            Assert.That(amount, Does.Contain("70"), $"shop {shopId}: the coin count");
+            int tag = model.Tables.GachaBoxes.PaymentIconTagByShopId(shopId);
+            if (tag != 0) Assert.That(amount, Does.Contain(tag.ToString()), $"shop {shopId}: the payment icon tag");
+        }
+    }
+
+    /// <summary>A shop packet ends in UpdateGachaCoin (@0x141afbd10, uishopdialog.cpp:2120): the movie's coin count follows the
+    /// bag. The closed-inventory placement of a coin shop leaves the dialog where it is (vfunc_66 :626-657).</summary>
+    [Test]
+    public void TheGachaShopCoinCountFollowsTheBagAfterAShopPacket()
+    {
+        Packs();
+        var model = NewModel();
+        int shopId = model.Tables.GachaBoxes.ShopIds().First();
+        int coin = model.Tables.GachaBoxes.CoinItemIdByShopId(shopId);
+        long owned = 70;
+        var (h, c) = LoadGacha(model, shopId, id => id == coin ? owned : 0);
+        string at70 = c.GachaCoinAmount();
+        Assert.That(ShownTexts(h.Entity as AsDisplayObject), Has.Some.Contains("70"));
+        owned = 3;
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteProductUpdate(1, 1))));
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(c.GachaCoinAmount(), Is.Not.EqualTo(at70));
+        Assert.That(h.RT.Errors, Is.Empty);
+        // owned is read as unsigned (FUN_140a5f180 result): a count of 0 shows 0
+        owned = 0;
+        Assert.That(c.GachaCoinAmount(), Does.Contain("0"));
+
+        int placed = 0;
+        c.InventoryWindowPos += _ => placed++;
+        c.PlaceBesideInventory(null, false);
+        Assert.That(placed, Is.Zero, "a coin shop with the inventory closed sends no window position");
+    }
+
     [Test]
     public void TheShopOpensWhereItsSettingsFilePlacedIt()
     {
