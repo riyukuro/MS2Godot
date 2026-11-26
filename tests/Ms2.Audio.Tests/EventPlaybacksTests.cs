@@ -33,6 +33,8 @@ public class EventPlaybacksTests
         Assert.That(t.Select(x => v.SlotOf(x) >= 0), Is.EqualTo(expected));
         Assert.That(stolen, Is.EqualTo(behavior != EffectVoiceSlots.JustFail));
         Assert.That(Sounding(v, t, 1), Is.EqualTo(2));
+        Assert.That(v.SoundingOf(A, 1), Is.EqualTo(2));
+        Assert.That(v.SoundingOf(B, 1), Is.Zero);
     }
 
     [Test]

@@ -851,7 +851,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             audioClock, audioClock + delay + length, out bool stolen);
         if (Ms2Godot.Net.LiveSession.LiveCheck || LogVoices)
             GD.Print($"audio: voice {audioClock:F3} {ev?.FullPath ?? clip.Name} max {ev?.MaxPlaybacks} behavior {ev?.MaxPlaybacksBehavior} "
-                     + (ticket == 0 ? "failed" : $"slot {voiceSlots.SlotOf(ticket)}{(stolen ? " stolen" : "")}") + $" sounding {voiceSlots.SoundingCount(audioClock)}");
+                     + (ticket == 0 ? "failed" : $"slot {voiceSlots.SlotOf(ticket)}{(stolen ? " stolen" : "")}") + $" sounding {voiceSlots.SoundingCount(audioClock)} of the event {voiceSlots.SoundingOf(ev, audioClock)}");
         if (ticket == 0) { EventSoundsFailed++; return 0; }
         int slot = voiceSlots.SlotOf(ticket);
         var v = voices3d[slot];

@@ -1835,6 +1835,39 @@ public partial class LiveSession
                 await frames(120);
                 continue;
             }
+            if (step.StartsWith("mesoburst:"))      // mesoburst:<mobs>:<npc id>: that many mobs spawned beside the player and killed together by one GM kill near (the server's death and drops), so their meso piles come in together; the pickup key is held and the step waits until no meso has come for 3 s (at most 30 s). Each pickup's sound prints as an audio voice line. The GM item command does not drop mesos (it gives them)
+            {
+                var mp = step[10..].Split(':');
+                int mobs = int.Parse(mp[0]), mob = int.Parse(mp[1]), added = npcs, gains = 0;
+                var piles = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
+                void Pile(Ms2.Net.Packets.FieldAddItem d, bool shown) { if (shown && d.IsMeso) piles.Add(d); }
+                System.Action<long, int> gain = (d, k) => { if (d > 0) gains++; };
+                for (int i = 0; i < mobs; i++) { hud.SubmitChatLine("/npc " + mob); await frames(6); }
+                await until(() => npcs - added >= mobs, 60 * 10); await frames(10);
+                // MS2_LIVE_MESOBURST_PRESSES: attack presses at the mobs first, for a server whose GM kill records no damage
+                // dealer and so drops nothing (the upstream server)
+                for (int i = 0, presses = int.Parse(Env("MS2_LIVE_MESOBURST_PRESSES", "0")); i < presses && lastNpc != null; i++)
+                {
+                    hud.FaceScripted(lastNpc.Position); await frames(4); hud.AttackScripted(); await frames(24);
+                }
+                live.DropAdded += Pile;
+                live.MesoChanged += gain;
+                live.PickupKeyHeld = true;
+                hud.SubmitChatLine("/kill near --distance 600");
+                int last = -1;
+                for (int n = 0, quiet = 0; n < 60 * 30 && quiet < 180; n++, quiet = gains == last && piles.Count > 0 ? quiet + 1 : 0)
+                {
+                    last = gains;
+                    await frames(1);
+                }
+                live.PickupKeyHeld = false;
+                live.DropAdded -= Pile;
+                live.MesoChanged -= gain;
+                GD.Print($"live: combat {step}: {npcs - added} mob(s), {piles.Count} meso pile(s): {string.Join(" ", piles.Select(d => d.Amount))}");
+                Check($"{step}: {gains} meso pickups of {piles.Count} piles", piles.Count > 1 && gains == piles.Count);
+                Shot("mesoburst_picked.png");
+                continue;
+            }
             if (step == "gohome")      // the game menu's go home (RequestHome 3, -1), then the field entry
             {
                 int entered = 0; void Entered(int map, long ms) => entered++;

@@ -112,6 +112,14 @@ public sealed class EffectVoiceSlots
         return n;
     }
 
+    /// <summary>The voices of event <paramref name="ev"/> sounding at <paramref name="now"/>, for the play log.</summary>
+    public int SoundingOf(object ev, double now)
+    {
+        int n = 0;
+        for (int i = 0; i < tickets.Length; i++) if (ev != null && events[i] == ev && Sounding(i, now)) n++;
+        return n;
+    }
+
     public int Count => tickets.Length;
 
     /// <summary>Voices with a doNotStop stop pending.</summary>
