@@ -39,5 +39,35 @@ public static class ItemSpawnCommand
         if (rarity > 0) sb.Append(" --rarity ").Append(Math.Clamp(rarity, 1, MaxRarity).ToString(CultureInfo.InvariantCulture));
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The line with the browser's enhancement settings: the spawning options, then --enchant, --limit-break, the
+    /// unlocked sockets and a --gem per socket (0 for an empty one, so the later gems keep their slot), and the bonus
+    /// lines. --bonus-clear goes with the lines, because the browser's tooltip builds the random group from those lines
+    /// alone (the bag's rolled lines would otherwise not be in it); a plain spawn keeps the server's rolled group.
+    /// </summary>
+    public static string Line(int itemId, int amount, int rarity, uint slotMax, ItemBrowserSettings settings)
+    {
+        var sb = new StringBuilder(Line(itemId, amount, rarity, slotMax));
+        var s = settings;
+        if (s.Enchant > 0) sb.Append(" --enchant ").Append(s.Enchant.ToString(CultureInfo.InvariantCulture));
+        if (s.LimitBreak > 0) sb.Append(" --limit-break ").Append(s.LimitBreak.ToString(CultureInfo.InvariantCulture));
+        if (s.Sockets > 0)
+        {
+            sb.Append(" --socket ").Append(s.Sockets.ToString(CultureInfo.InvariantCulture));
+            for (int i = 0; i < s.Sockets && i < s.Gems.Length; i++)
+                sb.Append(" --gem ").Append(s.Gems[i].ToString(CultureInfo.InvariantCulture));
+        }
+        // Only with lines of the browser's own: a plain spawn keeps the server's rolled random options (the tooltip picks
+        // them up from the spawned item). --bonus-clear is the fork's option; a server without --stat has no use for it.
+        if (s.BonusLines.Count > 0)
+        {
+            sb.Append(" --bonus-clear");
+            foreach (var b in s.BonusLines)
+                sb.Append(b.Special ? " --special " : " --stat ").Append(b.Id.ToString(CultureInfo.InvariantCulture))
+                  .Append('=').Append(b.Value.ToString(CultureInfo.InvariantCulture));
+        }
+        return sb.ToString();
+    }
 }
 #endif
