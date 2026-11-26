@@ -250,6 +250,10 @@ public partial class HudScene
         return string.Join(", ", parts);
     }
 
+    /// <summary>Harness: the learning quest dialog no longer opens by itself (as with its game option on), so a shot of the
+    /// screen centre is not covered by the next new learning quest. True when the dialog object exists.</summary>
+    public bool LearningAutoOpenOffScripted() { learningAutoOpenOff = true; return learningQuest != null; }
+
     /// <summary>The Escape key pressed, through the dialog key handler. True when a dialog took it.</summary>
     public bool EscScripted() =>
         DialogKeys(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true, Echo = false });

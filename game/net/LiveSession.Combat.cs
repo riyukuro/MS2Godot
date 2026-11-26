@@ -3178,6 +3178,11 @@ public partial class LiveSession
                     GD.Print($"live: combat guide state: {hud.GuideStateText()}");
                     break;
                 }
+                case "learningauto:off":      // the learning quest dialog stops opening by itself, for shots of the screen centre
+                {
+                    GD.Print($"live: combat learning quest auto open off: {(hud.LearningAutoOpenOffScripted() ? "set" : "no dialog")}");
+                    break;
+                }
                 case "esc":
                 {
                     GD.Print($"live: combat esc: {(hud.EscScripted() ? "taken" : "not taken")}");

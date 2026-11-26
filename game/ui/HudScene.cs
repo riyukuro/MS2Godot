@@ -2631,6 +2631,7 @@ public partial class HudScene : Node, IUiStageHost
     static SortedDictionary<int, Ms2.Ui.Hud.LearningQuestController.Learning> learningRows;   // CLearningQuestTable, read once
     static Dictionary<int, int> learningNewMarks;    // the dialog's m_310 of this game session, kept across field scenes
     static long learningNewMarksFor = -1;            // the character it was made for
+    bool learningAutoOpenOff;                        // the live harness's switch: no opening by itself
 
     /// <summary>
     /// The dialog object, made at field entry (the client builds it with the UI and keeps it): the seen files read, and for
@@ -2663,7 +2664,7 @@ public partial class HudScene : Node, IUiStageHost
             HasLocalPlayer = () => true,
             PlayerLevel = () => hudModel.Player.Level,
             FieldId = () => live?.FieldId ?? xblockFieldId,
-            AutoOpenOff = () => GameOptions.LearningQuest.Value,
+            AutoOpenOff = () => GameOptions.LearningQuest.Value || learningAutoOpenOff,
             CharacterFile = folders == null ? null : System.IO.Path.Combine(folders.Value.Character, "learningQuestCharacter.xml"),
             AccountFile = folders == null ? null : System.IO.Path.Combine(folders.Value.Account, "learningQuestAccount.xml"),
         };
