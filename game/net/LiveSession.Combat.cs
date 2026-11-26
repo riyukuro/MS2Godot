@@ -2845,6 +2845,30 @@ public partial class LiveSession
                             Shot("scroll_closed.png");
                             break;
                         }
+                        // scrollpressclose:<level>: the enchant button, then the window closed before the answer. The client's dialog
+                        // object outlives its window (OnEnchantScroll finds it either way, scenestategame.cpp:8084), so FUN_140f3c6c0
+                        // still stores the item and shows the result box (uienchantscrolldialog.cpp:276-287); its OK leaves the window closed
+                        case "scrollpressclose":
+                        {
+                            int level = int.Parse(arg);
+                            var st0 = hud.EnchantScrollStateScripted();
+                            var scroll = live.Items.Get(st0.Scroll); int scrollId = scroll?.Id ?? 0;
+                            long n0 = Count(scrollId); int lv0 = LevelOf(st0.Slot);
+                            bool pressed = hud.EnchantScrollPressScripted();
+                            hud.EnchantScrollCloseScripted();
+                            bool closedBefore = !book.IsOpen && !book.SlotRegistered && LevelOf(st0.Slot) == lv0;   // the window's own IsClosed waits for its close animation
+                            GD.Print($"live: combat scroll press then close (item {st0.Slot} level {lv0}, scroll {scrollId} x{n0}): {(pressed ? "clicked" : "no button")}, closed before the answer {closedBefore}");
+                            await until(() => LevelOf(st0.Slot) != lv0 || notices.Count > 0, 60 * 5); await frames(60);
+                            var box = hud.ShownBoxScripted();
+                            GD.Print($"live: combat scroll result (window closed): level {lv0} -> {LevelOf(st0.Slot)}, scroll {n0} -> {Count(scrollId)}, box \"{box?.Extra}\" notices [{string.Join(",", notices.Select(n => $"0x{n:x}"))}]");
+                            Check($"window closed before the answer ({closedBefore}): the item is stored at level {level} ({lv0} -> {LevelOf(st0.Slot)}), one scroll used ({n0} -> {Count(scrollId)}), the result box shown",
+                                pressed && closedBefore && LevelOf(st0.Slot) == level && Count(scrollId) == n0 - 1 && box?.Extra == Ms2.Ui.Hud.EnchantScrollDialogController.ResultTag && notices.Count == 0);
+                            Shot("scroll_result_closed.png");
+                            GD.Print($"live: combat scroll result OK: {(hud.BagBoxAnswerScripted(box, 0, box?.Extra ?? "") ? "answered" : "no box")}");
+                            await frames(60);
+                            Check("the result box's OK left the window closed and the book reset", !hud.EnchantScrollStateScripted().Open && !book.IsOpen && !book.SlotRegistered && hud.ShownBoxScripted() == null);
+                            break;
+                        }
                         // scrollwarp:<map>: a field change with the window open. The client keeps its dialogs over a field move
                         // (WorldService FUN_141bbc580: CUIService FUN_141adc3d0 closes only 0x4f38, uiservice.cpp:1568; FUN_141adb900
                         // only disables the movies, :1215), and so does this port (ChangeField swaps the field under the HUD), so the
