@@ -69,6 +69,20 @@ public class ScreenModesTests
         Assert.That(ScreenModes.WindowedPlacement(1920, 1080, 1280, 720, 16, 39), Is.EqualTo((1280, 720, 0, 0)));
     }
 
+    /// <summary>A framed window fits the work area with its frame (GitHub issue #10: a client size of the whole screen with a
+    /// title bar reached past the screen's edge and ran at about 2 frames a second): the client is clamped to the work area
+    /// less the frame, and a window that already fits is left alone.</summary>
+    [Test]
+    public void AFramedWindowFitsTheWorkAreaWithItsFrame()
+    {
+        Assert.That(ScreenModes.FitFramed(1920, 1080, 1920, 1080, 0, 28), Is.EqualTo((1920, 1052)));
+        Assert.That(ScreenModes.FitFramed(1920, 1080, 1920, 1036, 2, 28), Is.EqualTo((1918, 1008)), "a panel takes part of the screen");
+        Assert.That(ScreenModes.FitFramed(1280, 720, 1920, 1080, 0, 28), Is.EqualTo((1280, 720)));
+        Assert.That(ScreenModes.FitFramed(1920, 1052, 1920, 1080, 0, 28), Is.EqualTo((1920, 1052)));
+        Assert.That(ScreenModes.FitFramed(2560, 1440, 1920, 1080, 0, 28), Is.EqualTo((1920, 1052)));
+        Assert.That(ScreenModes.FitFramed(800, 600, 20, 20, 40, 40), Is.EqualTo((1, 1)), "never below 1 x 1");
+    }
+
     /// <summary>Every screen mode the options offer (full screen, window, full window) at a size equal to, lower than and higher
     /// than the screen: the full modes are the window manager's full-screen state at the screen's size (the panel hidden, no
     /// gap) with the content at the requested size; the window is framed, not topmost and clamped to the screen. A plan sets

@@ -167,37 +167,61 @@ public static class ScreenMode
         GD.Print($"display: window {w.Mode} borderless={w.Borderless} at {w.Position} size {w.Size}{(Emulated is { } e ? $", content {e.X}x{e.Y}" : "")}");
     }
 
-    /// <summary>The framed window of a request: its client size clamped to the screen, centred (windowservice.cpp:337-374).</summary>
-    static void PlaceWindowed(Window w, WindowRequest r)
+    /// <summary>The client size of the framed window of a request and the frame the window has now: the size clamped to the
+    /// screen (windowservice.cpp:337-374) and, on Linux, to the work area less the frame, as the window manager makes a new
+    /// window (<see cref="ScreenModes.FitFramed"/>); the frame is zero until the window manager has told the window its frame.</summary>
+    static (Vector2I Size, Vector2I Frame, Rect2I Area) FramedSize(Window w, WindowRequest r)
+    {
+        var screen = DisplayServer.ScreenGetSize(Screen);
+        var first = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, 0, 0);
+        var frame = w.GetSizeWithDecorations() - w.Size;
+        var size = new Vector2I(first.Width, first.Height);
+        var area = new Rect2I(DisplayServer.ScreenGetPosition(Screen), screen);
+        if (!OperatingSystem.IsWindows())
+        {
+            var work = DisplayServer.ScreenGetUsableRect(Screen);
+            var fit = ScreenModes.FitFramed(first.Width, first.Height, work.Size.X, work.Size.Y, frame.X, frame.Y);
+            if (fit.Width != size.X || fit.Height != size.Y) { size = new Vector2I(fit.Width, fit.Height); area = work; }
+        }
+        return (size, frame, area);
+    }
+
+    /// <summary>The framed window of a request: its client size clamped to the screen, centred (windowservice.cpp:337-374). On
+    /// Linux the framed window also has to fit the work area (<see cref="FramedSize"/>): leaving the full-screen state the
+    /// window manager keeps the size set here, and a window whose frame reaches past the screen's edge runs at about 2 frames
+    /// a second (GitHub issue #10). Returns the client size.</summary>
+    static Vector2I PlaceWindowed(Window w, WindowRequest r)
     {
         var screen = DisplayServer.ScreenGetSize(Screen);
         var first = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, 0, 0);
         w.Size = new Vector2I(first.Width, first.Height);
-        var frame = w.GetSizeWithDecorations() - w.Size;
-        var place = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, frame.X, frame.Y);
+        var (size, frame, area) = FramedSize(w, r);
+        w.Size = size;
+        var place = ScreenModes.WindowedPlacement(size.X, size.Y, area.Size.X, area.Size.Y, frame.X, frame.Y);
         var inset = DisplayServer.WindowGetPosition() - DisplayServer.WindowGetPositionWithDecorations();
-        w.Position = DisplayServer.ScreenGetPosition(Screen) + new Vector2I(place.OuterX, place.OuterY) + inset;
+        w.Position = area.Position + new Vector2I(place.OuterX, place.OuterY) + inset;
+        return size;
     }
 
     static int keepRequest;
 
     /// <summary>Places the framed window of <paramref name="r"/> again on the next frames until the window manager has settled
-    /// on it (the size is the request's, or a second try on the same size did not change it); a newer request ends this one.</summary>
+    /// on it: the window has the size placed for the frame it has now, for 10 frames in a row, and the window manager has
+    /// told it its frame (the frame, so the size that fits the work area, is only known a few frames after the window left
+    /// the full-screen state); a newer request ends this one.</summary>
     static void KeepWindowed(Window w, WindowRequest r)
     {
         var tree = w.GetTree();
         int mine = ++keepRequest, frames = 0, same = 0;
-        var screen = DisplayServer.ScreenGetSize(Screen);
-        var want = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, 0, 0);
-        var wanted = new Vector2I(want.Width, want.Height);
         Action tick = null;
         tick = () =>
         {
             bool done = mine != keepRequest || !GodotObject.IsInstanceValid(w) || ++frames > 120;
             if (!done && w.Mode == Window.ModeEnum.Windowed && !w.Borderless)
             {
-                if (DisplayServer.WindowGetSize() != wanted) { PlaceWindowed(w, r); same = 0; }
-                else if (++same >= 10) done = true;
+                var (size, frame, _) = FramedSize(w, r);
+                if (DisplayServer.WindowGetSize() != size) { PlaceWindowed(w, r); same = 0; }
+                else if (frame != Vector2I.Zero && ++same >= 10) done = true;
             }
             if (done) tree.ProcessFrame -= tick;
         };

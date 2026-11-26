@@ -144,6 +144,16 @@ public sealed class ScreenModes
     }
 
     /// <summary>
+    /// Linux deviation from <see cref="WindowedPlacement"/>: a framed window has to fit inside the work area (the screen less
+    /// its panels) with its frame, which the window manager enforces when it places a new window but not when it hands a window
+    /// back after the full-screen state: it keeps a client size of the whole screen, the frame then reaches past the screen's
+    /// edge and the compositor then runs it at about 2 frames a second (seen under kwin on XWayland, GitHub issue #10). Returns the client size clamped so that the
+    /// client plus the frame is at most the work area (at least 1 x 1).
+    /// </summary>
+    public static (int Width, int Height) FitFramed(int width, int height, int workWidth, int workHeight, int frameWidth, int frameHeight)
+        => (Math.Max(1, Math.Min(width, workWidth - frameWidth)), Math.Max(1, Math.Min(height, workHeight - frameHeight)));
+
+    /// <summary>
     /// The client area of a fixed window of w x h (ApplyWindowMode's windowed branch, windowservice.cpp:337-374): the size
     /// is clamped to the screen, and the outer rectangle (client plus the 0xca0000 frame, <paramref name="frame"/>) is
     /// centred on the screen, rounded down, not above or left of 0,0. Returns the client size and the outer position.
