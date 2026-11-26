@@ -60,7 +60,6 @@ public class GuildDialogTests
         var t = new GameTables(p, "en");
         var c = new GuildDialogController(new GuildBook { Common = id => $"c{id:x}", CommonByKey = k => k, PlayerName = () => "Ma" })
         {
-            Gms2Client = LobbyFeatures.LocaleOf(p) == "NA",
             Common = t.Common,
             CommonByKey = key => t.Common(key) ?? "",
             LevelByExp = t.GuildLevelByExp,
@@ -70,12 +69,14 @@ public class GuildDialogTests
             MapName = id => t.MapName(id) ?? id.ToString(),
             ImagePath = (_, _) => "x.png",
         };
-        if (variable == "MS2_GMS2_DATA") Assert.That(c.Gms2Client, Is.True);
-        else Assume.That(c.Gms2Client, Is.False, "MS2_DATA holds GMS2 data here; the MS2_GMS2_DATA case covers it");
         var (rt, pl) = movies.Open(c.Movie, r => r.Budget = 20_000_000, c.Libraries);
         pl.StageW = 1920; pl.StageH = 1080;
         var h = new UiHost(pl, c, new UiModel(t));
         Assert.That(h.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+        // The movie picks the call: the KMS movie's setupCategory takes the flag, the GMS2 movie's none. Nothing here names a
+        // session, so a KMS server with GMS2 data (or the reverse) calls what the loaded movie has.
+        Assert.That(c.MovieTakesCategoryFlag, Is.EqualTo(LobbyFeatures.LocaleOf(p) != "NA"));
+        if (variable == "MS2_GMS2_DATA") Assert.That(c.MovieTakesCategoryFlag, Is.False);
         for (int i = 0; i < 5; i++) pl.Tick();
         Assert.That(rt.Errors, Is.Empty);
         Assert.That(h.Child("m_category") is { } bar ? h.Get(h.Get(bar, "dataProvider"), "length") : null, Is.GreaterThan(0));

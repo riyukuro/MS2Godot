@@ -98,7 +98,7 @@ public static class GuildModes {
         [21] = 0x15,    // OnPacketMemberGradeChanged, up NotifyUpdateMemberRank
         [22] = 0x16,    // OnPacketSetMemberMessage, up NotifyUpdateMemberMessage
         [36] = 0x24,    // OnPacketMemberContribution, up CheckInTime
-        [37] = 0x25,    // OnPacketMemberRaidCount
+        [37] = 0x25,    // OnPacketMemberRaidCount (GMS2 case: string, i32, i32, as KMS)
         [25] = 0x19,    // OnPacketMasterChanged, up NotifyUpdateLeader
         [26] = 0x1a,    // OnPacketNoticeChanged, up NotifyUpdateNotice
         [27] = 0x1b,    // FUN_1413c15b0, up NotifyUpdateEmblem
@@ -108,9 +108,9 @@ public static class GuildModes {
         [30] = 0x1e,    // FUN_1413c1c50, up NotifyUpdateFocus
         [32] = 0x20,    // FUN_1413c1d30, up UpdateMember
         [31] = 0x1f,    // OnPacketMemberDataChanged, up UpdateMemberMap
-        [39] = 0x27,    // FUN_1413c2860
+        [39] = 0x27,    // FUN_1413c2860 (GMS2 case: u8, as KMS)
         [40] = 0x28,    // FUN_1413c28e0
-        [41] = 0x29,    // FUN_1413c2c60
+        [41] = 0x29,    // FUN_1413c2c60 (GMS2 case: three i32, as KMS)
         [42] = 0x2a,    // OnPacketBattleResult
         [43] = 0x2b,    // OnPacketBattleApplied
         [44] = 0x2c,    // OnPacketGuildBattleNotice
@@ -118,16 +118,16 @@ public static class GuildModes {
         [49] = 0x32,    // OnPacketGuildExp, up GuildExperience (GMS2: the exp alone; KMS adds the funds)
         [52] = 0x36,    // FUN_1413c3170, up NotifyUseBuff
         [53] = 0x37,    // FUN_1413c3460, up UpgradeBuff
-        [54] = 0x38,    // FUN_1413c3780 (GMS2 handler @0x140aa0090)
+        [54] = 0x38,    // FUN_1413c3780 (GMS2 handler @0x140aa0090: string, then 0x14030f9a0 reads i32, i32, as KMS)
         [55] = 0x39,    // FUN_1413c39e0, up UpgradeHouse
         [56] = 0x3a,    // FUN_1413c3c40, up UpdatePoster
-        [107] = 0x6e,   // FUN_1413c3e50 (both read an item)
+        [107] = 0x6e,   // FUN_1413c3e50 (GMS2 item read 0x14023d450: i32, i16, i32, four bools, as GuildStorageItem)
         [57] = 0x3b,    // FUN_1413c3ef0, up UpgradeNpc
-        [59] = 0x3d,    // OnPacketWeeklyContributionReset
-        [60] = 0x3e,    // FUN_1413c4300 (GMS2 handler @0x140aa0b50)
-        [115] = 0x76,   // OnPacketVsGameTicket
-        [114] = 0x75,   // OnPacketVsGameMatchCanceled
-        [116] = 0x77,   // FUN_1413c45e0 (GMS2 handler @0x140aa0de0)
+        [59] = 0x3d,    // OnPacketWeeklyContributionReset (no read; falls into case 115's two bools, as KMS)
+        [60] = 0x3e,    // FUN_1413c4300 (GMS2 handler @0x140aa0b50; no read, falls into case 115's two bools, as KMS)
+        [115] = 0x76,   // OnPacketVsGameTicket (GMS2 case: two bools, as KMS)
+        [114] = 0x75,   // OnPacketVsGameMatchCanceled (GMS2 case: no read, as KMS)
+        [116] = 0x77,   // FUN_1413c45e0 (GMS2 handler @0x140aa0de0: i32, as KMS)
         [119] = 0x7a,   // FUN_1413c4870
         [120] = 0x7b,   // OnPacketVsGameReward
         [74] = 0x4c,    // OnPacketExpelledOfflineMembers
@@ -139,16 +139,16 @@ public static class GuildModes {
         [35] = 0x23,    // OnPacketMemberAchievement, up Achievement
         [38] = 0x26,    // FUN_1413c23d0
         [51] = 0x35,    // FUN_1413c2590, up GuildContribution
-        [72] = 0x4a,    // OnPacketPvpHistory (GMS2 handler @0x140aa1580)
-        [73] = 0x4b,    // OnPacketPvpSeasonHistory (GMS2 handler @0x140aa17b0)
+        [72] = 0x4a,    // OnPacketPvpHistory (GMS2 handler @0x140aa1580; entry layout unchecked, GuildMessage.Gms2UncheckedLayouts)
+        [73] = 0x4b,    // OnPacketPvpSeasonHistory (GMS2 handler @0x140aa17b0; entry layout unchecked, GuildMessage.Gms2UncheckedLayouts)
         [80] = 0x52,    // FUN_1413c5360, up SendApplication
         [81] = 0x53,    // FUN_1413c5440, up CancelApplication
         [82] = 0x54,    // OnPacketJoinRequestAnswer, up RespondApplication
         [83] = 0x55,    // OnPacketJoinRequestsForGuild, up ListApplications
         [84] = 0x56,    // FUN_1413c5840, up ListAppliedGuilds
         [85] = 0x57,    // OnPacketSearchResults, up ListGuilds
-        [106] = 0x6d,   // OnPacketStorageGiftResult
-        [109] = 0x70,   // OnPacketStorageHistory (GMS2 handler @0x140aa2370)
+        [106] = 0x6d,   // OnPacketStorageGiftResult (GMS2 case: u8, then a string only for 0, as KMS)
+        [109] = 0x70,   // OnPacketStorageHistory (GMS2 handler @0x140aa2370; line layout unchecked, GuildMessage.Gms2UncheckedLayouts)
         [48] = 0x30,    // OnPacketMyJoinRequestRemoved, up NotifyApplicant
         [47] = 0x2f,    // FUN_1413c6180, up NotifyApplication
         [45] = 0x2d,    // OnPacketJoinRequestReceived, up ReceiveApplication
@@ -159,8 +159,13 @@ public static class GuildModes {
     /// reads as an unhandled type.</summary>
     public const byte NoKmsType = 0xff;
 
-    /// <summary>The wire mode of a KMS send mode for the session's profile.</summary>
-    public static byte Send(byte kmsMode, ProtocolProfile profile) => profile.IsGms2 ? Gms2Send[kmsMode] : kmsMode;
+    /// <summary>The wire mode of a KMS send mode for the session's profile. A KMS mode without a GMS2 row is a request the
+    /// GMS2 client never sends; it throws naming the mode rather than a bare missing key.</summary>
+    public static byte Send(byte kmsMode, ProtocolProfile profile) {
+        if (!profile.IsGms2) return kmsMode;
+        if (Gms2Send.TryGetValue(kmsMode, out byte gms2)) return gms2;
+        throw new InvalidOperationException($"Guild send mode 0x{kmsMode:x2} has no GMS2 mode (GuildModes.Gms2Send); the GMS2 client has no such request");
+    }
 
     /// <summary>The KMS type of a received wire type for the session's profile (<see cref="NoKmsType"/> for a GMS2 type
     /// without a KMS case).</summary>

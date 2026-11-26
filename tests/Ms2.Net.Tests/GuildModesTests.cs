@@ -105,6 +105,15 @@ public class GuildModesTests {
     }
 
     [Test]
+    public void AnUnmappedSendModeNamesTheModeOnGms2() {
+        // 0x42 is a KMS receive type with no KMS sender: no GMS2 row. KMS passes every byte through.
+        Assert.That(GuildModes.Gms2Send.ContainsKey(0x42), Is.False);
+        var e = Assert.Throws<InvalidOperationException>(() => GuildModes.Send(0x42, Gms));
+        Assert.That(e.Message, Does.Contain("0x42"));
+        Assert.That(GuildModes.Send(0x42, Kms), Is.EqualTo((byte) 0x42));
+    }
+
+    [Test]
     public void TheReceiveMapIsOneToOneAndKmsIsUnchanged() {
         // 91 GMS2 cases, 90 with a KMS case (GMS2 50 has none).
         Assert.That(GuildModes.Gms2Receive, Has.Count.EqualTo(90));

@@ -575,6 +575,15 @@ public sealed class GuildBook
     public void ClearSearchResults() => results.Clear();
 
     /// <summary>FUN_1413b6370: one Guild packet.</summary>
+    /// <summary>OnPacketVsGameTicket (@0x1413c4420, guildmanager.cpp:2653), mode 0x76 and the tail of 0x3d and 0x3e: f354 = the
+    /// flag; with the notify flag the line of the register (3 when registered) or unregister ticket key, type 3; then the
+    /// dialog's UpdateEventButtons.</summary>
+    void VsGameTicket(GuildMessage m) {
+        if (Info != null) Info.F354 = m.Accepted;
+        if (m.Notify) ChatLine?.Invoke(CommonByKey(m.Accepted ? "s_guild_notify_vsGame_register_ticket" : "s_guild_notify_vsGame_unregister_ticket"), 3);
+        VsGameRefresh?.Invoke();
+    }
+
     public void Apply(GuildMessage m)
     {
         switch (m.Type)
@@ -764,11 +773,17 @@ public sealed class GuildBook
                 ChatLine?.Invoke(CommonByKey("s_guild_donate_complete"), 0xd);
                 break;
             case 0x76:
-                // OnPacketVsGameTicket (@0x1413c4420, guildmanager.cpp:2653): f354 = the flag; with the notify flag the line of the
-                // register (3 when registered) or unregister ticket key, type 3; then the dialog's UpdateEventButtons.
-                if (Info != null) Info.F354 = m.Accepted;
-                if (m.Notify) ChatLine?.Invoke(CommonByKey(m.Accepted ? "s_guild_notify_vsGame_register_ticket" : "s_guild_notify_vsGame_unregister_ticket"), 3);
-                VsGameRefresh?.Invoke();
+                VsGameTicket(m);
+                break;
+            case 0x3d:
+                // OnPacketWeeklyContributionReset (@0x1413c41b0, :2620): every member's weekly contribution (fe8) is 0 and the open
+                // dialog's FUN_141973b20 runs per member; the case then falls into OnPacketVsGameTicket (guildmanager.cpp:367-369).
+                if (Info != null)
+                    foreach (var member in Info.Members) {
+                        member.Contribution = 0;
+                        MemberRefresh?.Invoke(member.Name);
+                    }
+                if (m.Ticket) VsGameTicket(m);   // an empty body (the retail GMS2 server's) fails the ticket read after the reset
                 break;
             case 0x75:
                 // OnPacketVsGameMatchCanceled (@0x1413c4580, :2670): f354 = 0 and the notice s_guild_notify_vsGame_match_canceled
@@ -873,6 +888,7 @@ public sealed class GuildBook
                 // UpdateRaidScore and FUN_141973220 run. Unlike the 0x25 packet this one has no in-guild check.
                 if (Info != null) foreach (var member in Info.Members) member.Raid.Clear();
                 RaidRefresh?.Invoke();
+                if (m.Ticket) VsGameTicket(m);   // the case falls through (guildmanager.cpp:368-369); an empty body has no ticket
                 break;
             case 0x6e:
                 // FUN_1413c3e50 (@0x1413c3e50, :2590): SetStorageItem, m_400 cleared (the history is asked for again), the dialog's

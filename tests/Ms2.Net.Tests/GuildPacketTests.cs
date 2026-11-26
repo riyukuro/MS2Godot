@@ -262,8 +262,39 @@ public class GuildPacketTests {
         var m = GuildMessage.Read(R(w => { w.WriteByte(0x25); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(9); }));
         Assert.That((m.Name, m.RaidId, m.Value), Is.EqualTo(("bo", 3, 9)));
         Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x25); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(9); w.WriteByte(0); })), "ExpectEnd");
-        Assert.That(GuildMessage.Read(R(w => w.WriteByte(0x3e))).Type, Is.EqualTo(0x3e));
-        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x3e); w.WriteByte(0); })), "the reset has no body");
+    }
+
+    [Test]
+    public void TheWeeklyAndRaidResetsFallIntoTheTicketsTwoBools() {
+        // guildmanager.cpp:367-369: 0x3d and 0x3e read nothing and fall into OnPacketVsGameTicket (GMS2 59 and 60 into 115).
+        foreach (var (wire, kms, profile) in new[] { ((byte) 0x3d, (byte) 0x3d, ProtocolProfile.Kms2525), ((byte) 0x3e, (byte) 0x3e, ProtocolProfile.Kms2525),
+                     ((byte) 59, (byte) 0x3d, ProtocolProfile.Gms2), ((byte) 60, (byte) 0x3e, ProtocolProfile.Gms2) }) {
+            var m = GuildMessage.Read(R(w => { w.WriteByte(wire); w.WriteByte(1); w.WriteByte(1); }), profile);
+            Assert.That((m.Type, m.Ticket, m.Accepted, m.Notify), Is.EqualTo((kms, true, true, true)), $"{profile.Name} {wire}");
+            // The retail GMS2 server's weekly reset has no body: the reset alone.
+            var empty = GuildMessage.Read(R(w => w.WriteByte(wire)), profile);
+            Assert.That((empty.Type, empty.Ticket), Is.EqualTo((kms, false)), $"{profile.Name} {wire} empty");
+            Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(wire); w.WriteByte(0); w.WriteByte(0); w.WriteByte(0); }), profile), "ExpectEnd");
+        }
+    }
+
+    [Test]
+    public void AGms2BodyOfAnUncheckedLayoutIsSkippedWithAWarning() {
+        var warnings = new List<string>(); var old = GuildMessage.Warning; GuildMessage.Warning = warnings.Add;
+        try {
+            foreach (byte kms in GuildMessage.Gms2UncheckedLayouts) {
+                byte wire = GuildModes.Gms2Receive.Single(kv => kv.Value == kms).Key;
+                // One entry present, then a byte the KMS entry reader cannot place.
+                var m = GuildMessage.Read(R(w => { w.WriteByte(wire); w.WriteInt(1); w.WriteByte(1); w.WriteByte(9); }), ProtocolProfile.Gms2);
+                Assert.That(m.Type, Is.EqualTo(GuildModes.NoKmsType), $"GMS2 {wire}");
+                Assert.That(warnings.Last(), Does.Contain($"GMS2 type {wire}"));
+                // An empty list still reads.
+                Assert.That(GuildMessage.Read(R(w => { w.WriteByte(wire); w.WriteInt(0); }), ProtocolProfile.Gms2).Type, Is.EqualTo(kms));
+                // KMS keeps the strict read.
+                Assert.That(() => GuildMessage.Read(R(w => { w.WriteByte(kms); w.WriteInt(1); w.WriteByte(1); w.WriteByte(9); }), ProtocolProfile.Kms2525), Throws.Exception);
+            }
+            Assert.That(warnings, Has.Count.EqualTo(GuildMessage.Gms2UncheckedLayouts.Length));
+        } finally { GuildMessage.Warning = old; }
     }
 
     static void WriteBattle(ByteWriter w, long time) {

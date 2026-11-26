@@ -213,6 +213,8 @@ public sealed record GuildMessage(byte Type) {
     public bool Notify { get; init; }
     /// <summary>Type 0x38: the custom event (id and time) a member opened; <see cref="Name"/> is the member. Type 0x76: the registration
     /// flag (<see cref="Accepted"/>) and the notice flag (<see cref="Notify"/>). Type 0x77: the other game id is <see cref="Value"/>.</summary>
+    /// <summary>Types 0x76, 0x3d and 0x3e: the vs game ticket's two bools were in the body (0x3d and 0x3e fall into them).</summary>
+    public bool Ticket { get; init; }
     public int EventId { get; init; }
     public int EventTime { get; init; }
     /// <summary>Type 0x39 (FUN_1413c39e0 @0x1413c39e0, guildmanager.cpp:2554): the new house level and theme; <see cref="Name"/> is the member
@@ -261,10 +263,35 @@ public sealed record GuildMessage(byte Type) {
 
     public static GuildMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
 
+    /// <summary>Where the one-line warning of a skipped GMS2 body goes (the tests listen here).</summary>
+    public static Action<string> Warning = line => Console.Error.WriteLine(line);
+
+    /// <summary>The KMS types whose GMS2 row rests on the case order alone: the GMS2 case reads entries through helpers whose
+    /// layout is not checked against the KMS entry (GMS2 72 and 73: 0x1403203d0 per entry; GMS2 109: the history line). On
+    /// GMS2 a body that does not fit the KMS reader is skipped with a warning instead of throwing. Every other GMS2 row has
+    /// its case read field by field against the KMS reader (see GuildModes.Gms2Receive).</summary>
+    public static readonly byte[] Gms2UncheckedLayouts = [0x4a, 0x4b, 0x70];
+
     public static GuildMessage Read(ByteReader r, ProtocolProfile profile) {
+        if (profile.IsGms2 && r.Available > 0) {
+            byte wire = r.Buffer[r.Position];
+            byte kms = GuildModes.Receive(wire, profile);
+            if (Array.IndexOf(Gms2UncheckedLayouts, kms) >= 0) {
+                try { return ReadChecked(r, profile); }
+                catch (Exception e) when (e is PacketLayoutException or IndexOutOfRangeException or ArgumentException) {
+                    Warning?.Invoke($"Guild GMS2 type {wire} (KMS 0x{kms:x2}) skipped: its body does not fit the KMS layout ({e.Message})");
+                    r.ReadBytes(r.Available);
+                    return new(GuildModes.NoKmsType);
+                }
+            }
+        }
+        return ReadChecked(r, profile);
+    }
+
+    static GuildMessage ReadChecked(ByteReader r, ProtocolProfile profile) {
         var m = ReadBody(r, profile);
         // Types 7 and 0xf have no body, the others end with their fields.
-        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x25 or 0x3e or 0x27 or 0x29 or 0x4a or 0x4b or 0x6d or 0x6e or 0x70 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x25 or 0x3d or 0x3e or 0x27 or 0x29 or 0x4a or 0x4b or 0x6d or 0x6e or 0x70 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 
@@ -366,8 +393,6 @@ public sealed record GuildMessage(byte Type) {
                 for (int i = 0; i < n; i++) if (r.ReadByte() == 1) list.Add(GuildPvpSeasonHistory.Read(r));
                 return Done(new(t) { PvpSeasonHistory = list }, r);
             }
-            // FUN_1413c4300 (@0x1413c4300, :2637): the raid records were reset, the packet has no body
-            case 0x3e: return Done(new(t), r);
             // FUN_1413c3e50 (:2590): ItemEntity::Read
             case 0x6e: return Done(new(t) { StorageItem = GuildStorageItem.Read(r) }, r);
             // OnPacketStorageGiftResult (@0x1413c5c00, :2985): u8 result, and for 0 the receiver's name
@@ -379,8 +404,16 @@ public sealed record GuildMessage(byte Type) {
                 for (int i = 0; i < n; i++) list.Add(new(GuildStorageParty.Read(r), GuildStorageParty.Read(r), GuildStorageItem.Read(r), r.ReadLong()));
                 return Done(new(t) { StorageHistory = list }, r);
             }
+            // OnPacketWeeklyContributionReset (@0x1413c41b0, :2620) and FUN_1413c4300 (@0x1413c4300, :2637, the raid records
+            // reset) read nothing; their cases fall through (guildmanager.cpp:367-369) into OnPacketVsGameTicket, so the body is
+            // its two bools. GMS2 cases 59 and 60 (0x140aa09d0, 0x140aa0b50) fall into case 115's two bool reads the same way.
+            // The retail GMS2 server sent 59 with no body (recorded weekly reset): the client has done the reset by then and its
+            // ticket read fails, so an empty body is the reset alone (Ticket false).
+            case 0x3d: case 0x3e:
+                if (r.Available == 0) return new(t);
+                goto case 0x76;
             // OnPacketVsGameTicket (:2653)
-            case 0x76: return Done(new(t) { Accepted = r.ReadByte() != 0, Notify = r.ReadByte() != 0 }, r);
+            case 0x76: return Done(new(t) { Ticket = true, Accepted = r.ReadByte() != 0, Notify = r.ReadByte() != 0 }, r);
             // OnPacketVsGameMatchCanceled (:2670): no body
             case 0x75: return new(t);
             // FUN_1413c45e0 (:2679)

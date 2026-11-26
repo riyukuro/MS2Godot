@@ -795,6 +795,24 @@ public class GuildBookTests {
     }
 
     [Test]
+    public void TheWeeklyResetClearsEveryContributionAndBothResetsApplyTheTicket() {
+        var b = GuildDialogTests.InGuild(); var rows = new List<string>(); int vs = 0;
+        b.MemberRefresh += rows.Add; b.VsGameRefresh += () => vs++;
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 5, Triple = (0, 0, 0), Contribution = 40 });
+        b.Me.Contribution = 25;
+        b.Apply(new GuildMessage((byte)0x3d) { Ticket = true, Accepted = true, Notify = false });
+        Assert.That(b.Info.Members.Select(x => x.Contribution), Is.All.EqualTo(0));
+        Assert.That(rows, Is.EquivalentTo(b.Info.Members.Select(x => x.Name)), "one row redraw per member");
+        Assert.That((b.Info.F354, vs), Is.EqualTo((true, 1)), "then the ticket's flag and event buttons");
+        b.Apply(new GuildMessage((byte)0x3e) { Ticket = true, Accepted = false, Notify = false });
+        Assert.That((b.Info.F354, vs), Is.EqualTo((false, 2)));
+        // An empty body (the retail GMS2 server's weekly reset): the reset alone, the ticket flag stays.
+        b.Info.F354 = true; b.Me.Contribution = 7; rows.Clear();
+        b.Apply(new GuildMessage((byte)0x3d));
+        Assert.That((b.Me.Contribution, rows.Count > 0, b.Info.F354, vs), Is.EqualTo((0, true, true, 2)));
+    }
+
+    [Test]
     public void ARaidCountOutsideAGuildDoesNothingButTheResetStillRefreshes() {
         var b = new GuildBook { Common = id => $"c{id:x}", CommonByKey = k => k, PlayerName = () => "Ma" }; int refresh = 0; b.RaidRefresh += () => refresh++;
         b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 3, Value = 2 });
