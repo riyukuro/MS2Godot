@@ -654,13 +654,21 @@ public class MyInfoTests
         Assert.That(Status(Tip(skin, 0x10800)), Is.EqualTo("<font color='#ffffff'>Basic Attributes\n  • " + Sp(10) + "\n</font>"),
             "0x10000 takes the option block");
 
-        // the unlimited block: this data's English s_tooltip_itemoption_unlimited is a placeholder without fields
+        // the unlimited block: the en stringcommon row is a localisation marker; the table's fallback takes the kr label
+        // with the level and rows. The GMS2 data has no real row, so its block is the marker itself (the data's text).
         var limit = new EquipItem { Id = 15000001, Uid = 11, Rarity = 2, Amount = 1 };
         limit.Options.Stat[0][0x1c] = 20;
         limit.LimitBreak.Level = 2; limit.LimitBreak.Stat[0x1c] = 500; limit.LimitBreak.Stat[0x17] = 30; limit.LimitBreak.Special[5] = 15;
-        // (no GMS2 string file has s_tooltip_itemoption_unlimited, so the block formats to nothing there)
-        Assert.That(t.Common("s_tooltip_itemoption_unlimited") == null, Is.EqualTo(!UiDataRows.IsKr(Packs())));
-        Assert.That(Status(Tip(limit)), Is.EqualTo(t.Common("s_tooltip_itemoption_unlimited") ?? ""));
+        string unlimited = t.Common("s_tooltip_itemoption_unlimited");
+        string UnlimitedRow(string text) => Ms2.Quest.ClientFormat.Format(t.Common("s_tooltip_itemoption_stat_row"), text);
+        string unlimitedRows =
+            UnlimitedRow(V(0x17, 30)) +
+            UnlimitedRow(V(0x1c, 10)) +
+            UnlimitedRow(Ms2.Quest.ClientFormat.Format(t.ItemOptions.SpecialValueText(5), t.ItemOptions.IsSpecialRate(5) ? 1.5f : 15));
+        string expectedLimit = unlimited == null ? "" :
+            GameStrings.IsUntranslated(unlimited) ? unlimited :
+            Ms2.Quest.ClientFormat.Format(unlimited, 2, unlimitedRows);
+        Assert.That(Status(Tip(limit)), Is.EqualTo(expectedLimit));
 
         // 15000307 (rank 4) can be enchanted: +3 with 5000 charge, step 5000 (the version 1 table): 1 of 2, 50%
         var gauge = new EquipItem { Id = 15000307, Uid = 12, Rarity = 4, Amount = 1 };
