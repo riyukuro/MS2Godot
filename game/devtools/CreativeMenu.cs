@@ -6,6 +6,7 @@ using Ms2.Formats.Pack;
 using Ms2.Quest;
 using Ms2.Ui;
 using Ms2.Ui.Items;
+using Ms2.Devtools;
 using Ms2Godot.Ui;
 
 namespace Ms2Godot;
@@ -35,6 +36,7 @@ public partial class CreativeMenu : Control
     const int PoolRows = 7;                 // a 480 px grid shows 5.7 rows of 84; one spare row
     const int IconCacheMax = 256;
 
+    static readonly StringName FontColor = "font_color";   // one native name, not one per call
     static readonly Color Backdrop = new(0, 0, 0, 0.55f);
     static readonly Color PanelColor = new("1e242e");
     static readonly Color MutedColor = new("98a4b5");
@@ -89,6 +91,22 @@ public partial class CreativeMenu : Control
         menu.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         menu.Build();
         Current = menu;
+        HookMovement();
+    }
+
+    static bool movementHooked;
+
+    /// <summary>
+    /// The own player's move keys are read every frame (Unk_PCMove through FUN_141683ef0, <see cref="Ms2.Ui.InputBlock"/>),
+    /// not through the HUD's key handling, so a focused OptionButton or SpinBox would let the field walk under the window.
+    /// The devtool adds its own hold while it is open; the client's block is kept for everything else.
+    /// </summary>
+    static void HookMovement()
+    {
+        if (movementHooked) return;
+        movementHooked = true;
+        var client = Ms2Godot.Movement.MoveInput.Blocked;
+        Ms2Godot.Movement.MoveInput.Blocked = () => IsOpen || client();
     }
 
     /// <summary>NumLock toggles the menu, also while it is open; true = the key was the menu's.</summary>
@@ -214,7 +232,7 @@ public partial class CreativeMenu : Control
         box.AddChild(title);
         excluded = new Label { Text = "", ClipText = true, CustomMinimumSize = new Vector2(0, 18) };
         excluded.AddThemeFontSizeOverride("font_size", 12);
-        excluded.AddThemeColorOverride("font_color", MutedColor);
+        excluded.AddThemeColorOverride(FontColor, MutedColor);
         box.AddChild(excluded);
 
         var top = new HBoxContainer();
@@ -241,7 +259,7 @@ public partial class CreativeMenu : Control
         top.AddChild(close);
 
         group = new Label { Text = "", ClipText = true, CustomMinimumSize = new Vector2(0, 20), Visible = false };
-        group.AddThemeColorOverride("font_color", MutedColor);
+        group.AddThemeColorOverride(FontColor, MutedColor);
         box.AddChild(group);
         scroll = new ScrollContainer
         {
@@ -374,7 +392,7 @@ public partial class CreativeMenu : Control
         c.Entry = entryIndex;
         c.Button.Visible = true;
         c.Name.Text = e.Name.Length > 0 ? e.Name : "(no name)";
-        if (c.Rank != e.Rank) { c.Rank = e.Rank; c.Name.AddThemeColorOverride("font_color", rankColors[Math.Clamp(e.Rank, 0, rankColors.Length - 1)]); }
+        if (c.Rank != e.Rank) { c.Rank = e.Rank; c.Name.AddThemeColorOverride(FontColor, rankColors[Math.Clamp(e.Rank, 0, rankColors.Length - 1)]); }
         if (!string.Equals(c.IconEntry, e.IconEntry, StringComparison.Ordinal)) { c.IconEntry = e.IconEntry; c.Icon.Texture = Icon(e.IconEntry); }
     }
 
@@ -401,8 +419,21 @@ public partial class CreativeMenu : Control
         icons[entry] = tex;
         iconOrder.Enqueue(entry);
         iconLoads++;
-        while (icons.Count > IconCacheMax && iconOrder.Count > 0) icons.Remove(iconOrder.Dequeue());
+        while (icons.Count > IconCacheMax && iconOrder.Count > 0)
+        {
+            string old = iconOrder.Dequeue();
+            if (!icons.Remove(old, out var evicted)) continue;
+            if (evicted != null && !Shown(old)) evicted.Dispose();   // a cell still showing it keeps its own reference
+        }
         return tex;
+    }
+
+    /// <summary>Whether a visible cell still draws the entry (its texture is not ours to free then).</summary>
+    bool Shown(string entry)
+    {
+        foreach (var c in cells)
+            if (c.Entry >= 0 && c.Button.Visible && string.Equals(c.IconEntry, entry, StringComparison.Ordinal)) return true;
+        return false;
     }
 
     void Hover(Cell c)
@@ -411,9 +442,8 @@ public partial class CreativeMenu : Control
         var e = catalog.Entries[c.Entry];
         c.Button.TooltipText = Tooltip(e);        // built on hover, so scrolling never builds one
         details.Text = $"{e.Name}  (id {ItemCatalog.IdText(e.Id)}, {ItemCatalog.TabName(tables, e.Tab)}, rank {e.Rank}, max stack {e.SlotMax})";
-        int max = Math.Max(1, e.SlotMax);
-        amountBox.MaxValue = max;
-        if (amountBox.Value > max) amountBox.Value = max;
+        // the amount box is left alone: it is what the next item's command sends, and clamping it to this item's slot max
+        // would keep a non-stackable hover from reducing the amount a later potion spawns (ItemSpawnCommand caps a stack).
     }
 
     // ---- spawning -----------------------------------------------------------------------------------------------------
@@ -430,9 +460,14 @@ public partial class CreativeMenu : Control
 
     int SelectedRarity() => (int)rarityBox.GetItemId(rarityBox.Selected);
 
-    /// <summary>Sends the spawn as the live session's normal chat line (UserChat 0x11, type 1, as the chat window sends).</summary>
+    /// <summary>
+    /// Sends the spawn as the live session's normal chat line (UserChat 0x11, type 0, ChatType.Normal, as the chat window's
+    /// normal line goes out). Every spawn re-checks the KMS gate, so an endpoint call on a menu left from another session's
+    /// catalog cannot send.
+    /// </summary>
     public string Spawn(ItemCatalog.Entry e, int amount, int rarity)
     {
+        if (!Allowed()) return null;
         string line = ItemSpawnCommand.Line(e.Id, amount, rarity, (uint)e.SlotMax);
         lastLine = line;
         var live = Ms2Godot.Net.LiveSession.Instance;
@@ -442,7 +477,7 @@ public partial class CreativeMenu : Control
             GD.Print($"creative: {line} not sent: no live session");
             return null;
         }
-        live.SendChat(new Ms2.Net.Packets.UserChatRequest(1, line, "", 0));
+        live.SendChat(new Ms2.Net.Packets.UserChatRequest(0, line, "", 0));
         ShowStatus("sent " + line, error: false);
         GD.Print($"creative: sent {line}");
         return line;
@@ -477,12 +512,37 @@ public partial class CreativeMenu : Control
     void ShowStatus(string text, bool error)
     {
         status.Text = text;
-        status.AddThemeColorOverride("font_color", error ? ErrorColor : MutedColor);
+        status.AddThemeColorOverride(FontColor, error ? ErrorColor : MutedColor);
     }
 
     // ---- the debug endpoint's view ------------------------------------------------------------------------------------
 
     public void SetSearch(string text) { search.Text = text ?? ""; Refilter(true); }
+
+    /// <summary>The amount box's value, set by the endpoint for a scripted click (1..99999; the command clamps a stack).</summary>
+    public void SetAmount(int amount) => amountBox.Value = Math.Clamp(amount, 1, 99999);
+
+    /// <summary>Hovers the first visible cell, as a pointer over it does (details, tooltip; never the amount box).</summary>
+    public void HoverFirst()
+    {
+        if (!Visible) Open();
+        if (FirstVisible() is { } c) Hover(c);
+    }
+
+    /// <summary>Clicks the first visible cell: the same amount, rarity and shift path a real click takes.</summary>
+    public string ClickFirst()
+    {
+        if (!Visible && !Open()) return null;
+        if (FirstVisible() is not { } c) return null;
+        Click(c);
+        return lastLine;
+    }
+
+    Cell FirstVisible()
+    {
+        foreach (var c in cells) if (c.Button.Visible && c.Entry >= 0) return c;
+        return null;
+    }
 
     public void SetTab(int t) { tab = t; tabBox.Select(tabBox.GetItemIndex(t)); Refilter(true); }
 
@@ -505,7 +565,7 @@ public partial class CreativeMenu : Control
     {
         var o = new System.Text.Json.Nodes.JsonObject
         {
-            ["open"] = Visible, ["count"] = catalog?.Count ?? 0, ["shown"] = matches.Count, ["firstRow"] = firstRow,
+            ["open"] = Visible, ["count"] = catalog?.Count ?? 0, ["shown"] = matches.Count, ["firstRow"] = firstRow, ["amount"] = (int)amountBox.Value,
             ["tab"] = tab, ["search"] = search.Text, ["cells"] = cells.Count, ["icons"] = icons.Count, ["iconLoads"] = iconLoads,
             ["scrollEvents"] = scrollEvents, ["scrollBytes"] = scrollBytes, ["catalogMs"] = catalogMs,
             ["lastLine"] = lastLine, ["lastAnswer"] = lastAnswer, ["unfiltered"] = catalog?.Unfiltered ?? 0,

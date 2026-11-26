@@ -1958,10 +1958,15 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Input(InputEvent e)
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
+        // the held-state trackers see every key, also while the debug item browser is open: a release that arrives then
+        // must not leave the pickup or the left Ctrl held after the window closes
+        TrackPickupKey(e);
+        TrackLeftCtrl(e);
 #if MS2_DEVTOOLS
         // The debug item browser: NumLock toggles it, and while it is open the HUD's hotkeys stay out of its way (typing
         // in its search box is a Godot text control, so the movie keys are already gated by UiFocus.IsTyping; Escape
-        // closes it). Neither path marks the event handled, so the menu's own Controls still see it.
+        // closes it; CreativeMenu.HookMovement keeps the move keys from walking the field). Neither path marks the event
+        // handled, so the menu's own Controls still see it.
         if (CreativeMenu.ToggleKey(e)) { vp.SetInputAsHandled(); return; }
         if (CreativeMenu.IsOpen)
         {
@@ -1969,8 +1974,6 @@ public partial class HudScene : Node, IUiStageHost
             return;
         }
 #endif
-        TrackPickupKey(e);
-        TrackLeftCtrl(e);
         // under a field move's loading screen no hotkey opens a dialog (Ms2.Ui.FieldMoveCover); the message box's keys are
         // its own layer's (MessageBoxLayer), which saw them first
         if (Ms2.Ui.FieldMoveCover.Up)

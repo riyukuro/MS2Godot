@@ -41,7 +41,7 @@ stderr with exit code 1. `--help` lists every command and argument.
 | `input key=Space` / `text=/item 1 --drop` / `mouse=left x= y=` / `action=` | send an input event (the only command that changes the game) |
 | `log since=` | print output, `push_error` and `push_warning` lines after a sequence number |
 | `as3 movie= path= depth=` | no args lists the movies; with `movie` a display-list and variable view; `depth` (default 1, at most 6) is how many child levels show |
-| `creative action= search= tab= spawn= amount= rarity= stack=` | the debug item browser: `status` (default), `open`, `close`, `toggle`, `search`, `tab`, `spawn`; the catalog is built on the first open |
+| `creative action= search= tab= spawn= amount= rarity= stack=` | the debug item browser: `status` (default), `open`, `close`, `toggle`, `search`, `tab`, `amount` (the amount box), `hover`/`click` (the first visible cell), `spawn`; the catalog is built on the first open |
 
 There is no eval, no method call and no property write. A request that throws returns an error and never reaches the game.
 

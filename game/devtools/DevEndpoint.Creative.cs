@@ -9,10 +9,11 @@ namespace Ms2Godot;
 public partial class DevEndpoint
 {
     /// <summary>
-    /// creative {action=toggle|open|close|search|tab|spawn|status, search, tab, spawn, amount, rarity, stack}: the debug item
-    /// browser (game/devtools/CreativeMenu.cs). "spawn" sends the same chat line a click does and returns it with the
-    /// menu's state; every other action returns the state, so a run can open it, filter it and spawn without the mouse.
-    /// The catalog is built on the first open (once per pack set).
+    /// creative {action=toggle|open|close|search|tab|spawn|click|hover|amount|status, search, tab, spawn, amount, rarity,
+    /// stack}: the debug item browser (game/devtools/CreativeMenu.cs). "spawn" sends the same chat line a click does and
+    /// returns it with the menu's state; "click" clicks the first visible cell (the real amount/rarity/shift path), "hover"
+    /// hovers it (which must not touch the amount box) and "amount" sets the amount box. Every action returns the state, so
+    /// a run can open it, filter it and spawn without the mouse. The catalog is built on the first open (once per pack set).
     /// </summary>
     JsonNode Creative(Request r)
     {
@@ -27,6 +28,11 @@ public partial class DevEndpoint
             case "toggle": menu.Toggle(); break;
             case "search": menu.SetSearch(r.GetString("search", "")); break;
             case "tab": menu.SetTab(r.GetInt("tab", -1)); break;
+            case "amount": menu.SetAmount(r.GetInt("amount", 1)); break;
+            case "hover": menu.HoverFirst(); break;
+            case "click":
+                string clicked = menu.ClickFirst();
+                return new JsonObject { ["line"] = clicked, ["sent"] = clicked != null, ["state"] = menu.StatusJson() };
             case "spawn":
                 string line = menu.SpawnId(r.GetInt("spawn", 0), r.GetInt("amount", 1), r.GetInt("rarity", 0), r.GetBool("stack", false));
                 return new JsonObject { ["line"] = line, ["sent"] = line != null, ["state"] = menu.StatusJson() };
