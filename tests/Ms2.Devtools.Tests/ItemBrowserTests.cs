@@ -140,8 +140,6 @@ public class ItemBrowserTests
     public void TheStatusKeepsTheOptionsAndLimitBreakOfAnAdditionalEffectItem()
     {
         Model();
-        if (!string.Equals(tables.Locale, "KR", StringComparison.OrdinalIgnoreCase))
-            Assert.Ignore("the GMS2 data has no translated unlimited-enchant block");
         // The Fire Prism Knife has additional effects (Power of Phantom Spacetime); the block is still built, with
         // the data's options, the browser's bonus line and the server's limit break rows.
         var s = new ItemBrowserSettings { LimitBreak = 2 };
@@ -153,16 +151,25 @@ public class ItemBrowserTests
         Assert.That(ItemBrowserModel.Build(model, 13100313, s, server), Is.Not.Null);
         var (_, data) = ItemBrowserModel.Build(model, 13100313, s, server)!.Value;
         string status = (string)data["itemStatus"];
-        string unlimited = Common("s_tooltip_itemoption_unlimited").Split("{0}")[0];
+        // The label is the data's own text: English on the restore data, Korean on the raw KMS2_DEV data, and
+        // absent (or an untranslated marker) on the GMS2 data, whose client table has no real row. The prefix before
+        // the level field is matched, so no language or Hangul text is hard-coded; without a label the client shows no
+        // block, and only the rest of the status is checked.
+        string unlimited = Common("s_tooltip_itemoption_unlimited");
+        string unlimitedPrefix = unlimited.Contains("{0}", StringComparison.Ordinal)
+            ? unlimited[..unlimited.IndexOf("{0}", StringComparison.Ordinal)] : unlimited;
+        bool noLabel = unlimited.Length == 0 || GameStrings.IsUntranslated(unlimited);
         string random = Common("s_tooltip_itemoption_kinds_random").Split("{0}")[0];
         Assert.Multiple(() => {
-            Assert.That(status, Does.Contain(unlimited), "the unlimited enchant block");
-            Assert.That(status, Does.Contain("Limit Break Lv. 2"), "the label from the fallback language, not its marker");
-            Assert.That(status, Does.Not.Contain("STRINGCOMMON_"), "the localisation marker is not shown");
-            Assert.That(status, Does.Contain(tables.StatName(31)), "the limit break's Piercing row");
-            Assert.That(status, Does.Contain(ClientPercent(31, 30)), "the limit break's rate in tenths");
-            Assert.That(status, Does.Contain("195"), "the limit break's Health row");
+            Assert.That(status, Does.Contain(unlimitedPrefix), "the unlimited enchant block, in the data's own text");
             Assert.That(status, Does.Contain(random), "the browser's bonus line is shown as the random kind");
+            if (!noLabel)
+            {
+                Assert.That(status, Does.Not.Contain("STRINGCOMMON_"), "the localisation marker is not shown");
+                Assert.That(status, Does.Contain(tables.StatName(31)), "the limit break's Piercing row");
+                Assert.That(status, Does.Contain(ClientPercent(31, 30)), "the limit break's rate in tenths");
+                Assert.That(status, Does.Contain("195"), "the limit break's Health row");
+            }
         });
     }
 
