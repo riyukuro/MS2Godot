@@ -927,7 +927,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (Ms2Godot.Net.LiveSession.LiveCheck) LogRolloff(clip, clip.Volume * volume, position, v.VolumeDb);
         // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing
         // the voice's sound may be stopped, or the voice taken by a newer sound, before the delay ends
-        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v) && voiceSlots.SlotOf(ticket) == slot) v.Play(); }; else v.Play();
+        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v) && voiceSlots.SlotOf(ticket) == slot) Start3d(v, slot); }; else Start3d(v, slot);
         PositionalPlayed++;
         return ticket;
     }

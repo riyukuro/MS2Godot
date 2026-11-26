@@ -49,6 +49,12 @@ public partial class AmbientSounds : Node3D
         {
             var s = rolled[i];
             if (gains.Update(s.Index, listener, out float db)) s.Player.VolumeDb = db;
+            if (gains.PastSilentChanged(s.Index, out bool past))
+            {
+                // a loop: stopped while silent, played again on the way back
+                if (past) s.Player.Stop();
+                else if (s.On && s.Player.Stream != null) s.Player.Play();
+            }
         }
     }
 
@@ -63,7 +69,7 @@ public partial class AmbientSounds : Node3D
             float now = s.Clip.Rolloff != null ? s.Clip.Volume * s.Clip.Rolloff.GainAt(d) : s.Clip.Is2D ? s.Clip.Volume : float.NaN;
             var m = Ms2Godot.World.FieldPortals.ToMs2(s.Player.GlobalPosition);
             var ev = s.Clip.Event;
-            sb.Append($"{s.Player.Name} {ev?.FullPath ?? s.Clip.Name} {(ev == null ? "?" : ev.Is3D ? "3d" : "2d")}{(ev?.IsSimple == true ? " simple" : "")} {s.Clip.Name} [{m.X:F0} {m.Y:F0} {m.Z:F0}] at {d:F0} (camera {dc:F0}): gain {now:F3} applied {Mathf.DbToLinear(s.Player.VolumeDb):F3}, "
+            sb.Append($"{s.Player.Name} {ev?.FullPath ?? s.Clip.Name} {(ev == null ? "?" : ev.Is3D ? "3d" : "2d")}{(ev?.IsSimple == true ? " simple" : "")} {s.Clip.Name} [{m.X:F0} {m.Y:F0} {m.Z:F0}] at {d:F0} (camera {dc:F0}): gain {now:F3} applied {Mathf.DbToLinear(s.Player.VolumeDb):F3}{(s.Clip.Rolloff != null && GetParent() is FieldAudio fa ? $" out {fa.Output(s.Player):F3}" : "")}{(s.Clip.Rolloff != null && s.On && gains.IsPast(s.Index) ? " stopped past silent" : "")}, "
                 + $"old {s.Clip.Volume * FieldAudio.OldFalloff(dc, s.OldMin, s.OldMax):F3}; ");
         }
         return sb.ToString();
@@ -97,11 +103,11 @@ public partial class AmbientSounds : Node3D
         s.On = on;
         if (s.Clip.Rolloff is { } curve)
         {
-            if (on) gains.Set(s.Index, curve, s.Clip.Volume, s.At);
+            if (on) { gains.Set(s.Index, curve, s.Clip.Volume, s.At, stopsPastSilent: true); Place(s); }
             else gains.Clear(s.Index);
         }
         if (!on) s.Player.Stop();
-        else if (s.Player.Stream != null && !s.Player.Playing) s.Player.Play();
+        else if (s.Player.Stream != null && !s.Player.Playing && !Past(s)) s.Player.Play();
     }
 
     /// <summary>Whether the entity has a sound and it is set to play (null: no sound).</summary>
@@ -127,14 +133,15 @@ public partial class AmbientSounds : Node3D
         var sound = sounds[e] = new Sound { Player = player, Clip = clip, At = new(pos.X, pos.Y, pos.Z), OldMin = min, OldMax = max };
         if (clip.Rolloff is { } curve)
         {
-            // Godot's attenuation off: the curve is the gain, silent past its last non-zero point
+            // Godot's attenuation, max distance fade and filter off: the curve is the gain, and the loop is stopped past its
+            // silent distance (FieldAudio.Rolloff.cs)
             player.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
-            player.MaxDistance = float.IsInfinity(curve.Silent) ? 0 : curve.Silent;
+            player.MaxDistance = Player3DOutput.CurveMaxDistance(curve);
+            player.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
             sound.Index = rolled.Count;
-            gains.Set(sound.Index, curve, clip.Volume, sound.At);
+            gains.Set(sound.Index, curve, clip.Volume, sound.At, stopsPastSilent: true);
             rolled.Add(sound);
-            if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(sound.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z), out float db))
-                player.VolumeDb = db;
+            Place(sound);
         }
         else if (clip.Is2D)
         {
@@ -143,6 +150,7 @@ public partial class AmbientSounds : Node3D
             // across the field at its own volume
             player.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
             player.MaxDistance = 0;
+            player.AttenuationFilterDb = 0;   // Godot shelves the highs by the volume too (Player3DOutput)
             player.PanningStrength = 0;
         }
         AddChild(player);
@@ -176,7 +184,17 @@ public partial class AmbientSounds : Node3D
         while (started.TryDequeue(out var start)) start();
     }
 
-    static void Start(Sound s, Pcm16 pcm, byte[] data)
+    /// <summary>A curve sound's volume for the listener now, and which side of its silent distance it is on.</summary>
+    void Place(Sound s)
+    {
+        if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(s.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z), out float db))
+            s.Player.VolumeDb = db;
+    }
+
+    /// <summary>A curve sound past its silent distance: not played until the listener comes back.</summary>
+    bool Past(Sound s) => s.Clip.Rolloff != null && gains.IsPast(s.Index);
+
+    void Start(Sound s, Pcm16 pcm, byte[] data)
     {
         var p = s.Player;
         if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
@@ -185,6 +203,6 @@ public partial class AmbientSounds : Node3D
             Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = data,
             LoopMode = AudioStreamWav.LoopModeEnum.Forward, LoopBegin = 0, LoopEnd = pcm.Frames,
         };
-        if (s.On) p.Play();
+        if (s.On && !Past(s)) p.Play();
     }
 }

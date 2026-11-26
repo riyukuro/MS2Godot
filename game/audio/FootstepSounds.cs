@@ -100,20 +100,27 @@ public partial class FootstepSounds : Node
                 decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
             }
             if (wav == null) continue;
+            var curve = clip.Rolloff;
+            var fa = GetParent() as FieldAudio;
+            float d = curve != null && fa is { HasListener: true } ? fa.ListenerAt.DistanceTo(body.GlobalPosition) : 0;
+            if (curve != null && fa is { HasListener: true } && d >= curve.Silent) continue;   // past its silent distance: nothing to hear
             var v = voices[nextVoice++ % voices.Length];
             v.Stream = wav;
             v.VolumeDb = Mathf.LinearToDb(clip.Volume);
-            if (clip.Rolloff is { } curve && GetParent() is FieldAudio fa && fa.HasListener)
+            if (curve != null && fa is { HasListener: true })
             {
-                // the step's curve gain from the listener (FieldAudio.Rolloff.cs), at its start: a step is short
+                // the step's curve gain from the listener (FieldAudio.Rolloff.cs), at its start: a step is short. Godot's
+                // attenuation, max distance fade and filter off (Player3DOutput)
                 v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
-                v.MaxDistance = float.IsInfinity(curve.Silent) ? 0 : curve.Silent;
-                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(fa.ListenerAt.DistanceTo(body.GlobalPosition)));
+                v.MaxDistance = Player3DOutput.CurveMaxDistance(curve);
+                v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
+                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d));
             }
             else
             {
                 v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance;
                 v.MaxDistance = 3000;
+                v.AttenuationFilterDb = Player3DOutput.DefaultFilterDb;
             }
             v.Bus = SoundBuses.Of(clip.Category);
             v.Play();

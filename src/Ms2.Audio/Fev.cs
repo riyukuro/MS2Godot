@@ -136,10 +136,11 @@ public sealed class FevEvent
     public bool Is3D;
     /// <summary>The record's mode word at +0x34 (FMOD_MODE bits: 3D / 2D, and the rolloff, <see cref="RolloffModel"/>).</summary>
     public int Mode;
-    /// <summary>The rolloff the mode asks for: custom (0x04000000), else linear (0x00200000), else log (0x00100000, FMOD's
-    /// default). No MS2Sound.fev event sets two of them.</summary>
+    /// <summary>The rolloff the mode asks for: custom (0x04000000), else linear square (0x00400000), else linear (0x00200000),
+    /// else inverse (0x00100000, FMOD's default). No MS2Sound.fev event sets two of them, and none sets linear square.</summary>
     public RolloffModel RolloffModel => (Mode & FevProject.CustomRolloff) != 0 ? RolloffModel.Custom
-        : (Mode & FevProject.LinearRolloff) != 0 ? RolloffModel.Linear : RolloffModel.Log;
+        : (Mode & FevProject.LinearSquareRolloff) != 0 ? RolloffModel.LinearSquare
+        : (Mode & FevProject.LinearRolloff) != 0 ? RolloffModel.Linear : RolloffModel.Inverse;
     /// <summary>3D min and max distance of a complex 3D event, from its record's +0x38 and +0x3c (FMOD_EVENTPROPERTY_3D_MINDISTANCE,
     /// _3D_MAXDISTANCE; a 2D event holds FMOD's 1 / 10000 there). The min is 0 in every MS2Sound.fev 3D event. 0 / 0 when
     /// the event has no range (2D, simple, or a record holding 1 / 1).</summary>
@@ -538,11 +539,14 @@ public sealed class FevProject
         }
         else if (etype == 8)
         {
-            int volumeEnv = -1;
+            volumeEnvs.Clear();
             int nLayers = U32(p);
             p += 4;
             for (int l = 0; l < nLayers; l++)
             {
+                // layer: u32 flags, u16 the parameter that drives the layer's envelopes (an index into the event's
+                // parameters; the event system's layer load reads it into the layer's +0x40), u16 sounds, u16 envelopes
+                int layerParam = U16(p + 4);
                 int nSnd = U16(p + 6);
                 int nEnv = U16(p + 8);
                 p += 10;
@@ -554,22 +558,25 @@ public sealed class FevProject
                 for (int e = 0; e < nEnv; e++)
                 {
                     int nPts = U32(p + 20);
-                    // u32 unit (-1 built-in, else a DSP unit), u32, u32 parameter, u32 effect, u32, u32 point count, the points
-                    if (ev.Is3D && volumeEnv < 0 && U32(p) == -1 && U32(p + 12) == EnvelopeVolume && nPts > 0) volumeEnv = p;
+                    // u32 unit (-1 built-in, else a DSP unit), u32 name length (0 here), u32 sub-index (the occlusion's
+                    // direct 0 / reverb 1), u32 effect, u32, u32 point count, the points; the envelope's parameter is its layer's
+                    if (ev.Is3D && U32(p) == -1 && U32(p + 12) == EnvelopeVolume && nPts > 0) volumeEnvs.Add((p, layerParam));
                     p += 24 + 4 * nPts + 8;
                 }
             }
             int nParams = U32(p);
             // 32-byte parameters: u32 name (STRR), u32, f32 min, f32 max, ...
-            for (int q = 0; q < nParams && volumeEnv >= 0; q++)
+            // the curve is the first volume envelope of a layer driven by the "(distance)" parameter
+            for (int q = 0; q < nParams && volumeEnvs.Count > 0; q++)
             {
                 int r = p + 4 + 32 * q;
                 if (strr[U32(r)] != "(distance)") continue;
-                ev.Rolloff = Rolloff(volumeEnv, F32(r + 8), F32(r + 12));
+                foreach (var (env, param) in volumeEnvs)
+                    if (param == q) { ev.Rolloff = Rolloff(env, F32(r + 8), F32(r + 12)); break; }
                 break;
             }
             p += 4 + 32 * nParams;
-            // a linear or log event: FMOD's model on its range, times its "(distance)" envelope when it has one
+            // a linear, linear square or inverse event: FMOD's model on its range, times its "(distance)" envelope when it has one
             if (ev.Is3D && ev.RolloffModel != RolloffModel.Custom && ev.MaxDistance > ev.MinDistance)
             {
                 var c = ev.Rolloff;
@@ -606,8 +613,12 @@ public sealed class FevProject
     /// layered events). A loop plays until the event stops, which is what FMOD's own lengthms of -1 reports.</summary>
     public const int LoopModeOneShot = 1;
 
-    /// <summary>The rolloff bits of an event's mode word (FMOD_3D_LOGROLLOFF, _LINEARROLLOFF, _CUSTOMROLLOFF; fmod.h).</summary>
-    public const int LogRolloff = 0x00100000, LinearRolloff = 0x00200000, CustomRolloff = 0x04000000;
+    /// <summary>The rolloff bits of an event's mode word (FMOD_3D_INVERSEROLLOFF, _LINEARROLLOFF, _LINEARSQUAREROLLOFF,
+    /// _CUSTOMROLLOFF; fmod.h).</summary>
+    public const int InverseRolloff = 0x00100000, LinearRolloff = 0x00200000, LinearSquareRolloff = 0x00400000, CustomRolloff = 0x04000000;
+
+    /// <summary>The 3D volume envelopes of the event being read, with their layer's parameter.</summary>
+    readonly List<(int Offset, int Param)> volumeEnvs = new();
 
     /// <summary>The instances read by loop mode: [0], [1], [2] for the three modes, [3] for any other value (counted as a loop).</summary>
     public readonly int[] LoopModeCounts = new int[4];
