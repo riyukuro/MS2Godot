@@ -63,6 +63,37 @@ public abstract class UiController
     /// minimap). The always-on ones never block the Esc and guide gates (FUN_141adcbb0's walk skips them).</summary>
     public virtual bool AlwaysOn => false;
 
+    /// <summary>UIDialog IsFlagSet(1): the dialog is not closable. Esc passes it by (UIDialog::vfunc_13, uidialog.cpp:848) and
+    /// so do the field Esc's open-dialog test and CloseAllDialogs (FUN_141274df0, CUIService::IsDialogClosable,
+    /// uiservice.cpp:1001). The ctors that set it override this.</summary>
+    public virtual bool NotClosable => false;
+
+    /// <summary>vfunc_64 (uidialog.cpp:550): minimized (m_6c). Only the group messenger windows minimize.</summary>
+    public virtual bool Minimized => false;
+
+    /// <summary>vfunc_69 (uidialog.cpp:637), the close the Esc key asks for: vfunc_67 unless vfunc_71 takes it (0 in UIDialog;
+    /// the skill book and the store, which override it, take Esc in the HUD's own key lines first). The group messenger
+    /// windows minimize instead.</summary>
+    public virtual void EscapeClose() => Close();
+
+    /// <summary>
+    /// UIDialog::vfunc_13 (uidialog.cpp:840-853), a key pressed while the dialog's entity is shown: Esc runs
+    /// <see cref="EscapeClose"/> and takes the key unless the dialog is closed (vfunc_55), always on (vfunc_56), minimized
+    /// (vfunc_64) or not closable (flag 1). The dialogs whose own vfunc_13 never reaches it override this.
+    /// </summary>
+    public virtual bool EscapeKey()
+    {
+        if (IsClosed || AlwaysOn || Minimized || NotClosable) return false;
+        EscapeClose();
+        return true;
+    }
+
+    /// <summary>vfunc_9 (uiswfentity.cpp:193): the entity (m_30) is shown. The key walk asks only shown entities.</summary>
+    public bool EntityShown => Host?.Entity != null && Rt.ToBoolean(Host.Get(Host.Entity, "visible"));
+
+    /// <summary>m_68: a close was asked (set by vfunc_67, before its tween ends).</summary>
+    internal bool CloseAsked => closed;
+
     /// <summary>m_74 (editAlign): set when the player moved the dialog (vfunc_77).</summary>
     public int EditAlign;
     bool placedFromFile;       // m_78

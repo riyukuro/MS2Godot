@@ -11,6 +11,9 @@ public readonly record struct ChannelRow(int Id);
 public sealed class SystemMenuController : UiController
 {
     public override string Movie => "uisystemmenudialog";
+
+    /// <summary>The ctor sets flag 1 (uisystemmenudialog.cpp:137): Esc reaches the field's toggle, never the dialog's own close.</summary>
+    public override bool NotClosable => true;
     protected override string EntityMethod => "arrangeConrols";
 
     /// <summary>The field's CFieldDataCli::m_nMapType; null when the field has no field data.</summary>

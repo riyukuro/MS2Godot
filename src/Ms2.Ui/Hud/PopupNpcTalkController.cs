@@ -22,6 +22,10 @@ public sealed class PopupNpcTalkController : UiController
     /// <summary>scaleform.ms2.controls.dialog.PopupNpcTalk's own method.</summary>
     protected override string EntityMethod => "setPortrait";
     public override string TypeName => "PopupNpcTalkDialog";     // GetTypeName (:@0x140e769d0)
+
+    /// <summary>vfunc_13 (uipopupnpctalkdialog.cpp:186) has its own Esc (the opening banner, then vfunc_69), run by the npc
+    /// talk's key input, so the generic dialog Esc passes it by.</summary>
+    public override bool EscapeKey() => false;
     /// <summary>vfunc_48.</summary>
     public const int DialogId = 0x4f4d;
     /// <summary>CFeatureManager id 0x95, "FameContents": StartQuestTalk does nothing without it.</summary>

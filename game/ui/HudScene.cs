@@ -706,12 +706,13 @@ public partial class HudScene : Node, IUiStageHost
         else systemMenu.Close();
     }
 
-    /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
-    /// dialogs, the quest log.</summary>
+    /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: the HUD's own
+    /// dialogs, then the registry's (DialogGates.AnyClosable).</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false
                                     || AchieveOpen || MailOpen || MailSendOpen || PcInfoOpen
-                                    || CommunityOpen || CommunityQueryOpen || KeySettingSelectOpen;
+                                    || CommunityOpen || CommunityQueryOpen || KeySettingSelectOpen
+                                    || Ms2.Ui.Hud.DialogGates.AnyClosable(MovieDialog.Live);
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -730,6 +731,7 @@ public partial class HudScene : Node, IUiStageHost
         if (CommunityOpen) community.Close();
         if (KeySettingSelectOpen) keySettingSelect.Close();
         if (SkillCompactOpen) skillCompact.Close();
+        Ms2.Ui.Hud.DialogGates.CloseAll(MovieDialog.Live);
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -2170,6 +2172,8 @@ public partial class HudScene : Node, IUiStageHost
         if (CommunityKeys(k)) return true;
         if (GuildKeys(k)) return true;
         if (PartySearchKeys(k)) return true;
+        // the other dialogs: each shown one closes on Esc through UIDialog::vfunc_13, the top-most first
+        if (k.Keycode == Key.Escape && Ms2.Ui.Hud.DialogGates.EscapeKey(MovieDialog.Live)) return true;
         return false;
     }
 

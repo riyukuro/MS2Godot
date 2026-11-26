@@ -69,6 +69,14 @@ public partial class DevEndpoint
             catch (Exception e) { movies.Add(new JsonObject { ["view"] = v.GetPath().ToString(), ["error"] = e.GetType().Name }); }
         }
         res["movies"] = movies;
+        // the views whose shapes are under the point (the mouse-over-UI test, As3View.HitsShapesAt), mouse-enabled or not
+        var shapes = new JsonArray();
+        foreach (var v in views)
+            if (v.HitsShapesAt(p)) shapes.Add(new JsonObject { ["movie"] = v.Player.Main?.Key, ["mouseOverUi"] = v.MouseOverUi });
+        res["shapes"] = shapes;
+        // the window's pointer: the views' 50 ms mouse-over-UI sample reads it, not injected mouse moves, so a view the pointer
+        // was left over keeps covering the others for an injected hover
+        res["pointer"] = Struct(vp.GetMousePosition());
         return res;
     }
 

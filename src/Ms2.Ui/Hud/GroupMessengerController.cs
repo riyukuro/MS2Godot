@@ -63,7 +63,10 @@ public sealed class GroupMessengerController : UiController, IMessageBoxListener
     public string SettingsFile => TypeName + Index.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".xml";
 
     /// <summary>vfunc_64: minimized (UIDialog m_6c).</summary>
-    public bool Minimized => minimized;
+    public override bool Minimized => minimized;
+
+    /// <summary>vfunc_69 (@0x141947f10, :329): the Esc key minimizes the window.</summary>
+    public override void EscapeClose() => Minimize();
     /// <summary>m_bUserList: the member list is shown.</summary>
     public bool UserListShown => userList;
     /// <summary>m_nAlpha.</summary>

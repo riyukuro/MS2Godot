@@ -1,0 +1,92 @@
+using Ms2.Avm2.Flash;
+using Ms2.Formats.Pack;
+using Ms2.Ui.Hud;
+using NUnit.Framework;
+
+namespace Ms2.Ui.Tests;
+
+/// <summary>
+/// The Esc key over the dialogs: UISwfEntityManager::FUN_1422d1c20 asks each shown dialog, last-added first, through
+/// UIDialog::vfunc_13 (uidialog.cpp:840-853), which closes one that is not always on, not minimized and closable (no flag 1);
+/// the field Esc (FUN_1418fcb70) then asks FUN_141274ff0 and CloseAllDialogs over the same registry. A dialog no hand
+/// list names, the Maple Guide among them, closes like any other (needs MS2_DATA).
+/// </summary>
+public class DialogEscapeTests
+{
+    static MovieSource src;
+    static GameTables tables;
+    static PackSet packs;
+
+    static UiModel Model()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        if (packs == null)
+        {
+            packs = TestData.Packs(d);
+            src = TestData.Movies(packs);
+            tables = new GameTables(packs, "en");
+        }
+        return new UiModel(tables);
+    }
+
+    static UiHost Load(UiController c)
+    {
+        var m = Model();
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 10; i++) p.Tick();
+        return h;
+    }
+
+    static void Settle(params UiController[] cs)
+    {
+        for (int i = 0; i < 60; i++)
+            foreach (var c in cs) c.Host?.Player.Tick();
+    }
+
+    [Test]
+    public void EscClosesTheTopShownClosableDialogAndPassesTheOthers()
+    {
+        var guide = new LearningQuestController();
+        var menu = new SystemMenuController { MapType = 0, ChannelWord = "Ch.", CurrentChannel = 1, Channels = new[] { new ChannelRow(1) } };
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
+        var inv = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        Load(inv); Load(guide); Load(menu);
+        Assert.That(guide.EntityShown && inv.EntityShown && menu.EntityShown, Is.True, "all three shown");
+        Assert.That(menu.NotClosable, Is.True, "the system menu sets flag 1 (uisystemmenudialog.cpp:137)");
+        Assert.That(guide.NotClosable || guide.AlwaysOn, Is.False, "the guide sets flag 3 only");
+
+        UiController[] registry = { inv, guide, menu };
+        Assert.That(DialogGates.AnyClosable(registry), Is.True);
+        // the system menu is the last added but not closable: the guide, next down, takes the key
+        Assert.That(DialogGates.EscapeKey(registry), Is.True, "a dialog takes Esc");
+        Settle(registry);
+        Assert.That(guide.IsClosed, Is.True, "the guide closes on Esc");
+        Assert.That(inv.IsClosed || menu.IsClosed, Is.False, "one dialog per key");
+
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(inv.IsClosed, Is.True, "then the inventory");
+        Assert.That(DialogGates.EscapeKey(registry), Is.False, "the system menu alone passes the key on");
+        Assert.That(DialogGates.AnyClosable(registry), Is.False, "so the field Esc toggles the menu");
+        Assert.That(menu.IsClosed, Is.False);
+    }
+
+    [Test]
+    public void CloseAllClosesEveryClosableDialogButTheSystemMenu()
+    {
+        var guide = new LearningQuestController();
+        var menu = new SystemMenuController { MapType = 0, ChannelWord = "Ch.", CurrentChannel = 1, Channels = new[] { new ChannelRow(1) } };
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
+        var inv = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        Load(guide); Load(inv); Load(menu);
+        UiController[] registry = { guide, inv, menu };
+        DialogGates.CloseAll(registry);
+        Settle(registry);
+        Assert.That(guide.IsClosed && inv.IsClosed, Is.True, "CloseAllDialogs closes both");
+        Assert.That(menu.IsClosed, Is.False, "flag 1 is not closable (IsDialogClosable, uiservice.cpp:1001)");
+    }
+}
