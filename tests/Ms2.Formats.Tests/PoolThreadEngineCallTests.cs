@@ -25,8 +25,8 @@ public class PoolThreadEngineCallTests
             "the next segment's decode: as above"),
         new("audio/AmbientSounds.cs", "SafeDecode.Decode(clip, out var failure)", null,
             "MpegDecoder (no engine); the warning goes through EngineCalls"),
-        new("audio/AmbientSounds.cs", "started.Enqueue(() => Start(sound, pcm, data))", null,
-            "bytes only; the stream is built on the main thread"),
+        new("audio/AmbientSounds.cs", "started.Enqueue(() => Start(sound, pcm, data, begin, end))", null,
+            "bytes only (EventFadeIn.Bytes, Ms2.Audio: no engine); the stream is built on the main thread"),
         new("scripts/SetupScreen.cs", "UiCode.Build(data, progress)", null,
             "the setup build: UiGenerator, crossgen2, src tables; the folders are read on the main thread first (UiCode.RootPath, " +
             "Precompiled.AssemblyDirs) and its log lines go through EngineCalls (DataCache, UiCode, Precompiled.Compile too)"),

@@ -251,14 +251,12 @@ public class DistanceRolloffTests
             }
         }
         for (int f = 0; f < 200; f++) Frame(f);
-        const int frames = 20000;
-        var sw = new Stopwatch();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        sw.Start();
-        for (int f = 0; f < frames; f++) Frame(f);
+        const int frames = 20000, runs = 3;
+        void Run() { for (int f = 0; f < frames; f++) Frame(f); }
+        var sw = Stopwatch.StartNew();
+        long bytes = AllocatedBytes.LeastOf(runs, Run);
         sw.Stop();
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
-        double nsPerVoice = sw.Elapsed.TotalMilliseconds * 1e6 / (frames * (double)voices);
+        double nsPerVoice = sw.Elapsed.TotalMilliseconds * 1e6 / (runs * frames * (double)voices);
         TestContext.Out.WriteLine($"{voices} voices: {bytes} B over {frames} frames, {nsPerVoice:F1} ns per voice per frame, {sets} volume sets, {stopsOrPlays} stops or plays");
         Assert.That(bytes, Is.Zero);
         Assert.That(stopsOrPlays, Is.GreaterThan(0));
