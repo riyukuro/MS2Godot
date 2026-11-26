@@ -256,6 +256,7 @@ public class ItemBrowserTests
         Assert.Multiple(() => {
             Assert.That(ItemCommandSupport.IsHelpLine("Usage: item <id> [options]"), Is.True);
             Assert.That(ItemCommandSupport.IsHelpLine("Options:"), Is.True);
+            Assert.That(ItemCommandSupport.IsHelpLine("Description:  Item spawning."), Is.True, "the description is the reply's, not a status line");
             Assert.That(ItemCommandSupport.IsHelpLine("  --limit-break <limit-break>  Limit break level."), Is.True);
             Assert.That(ItemCommandSupport.IsHelpLine("  -a, --amount <amount>  Amount of the item."), Is.True);
             Assert.That(ItemCommandSupport.IsHelpLine("  <id>  Id of item to spawn."), Is.True);

@@ -157,7 +157,10 @@ public sealed class ItemCommandSupport
         if (string.IsNullOrEmpty(text)) return false;
         if (text.Contains("Usage:", StringComparison.Ordinal)) return true;
         string trimmed = text.TrimStart();
-        if (trimmed.StartsWith("Options:", StringComparison.Ordinal) || trimmed.StartsWith("Arguments:", StringComparison.Ordinal)) return true;
+        // The server's console joins "Description:" and "Usage:" with the line after them (GameConsole), so the
+        // description arrives as one notice, "Description:  Item spawning."
+        if (trimmed.StartsWith("Description:", StringComparison.Ordinal) || trimmed.StartsWith("Options:", StringComparison.Ordinal)
+            || trimmed.StartsWith("Arguments:", StringComparison.Ordinal)) return true;
         if (!text.StartsWith("  ", StringComparison.Ordinal)) return false;
         return trimmed.StartsWith("-", StringComparison.Ordinal)
             || trimmed.Contains("<id>", StringComparison.Ordinal)
