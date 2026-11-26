@@ -174,6 +174,59 @@ public class ShopTests
         Assert.That(placed, Is.Zero, "a coin shop with the inventory closed sends no window position");
     }
 
+    /// <summary>A dismantle result (CItemBreakManager::ForwardPacketToDialog, itembreakmanager.cpp:360) runs UpdateGachaCoin on the open
+    /// shop: the coin the break paid out shows in the movie without a shop packet. Only the type 1 result does; the donation dialog's
+    /// (type 2) does not, and a shop that stopped following is not touched.</summary>
+    [Test]
+    public void ADismantleResultRefreshesTheOpenGachaShopsCoinCount()
+    {
+        Packs();
+        var model = NewModel();
+        int shopId = model.Tables.GachaBoxes.ShopIds().First();
+        int coin = model.Tables.GachaBoxes.CoinItemIdByShopId(shopId);
+        long owned = 70;
+        var (h, c) = LoadGacha(model, shopId, id => id == coin ? owned : 0);
+        var mgr = new Ms2.Ui.Items.ItemBreakManager { Send = _ => { }, DialogOpen = true };
+        mgr.SendMode0(1);
+        Assert.That(CoinText(h, c), Does.Contain("70"));
+        var unfollow = c.FollowItemBreak(mgr);
+
+        // the bag took the break's coins before the packet (the server's inventory update), the packet refreshes the movie
+        owned = 75;
+        mgr.OnPacket(new ItemDismantlePacket(3) { Type = 1, Rewards = new[] { new DismantleReward(coin, 5) } });
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(CoinText(h, c), Does.Contain("75").And.Not.Contain("70"), "the type 1 result refreshes the coin count");
+        Assert.That(h.RT.Errors, Is.Empty);
+
+        // a result for the other type (the donation dialog, vfunc_84 reads nothing, no shop call) leaves it alone
+        mgr.SendMode0(2);
+        owned = 99;
+        mgr.OnPacket(new ItemDismantlePacket(3) { Type = 2 });
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(CoinText(h, c), Does.Contain("75"), "the donation result does not refresh the shop");
+
+        // a shop that has unloaded no longer follows (the client finds the dialog only while it exists)
+        mgr.SendMode0(1);
+        unfollow();
+        mgr.OnPacket(new ItemDismantlePacket(3) { Type = 1, Rewards = new[] { new DismantleReward(coin, 24) } });
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(CoinText(h, c), Does.Contain("75"), "an unloaded shop is not refreshed");
+    }
+
+    /// <summary>The refresh goes to whatever shop is open and UpdateGachaCoin returns for a shop that is not a gacha shop: nothing is sent.</summary>
+    [Test]
+    public void ADismantleResultLeavesAPlainShopAlone()
+    {
+        Packs();
+        var (h, c) = Load(NewModel());
+        var mgr = new Ms2.Ui.Items.ItemBreakManager { Send = _ => { }, DialogOpen = true };
+        mgr.SendMode0(1);
+        c.FollowItemBreak(mgr);
+        mgr.OnPacket(new ItemDismantlePacket(3) { Type = 1, Rewards = Array.Empty<DismantleReward>() });
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void TheShopOpensWhereItsSettingsFilePlacedIt()
     {

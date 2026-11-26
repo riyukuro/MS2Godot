@@ -133,9 +133,12 @@ public partial class HudScene
         if (shopMovie != null) { ReleaseShopAvatar(); shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
         BindBoxAnswers();
         var m = new MovieDialog(assets, liveShop, hudModel, ScreenMode.PixelSize(GetWindow()));
+        // CItemBreakManager::ForwardPacketToDialog (itembreakmanager.cpp:360): a dismantle result refreshes the open shop's coin count
+        var unfollow = Ms2Godot.Net.LiveSession.Instance is { } session ? liveShop.FollowItemBreak(session.BreakManager) : null;
         liveShop.Unloaded += OnLiveShopUnloaded;
         void OnLiveShopUnloaded()
         {
+            unfollow?.Invoke();
             liveShop.Unloaded -= OnLiveShopUnloaded;
             m.Host.Unload();
             m.QueueFree();

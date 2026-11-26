@@ -81,7 +81,7 @@ public sealed class ItemBreakManager
     public event Action<ItemDismantlePacket> PreviewReceived;   // mode 5
     public event Action RefreshActive;               // vfunc_85(true, 0) after a mode 3
     public event Action ResetBreak;                  // mode 4 with a break in progress
-    public event Action<int> ShopCoinRefresh;        // mode 3 type 1: shop 0x4e3b UpdateGachaCoin (STILL-OPEN: the host's)
+    public event Action<int> ShopCoinRefresh;        // mode 3 type 1: shop 0x4e3b UpdateGachaCoin (ShopController.FollowItemBreak)
 
     public long Uid(int index) => (uint)index < Slots ? uids[index] : 0;
     public uint Count(int index) => (uint)index < Slots ? counts[index] : 0;

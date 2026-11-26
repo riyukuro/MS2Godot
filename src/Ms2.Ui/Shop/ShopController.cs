@@ -1503,7 +1503,6 @@ public sealed partial class ShopController : UiController, Hud.IMessageBoxListen
     /// initData set m_coinInfo.textField.text from the count (initData also plays m_coinInfo.m_icon "_"+gachaUIType, which is why the
     /// icon tag is no part of its text). The movie's own declaration decides; the GMS2 exe is not decompiled, so the plain count (not a
     /// grouped one) is the reading taken for it.
-    /// STILL-OPEN: the item-break path's UpdateGachaCoin call (itembreakmanager.cpp:360) is not ported.
     /// </summary>
     internal object GachaCoinValue()
     {
@@ -1519,11 +1518,25 @@ public sealed partial class ShopController : UiController, Hud.IMessageBoxListen
     int ItemCountOfCoin() => (int)(uint)ItemCount(Model.Tables.GachaBoxes.CoinItemIdByShopId(info.ShopId), 0);
 
     /// <summary>UpdateGachaCoin (@0x141afbd10, uishopdialog.cpp:2120): a gacha shop's coin count, sent to the movie's gachaCoinAmount;
-    /// run at the end of every shop packet (OnShopPacket :1569).</summary>
-    void UpdateGachaCoin()
+    /// run at the end of every shop packet (OnShopPacket :1569) and after an item break result (<see cref="FollowItemBreak"/>).</summary>
+    public void UpdateGachaCoin()
     {
         if (shop == null || info.ShopType != 4) return;
         Host.Invoke(shop, "gachaCoinAmount", GachaCoinValue());
+    }
+
+    /// <summary>
+    /// CItemBreakManager::ForwardPacketToDialog's second call (@0x140532160, itembreakmanager.cpp:360): after the dismantle dialog (type 1)
+    /// has taken a result packet, the open shop dialog (0x4e3b) runs UpdateGachaCoin, whatever dialog it is (the call itself returns
+    /// for a shop that is not a gacha shop). The host calls this when the shop opens and runs the returned action when it unloads, as
+    /// the client's lookup finds the shop only while it exists. The refresh follows the manager's mode 3 / type 1 packet in the
+    /// client's order: the break dialog first, the coin count after it.
+    /// </summary>
+    public Action FollowItemBreak(ItemBreakManager manager)
+    {
+        void OnResult(int _) => UpdateGachaCoin();
+        manager.ShopCoinRefresh += OnResult;
+        return () => manager.ShopCoinRefresh -= OnResult;
     }
 
     /// <summary>UpdateMoney (@0x141b03800): the reset price; the reset-price sale event is not ported, so its original.</summary>
