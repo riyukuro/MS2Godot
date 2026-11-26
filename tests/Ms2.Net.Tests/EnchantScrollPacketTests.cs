@@ -147,6 +147,9 @@ public class EnchantScrollPacketTests {
         var c = new Ctx();
         var (m, r) = c.Read(Of(w => { w.WriteByte(4); w.WriteInt(2); w.WriteInt(100); w.WriteShort(3); w.WriteInt(200); w.WriteShort(-1); }));
         Assert.That(((EnchantScrollMessage.Reward) m).Items, Is.EqualTo(new[] { (100, 3), (200, 0xffff) })); Assert.That(r.Available, Is.EqualTo(0));
+        // the client leaves the body unread without RewardNotify 0x4e5d (scenestategame.cpp:8102), so a trailing byte is no layout error
+        (m, r) = c.Read(Of(w => { w.WriteByte(4); w.WriteInt(1); w.WriteInt(100); w.WriteShort(3); w.WriteByte(9); }));
+        Assert.That(((EnchantScrollMessage.Reward) m).Items, Is.EqualTo(new[] { (100, 3) })); Assert.That(r.Available, Is.EqualTo(1));
         foreach (byte mode in new byte[] { 2, 5, 0xff }) {
             (m, _) = c.Read(new[] { mode, (byte) 1 });
             Assert.That(((EnchantScrollMessage.Other) m).Mode, Is.EqualTo(mode));

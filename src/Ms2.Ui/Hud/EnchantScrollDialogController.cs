@@ -348,6 +348,8 @@ public sealed class EnchantScrollDialogController : UiController, IDragSlotOwner
                 if (ulong.TryParse(Rt.ToString(args[0]), NumberStyles.None, CultureInfo.InvariantCulture, out ulong uid))
                     Book.Enchant((long)uid);
                 else Book.Enchant(0);
+                // The client's vfunc_28 returns 0 after the send (uienchantscrolldialog.cpp:175); nothing reads the value for
+                // this movie, and true here only keeps the name off UiHost's Unhandled list.
                 return true;
             case "notifyslotuse": return SlotUse(args);
             case "notifyslotshiftclick":

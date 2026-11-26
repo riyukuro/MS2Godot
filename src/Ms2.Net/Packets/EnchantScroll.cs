@@ -122,7 +122,8 @@ public abstract record EnchantScrollMessage {
                 int n = r.ReadInt();
                 var l = new List<(int, int)>(Math.Max(0, Math.Min(n, 64)));
                 for (int i = 0; i < n; i++) l.Add((r.ReadInt(), (ushort) r.ReadShort()));
-                r.ExpectEnd("EnchantScroll reward");
+                // No ExpectEnd: the client reads the list only when RewardNotify 0x4e5d exists and otherwise leaves the body
+                // unread (OnEnchantScroll, scenestategame.cpp:8102), so it never checks the end here.
                 return new Reward(l);
             }
             default: return new Other(mode);
