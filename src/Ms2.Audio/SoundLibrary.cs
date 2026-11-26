@@ -17,6 +17,9 @@ public sealed class SoundClip
     /// <summary>The client's category slot the event plays in (<see cref="SoundCategories"/>); -1 for none (a music
     /// segment, which the music system plays).</summary>
     public int Category = -1;
+    /// <summary>The event the clip plays (<see cref="SoundLibrary.ResolveEvent"/>), whose playback limits choose its voice;
+    /// null for a clip of no event.</summary>
+    public FevEvent Event;
 }
 
 /// <summary>
@@ -193,6 +196,7 @@ public sealed class SoundLibrary
         TakeCategory(ev, clip);
         clip.MinDistance = ev.MinDistance;
         clip.MaxDistance = ev.MaxDistance;
+        clip.Event = ev;
         return clip;
     }
 

@@ -746,11 +746,14 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); return a; }   // the footsteps' ground effects stay
     }
 
-    readonly AudioStreamPlayer3D[] voices3d = new AudioStreamPlayer3D[16];
-    readonly EffectVoiceSlots voiceSlots = new(16);   // which sound each voice holds, and the doNotStop stops pending
-    readonly Node3D[] followed3d = new Node3D[16];        // the node a voice follows (attachToNode), null for none
-    readonly Vector3[] followOffset3d = new Vector3[16];
-    int nextVoice3d, following3d;
+    // the client's 100 channels; a voice's player is made at its first sound
+    readonly AudioStreamPlayer3D[] voices3d = new AudioStreamPlayer3D[EffectVoiceSlots.ClientChannels];
+    readonly EffectVoiceSlots voiceSlots = new(EffectVoiceSlots.ClientChannels);   // which sound each voice holds, the doNotStop stops pending
+    readonly Node3D[] followed3d = new Node3D[EffectVoiceSlots.ClientChannels];    // the node a voice follows (attachToNode), null for none
+    readonly Vector3[] followOffset3d = new Vector3[EffectVoiceSlots.ClientChannels];
+    int following3d;
+    /// <summary>Event sounds that failed for their event's max playbacks or for no channel (<see cref="EffectVoiceSlots.Start"/>).</summary>
+    public int EventSoundsFailed;
 
     /// <summary>The followed voices to their nodes' places (CSoundEventEffect::vfunc_9's SetPosition, soundeventmgr.cpp:582).
     /// A node that left the tree ends the follow; the sound stays where it was.</summary>
@@ -830,7 +833,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         PlayEventVoice(path, position, delay, volume, follow) != 0;
 
     /// <summary><see cref="PlayEventAt"/>, returning the sound's voice for <see cref="StopEffectSound"/> (0 when nothing plays).</summary>
-    int PlayEventVoice(string path, Vector3 position, float delay, float volume, Node3D follow)
+    public int PlayEventVoice(string path, Vector3 position, float delay, float volume, Node3D follow)
     {
         var clip = library?.ResolveEvent(path);
         if (clip == null) return 0;
@@ -840,8 +843,17 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
         }
         if (wav == null) return 0;
-        int slot = nextVoice3d++ % voices3d.Length;
-        int ticket = voiceSlots.Take(slot);
+        // the event's instance is taken as the effect is made, so it is held through the start delay too
+        var ev = clip.Event;
+        float audibility = Audibility(clip, clip.Volume * volume, position);
+        double length = clip.Seconds > 0 ? clip.Seconds : wav.GetLength();
+        int ticket = voiceSlots.Start(ev, ev?.MaxPlaybacks ?? 0, ev?.MaxPlaybacksBehavior ?? 0, ev?.Priority ?? 0, audibility,
+            audioClock, audioClock + delay + length, out bool stolen);
+        if (Ms2Godot.Net.LiveSession.LiveCheck || LogVoices)
+            GD.Print($"audio: voice {audioClock:F3} {ev?.FullPath ?? clip.Name} max {ev?.MaxPlaybacks} behavior {ev?.MaxPlaybacksBehavior} "
+                     + (ticket == 0 ? "failed" : $"slot {voiceSlots.SlotOf(ticket)}{(stolen ? " stolen" : "")}") + $" sounding {voiceSlots.SoundingCount(audioClock)}");
+        if (ticket == 0) { EventSoundsFailed++; return 0; }
+        int slot = voiceSlots.SlotOf(ticket);
         var v = voices3d[slot];
         if (v == null) { v = voices3d[slot] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; AddChild(v); }
         if (followed3d[slot] != null) following3d--;
@@ -859,6 +871,23 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v) && voiceSlots.SlotOf(ticket) == slot) v.Play(); }; else v.Play();
         PositionalPlayed++;
         return ticket;
+    }
+
+    /// <summary>The sound of <paramref name="voice"/> (<see cref="PlayEventVoice"/>'s return) still holds its voice and plays.</summary>
+    public bool VoicePlaying(int voice) =>
+        voiceSlots.SlotOf(voice) is int slot and >= 0 && voices3d[slot] is { } v && IsInstanceValid(v) && v.Playing;
+
+    /// <summary>Print each event sound's voice choice (the play log of the pickup sound check).</summary>
+    public static bool LogVoices;
+
+    /// <summary>The new sound's volume at the listener for the quietest choices: its gain over the inverse distance
+    /// attenuation its voice is given, measured from the camera's actor where the listener stands (Field's listener,
+    /// soundservice.cpp:975-999); its gain alone without a viewer.</summary>
+    float Audibility(SoundClip clip, float gain, Vector3 position)
+    {
+        if (Viewer?.Invoke() is not { } at) return gain;
+        float d = at.DistanceTo(position), max = clip.MaxDistance > 0 ? clip.MaxDistance : 3000, unit = clip.MinDistance > 0 ? clip.MinDistance : 300;
+        return d >= max ? 0 : d <= unit ? gain : gain * unit / d;
     }
 
     static void LogGain(string player, SoundClip clip, float own, StringName bus)

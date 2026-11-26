@@ -144,6 +144,10 @@ public sealed class FevEvent
     /// at the event's first play: -2 until then, -1 for none.</summary>
     internal int CategorySlot = -2;
     internal float CategoryBelowTop = 1f;
+    /// <summary>The event's playback limits from its record (laid out against the FMOD Designer 4.44 example project's
+    /// .fdp and .fev): +0x28 priority (0 the most important), +0x2c max playbacks, +0x78 max playbacks behavior
+    /// (FMOD_EVENTPROPERTY_PRIORITY, _MAX_PLAYBACKS, _MAX_PLAYBACKS_BEHAVIOR, fmod_event.h:185-187).</summary>
+    public int Priority, MaxPlaybacks, MaxPlaybacksBehavior;
 }
 
 /// <summary>
@@ -468,6 +472,9 @@ public sealed class FevProject
             Group = groupPath,
             IsSimple = etype == 0x10,
             Volume = vol,
+            Priority = U32(p + 0x28),
+            MaxPlaybacks = U32(p + 0x2c),
+            MaxPlaybacksBehavior = U32(p + 0x78),
         };
         if (etype == 8)
         {
