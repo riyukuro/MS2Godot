@@ -2095,6 +2095,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (k.Keycode == Key.Escape && FamePointBoardOpen) { famePointBoard.Close(); return true; }
         if (k.Keycode == Key.Escape && levelUpGuideMovie != null && levelUpGuide?.IsClosed == false) { levelUpGuide.Close(); return true; }
+        if (k.Keycode == Key.Escape && learningQuestMovie != null && learningQuest?.IsClosed == false) { learningQuest.Close(); return true; }
         if (AchieveKeys(k)) return true;
         if (MailSendKeys(k)) return true;
         if (MailKeys(k)) return true;
