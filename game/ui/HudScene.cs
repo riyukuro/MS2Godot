@@ -815,10 +815,6 @@ public partial class HudScene : Node, IUiStageHost
     Ms2.Ui.Hud.UpperHudController upperHudSide;
 
     /// <summary>
-    /// The clock, mesos, merats and the buttons at the top (UIUpperHudDialog, uiupperhuddialog.cpp). The mesos and merats are
-    /// shown only; the features the controller tests are the client's (feature.xml by name). Kept across relayouts.
-    /// </summary>
-    /// <summary>
     /// The short commit this build was made from, for the upper HUD's version field (the development client's watermark), in
     /// a non-release build only; "" in a release build and when the build was made outside a git tree. The SDK stamps the
     /// commit at build time as the "+sha" part of the assembly's informational version; nothing runs git at game start. Perf
@@ -838,6 +834,10 @@ public partial class HudScene : Node, IUiStageHost
 #endif
     }
 
+    /// <summary>
+    /// The clock, mesos, merats and the buttons at the top (UIUpperHudDialog, uiupperhuddialog.cpp). The mesos and merats are
+    /// shown only; the features the controller tests are the client's (feature.xml by name). Kept across relayouts.
+    /// </summary>
     void UpperHud(Control ui)
     {
         var model = upperHudModel = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
