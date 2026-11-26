@@ -12,6 +12,9 @@ public sealed class ShopOpenGate
 {
     bool wanted;
 
+    /// <summary>An answer is waiting for its header.</summary>
+    public bool Wanted => wanted;
+
     /// <summary>The talk ui or system shop answer arrived: true to open the dialog now (the header is read and it is not open).
     /// Without the header the open waits for it.</summary>
     public bool OnAnswer(bool headerRead, bool open)

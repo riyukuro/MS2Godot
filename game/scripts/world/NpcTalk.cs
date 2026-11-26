@@ -55,7 +55,21 @@ public sealed partial class NpcTalk : Node
     QuestRules liveRules;
     FieldNpcs.Placed liveRequested;        // NpcTalk mode 1 sent, the server has not answered yet
     ulong liveRequestedAt;
-    FieldNpcs.Placed liveTalking;          // the server opened a talk with this npc (m_nTalking)
+    FieldNpcs.Placed liveTalkingNpc;
+    /// <summary>The server opened a talk with this npc (m_nTalking); every way the talk ends clears it and raises LiveSession.TalkOver.</summary>
+    FieldNpcs.Placed liveTalking
+    {
+        get => liveTalkingNpc;
+        set
+        {
+            bool over = liveTalkingNpc != null && value == null;
+            liveTalkingNpc = value;
+            if (over) live?.RaiseTalkOver();
+        }
+    }
+    /// <summary>For the headless shop check.</summary>
+    internal FieldNpcs.Placed LiveTalkingForCheck { get => liveTalking; set => liveTalking = value; }
+    internal bool RequestLiveTalkForCheck(FieldNpcs.Placed npc) => RequestLiveTalk(npc);
     static NpcScriptTable scripts;
     static GameTables tables;
     static System.Collections.Generic.Dictionary<int, int> continentShadows;
@@ -145,6 +159,7 @@ public sealed partial class NpcTalk : Node
     public override void _ExitTree()
     {
         if (Current == this) Current = null;
+        liveTalking = null;                  // a field left with the talk open: the talk state goes with it
         if (window != null) { window = null; MovieLayerHost.Layers.LeaveTalk(); }   // a field left with the talk open
         ClosePopupMovie();
         if (live == null) return;

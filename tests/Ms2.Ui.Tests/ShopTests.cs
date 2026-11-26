@@ -993,9 +993,26 @@ public class ShopTests
         Assert.That(sent, Is.Empty);
         Assert.That(c.Info.ShopId, Is.EqualTo(106), "the header is kept for the open");
 
-        // frame 2: the answer opens it
+        // frame 2: the answer opens it (the HUD builds the dialog on the true), and the player now talks
         Assert.That(gate.OnAnswer(headerRead: c.Info.ShopId != 0, open: false), Is.True);
+        c.PlayerTalking = () => true;
+        var model = NewModel();
+        c.BoundModel = model;
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var h = new UiHost(p, c, model);
+        Assert.That(h.Load(), Is.True, string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) p.Tick();
         Assert.That(gate.OnAnswer(headerRead: true, open: true), Is.False, "an open dialog is not opened twice");
+
+        // the real open dialog stays open through the frames that follow: not closed, no talk end, nothing sent
+        Assert.That(c.ShopView, Is.Not.Null);
+        for (int i = 0; i < 30; i++) { c.Process(); p.Tick(); }
+        Assert.That(c.ShopView, Is.Not.Null, "the open shop is not closed by the talk check while the player talks");
+        Assert.That(c.IsClosed, Is.False);
+        Assert.That(talkEnds, Is.Zero);
+        Assert.That(sent, Is.Empty);
     }
 
     /// <summary>The items arrive with the header, ahead of the answer that opens the dialog, so the controller reads them with no host

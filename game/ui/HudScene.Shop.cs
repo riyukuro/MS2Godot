@@ -64,7 +64,7 @@ public partial class HudScene
                 () => live.Items.All, () => live.PlayingScoreUid, hudModel.Tables.Items, itemUse.Error);
             // PlotIndoorSize stays null: the plot's indoor size (FUN_1408a0d30) is not ported
             c.UgcHome = () => new ShopController.UgcHomeState(live.Home.HasInfo, live.Home.PlotId, null, live.Home.HasNoHome);
-            c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));   // Close sends it only while a talk is open
+            c.BindLiveNetwork(live.SendShop, live.EndTalk);   // Close calls it only while a talk is open: SendNpcTalkMode0 sends NpcTalk 0 and clears the talk (m_nTalking 0, ResetTalk)
             c.ShowLackMeratAsk = () => SmartPushNotices.ShowLackMeratAsk();
             c.PlayerTalking = () => live.IsTalking();     // MyPC::FUN_141527e60 (UIShopDialog::vfunc_72 closes the shop once it is false)
             BindMeratQueue(live, c);
@@ -113,6 +113,7 @@ public partial class HudScene
         live.SystemShopReceived += OnSystemShop;
         live.TalkUiOpen += OnOpen;
         live.TalkUiClose += OnClose;
+        live.TalkOver += openGate.Cancel;                 // a wait for the header ends with its talk (walk away, npc gone, Esc, field change)
         unwatchShop = () =>
         {
             live.ShopReceived -= OnPacket;
@@ -120,6 +121,8 @@ public partial class HudScene
             live.SystemShopReceived -= OnSystemShop;
             live.TalkUiOpen -= OnOpen;
             live.TalkUiClose -= OnClose;
+            live.TalkOver -= openGate.Cancel;
+            openGate.Cancel();
             shopWatched = false;
         };
     }
