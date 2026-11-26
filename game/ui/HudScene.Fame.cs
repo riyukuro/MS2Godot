@@ -137,10 +137,13 @@ public partial class HudScene
     {
         if (fameNotifyMovie != null || fameNotifySlot == null || !IsInstanceValid(fameNotifySlot)) return;
         FameNotify.Fame = FameTextsNow();
-        fameNotifyMovie = new MovieDialog(assets, FameNotify, NewModel(), ScreenMode.PixelSize(GetWindow()));
+        var m = new MovieDialog(assets, FameNotify, NewModel(), ScreenMode.PixelSize(GetWindow()));
         if (Ms2Godot.Net.LiveSession.LiveCheck)
-            GD.Print($"live: fame notice load {fameNotifyMovie.Loaded}: {string.Join(",", FameNotify.Pending)}");
-        fameNotifySlot.AddChild(fameNotifyMovie);
+            GD.Print($"live: fame notice load {m.Loaded}: {string.Join(",", FameNotify.Pending)}");
+        // a failed load leaves m_30 false, so the next Queue*Banner or OnFadeInComplete calls vfunc_2 again
+        if (!m.Loaded) { m.Host.Unload(); m.QueueFree(); return; }
+        fameNotifyMovie = m;
+        fameNotifySlot.AddChild(m);
     }
 
     /// <summary>UIHeadUpDisplay::vfunc_3 for the fame contents notice: the movie unloads.</summary>
