@@ -14,6 +14,8 @@ public sealed class TooltipController : UiController, ITooltipMovie
     public override string Movie => "CommonTooltip";
     protected override string EntityMethod => "createTooltip";
     protected override bool IsDialog => false;
+    /// <summary>A GFxMovie, no UISwfEntity: no load visibility step.</summary>
+    public override bool LoadSetsVisibility => false;
 
     AsObject root;                                  // m_90 (ASUIComponent of the root)
     readonly List<object> open = new();             // m_a0: the ids of the tooltips shown

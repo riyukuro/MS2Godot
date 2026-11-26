@@ -13,6 +13,8 @@ public sealed class UpperHpBarController : UiController
     public override string Movie => "uiupperhpbar";
     protected override string EntityMethod => "createHpBar";
     protected override bool IsDialog => false;          // a UIHeadUpDisplay
+    /// <summary>m_58 = 0 in the UIUpperHpBar ctor (uiupperhpbar.cpp:249): hidden at load (vfunc_8(m_58)).</summary>
+    public override bool VisibleOnLoad => false;
 
     /// <summary>What the bar reads from an actor (PCBase / CNpc / PC).</summary>
     public sealed class Actor

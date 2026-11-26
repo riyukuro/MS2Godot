@@ -24,6 +24,9 @@ public sealed class QuestNavigationController : UiController
     /// <summary>QuestNavigationFactory.removeAll: only the movie's root has it.</summary>
     protected override string EntityMethod => "removeAll";
     protected override bool IsDialog => false;
+    /// <summary>A UIObject with the base vfunc_41 (vftable slot 41 = 0x1422dc8c0): its root is no movie clip, so the
+    /// m_58 = 0 of its ctor (uiquestnavigation.cpp:504) hides nothing at load and the markers' root stays shown.</summary>
+    public override bool LoadSetsVisibility => false;
     public override string TypeName => "QuestNavigation";
 
     /// <summary>The marker kinds: the NavigationEntity subclasses.</summary>

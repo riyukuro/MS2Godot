@@ -142,6 +142,8 @@ public class QuestNavigationTests
         Assert.That(Num(h, pc.Clip, "x"), Is.EqualTo(10));
         Assert.That(Num(h, pc.Clip, "y"), Is.EqualTo(20 + 40 - Shift));
         Assert.That(Rt.ToBoolean(h.Get(pc.Clip, "visible")), Is.True);
+        // the root is no movie clip (base vfunc_41), so the ctor's m_58 = 0 hides nothing at load: the markers show
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.True, "the markers' root stays shown after load");
         var field = h.Get(pc.Clip, "m_distance");
         Assert.That(Rt.ToString(h.Get(field, "text")), Is.EqualTo("123"));
         // no trace (kind 0) or no beam: off, but the text still follows the result

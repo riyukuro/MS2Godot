@@ -47,6 +47,8 @@ public sealed class CastingBarController : UiController
     public override string Movie => "uicastingbar";
     protected override string EntityMethod => "startCasting";
     protected override bool IsDialog => false;              // a UIHeadUpDisplay
+    /// <summary>m_58 = 0 in the UICastingBar ctor (uicameraeditdialog.cpp:907): hidden at load (vfunc_8(m_58)).</summary>
+    public override bool VisibleOnLoad => false;
     public override string TypeName => "CastingBar";        // GetTypeName (@0x1418e1100)
 
     /// <summary>Timer::FUN_1408688e0: the millisecond clock the cast's timer runs on.</summary>

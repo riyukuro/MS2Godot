@@ -11,6 +11,8 @@ public sealed class BootyPopupController : UiController
     public override string Movie => "uibootypopup";
     protected override string EntityMethod => "setText";
     protected override bool IsDialog => false;
+    /// <summary>m_58 = 0 in the UIBootyPopup ctor (uibootypopup.cpp:57): hidden at load (vfunc_8(m_58)).</summary>
+    public override bool VisibleOnLoad => false;
     public override string TypeName => "BootyPopup";
 
     /// <summary>The popup this movie draws.</summary>

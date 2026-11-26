@@ -317,6 +317,15 @@ public abstract class UiController
     /// </summary>
     public virtual bool VisibleOnLoad => true;
 
+    /// <summary>
+    /// Whether that load step reaches the entity at all: vfunc_8 sets the visibility only when the root is an ASMovieClip
+    /// (the dynamic_cast at uiswfentity.cpp:186). UIHeadUpDisplay, UIHudEntity, UIDialog and the classes with their own
+    /// vfunc_41 wrap the root in one (CreateGameEntity, ASUIComponent, ASDialog); the base vfunc_41 (:568) makes a plain
+    /// ASDisplayObject, so a class that keeps it (vftable slot 41 = 0x1422dc8c0) leaves the movie's own visibility. The
+    /// movies that are no UISwfEntity (the cursor and tooltip GFxMovies) have no such step either.
+    /// </summary>
+    public virtual bool LoadSetsVisibility => true;
+
     /// <summary>UIDialog::OnLoadComplete (uidialog.cpp:696): open (m_c0 0), shown, and startOpen when the tween is on (m_c4).</summary>
     public virtual void OnLoadComplete()
     {

@@ -95,7 +95,7 @@ public sealed class UiHost
         // UISwfEntity::OnLoadComplete (uiswfentity.cpp:443): the entity's visibility (vfunc_8(m_58), :184), the settings
         // file (vfunc_5), the layout (FUN_1422dc450), then the rest of the subclass's OnLoadComplete
         RT.Guard("OnLoadComplete start " + Id, Controller.OnLoadCompleteBeforeBase);
-        SetVisible(Entity, Controller.VisibleOnLoad);
+        if (Controller.LoadSetsVisibility) SetVisible(Entity, Controller.VisibleOnLoad);
         RT.Guard("load transform " + Id, Controller.LoadTransform);
         Model.AlignWidgets?.Add(Controller);                        // UISwfEntityManager's loaded entities
         Controller.LayoutAndClear(Player.StageW, Player.StageH);

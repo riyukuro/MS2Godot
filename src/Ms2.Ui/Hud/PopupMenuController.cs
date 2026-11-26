@@ -47,6 +47,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     protected override string EntityMethod => "test_makeData";     // only PopUpMenuFactory has it
     public override string TypeName => "PopUpMenu";                // GetTypeName (:1809)
     protected override bool IsDialog => false;                     // a UISwfEntity, loaded once (vfunc_2, :1815)
+    /// <summary>m_58 = 0 in the UIPopUpMenu ctor (uipartydialog.cpp:1803): hidden at load (vfunc_8(m_58)).</summary>
+    public override bool VisibleOnLoad => false;
 
     // The menu ids (Unk_PmMenuId; their labels are string table 7 "popupMenu").
     public const int ViewOwnCharacter = 100, Whisper = 0x65, ViewCharacter = 0x66;

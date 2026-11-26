@@ -16,6 +16,8 @@ public sealed class MouseCursorController : UiController, ITooltipMovie
     public override string Movie => "CommonMouseCursor";
     protected override string EntityMethod => "changeType";
     protected override bool IsDialog => false;
+    /// <summary>A GFxMovie, no UISwfEntity: no load visibility step.</summary>
+    public override bool LoadSetsVisibility => false;
 
     /// <summary>The cursor types (Unk_MouseCursorType): the hand, and interact, the one the mouse picks' hover sets
     /// (CMouseController::UpdateHover, unit_140ad1860_mousecontroller.cpp:690-698).</summary>

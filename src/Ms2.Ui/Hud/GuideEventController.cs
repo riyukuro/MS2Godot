@@ -32,7 +32,9 @@ public sealed class GuideEventController : UiController, IGuideEventPane
     public override string Movie => "uiguideevent";        // GetSwfFileName: "UI" + GetTypeName
     /// <summary>A method only the GuideEvent entity has (the host takes the first display object with it as m_30).</summary>
     protected override string EntityMethod => "showTextTip";
-    protected override bool IsDialog => false;              // a UIHeadUpDisplay
+    protected override bool IsDialog => false;              // a UIObject
+    /// <summary>The base vfunc_41 (vftable slot 41 = 0x1422dc8c0): no movie clip root, so the load sets no visibility.</summary>
+    public override bool LoadSetsVisibility => false;
     public override string TypeName => "GuideEvent";        // GetTypeName (@0x1419594f0)
 
     /// <summary>GetTickCountMs2: the millisecond tick the summary's expiry runs on (CheckSummaryExpiry).</summary>

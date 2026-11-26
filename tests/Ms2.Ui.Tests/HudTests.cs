@@ -3661,12 +3661,14 @@ public partial class HudTests
         var c = new CastingBarController { NowMs = () => now };
         var h = Load(c, Model());
         Assert.That(h.RT.Errors, Is.Empty);
+        // the ctor clears m_58 (uicameraeditdialog.cpp:907): hidden at load, the movie's startCasting shows it
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.False, "hidden at load");
         var caster = new Caster();
         c.StartCastingText(caster, "Cast", 3000, true, true, "Done");
         Assert.That(h.RT.Errors, Is.Empty);
         Assert.That(c.IsCasting, Is.True);
         Assert.That(c.Listener, Is.SameAs(caster));
-        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.True, "startCasting shows the bar");
         Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("show"));
         Assert.That(Rt.ToString(h.Get(h.Child("m_text1"), "text")), Is.EqualTo("Cast"));
         Assert.That(Rt.ToString(h.Get(h.Child("m_text2"), "text")), Is.EqualTo("Cast"));
