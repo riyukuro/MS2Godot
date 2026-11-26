@@ -33,6 +33,9 @@ public sealed partial class MinimapController : UiController
     public MinimapInfo Viewport;
     /// <summary>The field hides its minimap (m_nMinimapInvisible).</summary>
     public bool MinimapInvisible;
+    /// <summary>BuildUIData's bForceMinimize (uiminimapentity.cpp:3455-3459): a field without a minimap block (no image
+    /// name), with an empty image name, or with minimapInvisible keeps the window minimized and its min/max button off.</summary>
+    public bool ForceMinimize => MinimapInvisible || string.IsNullOrEmpty(ImageName);
     public bool Minimize, FullMap;
     /// <summary>The player's profile image (BuildPlayerData imgpath, FUN_141028be0) and character id.</summary>
     public string PlayerImage = "";
@@ -107,6 +110,16 @@ public sealed partial class MinimapController : UiController
         foreach (var m in Marks)
             if (m.HasPortal && m.PortalId == portalId && m.Clip != null) return ClipVisible(m.Clip);
         return null;
+    }
+
+    /// <summary>The movie's m_forceMinimize and whether its min/max button is enabled, as initData set them; null before
+    /// the movie.</summary>
+    public (bool Forced, bool MinMaxEnabled)? MovieForceState()
+    {
+        if (Host?.Entity == null) return null;
+        bool forced = Rt.ToBoolean(Host.Get(Host.Entity, "m_forceMinimize"));
+        bool enabled = Host.Get(Host.Entity, "m_minmax") is AsObject b && Rt.ToBoolean(Host.Get(b, "enabled"));
+        return (forced, enabled);
     }
 
     /// <summary>
@@ -439,7 +452,7 @@ public sealed partial class MinimapController : UiController
     /// <summary>BuildUIData (uiminimapentity.cpp:3456): initData(obj).</summary>
     void BuildUIData()
     {
-        bool force = MinimapInvisible || string.IsNullOrEmpty(ImageName);
+        bool force = ForceMinimize;
         var f = Model.Field;
         string chPrefix = Model.Tables.Common("s_word_ch") ?? "";
         var channels = new List<object>();

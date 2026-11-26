@@ -1295,12 +1295,13 @@ public partial class HudScene : Node, IUiStageHost
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
         var model = NewModel();
         model.Field.Name = MapName();
-        bool pingAllowed = false;
+        bool pingAllowed = false, invisible = false;
         try
         {
             var fd = FieldData.FindByXBlock(assets.Packs, xblock);
             model.Field.MapLevel = fd?.MapLevel;
             pingAllowed = fd?.MinimapPing ?? false;
+            invisible = fd?.MinimapInvisible ?? false;
             if (fd != null) model.Field.MapId = fd.Id;
         }
         catch (Exception e) { GD.PushWarning("minimap field data: " + e.Message); }
@@ -1316,6 +1317,7 @@ public partial class HudScene : Node, IUiStageHost
         var c = minimapSide = new Ms2.Ui.Hud.MinimapController
         {
             ImageName = info?.ImageEntry,
+            MinimapInvisible = invisible,
             Viewport = info,
             CharacterId = selfId,
             // FUN_141028be0(id, picture, 1): the downloaded picture, else (none, or not downloaded yet) the default image

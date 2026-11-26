@@ -321,6 +321,11 @@ public partial class LiveSession
                 Check($"quest {id} is given up from the log (state {live.Quests.Get(id)?.State})", live.Quests.Get(id) is not { State: 1 });
                 continue;
             }
+            if (step == "minimapforce")      // minimapforce: the minimap's forced minimize (BuildUIData's forceMinimize), as the controller and the movie hold it
+            {
+                GD.Print($"live: combat minimap force: {hud.MinimapForceScripted() ?? "no minimap"}");
+                continue;
+            }
             if (step.StartsWith("minimapmark:"))      // minimapmark:<portal id>: whether the minimap's mark of the portal shows
             {
                 int id = int.Parse(step[12..]);

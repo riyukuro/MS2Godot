@@ -89,6 +89,9 @@ public sealed class FieldData
     /// <summary>m_bMinimapPing: &lt;property minimapPing&gt; (fielddata.cpp:704), false when absent (the ctor, :557);
     /// UIMinimapDialog::IsPingAllowed (uiminimapentity.cpp:2521).</summary>
     public bool MinimapPing;
+    /// <summary>m_nMinimapInvisible: &lt;property minimapInvisible&gt; (fielddata.cpp:682), 0 when absent (the ctor, :546);
+    /// nonzero forces the minimap minimized (UIMinimapDialog::BuildUIData, uiminimapentity.cpp:3459).</summary>
+    public bool MinimapInvisible;
     /// <summary>m_bPopupMenu: &lt;property popupMenu&gt; (fielddata.cpp:705), true when absent (the ctor, :557).</summary>
     public bool PopupMenu = true;
     /// <summary>m_bGemSystem: &lt;property gemSystem&gt; (fielddata.cpp:706), true when absent (the ctor, :557).</summary>
@@ -245,6 +248,7 @@ public sealed class FieldData
         o.GlobalSplit = QueryInt(env.Element("split"), "globalSplit", 0) != 0;
         o.CheckPartyObserve = QueryInt(prop, "checkPartyObserve", 0) != 0;
         o.MinimapPing = BoolAttr(prop, "minimapPing", false);
+        o.MinimapInvisible = QueryInt(prop, "minimapInvisible", 0) != 0;
         // the death state's properties (GMS2 writes deathPenalty="" on 140 fields: the client keeps 1)
         o.RevivalReturnId = QueryInt(prop, "revivalreturnid", 0); if (o.RevivalReturnId == 0) o.RevivalReturnId = o.Id;
         o.DeathPenalty = QueryInt(prop, "deathPenalty", 1);

@@ -99,6 +99,12 @@ public partial class HudScene
     public string MinimapNamedMarkScripted(string name) =>
         minimapSide?.NamedMark(name) is { } m ? $"icon {m.Icon}, layer {m.Layer}, shown {minimapSide.NamedMarkShown(name)}" : null;
 
+    /// <summary>The minimap's forced minimize: the controller's, the movie's m_forceMinimize and its min/max button; null
+    /// without the minimap.</summary>
+    public string MinimapForceScripted() => minimapSide is { } c
+        ? $"forced {c.ForceMinimize}, movie {c.MovieForceState()?.ToString() ?? "none"}, image {c.ImageName ?? "none"}, minimapInvisible {c.MinimapInvisible}"
+        : null;
+
     /// <summary>Shuts every dialog, then opens one of the everyday windows the way its menu button does (inventory: the guide's
     /// InventoryDialog occurrence, quest: the quest log toggle, sysmenu: the system menu); whether it is open. A live shot of the
     /// same window in two builds compares how the whole swf UI draws.</summary>
