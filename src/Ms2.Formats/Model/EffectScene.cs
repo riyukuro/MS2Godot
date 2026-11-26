@@ -148,6 +148,23 @@ public enum MeshEmitFrom { Vertices, FaceCenter, EdgeCenter, FaceSurface, EdgeSu
 /// <summary>NiPSMeshEmitter::InitialVelocityType (NiPSMeshEmitter.h:80-98).</summary>
 public enum MeshVelocity { Normals, Random, Direction }
 
+/// <summary>An animated float: the curve read at the controller's time.</summary>
+public sealed class EmitterAnim
+{
+    public Func<double, double> Curve; public TimeCtl Ctl;
+    public double At(double t) => Curve(Ctl.Local(t));
+}
+
+/// <summary>The emitter values an NiPSEmitterFloatCtlr can drive, in <see cref="EmitterDef.Anims"/>'s order.</summary>
+public enum EmitterField { Speed, SpeedVar, SpeedFlipRatio, Declination, DeclinationVar, PlanarAngle, PlanarAngleVar, Size, SizeVar, Lifespan, LifespanVar, RotAngle, RotAngleVar, RotSpeed, RotSpeedVar }
+
+/// <summary>An emitter's values at one time (<see cref="EmitterDef.At"/>).</summary>
+public struct EmitterValues
+{
+    public double Speed, SpeedVar, SpeedFlipRatio, Declination, DeclinationVar, PlanarAngle, PlanarAngleVar, Size, SizeVar, Lifespan, LifespanVar;
+    public double RotAngle, RotAngleVar, RotSpeed, RotSpeedVar;
+}
+
 public sealed class EmitterDef
 {
     public EmitterKind Kind; public string Name; public int Node = -1;
@@ -162,6 +179,48 @@ public sealed class EmitterDef
     public MeshVelocity MeshVelocityType;        // NiPSMeshEmitter "Initial Velocity Type"
     public Func<double, double> Rate; public TimeCtl RateCtl;           // births per second (NiPSEmitParticlesCtlr)
     public Func<double, double> On; public TimeCtl OnCtl;               // emitter active
+    /// <summary>The emitter's float controllers by <see cref="EmitterField"/>, or null when it has none. Each NiPSEmitterFloatCtlr
+    /// stores its interpolator's value at its scaled time into one emitter value through a plain setter (SetTargetFloatValue,
+    /// e.g. NiPSEmitterSpeedCtlr.cpp:40 SetSpeed, NiPSEmitter.inl:33), so the emitter emits with the animated value.
+    /// The Radius controllers drive the particle size (NiPSEmitterRadiusCtlr.cpp:40 SetSize, RadiusVar SetSizeVar), not a volume radius.</summary>
+    public EmitterAnim[] Anims;
+
+    /// <summary>The values at effect time t: the stored ones, each with a controller replaced by its value. Allocates nothing.</summary>
+    public EmitterValues At(double t)
+    {
+        var v = new EmitterValues
+        {
+            Speed = Speed, SpeedVar = SpeedVar, SpeedFlipRatio = SpeedFlipRatio, Declination = Declination, DeclinationVar = DeclinationVar,
+            PlanarAngle = PlanarAngle, PlanarAngleVar = PlanarAngleVar, Size = Size, SizeVar = SizeVar, Lifespan = Lifespan, LifespanVar = LifespanVar,
+            RotAngle = RotAngle, RotAngleVar = RotAngleVar, RotSpeed = RotSpeed, RotSpeedVar = RotSpeedVar,
+        };
+        var a = Anims;
+        if (a == null) return v;
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i] == null) continue;
+            double x = a[i].At(t);
+            switch ((EmitterField)i)
+            {
+                case EmitterField.Speed: v.Speed = x; break;
+                case EmitterField.SpeedVar: v.SpeedVar = x; break;
+                case EmitterField.SpeedFlipRatio: v.SpeedFlipRatio = x; break;
+                case EmitterField.Declination: v.Declination = x; break;
+                case EmitterField.DeclinationVar: v.DeclinationVar = x; break;
+                case EmitterField.PlanarAngle: v.PlanarAngle = x; break;
+                case EmitterField.PlanarAngleVar: v.PlanarAngleVar = x; break;
+                case EmitterField.Size: v.Size = x; break;
+                case EmitterField.SizeVar: v.SizeVar = x; break;
+                case EmitterField.Lifespan: v.Lifespan = x; break;
+                case EmitterField.LifespanVar: v.LifespanVar = x; break;
+                case EmitterField.RotAngle: v.RotAngle = x; break;
+                case EmitterField.RotAngleVar: v.RotAngleVar = x; break;
+                case EmitterField.RotSpeed: v.RotSpeed = x; break;
+                default: v.RotSpeedVar = x; break;
+            }
+        }
+        return v;
+    }
 
     /// <summary>A mesh emitter's start point and, for <see cref="MeshVelocity.Normals"/>, its direction, both in the mesh's
     /// own space: NiPSMeshEmitter::EmitFromVertex / EmitFromFace / EmitFromEdge (NiPSMeshEmitter.cpp:187-440).
@@ -175,7 +234,10 @@ public sealed class EmitterDef
     /// x += declination var * s1, z += planar angle var * s2 (s in [-1, 1]), then made unit. Returns false when the
     /// velocity type is not normals or the mesh has no normals (the client then uses the emitter direction,
     /// NiPSMeshEmitter.cpp:230-238). Draws from <paramref name="rng"/> only; allocates nothing.</summary>
-    public bool SampleMesh(Random rng, out Vec3 pos, out Vec3 dir)
+    public bool SampleMesh(Random rng, out Vec3 pos, out Vec3 dir) => SampleMesh(rng, DeclinationVar, PlanarAngleVar, out pos, out dir);
+
+    /// <summary><see cref="SampleMesh(Random, out Vec3, out Vec3)"/> with the declination and planar angle variances of one time (<see cref="At"/>).</summary>
+    public bool SampleMesh(Random rng, double declinationVar, double planarAngleVar, out Vec3 pos, out Vec3 dir)
     {
         var p = MeshPositions; var nm = MeshNormals; var ix = MeshTriangles;
         int a, b = -1, c = -1;
@@ -228,7 +290,7 @@ public sealed class EmitterDef
         if (b >= 0) n += N(b);
         if (c >= 0) n += N(c);
         if (b >= 0) n = Unit(n);
-        n = new Vec3(n.X + DeclinationVar * (2 * rng.NextDouble() - 1), n.Y, n.Z + PlanarAngleVar * (2 * rng.NextDouble() - 1));
+        n = new Vec3(n.X + declinationVar * (2 * rng.NextDouble() - 1), n.Y, n.Z + planarAngleVar * (2 * rng.NextDouble() - 1));
         dir = Unit(n);
         return true;
     }
@@ -311,6 +373,10 @@ public sealed class ForceDef
     /// <summary>NiPSDragForce range: full drag inside Range, fading linearly to none at RangeFalloff.</summary>
     public double Range = float.MaxValue, RangeFalloff = float.MaxValue;
     public Func<double, double> On; public TimeCtl OnCtl;
+    /// <summary>A gravity force's NiPSGravityStrengthCtlr, or null: it stores its value as the strength (SetTargetFloatValue,
+    /// NiPSGravityStrengthCtlr.cpp:72, NiPSGravityForce::SetStrength).</summary>
+    public EmitterAnim StrengthAnim;
+    public double StrengthAt(double t) => StrengthAnim != null ? StrengthAnim.At(t) : Strength;
 }
 
 public sealed class ParticleSystemDef
@@ -530,7 +596,7 @@ public sealed class EffectScene
         }
         foreach (var s in systems.Values) sc.Systems.Add(s);
         foreach (var t in B.Select(b => b.Type).Distinct())
-            if (t.StartsWith("NiPS", StringComparison.Ordinal) && !KnownPs.Contains(t)) sc.Unsupported.Add(t);
+            if (t.StartsWith("NiPS", StringComparison.Ordinal) && !KnownPs.Contains(t) && !EmitterFloatCtlrs.ContainsKey(t)) sc.Unsupported.Add(t);
         return sc;
     }
 
@@ -539,7 +605,34 @@ public sealed class EffectScene
         "NiPSParticleSystem", "NiPSSimulator", "NiPSSimulatorGeneralStep", "NiPSSimulatorForcesStep", "NiPSSimulatorCollidersStep", "NiPSSimulatorFinalStep",
         "NiPSSimulatorMeshAlignStep", "NiPSMeshEmitter", "NiPSBoxEmitter", "NiPSSphereEmitter", "NiPSCylinderEmitter", "NiPSAlignedQuadGenerator",
         "NiPSFacingQuadGenerator", "NiPSBoundUpdater", "NiPSBombForce", "NiPSGravityForce", "NiPSDragForce", "NiPSEmitParticlesCtlr", "NiPSForceActiveCtlr",
+        "NiPSGravityStrengthCtlr",
     };
+
+    /// <summary>The NiPSEmitterFloatCtlr types and the emitter value each sets (each one's SetTargetFloatValue, line 40 of its .cpp).</summary>
+    public static readonly Dictionary<string, EmitterField> EmitterFloatCtlrs = new()
+    {
+        ["NiPSEmitterSpeedCtlr"] = EmitterField.Speed, ["NiPSEmitterSpeedVarCtlr"] = EmitterField.SpeedVar, ["NiPSEmitterSpeedFlipRatioCtlr"] = EmitterField.SpeedFlipRatio,
+        ["NiPSEmitterDeclinationCtlr"] = EmitterField.Declination, ["NiPSEmitterDeclinationVarCtlr"] = EmitterField.DeclinationVar,
+        ["NiPSEmitterPlanarAngleCtlr"] = EmitterField.PlanarAngle, ["NiPSEmitterPlanarAngleVarCtlr"] = EmitterField.PlanarAngleVar,
+        ["NiPSEmitterRadiusCtlr"] = EmitterField.Size, ["NiPSEmitterRadiusVarCtlr"] = EmitterField.SizeVar,
+        ["NiPSEmitterLifeSpanCtlr"] = EmitterField.Lifespan, ["NiPSEmitterLifeSpanVarCtlr"] = EmitterField.LifespanVar,
+        ["NiPSEmitterRotAngleCtlr"] = EmitterField.RotAngle, ["NiPSEmitterRotAngleVarCtlr"] = EmitterField.RotAngleVar,
+        ["NiPSEmitterRotSpeedCtlr"] = EmitterField.RotSpeed, ["NiPSEmitterRotSpeedVarCtlr"] = EmitterField.RotSpeedVar,
+    };
+
+    /// <summary>A float interpolator's curve, or null when it gives no value: no curve, or no keys and the INVALID_FLOAT pose
+    /// (-FLT_MAX, NiInterpolator.cpp:27), for which NiFloatInterpolator::Update returns false and the controller sets nothing
+    /// (NiFloatInterpolator.cpp:185-209).</summary>
+    static Func<double, double> ValueCurve(NifFile n, long interp)
+    {
+        var f = Curve(n, interp);
+        if (f == null) return null;
+        var e = n.Blocks[(int)interp];
+        long di = e.IntOr("Data", -1);
+        bool keys = di >= 0 && n.Blocks[(int)di].TryGetValue("Data", out var g) && g is NifStruct grp && grp.IntOr("Num Keys", 0) > 0;
+        if (!keys && !(e.TryGetValue("Value", out var v) && v is float pose && pose > -float.MaxValue)) return null;
+        return f;
+    }
 
     // NiTexturingProperty::MapEnum (NiTexturingProperty.h:332) as ModelMesh.Maps keys
     static readonly string[] MapKeys = { "base", "dark", "detail", "gloss", "glow", "bump", "normal", "parallax", "decal0" };
@@ -619,7 +712,31 @@ public sealed class EffectScene
                     foreach (var f in ps2.Forces.Where(f => f.Name == fn)) { f.On = Curve(n, interp); f.OnCtl = ctl; }
                 }
                 break;
+            case "NiPSGravityStrengthCtlr":
+                // NiPSForceCtlr finds its force by name (GetForceByName); an inactive controller does not update
+                // (NiTimeController::DontDoUpdate, NiTimeController.inl:152), so the force keeps its stored strength
+                if (systems.TryGetValue((int)target, out var ps3) && ctl.Active && ValueCurve(n, interp) is { } gs)
+                {
+                    string fn = n.Str(c.IntOr("Force Name", -1));
+                    foreach (var f in ps3.Forces.Where(f => f.Name == fn && f.Kind == ForceKind.Gravity)) f.StrengthAnim = new EmitterAnim { Curve = gs, Ctl = ctl };
+                }
+                break;
             default:
+                if (EmitterFloatCtlrs.TryGetValue(c.Type, out var field))
+                {
+                    // NiPSEmitterCtlr finds its emitter by name (NiPSEmitterCtlr.cpp:67, GetEmitterByName); an inactive
+                    // controller does not update (NiPSEmitterFloatCtlr::Update, NiPSEmitterFloatCtlr.cpp:87-109)
+                    if (systems.TryGetValue((int)target, out var ps4) && ctl.Active && ValueCurve(n, interp) is { } ef)
+                    {
+                        string en = n.Str(c.IntOr("Emitter Name", -1));
+                        foreach (var e in ps4.Emitters.Where(e => e.Name == en))
+                        {
+                            e.Anims ??= new EmitterAnim[Enum.GetValues<EmitterField>().Length];
+                            e.Anims[(int)field] = new EmitterAnim { Curve = ef, Ctl = ctl };
+                        }
+                    }
+                    break;
+                }
                 if (c.Type.StartsWith("Ni", StringComparison.Ordinal)) Unsupported.Add(c.Type);
                 break;
         }

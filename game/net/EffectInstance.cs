@@ -747,7 +747,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         // the bomb's DeltaV and the drag and decay distances are scaled by psScale here.
         // Gravity's position and axis are taken the same way, and gravity without an object is left out
         // (NiPSGravityForce::Update, NiPSGravityForce.cpp:65-79); its Strength is an acceleration (scaled by psScale) and
-        // its Decay is per system-space distance (divided by psScale). All three run in the list's order.
+        // its Decay is per system-space distance (divided by psScale); an NiPSGravityStrengthCtlr sets the strength
+        // (ForceDef.StrengthAt). All three run in the list's order.
         // STILL-OPEN: gravity turbulence (random, NiPSForceHelpers.inl:786-800) is not read or applied.
         forcesNow.Clear();
         foreach (var f in d.Forces)
@@ -764,7 +765,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 {
                     Kind = f.Kind, Pos = new(w.Origin.X, w.Origin.Y, w.Origin.Z), Dir = new(dir.X, dir.Y, dir.Z),
                     DecayType = f.DecayType, SymmType = f.SymmType, ForceType = f.ForceType, Percentage = (float)f.Percentage,
-                    DeltaV = (float)f.DeltaV * psScale, Strength = (float)f.Strength * psScale,
+                    DeltaV = (float)f.DeltaV * psScale, Strength = (float)f.StrengthAt(t) * psScale,
                     Decay = f.Kind == ForceKind.Gravity ? (psScale != 0 ? (float)f.Decay / psScale : 0) : (float)f.Decay * psScale,
                     Range = f.Range >= float.MaxValue ? float.MaxValue : (float)f.Range * psScale,
                     Falloff = f.RangeFalloff >= float.MaxValue ? float.MaxValue : (float)f.RangeFalloff * psScale,
@@ -802,7 +803,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 bool on = e.On == null || e.On(e.OnCtl.Local(t)) > 0.5;
                 if (!on || rate <= 0) continue;
                 ps.Accum[ei] += rate * dt;
-                while (ps.Accum[ei] >= 1 && ps.Count < ps.Pos.Length) { ps.Accum[ei] -= 1; Emit(ps, e, camLocal, psScale); }
+                if (ps.Accum[ei] >= 1 && ps.Count < ps.Pos.Length)
+                {
+                    // the emitter's values at this time, its float controllers' values in place of the stored ones (EmitterDef.At)
+                    var ev = e.At(t);
+                    while (ps.Accum[ei] >= 1 && ps.Count < ps.Pos.Length) { ps.Accum[ei] -= 1; Emit(ps, e, in ev, camLocal, psScale); }
+                }
                 if (ps.Count >= ps.Pos.Length) ps.Accum[ei] = 0;
             }
         long qd = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
@@ -979,11 +985,11 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         cr += (k[i1].r / 255f - cr) * u; cg += (k[i1].g / 255f - cg) * u; cb += (k[i1].b / 255f - cb) * u; ca += (k[i1].a / 255f - ca) * u;
     }
 
-    void Emit(PSys ps, EmitterDef e, Vector3 camLocal, float psScale)
+    void Emit(PSys ps, EmitterDef e, in EmitterValues v, Vector3 camLocal, float psScale)
     {
         // the lifespan is drawn first; a particle already past it is not created (NiPSEmitter.cpp:139-144, its age at
         // emission is 0 here)
-        float lifespan = (float)e.Lifespan + Spread((float)e.LifespanVar / 2);
+        float lifespan = (float)v.Lifespan + Spread((float)v.LifespanVar / 2);
         if (lifespan < 0) return;
         int i = ps.Count++;
         ParticlesEmitted++;
@@ -993,7 +999,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         switch (e.Kind)
         {
             case EmitterKind.Box: local = new Vector3(Spread((float)e.Width / 2), Spread((float)e.Height / 2), Spread((float)e.Depth / 2)); break;
-            case EmitterKind.Sphere: { Vector3 v; do v = new Vector3(Spread(1), Spread(1), Spread(1)); while (v.LengthSquared() > 1); local = v * (float)e.Radius; break; }
+            case EmitterKind.Sphere: { Vector3 q; do q = new Vector3(Spread(1), Spread(1), Spread(1)); while (q.LengthSquared() > 1); local = q * (float)e.Radius; break; }
             case EmitterKind.Cylinder: { float a = R() * Mathf.Tau, r = Mathf.Sqrt(R()) * (float)e.Radius; local = new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, Spread((float)e.Height / 2)); break; }
             case EmitterKind.Mesh when e.MeshPositions != null && e.MeshPositions.Length >= 3:
             {
@@ -1004,7 +1010,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 // NiPSMeshEmitter.cpp:440+). Only the first mesh emitter is used; the
                 // client picks one at random per particle (NiPSMeshEmitter.cpp:108-118).
                 var mw = e.MeshNode >= 0 ? World(e.MeshNode, t, camLocal) : Transform3D.Identity;
-                meshNormal = e.SampleMesh(rng, out var mp, out var mn);
+                meshNormal = e.SampleMesh(rng, v.DeclinationVar, v.PlanarAngleVar, out var mp, out var mn);
                 ps.Pos[i] = mw * new Vector3((float)mp.X, (float)mp.Y, (float)mp.Z);
                 if (meshNormal) normalDir = (mw.Basis.Orthonormalized() * new Vector3((float)mn.X, (float)mn.Y, (float)mn.Z)).Normalized();
                 local = Vector3.Zero;
@@ -1026,18 +1032,18 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         }
         else
         {
-            double dec = e.Declination + Spread((float)e.DeclinationVar), pl = e.PlanarAngle + Spread((float)e.PlanarAngleVar);
+            double dec = v.Declination + Spread((float)v.DeclinationVar), pl = v.PlanarAngle + Spread((float)v.PlanarAngleVar);
             var dl = EmitterDef.Direction(dec, pl, ps.Def.PreRpi);
             dir = (ew.Basis.Orthonormalized() * new Vector3((float)dl.X, (float)dl.Y, (float)dl.Z)).Normalized();
         }
-        float speed = (float)e.Speed + Spread((float)e.SpeedVar / 2);
-        if (e.SpeedFlipRatio > 0 && R() < e.SpeedFlipRatio) speed = -speed;
+        float speed = (float)v.Speed + Spread((float)v.SpeedVar / 2);
+        if (v.SpeedFlipRatio > 0 && R() < v.SpeedFlipRatio) speed = -speed;
         ps.Vel[i] = dir * AlignedQuad.SpawnSpeed(speed, psScale);
         ps.Life[i] = lifespan;
-        ps.Size[i] = Mathf.Max(0f, (float)e.Size + Spread((float)e.SizeVar));
+        ps.Size[i] = Mathf.Max(0f, (float)v.Size + Spread((float)v.SizeVar));
         ps.Age[i] = 0;
-        ps.Rot[i] = (float)e.RotAngle + Spread((float)e.RotAngleVar);
-        float rs = (float)e.RotSpeed + Spread((float)e.RotSpeedVar);
+        ps.Rot[i] = (float)v.RotAngle + Spread((float)v.RotAngleVar);
+        float rs = (float)v.RotSpeed + Spread((float)v.RotSpeedVar);
         if (e.RandomRotSpeedSign && R() < 0.5f) rs = -rs;
         ps.RotSpeed[i] = rs;
         ps.Variance[i] = Spread(1f);        // NiSymmetricRandom (NiPSParticleSystem.cpp:262-265)
