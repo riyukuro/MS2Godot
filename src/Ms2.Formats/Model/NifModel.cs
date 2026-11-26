@@ -922,7 +922,10 @@ public sealed class ModelData
         };
     }
 
-    /// <summary>The active material name of a render object block (its "Material Data"), or null when it names none.</summary>
+    /// <summary>The active material name of a render object block (its "Material Data"), or null when it names none. An
+    /// active index past the names (0xFFFFFFFF is NO_MATERIAL) is no material: GetActiveMaterial returns null
+    /// (NiRenderObject.inl:90-95) and the renderer draws the block with its default material
+    /// (NiDX9Renderer::GetShaderAndVertexDecl_NoErrorShader, NiDX9Renderer.cpp:5004-5006).</summary>
     internal static string MaterialName(NifFile nif, NifStruct b)
     {
         if (!(b.TryGetValue("Material Data", out var mdv) && mdv is NifStruct md && md.IntOr("Num Materials", 0) > 0)) return null;
@@ -930,8 +933,8 @@ public sealed class ModelData
         var names = md.TryGetValue("Material Name", out var nv) ? nv : null;
         object pick = names switch
         {
-            long[] l => l[active >= 0 && active < l.Length ? active : 0],
-            object[] o => o[active >= 0 && active < o.Length ? active : 0],
+            long[] l when active >= 0 && active < l.Length => l[active],
+            object[] o when active >= 0 && active < o.Length => o[active],
             _ => null,
         };
         return pick switch

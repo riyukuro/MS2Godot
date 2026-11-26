@@ -101,6 +101,18 @@ public sealed class EffectMesh
     /// <summary>Which colour terms the mesh's vertex colours replace (ModelMesh.VertexColors).</summary>
     public VertexColorUse VertexColors => Mesh.VertexColors;
 
+    /// <summary>The detail map's alpha multiplies the opacity: the block names a material the client builds as an
+    /// MS2StandardMaterial (ModelData.IsStandardMaterial; NiRenderObject::LoadBinary builds the named material,
+    /// NiRenderObject.cpp:385-399, :77-86), whose HandleDetailMap samples the detail alpha into m_pkDetailOpacity
+    /// (ms2standardmaterial.cpp:681-694) and multiplies the opacity by it (:342-343). A block whose name builds nothing
+    /// is given the renderer's default material, an NiStandardMaterial (NiRenderObject.cpp:420-424; NiRenderer.cpp:49-54,
+    /// nothing in the client calls SetDefaultMaterial), which takes the detail colour only (NiStandardMaterial::
+    /// HandleDetailMap, NiStandardMaterial.cpp:4765-4774), as does SoftParticlesMaterial. That covers the blocks that name
+    /// none and the EffectUVDistortion* and EffectDissolve names: MS2MaterialLibrary::CreateMaterial returns null for them
+    /// (ms2materiallibrary.cpp:443-503) and the shipped Shaders folders hold no effect file a shader library would build
+    /// them from. Every effect block that names a material names one, active.</summary>
+    public bool DetailOpacity => ModelData.IsStandardMaterial(Mesh?.Material);
+
     /// <summary>The material's colour terms at effect time t, NiMaterialColorController keys applied (Target 0 ambient, 1
     /// diffuse, 3 emissive): lit = emissive + diffuse, amb = the ambient colour, which the scene's ambient light multiplies.
     /// The client's diffuse coefficient is emissive + matAmbient * lightAmbient + matDiffuse * lightDiffuse
@@ -412,14 +424,9 @@ public sealed class ParticleSystemDef
     /// (EffectMesh.Shade). Material.Mesh.Colors is an empty array when the system has colours ("Has Colors",
     /// NiPSParticleSystem::LoadBinary, NiPSParticleSystem.cpp:1227-1228), null without.</summary>
     public EffectMesh Material;
-    /// <summary>The detail map's alpha multiplies the opacity: the system names a material the client builds as an
-    /// MS2StandardMaterial (ModelData.IsStandardMaterial), whose HandleDetailMap samples the detail alpha into
-    /// m_pkDetailOpacity (ms2standardmaterial.cpp:681-694) and multiplies the opacity by it (:342-343). The renderer's
-    /// default NiStandardMaterial, for a system that names none, and SoftParticlesMaterial take the detail colour only
-    /// (NiStandardMaterial::HandleDetailMap, NiStandardMaterial.cpp:4765-4774).
-    /// STILL-OPEN: the EffectUVDistortion* and EffectDissolve shader materials some systems name are not read; they keep
-    /// the colour-only detail map.</summary>
-    public bool DetailOpacity => ModelData.IsStandardMaterial(Material?.Mesh?.Material);
+    /// <summary>The detail map's alpha multiplies the opacity: the system block names its material as a mesh does
+    /// (EffectMesh.DetailOpacity on Material).</summary>
+    public bool DetailOpacity => Material?.DetailOpacity == true;
 }
 
 /// <summary>
@@ -705,19 +712,24 @@ public sealed class EffectScene
             case "NiPSEmitParticlesCtlr":
                 if (systems.TryGetValue((int)target, out var ps))
                 {
+                    // the controller binds the first emitter with its name (GetEmitterByName, NiPSParticleSystem.cpp:285-299,
+                    // through NiPSEmitterCtlr::PostLinkObject, NiPSEmitterCtlr.cpp:119-125) and with none it does nothing
+                    // (NiPSEmitParticlesCtlr::Update, NiPSEmitParticlesCtlr.cpp:81)
                     string en = n.Str(c.IntOr("Emitter Name", -1));
-                    foreach (var e in ps.Emitters.Where(e => e.Name == en || ps.Emitters.Count == 1))
+                    if (ps.Emitters.Find(x => x.Name == en) is { } emitted)
                     {
-                        e.Rate = Curve(n, interp); e.RateCtl = ctl;
-                        e.On = Curve(n, c.IntOr("Emitter Active Interpolator", -1)); e.OnCtl = ctl;
+                        emitted.Rate = Curve(n, interp); emitted.RateCtl = ctl;
+                        emitted.On = Curve(n, c.IntOr("Emitter Active Interpolator", -1)); emitted.OnCtl = ctl;
                     }
                 }
                 break;
             case "NiPSForceActiveCtlr":
                 if (systems.TryGetValue((int)target, out var ps2))
                 {
+                    // the first force with the name (NiPSForceCtlr::GetForcePointerFromName, NiPSForceCtlr.cpp:100-118;
+                    // GetForceByName, NiPSSimulatorForcesStep.inl:29-43)
                     string fn = n.Str(c.IntOr("Force Name", -1));
-                    foreach (var f in ps2.Forces.Where(f => f.Name == fn)) { f.On = Curve(n, interp); f.OnCtl = ctl; }
+                    if (ps2.Forces.Find(x => x.Name == fn) is { } toggled) { toggled.On = Curve(n, interp); toggled.OnCtl = ctl; }
                 }
                 break;
             case "NiPSGravityStrengthCtlr":
@@ -725,22 +737,25 @@ public sealed class EffectScene
                 // (NiTimeController::DontDoUpdate, NiTimeController.inl:152), so the force keeps its stored strength
                 if (systems.TryGetValue((int)target, out var ps3) && ctl.Active && ValueCurve(n, interp) is { } gs)
                 {
+                    // the first force with the name, taken only when it is a gravity force
+                    // (NiPSGravityStrengthCtlr::InterpTargetIsCorrectType, NiPSGravityStrengthCtlr.cpp:59-62)
                     string fn = n.Str(c.IntOr("Force Name", -1));
-                    foreach (var f in ps3.Forces.Where(f => f.Name == fn && f.Kind == ForceKind.Gravity)) f.StrengthAnim = new EmitterAnim { Curve = gs, Ctl = ctl };
+                    if (ps3.Forces.Find(x => x.Name == fn) is { Kind: ForceKind.Gravity } gravity) gravity.StrengthAnim = new EmitterAnim { Curve = gs, Ctl = ctl };
                 }
                 break;
             default:
                 if (EmitterFloatCtlrs.TryGetValue(c.Type, out var field))
                 {
-                    // NiPSEmitterCtlr finds its emitter by name (NiPSEmitterCtlr.cpp:67, GetEmitterByName); an inactive
-                    // controller does not update (NiPSEmitterFloatCtlr::Update, NiPSEmitterFloatCtlr.cpp:87-109)
+                    // NiPSEmitterCtlr binds the first emitter with its name (NiPSEmitterCtlr.cpp:119-125, GetEmitterByName,
+                    // NiPSParticleSystem.cpp:285-299); an inactive controller does not update (NiPSEmitterFloatCtlr::Update,
+                    // NiPSEmitterFloatCtlr.cpp:87-109)
                     if (systems.TryGetValue((int)target, out var ps4) && ctl.Active && ValueCurve(n, interp) is { } ef)
                     {
                         string en = n.Str(c.IntOr("Emitter Name", -1));
-                        foreach (var e in ps4.Emitters.Where(e => e.Name == en))
+                        if (ps4.Emitters.Find(x => x.Name == en) is { } animated)
                         {
-                            e.Anims ??= new EmitterAnim[Enum.GetValues<EmitterField>().Length];
-                            e.Anims[(int)field] = new EmitterAnim { Curve = ef, Ctl = ctl };
+                            animated.Anims ??= new EmitterAnim[Enum.GetValues<EmitterField>().Length];
+                            animated.Anims[(int)field] = new EmitterAnim { Curve = ef, Ctl = ctl };
                         }
                     }
                     break;

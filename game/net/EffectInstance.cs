@@ -84,6 +84,7 @@ uniform sampler2D glow_tex : repeat_enable, filter_linear;
 uniform bool has_glow = false;
 uniform sampler2D detail_tex : repeat_enable, filter_linear;
 uniform bool has_detail = false;
+uniform bool detail_opacity = false;
 uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
 uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
 uniform bool detail_uv2 = false;
@@ -119,11 +120,13 @@ vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
 }
 void fragment() {
     vec4 t = has_tex ? texture(tex, map_uv(base_uv2 ? UV2 : UV, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
-    // the detail map multiplies the base colour by twice its colour and the opacity by its alpha (MS2StandardMaterial::
-    // HandleDetailMap, ms2standardmaterial.cpp:681-694, its opacity at :342-343)
+    // the detail map multiplies the base colour by twice its colour, and under an MS2StandardMaterial the opacity by its
+    // alpha (detail_opacity: EffectMesh.DetailOpacity; MS2StandardMaterial::HandleDetailMap, ms2standardmaterial.cpp:681-694,
+    // its opacity at :342-343); the default NiStandardMaterial takes the colour only (NiStandardMaterial.cpp:4765-4774)
     if (has_detail) {
         vec4 d = texture(detail_tex, map_uv(detail_uv2 ? UV2 : UV, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0)));
-        t = vec4(t.rgb * d.rgb * 2.0, t.a * d.a);
+        t.rgb *= d.rgb * 2.0;
+        if (detail_opacity) t.a *= d.a;
     }
     // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
     // The coefficient is not saturated (EffectMesh.Shade), and neither is the colour the pixel shader writes:
@@ -340,6 +343,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (m.Textures.TryGetValue("detail", out var dn) && mb.Texture(dn) is { } dt)
             {
                 mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dt);
+                if (em.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true);
                 ms.DetailMap = m.Maps.GetValueOrDefault("detail");
             }
             MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
