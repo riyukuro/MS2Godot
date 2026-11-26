@@ -116,7 +116,7 @@ public sealed class ItemLulluBoxDialogController : UiController
         base.OnLoadComplete();
         if (Data() is not { } data) { Close(); return; }
         multi = Sent = simple = false;
-        BindCloseButton("m_closeButton");   // UIDialog::BindCloseButton (@0x141925ec0): the X closes the dialog (vfunc_67); the web guide button (FUN_1419260d0) is STILL-OPEN (WebGuideTable)
+        BindCloseButton("m_closeButton");   // UIDialog::BindCloseButton (@0x141925ec0): the X runs FUN_141925de0, vfunc_70: vfunc_71 is 0 here, so vfunc_67, the close; the web guide button (FUN_1419260d0) is STILL-OPEN (WebGuideTable)
         string theme = data.HasFunctionXmlKey("boxTheme") ? data.FunctionXmlString("boxTheme") : "default";
         title = Host.Child("m_title");
         if ((singleOpen = Host.Child("m_singleOpenButton")) != null) Click(singleOpen, () => OnSelectMode(0));
@@ -142,7 +142,8 @@ public sealed class ItemLulluBoxDialogController : UiController
         else UpdateAutoPay();
     }
 
-    /// <summary>BindCloseButton (uidialog.cpp:977): the button's click handler is the close.</summary>
+    /// <summary>BindCloseButton (uidialog.cpp:977): the button's click runs FUN_141925de0 (uidialog.cpp:955), vfunc_70 (:645),
+    /// which closes (vfunc_67) unless vfunc_71 says no; UIItemLulluBoxDialog keeps UIDialog's vfunc_71 (0).</summary>
     void BindCloseButton(string name)
     {
         if (Host.Child(name) is not { } b) { Host.RT.NoteMissing("lullu box dialog: " + name); return; }
