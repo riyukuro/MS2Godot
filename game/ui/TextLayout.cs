@@ -79,6 +79,12 @@ public partial class TextNode
         /// <summary>An array, not a list: moving a kept line (<see cref="MoveLine"/>, each time the oldest line of a full log drops) reads and
         /// writes every glyph, and a list's accessors over this struct are JIT-compiled when the first line moves.</summary>
         public PlacedGlyph[] Shaped = new PlacedGlyph[0];
+        /// <summary>TextNode.ClientLineX's last answer for the line and what it was for (its shown length, the alignment, the
+        /// label's width and scale): a redraw of an unchanged line does not shape its runs again.</summary>
+        public int ClientXLength = -1;
+        public HorizontalAlignment ClientXAlign;
+        public float ClientXWidth, ClientXScale;
+        public float? ClientX;
     }
 
     List<LayoutLine> layout;

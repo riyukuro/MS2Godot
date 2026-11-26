@@ -21,7 +21,7 @@ public partial class GlyphShadow : Node2D
     readonly Color color;
     readonly float blur, strength;          // blur: screen pixels (the filter's BlurX at the field's scale)
     readonly Vector2 offset;                // label pixels
-    readonly List<Texture2D> drawn = new(); // the textures the last draw uses stay alive while the cache can drop them
+    readonly List<Texture2D> drawn = new(); // the pages the last draw uses stay alive while the cache can drop them
 
     public GlyphShadow(TextNode text, Color color, float blur, float strength, Vector2 offset)
     {
@@ -70,9 +70,9 @@ public partial class GlyphShadow : Node2D
                     for (int r = 0; r < g.Repeat; r++)
                     {
                         var at = new Vector2(pen + r * g.Advance + g.Offset.X, MathF.Floor(line.Baseline + g.Offset.Y)) + shift + e.Origin * k + offset;
-                        DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
+                        DrawTextureRectRegion(e.Texture, new Rect2(at, e.Size * k), e.Region, color);
                     }
-                    drawn.Add(e.Texture);
+                    if (drawn.Count == 0 || drawn[^1] != e.Texture) drawn.Add(e.Texture);
                 }
             }
         }
@@ -80,6 +80,7 @@ public partial class GlyphShadow : Node2D
         {
             foreach (var a in atlases.Values) a.Dispose();
             atlases.Clear();
+            foreach (var p in pages) p.Upload();
         }
     }
 
@@ -119,25 +120,88 @@ public partial class GlyphShadow : Node2D
 
     readonly struct Entry
     {
-        public readonly Texture2D Texture;
+        public readonly Texture2D Texture;      // the page the raster sits in
+        public readonly Rect2 Region;           // its slot in the page
         public readonly Vector2 Origin, Size;   // shadow pixels, from the pen position on the baseline
-        public Entry(Texture2D texture, Vector2 origin, Vector2 size) { Texture = texture; Origin = origin; Size = size; }
+        public Entry(Texture2D texture, Rect2 region, Vector2 origin, Vector2 size) { Texture = texture; Region = region; Origin = origin; Size = size; }
     }
+
+    /// <summary>
+    /// The shadow rasters share texture pages the way the client's glyph cache keeps its glyphs: GlyphCacheParams makes
+    /// 1024 x 1024 textures with the slots packed in them (render_glyphcacheconfig.h, the client's copy at 0x1422f5320).
+    /// A field's shadow glyphs then draw from one texture, so the renderer batches them in one draw call; one texture per
+    /// glyph cost a draw call per glyph (a gear tooltip and its compare tooltip: 360 glyphs, 410 more draw calls a frame).
+    /// Slots are packed on shelves of one height class; the page is uploaded once per draw that put new rasters in it.
+    /// The pages are 512 x 512, not the client's 1024: the client updates a 256 x 512 part of a texture
+    /// (TexUpdWidth/Height), but an ImageTexture updates whole, so a smaller page keeps that upload at 0.5 MB.
+    /// </summary>
+    sealed class Page
+    {
+        public const int Width = 512, Height = 512;
+        public readonly ImageTexture Texture;
+        readonly byte[] pixels = new byte[Width * Height * 2];   // La8
+        sealed class Shelf { public int Y, H, X; }   // a class element: the list runs the shared generic code
+        readonly List<Shelf> shelves = new();
+        int top;
+        bool dirty;
+
+        public Page()
+        {
+            using var image = Image.CreateEmpty(Width, Height, false, Image.Format.La8);
+            Texture = ImageTexture.CreateFromImage(image);
+        }
+
+        /// <summary>A free slot of <paramref name="w"/> x <paramref name="h"/>, or false when the page has none.</summary>
+        public bool Place(int w, int h, out int x, out int y)
+        {
+            int hc = (h + 7) & ~7;   // shelf height class
+            for (int i = 0; i < shelves.Count; i++)
+            {
+                var s = shelves[i];
+                if (s.H != hc || s.X + w > Width) continue;
+                x = s.X; y = s.Y;
+                s.X += w;
+                return true;
+            }
+            x = y = 0;
+            if (top + hc > Height || w > Width) return false;
+            shelves.Add(new Shelf { Y = top, H = hc, X = w });
+            y = top; top += hc;
+            return true;
+        }
+
+        public void Write(int x, int y, int w, int h, byte[] data)
+        {
+            for (int r = 0; r < h; r++) System.Array.Copy(data, r * w * 2, pixels, ((y + r) * Width + x) * 2, w * 2);
+            dirty = true;
+        }
+
+        /// <summary>
+        /// Uploads the page if a raster went in since the last upload. A new Image each time: under GL Compatibility with a
+        /// separate render thread the update keeps a reference to it, so it must not change after the call.
+        /// </summary>
+        public void Upload()
+        {
+            if (!dirty) return;
+            dirty = false;
+            using var image = Image.CreateFromData(Width, Height, false, Image.Format.La8, pixels);
+            Texture.Update(image);
+        }
+    }
+
+    static readonly List<Page> pages = new();
+    const int MaxPages = 16;
 
     /// <summary>
     /// One raster per (font, shadow ramp size, glyph, blur, strength). That set is bounded by the glyphs the HUD's fonts can
     /// draw times the shadow parameters the movies use, not by the strings: dynamic text (counts, timers, chat) reuses the
     /// glyphs. Free text could still reach many distinct glyphs (a font's whole Hangul set), so the cache is dropped whole
-    /// past CacheLimit entries; a node keeps the textures its last draw used until it draws again.
+    /// when MaxPages pages are full; a node keeps the pages its last draw used until it draws again.
     /// It lives for the session as the client's does: the shadow rasters sit in the renderer's GlyphCache
     /// (Renderer2D::pGlyphCache, render_renderer2d.h:171), which outlives the movies and is only emptied by ClearCache or
-    /// SetParams (render_glyphcache.h:207-208). So a dialog's first close keeps
-    /// its new glyphs' rasters, about two engine objects each: myinfo's first open adds 67 (of its 143 kept objects), the world
-    /// map's names 765 (of 1,978).
+    /// SetParams (render_glyphcache.h:207-208). So a dialog's first close keeps its new glyphs' rasters in the pages.
     /// </summary>
     static readonly System.Collections.Generic.Dictionary<(Rid, int, long, float, float), Entry> cache = new();
-    static Image scratch;
-    const int CacheLimit = 4096;
     const int SlotPadding = 2;              // GlyphCacheParams::SlotPadding
 
     static (Rid, int, long, float, float) Key(Rid font, int ramp, long glyph, float rb, float strength) =>
@@ -146,7 +210,6 @@ public partial class GlyphShadow : Node2D
     static Entry Get((Rid, int, long, float, float) key)
     {
         if (cache.TryGetValue(key, out var e)) return e;
-        if (cache.Count >= CacheLimit) cache.Clear();
         return cache[key] = Rasterize(key.Item1, key.Item2, key.Item3, key.Item4, key.Item5);
     }
 
@@ -215,12 +278,27 @@ public partial class GlyphShadow : Node2D
             data[2 * p] = 255;
             data[2 * p + 1] = (byte)Math.Clamp(v, 0, 255);
         }
-        // one scratch image for every raster. Safe on the RenderingDevice renderers (Forward+, Mobile), whose
-        // texture_2d_create copies the image's data at once. Not under GL Compatibility with a separate render thread:
-        // there the create is queued with a reference to this Image, and the next SetData would change it first.
-        scratch ??= new Image();
-        scratch.SetData(W, H, false, Image.Format.La8, data);
-        var tex = ImageTexture.CreateFromImage(scratch);
-        return new Entry(tex, gofs + new Vector2(bx0 - pad, by0 - pad), new Vector2(W, H));
+        var origin = gofs + new Vector2(bx0 - pad, by0 - pad);
+        if (W + 1 > Page.Width || H + 1 > Page.Height) return default;
+        int px = 0, py = 0;
+        Page page = null;
+        // one empty texel between slots, so the scaled draw's filter reads no neighbour
+        if (pages.Count > 0 && pages[^1].Place(W + 1, H + 1, out px, out py)) page = pages[^1];
+        else
+        {
+            if (pages.Count >= MaxPages)
+            {
+                // full: start over, as the client's cache does when it has no slot left. The nodes keep the pages
+                // their last draw used until they draw again, so the rasters put in them in this draw go up first.
+                foreach (var old in pages) old.Upload();
+                pages.Clear();
+                cache.Clear();
+            }
+            page = new Page();
+            pages.Add(page);
+            page.Place(W + 1, H + 1, out px, out py);
+        }
+        page.Write(px, py, W, H, data);
+        return new Entry(page.Texture, new Rect2(px, py, W, H), origin, new Vector2(W, H));
     }
 }

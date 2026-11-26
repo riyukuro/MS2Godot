@@ -65,10 +65,16 @@ public sealed partial class Runtime
         _ = b;
     }
 
+    // a qualified name's lookup name, split once: the callers pass the same few class names on every event and display object
+    readonly Dictionary<string, Name> globalNames = new();
+
     public object GetGlobal(string qname)
     {
-        int dot = qname.LastIndexOf('.');
-        var n = new Name(dot < 0 ? qname : qname[(dot + 1)..], new[] { Ns.Get(NsKind.Public, dot < 0 ? "" : qname[..dot]) });
+        if (!globalNames.TryGetValue(qname, out var n))
+        {
+            int dot = qname.LastIndexOf('.');
+            globalNames[qname] = n = new Name(dot < 0 ? qname : qname[(dot + 1)..], new[] { Ns.Get(NsKind.Public, dot < 0 ? "" : qname[..dot]) });
+        }
         var o = FindDefinition(n);
         return o == null ? Rt.Undef : GetProperty(o, n);
     }

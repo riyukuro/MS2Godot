@@ -13,7 +13,11 @@ public sealed class Ns
     public readonly string Uri;
     Ns(NsKind k, string uri) { Kind = k; Uri = uri; }
 
-    static readonly Dictionary<(NsKind, string), Ns> interned = new();
+    // read on every global lookup by name (each event, display object and frame script resolves its class): a hit takes no lock.
+    // One table per kind, keyed by the URI alone: a string key and a class value use the runtime's shared generic code,
+    // where a tuple key would make the JIT compile the whole dictionary again for it
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Ns>[] interned =
+        { new(), new(), new(), new(), new() };
     public static readonly Ns Public = Get(NsKind.Public, "");
     public static readonly Ns Protected = new(NsKind.Protected, "");
     /// <summary>The AS3 namespace (http://adobe.com/AS3/2006/builtin) the compiler uses for some builtin methods.</summary>
@@ -23,11 +27,8 @@ public sealed class Ns
     {
         if (k == NsKind.Protected) return Protected;
         if (k == NsKind.Private) return new Ns(k, uri);
-        lock (interned)
-        {
-            if (!interned.TryGetValue((k, uri), out var n)) interned[(k, uri)] = n = new Ns(k, uri);
-            return n;
-        }
+        var table = interned[(int)k];
+        return table.TryGetValue(uri, out var n) ? n : table.GetOrAdd(uri, new Ns(k, uri));
     }
 
     /// <summary>From an ABC namespace kind byte.</summary>

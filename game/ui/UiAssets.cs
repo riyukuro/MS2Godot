@@ -87,13 +87,29 @@ public sealed class UiAssets
     /// The font's ascent per pixel of font size, as Scaleform lays out a line: DefineFont2/3 Ascent over its EM square
     /// (GFx reads the DefineFont3 ascent / 20 into a 1024 EM). The system fallback's own ascent when the class is not in gfxfontlib.
     /// </summary>
-    public float AscentRatio(string fontClass)
+    public float AscentRatio(string fontClass) => Metrics(fontClass).Ascent;
+
+    // a font class's layout ratios, read once: every text field made (each tooltip's) and every script text measure asks for
+    // them, and each answer was a walk of the font library's characters
+    // (a class value, so the dictionary runs the shared generic code the JIT already has)
+    sealed class FontMetrics { public float Ascent, Height, Leading; }
+    readonly Dictionary<string, FontMetrics> fontMetrics = new();
+
+    FontMetrics Metrics(string fontClass)
     {
-        var lib = string.IsNullOrEmpty(fontClass) ? null : Dependency("gfxfontlib");
+        fontClass ??= "";
+        if (fontMetrics.TryGetValue(fontClass, out var m)) return m;
+        m = new FontMetrics { Ascent = Fallback.GetAscent(100) / 100f, Height = (Fallback.GetAscent(100) + Fallback.GetDescent(100)) / 100f };
+        var lib = fontClass.Length == 0 ? null : Dependency("gfxfontlib");
         if (lib != null)
             foreach (var c in lib.Characters.Values)
-                if (c.Font != null && c.ClassName == fontClass && c.Font.HasLayout && c.Font.Ascent > 0) return (float)c.Font.Ascent / c.Font.EmSquare;
-        return Fallback.GetAscent(100) / 100f;
+                if (c.Font != null && c.ClassName == fontClass && c.Font.HasLayout && c.Font.Ascent > 0)
+                {
+                    m = new FontMetrics { Ascent = (float)c.Font.Ascent / c.Font.EmSquare, Height = (float)(c.Font.Ascent + c.Font.Descent) / c.Font.EmSquare,
+                        Leading = (float)c.Font.Leading / c.Font.EmSquare };
+                    break;
+                }
+        return fontMetrics[fontClass] = m;
     }
 
     /// <summary>
@@ -102,12 +118,8 @@ public sealed class UiAssets
     /// </summary>
     public (float Height, float Leading) LineRatios(string fontClass)
     {
-        var lib = string.IsNullOrEmpty(fontClass) ? null : Dependency("gfxfontlib");
-        if (lib != null)
-            foreach (var c in lib.Characters.Values)
-                if (c.Font != null && c.ClassName == fontClass && c.Font.HasLayout && c.Font.Ascent > 0)
-                    return ((float)(c.Font.Ascent + c.Font.Descent) / c.Font.EmSquare, (float)c.Font.Leading / c.Font.EmSquare);
-        return ((Fallback.GetAscent(100) + Fallback.GetDescent(100)) / 100f, 0);
+        var m = Metrics(fontClass);
+        return (m.Height, m.Leading);
     }
 
     public UiAssets(PackSet packs) { Packs = packs; Ms2Godot.UiCode.UseCaches(); }

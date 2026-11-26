@@ -485,6 +485,9 @@ public partial class TextNode : Node2D
         // sfr_render_03b.cpp:2128 / :2155): the trailing spaces end at it
         while (end > line.Start && ImageAt(end - 1) == null && CodePointAt(end - 1) is ' ' or '\t' or '\n' or '\r') end--;
         if (end <= line.Start) return null;
+        // the same shown chars of a line (a kept line keeps its text and formats) at the same alignment, width and scale
+        if (line.ClientXLength == end - line.Start && line.ClientXAlign == align && line.ClientXWidth == Label.Size.X && line.ClientXScale == Label.Scale.X)
+            return line.ClientX;
         double sum = 0;
         foreach (var (a, b) in Runs(line.Start, end))
         {
@@ -506,7 +509,9 @@ public partial class TextNode : Node2D
         }
         float twip = 1 / (20 * Label.Scale.X);          // a twip of the field in label pixels
         float room = Label.Size.X - (float)sum;
-        return Math.Max(0, MathF.Round((align == HorizontalAlignment.Center ? room / 2 : room) / twip) * twip);
+        float x = Math.Max(0, MathF.Round((align == HorizontalAlignment.Center ? room / 2 : room) / twip) * twip);
+        (line.ClientXLength, line.ClientXAlign, line.ClientXWidth, line.ClientXScale, line.ClientX) = (end - line.Start, align, Label.Size.X, Label.Scale.X, x);
+        return x;
     }
 
     bool perLineDx;
