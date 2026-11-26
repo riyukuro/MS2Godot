@@ -474,6 +474,53 @@ public class ShopTests
         Assert.That(c.CanPayFee(0, 0, -1), Is.False, "the price is unsigned: -1 is 4294967295");
     }
 
+    /// <summary>Every currency kind a shop product can carry (the server's ShopCurrencyType, 0 to 14, the client's FUN_1403baee0 domain):
+    /// the ui currency it maps to, its icon, and that the wallet of that currency (and only it) pays.</summary>
+    [TestCase(0, 1, "export_common_icon_meso_h21")]
+    [TestCase(1, 2, "export_common_icon_item_")]
+    [TestCase(2, 4, "export_common_icon_honor")]
+    [TestCase(3, 5, "export_common_icon_treva")]
+    [TestCase(4, 3, "export_common_icon_merat")]
+    [TestCase(5, 6, "export_common_icon_lu")]
+    [TestCase(6, 7, "export_common_icon_habi")]
+    [TestCase(7, 11, "export_icon_guild_fund")]
+    [TestCase(8, 12, "export_common_icon_reverse_coin")]
+    [TestCase(9, 10, "export_common_icon_rbmerat")]
+    [TestCase(10, 9, "export_common_icon_redmerat")]
+    [TestCase(11, 13, "export_common_icon_mentor_token")]
+    [TestCase(12, 14, "export_common_icon_mentee_token")]
+    [TestCase(13, 15, "export_common_icon_star_point")]
+    [TestCase(14, 16, "export_common_icon_meso_market_token")]
+    public void EveryShopCurrencyKindMapsToItsIconAndItsWalletPays(int kind, int currency, string icon)
+    {
+        Packs();
+        Assert.That(ShopController.CurrencyOf(kind), Is.EqualTo(currency));
+        Assert.That(ShopController.CurrencyIcon(currency, 77, redMerat: true).Icon, Does.StartWith(icon));
+        var model = NewModel();
+        var (_, c) = Load(model);
+        long have = 0;
+        c.ItemCount = (_, _) => have;
+        c.GuildFund = () => have;
+        void Fund(long n)
+        {
+            have = n;
+            model.Player.Mesos = currency == 1 ? n : 0;
+            model.Player.Merats = currency == 3 || currency == 10 ? n : 0;
+            model.Player.RedMerat = currency == 9 ? n : 0;
+            foreach (int t in new[] { 4, 5, 6, 7, 0xc, 0xd, 0xe, 0xf, 0x10 }) model.Player.Tokens[t] = currency == t ? n : 0;
+        }
+        Fund(500);
+        Assert.That(c.CanPayFee(kind, 77, 500), Is.True, "exactly the price pays");
+        Assert.That(c.CanPayFee(kind, 77, 501), Is.False, "one short does not");
+        Fund(0);
+        Assert.That(c.CanPayFee(kind, 77, 1), Is.False, "an empty wallet does not");
+        var notices = new List<string>();
+        c.SystemNotice = notices.Add;
+        c.ShowLackCurrency(kind, 77, 1);
+        Assert.That(notices, Has.Count.EqualTo(1), "the lack of every kind is told");
+        Assert.That(notices[0], Is.Not.Empty);
+    }
+
     [Test]
     public void BuySingleItemBelowConfirmPriceSendsImmediatelyWithoutLocalMutation()
     {
