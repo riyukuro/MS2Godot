@@ -89,6 +89,7 @@ public partial class DevEndpoint : Node
             case "input": return Input(r);
             case "log": return Log(r);
             case "as3": return As3(r);
+            case "creative": return Creative(r);
             default: throw new ArgumentException("unknown command " + r.Cmd);
         }
     }

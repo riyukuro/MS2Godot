@@ -478,6 +478,9 @@ public partial class HudScene : Node, IUiStageHost
         BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
         MouseCursorLayer.Ensure(this);      // and the cursor movie (GFxManager LoadMouseCursorMovie)
+#if MS2_DEVTOOLS
+        CreativeMenu.Install(this, assets, hudModel);   // the debug item browser, MS2_DEBUG=1 only (game/devtools)
+#endif
     }
 
     CanvasLayer screenMaskLayer;        // CommonDepth.ScreenMask (10): over the damage text and action guide, under the HUD
@@ -1955,6 +1958,17 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Input(InputEvent e)
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
+#if MS2_DEVTOOLS
+        // The debug item browser: NumLock toggles it, and while it is open the HUD's hotkeys stay out of its way (typing
+        // in its search box is a Godot text control, so the movie keys are already gated by UiFocus.IsTyping; Escape
+        // closes it). Neither path marks the event handled, so the menu's own Controls still see it.
+        if (CreativeMenu.ToggleKey(e)) { vp.SetInputAsHandled(); return; }
+        if (CreativeMenu.IsOpen)
+        {
+            if (e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) { CreativeMenu.Current.Close(); vp.SetInputAsHandled(); }
+            return;
+        }
+#endif
         TrackPickupKey(e);
         TrackLeftCtrl(e);
         // under a field move's loading screen no hotkey opens a dialog (Ms2.Ui.FieldMoveCover); the message box's keys are
