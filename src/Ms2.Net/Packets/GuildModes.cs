@@ -72,7 +72,7 @@ public static class GuildModes {
         [7] = 7,        // FUN_1413be350, up Leave
         [8] = 8,        // FUN_1413be400, up Expelled
         [9] = 9,        // FUN_1413be460, up NotifyExpel
-        [11] = 0xb,     // FUN_1413be670, up UpdateMemberMessage
+        [11] = 0xb,     // FUN_1413be670 (GMS2 case @0x140a92589 is the same: the named member is removed), up UpdateMemberMessage (sent with the memo: a server gap)
         [10] = 0xa,     // FUN_1413be7e0, up UpdateMemberRank
         [12] = 0xc,     // OnPacketMemberRenamed, up UpdateMemberName
         [14] = 0xe,     // FUN_1413beb10, up Unknown14
@@ -133,7 +133,7 @@ public static class GuildModes {
         [74] = 0x4c,    // OnPacketExpelledOfflineMembers
         [69] = 0x47,    // FUN_1413c4dd0, up SendMail
         [77] = 0x4f,    // FUN_1413c4e20, up Error
-        [78] = 0x50,    // OnRemainTimeNotice @0x1413c4ed0 (GMS2 case: i32, i64, i64, string, as KMS)
+        [78] = 0x50,    // OnRemainTimeNotice @0x1413c4ed0 (GMS2 case @0x140a9463e: i32, i64, i64, string, the remain text, notice 0x434 and the guild line, as KMS; not written upstream)
         [75] = 0x4d,    // FUN_1413c7700, up AddTag
         [76] = 0x4e,    // FUN_1413c7810, up RemoveTag
         [35] = 0x23,    // OnPacketMemberAchievement, up Achievement
