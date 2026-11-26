@@ -237,7 +237,8 @@ public sealed record GuildMessage(byte Type) {
     public GuildStorageItem StorageItem { get; init; }
     /// <summary>Type 0x70 (OnPacketStorageHistory @0x1413c5dc0, :2963): the history lines.</summary>
     public IReadOnlyList<GuildStorageHistory> StorageHistory { get; init; } = Array.Empty<GuildStorageHistory>();
-    /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158).</summary>
+    /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158). Types 0x32, 0x33 and 0x34: the guild's exp, fund
+    /// or event fund is <see cref="Value"/>.</summary>
     public int Focus { get; init; }
     public int Value { get; init; }
     /// <summary>Type 0x4f: ShowGuildError's kind, code and argument.</summary>
@@ -418,6 +419,10 @@ public sealed record GuildMessage(byte Type) {
             case 0x75: return new(t);
             // FUN_1413c45e0 (:2679)
             case 0x77: return Done(new(t) { Value = r.ReadInt() }, r);
+            // OnPacketGuildExp (@0x1413c4aa0, :2723): i32 the exp (f15c). GMS2 case 49 (0x140a9416a) reads the one i32 to +0x164.
+            // FUN_1413c4b60 (:2739): i32 the fund (f160); GMS2 case 50 (0x140a941da) to +0x168.
+            // FUN_1413c4bd0 (:2748): i32 the event fund (f164); no GMS2 case.
+            case 0x32: case 0x33: case 0x34: return Done(new(t) { Value = r.ReadInt() }, r);
             // FUN_1413c4e20 (@0x1413c4e20, :2780): u8 the kind, u8 the code, i32 the argument, then ShowGuildError
             case 0x4f: return Done(new(t) { ErrorKind = r.ReadByte(), ErrorCode = r.ReadByte(), ErrorArg = r.ReadInt() }, r);
             default: return new(t);

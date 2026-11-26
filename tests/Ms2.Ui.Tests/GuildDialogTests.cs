@@ -18,7 +18,7 @@ public class GuildDialogTests
     static MovieSource src;
     static GameTables tables;
 
-    static GuildDialogController Load(GuildBook book)
+    static GuildDialogController Load(GuildBook book, Func<string, string> translate = null)
     {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
@@ -42,6 +42,7 @@ public class GuildDialogTests
         };
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000, c.Libraries);
         p.StageW = 1920; p.StageH = 1080;
+        if (translate != null) p.Translate = translate;
         var h = new UiHost(p, c, new UiModel(t));
         Assert.That(h.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 5; i++) p.Tick();
@@ -958,5 +959,49 @@ public class GuildDialogTests
         Assert.That(GuildDialogController.MemberMarks("1,a:2,b"), Is.EqualTo("a,b"));
         Assert.That(GuildDialogController.MemberMarks("1,a::bad:3,c,d:4,e"), Is.EqualTo("a,e"));
         Assert.That(GuildDialogController.MemberMarks(""), Is.EqualTo(""));
+    }
+
+    /// <summary>The exp and fund packets with the dialog open: UpdateGuildExp (@0x14196e0a0) sets the Info page's m_guildLevelGauge
+    /// (m_guildLevelText and the gauge, 296 wide at a full level) and FUN_14196e2c0 the Info page's m_guildCommonPurseText and the
+    /// skill page's m_guildFund / m_guildEventFund. A level change also redraws the skill page (FUN_14196e590).</summary>
+    [Test]
+    public void TheExpAndFundPacketsRedrawTheOpenDialog()
+    {
+        var b = InGuild();
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        b.Mesos = () => 0;
+        b.Level = () => 50;
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 0));
+        var c = Load(b, k => k.StartsWith('$') ? k[1..] + ":{0}" : k);   // a "$" key's text keeps the key and the first argument; other text is left as it is
+        b.LevelByExp = c.LevelByExp;
+        c.GroupText = n => "g" + n;
+        c.EffectIcon = (_, _) => "icon.png";
+        int built = 0;
+        c.EffectText = (_, _, _) => { built++; return "n"; };
+        c.OpenCategoryPage("Info");
+        var gauge = c.Host.Child("m_guildLevelGauge", c.InfoPage);
+        object Bar() => c.Host.Get(c.Host.Child("gauge", gauge), "width");
+        string LevelText() => c.Host.Get(c.Host.Child("m_guildLevelText", gauge), "text")?.ToString();
+        int l1 = c.LevelByExp(0);
+        Assert.That(l1, Is.GreaterThan(0), "the data has guild levels");
+        int lo = c.AccumExp(l1 - 1), hi = c.AccumExp(l1);
+        string before = LevelText();
+        Assert.That(before, Does.EndWith(":" + l1), "the open draws the level in the gauge text");
+        b.Apply(new GuildMessage((byte) 0x32) { Value = lo + (hi - lo) / 2 });
+        Assert.That(Rt.ToNumber(Bar()), Is.EqualTo(296.0 * ((hi - lo) / 2) / (hi - lo)).Within(0.5), "half way through the level");
+        Assert.That(LevelText(), Is.EqualTo(before), "the same level");
+        c.OpenCategoryPage("Skill");
+        int afterOpen = built;
+        int next = c.LevelByExp(hi) > l1 ? hi : hi + 1;          // the first exp of the next level
+        Assert.That(c.LevelByExp(next), Is.GreaterThan(l1));
+        b.Apply(new GuildMessage((byte) 0x32) { Value = next });
+        Assert.That(LevelText(), Is.Not.EqualTo(before).And.EndWith(":" + c.LevelByExp(next)), "the next level");
+        Assert.That(built, Is.GreaterThan(afterOpen), "a level change redraws the skill page");
+        b.Apply(new GuildMessage((byte) 0x33) { Value = 777 });
+        b.Apply(new GuildMessage((byte) 0x34) { Value = 55 });
+        Assert.That(c.Host.Get(c.Host.Child("m_guildCommonPurseText", c.InfoPage), "htmlText")?.ToString(), Does.Contain("guild_info_fund:g777"), "the fund in the Info page text");
+        Assert.That(c.Host.Get(c.Host.Child("m_guildFund", c.SkillPage), "text")?.ToString(), Is.EqualTo("g777"));
+        if (c.Host.Child("m_guildEventFund", c.SkillPage) is { } eventFund && !Rt.IsNullish(eventFund))
+            Assert.That(c.Host.Get(eventFund, "text")?.ToString(), Is.EqualTo("g55"));
     }
 }

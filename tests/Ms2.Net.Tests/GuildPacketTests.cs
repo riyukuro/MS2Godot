@@ -339,4 +339,17 @@ public class GuildPacketTests {
         Assert.That((s.SeasonName, s.Rank, s.Grade, s.Wins, s.Losses, s.F68), Is.EqualTo(("S1", 5, 6, 101, 102, 106)));
         Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x4b); w.WriteInt(0); w.WriteByte(0); })));
     }
+
+    /// <summary>OnPacketGuildExp, FUN_1413c4b60 and FUN_1413c4bd0 (guildmanager.cpp:2723, :2739, :2748): one i32 each, the exp, the
+    /// fund and the event fund. GMS2 case 49 (0x140a9416a) is the exp and 50 (0x140a941da) the fund; KMS 0x34 has no GMS2 case.</summary>
+    [Test]
+    public void TheExpAndFundPacketsReadTheirOneValueOnBothRegions() {
+        foreach (var (wire, kms, profile) in new[] { ((byte) 0x32, (byte) 0x32, ProtocolProfile.Kms2525), ((byte) 0x33, (byte) 0x33, ProtocolProfile.Kms2525),
+                     ((byte) 0x34, (byte) 0x34, ProtocolProfile.Kms2525), ((byte) 49, (byte) 0x32, ProtocolProfile.Gms2), ((byte) 50, (byte) 0x33, ProtocolProfile.Gms2) }) {
+            var m = GuildMessage.Read(R(w => { w.WriteByte(wire); w.WriteInt(123456); }), profile);
+            Assert.That((m.Type, m.Value), Is.EqualTo((kms, 123456)), $"wire {wire} on {profile.Name}");
+            Assert.That(() => GuildMessage.Read(R(w => { w.WriteByte(wire); w.WriteInt(1); w.WriteByte(0); }), profile),
+                Throws.InstanceOf<PacketLayoutException>(), $"wire {wire}: one i32 and nothing after");
+        }
+    }
 }

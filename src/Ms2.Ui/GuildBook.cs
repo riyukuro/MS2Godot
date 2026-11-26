@@ -113,6 +113,11 @@ public sealed class GuildBook
     public event Action StorageRefresh;
     /// <summary>The open guild dialog's UpdateRaidScore (@0x141972fc0) and FUN_141973220 (@0x141973220) after the raid records were reset (mode 0x3e).</summary>
     public event Action RaidRefresh;
+    /// <summary>OnPacketGuildExp (mode 0x32): the open guild dialog's UpdateGuildExp (@0x14196e0a0); true when the guild level
+    /// changed, which also redraws the skill page (FUN_14196e590) and the npc info (FUN_141971ac0).</summary>
+    public event Action<bool> ExpRefresh;
+    /// <summary>Modes 0x33 (the fund) and 0x34 (the event fund): the open guild dialog's FUN_14196e2c0 (uiguilddialog.cpp:2081).</summary>
+    public event Action FundRefresh;
     /// <summary>The open guild dialog's UpdateStorageHistory (@0x1419729d0) after the history came (mode 0x70) or was asked for again.</summary>
     public event Action StorageHistoryRefresh;
     /// <summary>CGuildStorage's history deque (f38, at most 0x32 lines, the oldest dropped first) and m_400: the history was received.</summary>
@@ -913,6 +918,23 @@ public sealed class GuildBook
                 foreach (var h in m.StorageHistory) storageHistory.Add(h);
                 if (storageHistory.Count > 0x32) storageHistory.RemoveRange(0, storageHistory.Count - 0x32);
                 StorageHistoryRefresh?.Invoke();
+                break;
+            case 0x32:
+            {
+                // OnPacketGuildExp (@0x1413c4aa0, guildmanager.cpp:2723): the level before, the exp (f15c), the level after; the
+                // open dialog (0x4e4f) updates the exp bar and, on a level change, the skill page and the npc. No in-guild check.
+                if (Info == null) break;
+                int before = GuildLevel;
+                Info.Exp = m.Value;
+                ExpRefresh?.Invoke(GuildLevel != before);
+                break;
+            }
+            case 0x33:
+            case 0x34:
+                // FUN_1413c4b60 (:2739) the fund (f160) and FUN_1413c4bd0 (:2748) the event fund (f164); then FUN_14196e2c0.
+                if (Info == null) break;
+                if (m.Type == 0x33) Info.Fund = m.Value; else Info.EventFund = m.Value;
+                FundRefresh?.Invoke();
                 break;
             case 0x44:
                 // FUN_1413bf2a0 (guildmanager.cpp:1855): in a guild, the propensity focus and value.

@@ -215,6 +215,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.MemberRefresh += OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
         Book.MemberRemoved += OnMemberRemoved;
+        Book.ExpRefresh -= OnExpRefresh;
+        Book.ExpRefresh += OnExpRefresh;
+        Book.FundRefresh -= OnFundRefresh;
+        Book.FundRefresh += OnFundRefresh;
         if (!NoMovie)
         {
             InitializeGuildDialog();
@@ -258,6 +262,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.PvpSeasonHistoryRefresh -= UpdatePvpSeasonHistory;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
+        Book.ExpRefresh -= OnExpRefresh;
+        Book.FundRefresh -= OnFundRefresh;
         Book.ClearSearchResults();
         createPage = null;
         joinPage = null;
@@ -1177,6 +1183,24 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (PlayerName() == name) SetPlayer();
     }
 
+    /// <summary>OnPacketGuildExp (guildmanager.cpp:2723) with the dialog open: UpdateGuildExp, and when the guild level changed
+    /// FUN_14196e590 (the skill page) and FUN_141971ac0 (the npc info).</summary>
+    void OnExpRefresh(bool levelChanged)
+    {
+        if (IsClosed || NoMovie) return;
+        UpdateGuildExp();
+        if (!levelChanged) return;
+        BuildGuildSkills();
+        SetNpcInfo();
+    }
+
+    /// <summary>FUN_1413c4b60 / FUN_1413c4bd0 (:2739, :2748) with the dialog open: FUN_14196e2c0.</summary>
+    void OnFundRefresh()
+    {
+        if (IsClosed || NoMovie) return;
+        UpdateSkillFund();
+    }
+
     /// <summary>RemoveMember (@0x141973df0).</summary>
     void OnMemberRemoved(string name)
     {
@@ -1213,7 +1237,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Host.Invoke(infoPage, "setGuildExpEvent", false);
     }
 
-    /// <summary>UpdateGuildExp (@0x14196dc00).</summary>
+    /// <summary>UpdateGuildExp (@0x14196e0a0, uiguilddialog.cpp:2046): setGuildExp(level, max, rate) on the Info page.</summary>
     void UpdateGuildExp()
     {
         if (infoPage == null) return;

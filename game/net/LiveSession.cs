@@ -3357,7 +3357,8 @@ public partial class LiveSession : Node
         // MS2_LIVE_GUILD_SHOTS=<dir> with MS2_LIVE_GUILD_STEP: one scripted step of the guild dialog against the live
         // server, each with its shots. create: the Create page's button, the name (MS2_LIVE_GUILD_NAME) into the box, the
         // box's OK, the created box's OK. apply: the Join page's first row's join. accept: the accept page's first row's
-        // accept. look: the Info and Member pages. leave / break: the Info page's button, the box's OK.
+        // accept. look: the Info and Member pages. checkin: the attend button, then the Info and Skill pages. leave / break:
+        // the Info page's button, the box's OK.
         string guildShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_GUILD_SHOTS");
         if (!string.IsNullOrEmpty(guildShots) && tree.CurrentScene is Ui.HudScene guildHud)
         {
@@ -3429,6 +3430,28 @@ public partial class LiveSession : Node
                     guildHud.GuildDialog.OpenCategoryPage("Member");
                     await Frames(180);
                     Shot("guild_members.png");
+                    break;
+                }
+                case "checkin":
+                {
+                    // the root's m_attendButton (onClickAttend, SendGuildMode15); the server answers with the exp and the
+                    // fund (modes 0x32 / 0x33), which redraw the Info page's level gauge and fund and the Skill page's fund
+                    await Until(() => Instance?.Guilds.InGuild ?? false, 60 * 10);
+                    guildHud.GuildDialog.OpenCategoryPage("Info");
+                    await Frames(180);
+                    var gi = Instance?.Guilds.Info;
+                    int exp0 = gi?.Exp ?? 0, fund0 = gi?.Fund ?? 0;
+                    GD.Print($"live: guild checkin before exp {exp0} fund {fund0} level {Instance?.Guilds.GuildLevel}");
+                    Shot("guild_checkin_before.png");
+                    GD.Print($"live: guild attend button {(guildHud.ClickGuild(null, "m_attendButton") ? "clicked" : "not there")}");
+                    await Until(() => Instance?.Guilds.Info is { } i && (i.Exp != exp0 || i.Fund != fund0), 60 * 20);
+                    gi = Instance?.Guilds.Info;
+                    GD.Print($"live: guild checkin after exp {gi?.Exp ?? 0} fund {gi?.Fund ?? 0} level {Instance?.Guilds.GuildLevel}");
+                    await Frames(120);
+                    Shot("guild_checkin_info.png");
+                    guildHud.GuildDialog.OpenCategoryPage("Skill");
+                    await Frames(180);
+                    Shot("guild_checkin_skill.png");
                     break;
                 }
                 case "leave":

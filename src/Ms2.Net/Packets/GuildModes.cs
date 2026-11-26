@@ -60,8 +60,7 @@ public static class GuildModes {
     };
 
     /// <summary>GMS2 receive type → KMS receive type. Comment: the KMS handler, "up" + the GMS2 server's writer when it has one.
-    /// GMS2 50 (one i32, the GMS2 server's GuildFunds) has no KMS case: KMS 0x32 carries exp and funds together (GMS2 49 is
-    /// the exp alone), and KMS 0x33 / 0x34 (FUN_1413c4b60 / FUN_1413c4bd0) have no GMS2 case.</summary>
+    /// KMS 0x34 (the event fund, FUN_1413c4bd0) has no GMS2 case.</summary>
     public static readonly IReadOnlyDictionary<byte, byte> Gms2Receive = new Dictionary<byte, byte> {
         [0] = 0,        // OnPacketGuildInfo, up Load
         [1] = 1,        // OnPacketCreateGuild, up Created
@@ -115,7 +114,8 @@ public static class GuildModes {
         [43] = 0x2b,    // OnPacketBattleApplied
         [44] = 0x2c,    // OnPacketGuildBattleNotice
         [104] = 0x6b,   // FUN_1413c3110
-        [49] = 0x32,    // OnPacketGuildExp, up GuildExperience (GMS2: the exp alone; KMS adds the funds)
+        [49] = 0x32,    // OnPacketGuildExp, up GuildExperience: one i32, the exp (KMS f15c, GMS2 +0x164; both compare the level)
+        [50] = 0x33,    // FUN_1413c4b60, up GuildFunds: one i32, the fund (KMS f160, GMS2 +0x168)
         [52] = 0x36,    // FUN_1413c3170, up NotifyUseBuff
         [53] = 0x37,    // FUN_1413c3460, up UpgradeBuff
         [54] = 0x38,    // FUN_1413c3780 (GMS2 handler @0x140aa0090: string, then 0x14030f9a0 reads i32, i32, as KMS)

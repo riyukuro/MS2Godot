@@ -885,4 +885,29 @@ public class GuildBookTests {
         sent.Clear(); b.RequestPvpHistoryAndSeason();
         Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GuildPvpHistoryRequest(0), new GuildPvpSeasonHistoryRequest() }));
     }
+
+    /// <summary>OnPacketGuildExp (:2723) keeps the exp and tells the open dialog whether the guild level changed; FUN_1413c4b60 /
+    /// FUN_1413c4bd0 (:2739, :2748) keep the fund and the event fund and redraw the fund texts. With no guild info nothing changes.</summary>
+    [Test]
+    public void TheExpAndFundPacketsKeepTheirValueAndRedrawTheDialog() {
+        var b = InGuild(new List<IOutPacket>(), new List<string>());
+        b.LevelByExp = e => 1 + e / 100;
+        var exp = new List<bool>(); int funds = 0;
+        b.ExpRefresh += exp.Add;
+        b.FundRefresh += () => funds++;
+        b.Apply(new GuildMessage((byte) 0x32) { Value = 50 });
+        b.Apply(new GuildMessage((byte) 0x32) { Value = 250 });
+        Assert.That(b.Info.Exp, Is.EqualTo(250));
+        Assert.That(exp, Is.EqualTo(new[] { false, true }), "level 1 to 1, then 1 to 3");
+        b.Apply(new GuildMessage((byte) 0x33) { Value = 900 });
+        b.Apply(new GuildMessage((byte) 0x34) { Value = 40 });
+        Assert.That((b.Info.Fund, b.Info.EventFund, funds), Is.EqualTo((900, 40, 2)));
+
+        var none = Book(new List<IOutPacket>(), new List<string>());
+        none.ExpRefresh += exp.Add;
+        none.FundRefresh += () => funds++;
+        none.Apply(new GuildMessage((byte) 0x32) { Value = 5 });
+        none.Apply(new GuildMessage((byte) 0x33) { Value = 5 });
+        Assert.That((exp.Count, funds), Is.EqualTo((2, 2)), "no guild info: no event");
+    }
 }

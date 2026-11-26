@@ -115,10 +115,11 @@ public class GuildModesTests {
 
     [Test]
     public void TheReceiveMapIsOneToOneAndKmsIsUnchanged() {
-        // 91 GMS2 cases, 90 with a KMS case (GMS2 50 has none).
-        Assert.That(GuildModes.Gms2Receive, Has.Count.EqualTo(90));
-        Assert.That(GuildModes.Gms2Receive.Values.Distinct().Count(), Is.EqualTo(90));
-        Assert.That(GuildModes.Gms2Receive.ContainsKey(50), Is.False);
+        // 91 GMS2 cases, each with a KMS case (GMS2 50 is the fund, KMS 0x33).
+        Assert.That(GuildModes.Gms2Receive, Has.Count.EqualTo(91));
+        Assert.That(GuildModes.Gms2Receive.Values.Distinct().Count(), Is.EqualTo(91));
+        Assert.That(GuildModes.Gms2Receive[50], Is.EqualTo((byte) 0x33));
+        Assert.That(GuildModes.Gms2Receive[49], Is.EqualTo((byte) 0x32));
         Assert.That(GuildModes.Gms2Receive.Values, Does.Not.Contain(GuildModes.NoKmsType));
         for (int t = 0; t < 256; t++) {
             Assert.That(GuildModes.Receive((byte) t, Kms), Is.EqualTo((byte) t));
@@ -193,10 +194,10 @@ public class GuildModesTests {
 
     [Test]
     public void AGms2TypeWithoutAKmsCaseIsNotTakenAsAKmsType() {
-        // GMS2 50 (the funds) has no KMS case; on a KMS session 0x32 stays 0x32.
-        var m = GuildMessage.Read(R(w => { w.WriteByte(50); w.WriteInt(7); }), Gms);
+        // 200 is past the GMS2 jump table (types 0-120); on a KMS session 0x32 stays 0x32.
+        var m = GuildMessage.Read(R(w => { w.WriteByte(200); w.WriteInt(7); }), Gms);
         Assert.That(m.Type, Is.EqualTo(GuildModes.NoKmsType));
-        Assert.That(GuildMessage.Read(R(w => w.WriteByte(0x32)), Kms).Type, Is.EqualTo((byte) 0x32));
+        Assert.That(GuildMessage.Read(R(w => { w.WriteByte(0x32); w.WriteInt(7); }), Kms).Type, Is.EqualTo((byte) 0x32));
     }
 
     [Test]
@@ -207,9 +208,7 @@ public class GuildModesTests {
         foreach (var (file, data) in all) {
             if (data.Length == 0) continue;
             types.Add(data[0]);
-            // GMS2 50 (the funds alone) is the one GMS2 type with no KMS case; it reads as NoKmsType and changes nothing.
-            if (data[0] == 50) Assert.That(GuildMessage.Read(new ByteReader(data), Gms).Type, Is.EqualTo(GuildModes.NoKmsType), file);
-            else Assert.That(GuildModes.Gms2Receive.ContainsKey(data[0]), Is.True, $"{file}: GMS2 type {data[0]}");
+            Assert.That(GuildModes.Gms2Receive.ContainsKey(data[0]), Is.True, $"{file}: GMS2 type {data[0]}");
             var r = new ByteReader(data);
             Assert.DoesNotThrow(() => GuildMessage.Read(r, Gms), file);
         }
