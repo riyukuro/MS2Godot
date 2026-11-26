@@ -349,7 +349,7 @@ void fragment() {
         var sc = Scene(part.FilePath);
         if (sc == null) return false;
         float dur = part.Duration > 0 ? part.Duration : 0.6f;
-        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Transform = place, Delay = part.StartDelay };
+        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff), part.UseLighting) { Transform = place, Delay = part.StartDelay };
         float s = part.Scale <= 0 ? 1 : part.Scale;
         var q = new Godot.Quaternion(Godot.Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Godot.Quaternion(Godot.Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Godot.Quaternion(Godot.Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
         inst.FileSpace = own ? new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2])) : Transform3D.Identity;

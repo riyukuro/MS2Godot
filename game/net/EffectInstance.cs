@@ -462,7 +462,9 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
 
     static float Rad(float x) => x;
 
-    public EffectInstance(EffectScene scene, ModelBuilder mb, float duration, int seed)
+    /// <param name="useLighting">The part's &lt;attachInfo useLighting&gt; (EffectPart.UseLighting): false draws every block
+    /// unlit (EffectMesh.PartLightForm).</param>
+    public EffectInstance(EffectScene scene, ModelBuilder mb, float duration, int seed, bool useLighting = true)
     {
         this.scene = scene; this.mb = mb; rng = new Random(seed);
         // The client removes an effect once the game time passes start + duration (CEffect::vfunc_9, OnTick), with no tail
@@ -532,7 +534,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
                 if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
                 if (em.AlphaBoost) mat.SetShaderParameter(FxParam.AlphaBoost, true);
-                mat.SetShaderParameter(FxParam.LightForm, em.LightForm);
+                mat.SetShaderParameter(FxParam.LightForm, EffectMesh.PartLightForm(em.LightForm, useLighting));
                 if (m.Normals == null) mat.SetShaderParameter(FxParam.LitNormals, false);
                 Shade(ms, 0, true);
                 mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
@@ -616,7 +618,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
                 if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
                 if (d.Material.AlphaBoost) mat.SetShaderParameter(FxParam.AlphaBoost, true);
-                mat.SetShaderParameter(FxParam.LightForm, d.Material.LightForm);
+                mat.SetShaderParameter(FxParam.LightForm, EffectMesh.PartLightForm(d.Material.LightForm, useLighting));
                 Shade(ps.Shading, 0, true);
                 mat.SetShaderParameter(FxParam.Alpha, ps.Shading.LastAlpha = (float)d.Material.Opacity(0));
             }

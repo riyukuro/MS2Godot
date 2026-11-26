@@ -160,7 +160,7 @@ public partial class TaxiStations : Node3D
             float s = part.Scale <= 0 ? 1 : part.Scale;
             var q = new Quaternion(Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Quaternion(Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Quaternion(Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
             float duration = part.Loop ? 1e7f : part.Duration;
-            var fx = new EffectInstance(sc, builder, duration, seed++) { Name = (keep ? "TaxiDefault_" : "TaxiReveal_") + seed, Position = at, Delay = part.StartDelay };
+            var fx = new EffectInstance(sc, builder, duration, seed++, part.UseLighting) { Name = (keep ? "TaxiDefault_" : "TaxiReveal_") + seed, Position = at, Delay = part.StartDelay };
             fx.FileSpace = new Transform3D(new Basis(q).Scaled(new Vector3(s, s, s)), new Vector3(part.Translate[0], part.Translate[1], part.Translate[2]));
             AddChild(fx);
             if (keep) running.Add(fx);

@@ -120,8 +120,9 @@ public sealed class EffectMesh
     /// block drawn through that file set for the map. The map's texture transform is the identity (the block has none:
     /// NiD3DXEffectParameter.cpp:1755-1812). Taken here as the effect's own other drawn _HO blocks of the same file: when they
     /// carry that map with exactly one texture, it is lent (EffectScene.LendMissingMaps); else none, and the pass reads
-    /// (0, 0, 0, 1), a NULL texture's value. STILL-OPEN: in the client the map also depends on the frame's draw order and on
-    /// the other effects on screen.</summary>
+    /// (0, 0, 0, 1), a NULL texture's value. With several, the client's pick depends on the draw order and is not known; in
+    /// the data every Mask block that lacks its detail map has one candidate (lent) or none (HoMaterialTests census).
+    /// STILL-OPEN: in the client the map also depends on the frame's draw order and on the other effects on screen.</summary>
     public Dictionary<string, string> Lent;
 
     /// <summary>The detail map's alpha multiplies the opacity: the active material is one the client builds as an
@@ -211,6 +212,12 @@ public sealed class EffectMesh
     /// STILL-OPEN: the character types (MS2CharacterMaterial and the Chaos names) use MS2CharacterLight's half-Lambert
     /// (ms2materialnodelibrary.cpp:1084-1110) and are drawn here as 2; the field's point lights are not added.</summary>
     public int LightForm => LightingE ? 0 : ModelData.IsStandardMaterial(ActiveMaterial) ? 2 : 1;
+
+    /// <summary>The light form a block of an effect part draws with: <paramref name="form"/> (<see cref="LightForm"/>) when the
+    /// part's root passes the field lights down, 0 when its &lt;attachInfo useLighting&gt; is false (EffectPart.UseLighting):
+    /// the EffectNode stops the lights (lightunaffectednode.cpp), and with no light in the effect state both accumulators stay
+    /// 0 (NiD3DShaderConstantMap.cpp:2334-2360), so the block draws its emissive alone as LightingE does.</summary>
+    public static int PartLightForm(int form, bool useLighting) => useLighting ? form : 0;
 
     /// <summary>The ambient and diffuse accumulators of light form <paramref name="form"/> (<see cref="LightForm"/>) for one
     /// channel: the field's ambient light, the directional light's colour and ambient colour, and ndl = max(0, N . -dir).

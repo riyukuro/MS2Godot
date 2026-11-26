@@ -478,7 +478,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             // client makes no part
             EffectAttach.Hung hung = default;
             if (actor != null && part.AttachKind != 0 && !EffectAttach.Hang(part, actor, out hung)) continue;
-            var fx = new EffectInstance(sc, builder, duration, seed++) { Name = "RegionSkill_" + seed, Delay = part.StartDelay };
+            var fx = new EffectInstance(sc, builder, duration, seed++, part.UseLighting) { Name = "RegionSkill_" + seed, Delay = part.StartDelay };
             if (actor != null && part.AttachKind == 0)
             {
                 // AttachToOwnerNode (nifeffectparam.cpp:1044): in the world at the actor's node, not following it

@@ -147,6 +147,7 @@ public class HoMaterialTests
             catch (Exception) { continue; }
             nifs++;
             var items = sc.Meshes.Select(m => ("mesh", m, m.Mesh.Name)).Concat(sc.Systems.Select(s => ("system", s.Material, s.Name)));
+            var drawn = sc.Meshes.Where(m => m.Ho != null).Concat(sc.Systems.Where(s => s.Emitters.Count > 0 && s.Material?.Ho != null).Select(s => s.Material)).ToList();
             foreach (var (kind, em, name) in items)
             {
                 var mat = em.Mesh.Material;
@@ -166,6 +167,13 @@ public class HoMaterialTests
                 {
                     if (em.Mesh.Textures.ContainsKey(slot)) { if (em.Lent?.ContainsKey(slot) == true) bad.Add($"{entry} {kind} {name}: lent its own {slot}"); continue; }
                     Add($"{kind} lacks {slot}, {(em.Lent?.ContainsKey(slot) == true ? "lent" : "none")}");
+                    if (slot == "detail" && !em.Ho.Dissolve)
+                    {
+                        var others = drawn.Where(o => o != em && !o.Ho.Dissolve)
+                            .Select(o => o.Mesh.Textures.GetValueOrDefault("detail")).Where(f => f != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                        // the client's pick among several is not known (it depends on the draw order); none in the data
+                        if (others.Count > 1) bad.Add($"{entry} {kind} {name}: lacks its Mask detail with several to choose from: {string.Join(", ", others)}");
+                    }
                 }
             }
         }
@@ -177,7 +185,8 @@ public class HoMaterialTests
 
     /// <summary>A map the block lacks reads what the shared effect was last given for that map (NiD3DXEffectParameter.cpp:862-881
     /// sets nothing; NiD3DXEffectTechnique.cpp:66 shares one effect per file): the texture the effect's other blocks of that
-    /// file carry when they all carry the same one, else nothing.</summary>
+    /// file carry when they all carry the same one. With several, the one the client reads depends on the frame's draw order
+    /// and is not known, and none is lent; no Mask block of the data lacks its detail map that way (the census checks it).</summary>
     [Test]
     public void AMissingMapTakesTheTextureTheEffectsOtherBlocksCarry()
     {
@@ -195,7 +204,8 @@ public class HoMaterialTests
             foreach (var slot in m.Ho.Maps.Where(m.Mesh.Textures.ContainsKey))
                 Assert.That(m.Lent?.ContainsKey(slot) == true, Is.False, $"{m.Mesh.Name} {slot}");
 
-        // two different glow textures in the effect: which one the draw reads is unknown, so none is lent
+        // two different glow textures in the effect: which one the client's draw reads is unknown (it depends on the
+        // frame's draw order); a missing glow map only loses the glow term, so none is lent
         var giant = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, "npc/skill/gigantikahead/eff_gigantikahead_attack_01_c.nif")));
         var bare = giant.Systems.Where(s => s.Emitters.Count > 0 && s.Material.Ho != null && !s.Material.Mesh.Textures.ContainsKey("glow")).ToList();
         Assert.That(bare, Is.Not.Empty);

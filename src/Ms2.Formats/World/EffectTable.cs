@@ -102,6 +102,15 @@ public sealed class EffectPart
     public string AttachType, ParentNode;
     public bool AttachToNode, ApplyNodeTransform;
     /// <summary>
+    /// &lt;attachInfo useLighting&gt; (true when absent, nifeffectparam.cpp:353, :394). CNifEffect::vfunc_3 builds the part's root
+    /// as EffectNode(useLighting, useShadow) (:680), a LightUnaffectedNode whose UpdateEffectsDownward passes no dynamic effects
+    /// to its children when the flag is off (lightunaffectednode.cpp). The field lights then never reach the part's blocks
+    /// (CEffectService::AttachEntityLight, effectservice.cpp:1780-1810, attaches them to the effect roots), and with no
+    /// ambient light in the effect state the material's ambient term is 0 (NiD3DShaderConstantMap.cpp:2334-2360): the
+    /// blocks draw emissive only.
+    /// </summary>
+    public bool UseLighting = true;
+    /// <summary>
     /// m_nAttachType: ParseAttachType of attachType (nifeffectparam.cpp:275: Node 1, Mesh 2, WeaponL 3, WeaponR 4, else 0,
     /// CompareNoCase), set to 1 by attachToNode="true" (:398). CNifEffect::vfunc_3 switches on it (:717): 0 puts the part
     /// under the world effect root (AttachToOwnerNode), the others under a node of the actor.
@@ -249,6 +258,7 @@ public sealed class EffectTable
                 p.ParentNode = (string)a.Attribute("parentNode");
                 p.AttachToNode = B((string)a.Attribute("attachToNode"), false);
                 p.ApplyNodeTransform = B((string)a.Attribute("applyNodeTransform"), false);
+                p.UseLighting = B((string)a.Attribute("useLighting"), true);
             }
             if (e.Element("applyNodeTransform") is { } an)
             {
