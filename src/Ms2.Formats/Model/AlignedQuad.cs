@@ -36,6 +36,15 @@ public static class AlignedQuad
     public static float SpeedScale(float amount, float limit, float rest, float speed) =>
         (amount * speed * limit + rest) / (amount * speed + 1f);
 
+    /// <summary>A spawned particle's speed in the effect's space: the emitter's speed in the system's space times the
+    /// system's scale, for a world-space system too (its emitter only rotates the velocity, NiPSBoxEmitter.cpp:100-103).</summary>
+    public static float SpawnSpeed(float speed, float systemScale) => speed * systemScale;
+
+    /// <summary>The speed the kernels' speed scale takes (NiPSAlignedQuadGeneratorKernelFF.cpp:65-79) from a velocity in the
+    /// effect's space: over the system's scale in both spaces, as the client keeps the world scale out of a world-space
+    /// system's data (NiPSParticleSystem::UpdateWorldData, NiPSParticleSystem.cpp:509-520); 0 for a zero scale.</summary>
+    public static float ClientSpeed(Vector3 velocity, float systemScale) => systemScale != 0 ? velocity.Length() / systemScale : 0f;
+
     /// <summary>Point3::Unitize(zeroLengthDefault) (efd/Win32/Point3_Win32.inl:180-221): the default when the length is
     /// 1e-6 or less; Vector3.Zero as the default is plain Unitize.</summary>
     public static Vector3 Unitize(Vector3 v, Vector3 zeroDefault)
@@ -103,7 +112,9 @@ public static class AlignedQuad
                 }
                 else scaledAge = age;
             }
-            float normTime = (scaledAge - initialTime) / (finalTime - initialTime);
+            // a zero life (drawn once, at its end) or a zero span would give 0/0: the initial frame
+            float span = finalTime - initialTime;
+            float normTime = span != 0 ? (scaledAge - initialTime) / span : 0f;
             float init, fin;
             if (!UVScrolling) { init = InitialFrame + MathF.Floor(variance * InitialFrameVar); fin = init + (NumFrames + MathF.Floor(variance * NumFramesVar)); }
             else { init = InitialFrame + variance * InitialFrameVar; fin = init + (NumFrames + variance * NumFramesVar); }

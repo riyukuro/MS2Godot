@@ -246,4 +246,32 @@ public class AlignedQuadTests
         Assert.That(badGrid, Is.Zero);
         Assert.That(animated, Is.GreaterThan(10));
     }
+
+    /// <summary>The speed scale's speed, the same in both spaces: a system scaled by 2.5 spawns its emitter speed times 2.5 here, and
+    /// the kernels take the emitter speed back (world-space data keep the world scale out, NiPSParticleSystem.cpp:509-520;
+    /// the emitter only rotates the velocity, NiPSBoxEmitter.cpp:100-103). The old rule took a world-space system's speed
+    /// times the effect's world scale, 2.5 x 2.5 too large.</summary>
+    [Test]
+    public void TheSpeedScaleTakesTheEmittersSpeed()
+    {
+        const float scale = 2.5f, emitterSpeed = 40f;
+        var vel = Vector3.Normalize(new Vector3(1, 2, 2)) * AlignedQuad.SpawnSpeed(emitterSpeed, scale);
+        float sp = AlignedQuad.ClientSpeed(vel, scale);
+        Assert.That(sp, Is.EqualTo(emitterSpeed).Within(1e-3f));
+        Assert.That(AlignedQuad.ClientSpeed(vel, 0), Is.Zero);
+    }
+
+    /// <summary>A zero-life particle (drawn once, at its end) and a zero time span take the initial frame, not 0/0.</summary>
+    [Test]
+    public void AZeroLifeTakesTheInitialFrame()
+    {
+        var t = new AlignedQuad.TexAnim(new ParticleSystemDef { Aligned = true, AnimatedTextures = true, FramesAcross = 4, FramesDown = 2,
+            InitialFrame = 1, NumFrames = 6, InitialTime = 0, FinalTime = 1 });
+        t.Cell(0f, 0f, 0f, out var u, out var v);
+        Assert.That((u, v), Is.EqualTo((0.25f, 0f)));
+        t = new AlignedQuad.TexAnim(new ParticleSystemDef { Aligned = true, AnimatedTextures = true, FramesAcross = 4, FramesDown = 2,
+            InitialFrame = 1, NumFrames = 6, InitialTime = 0.5, FinalTime = 0.5 });
+        t.Cell(3f, 10f, 0f, out u, out v);
+        Assert.That(float.IsFinite(u) && float.IsFinite(v), Is.True, $"{u} {v}");
+    }
 }

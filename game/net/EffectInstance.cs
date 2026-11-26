@@ -58,7 +58,7 @@ public sealed partial class EffectInstance : Node3D
     readonly int[] dynNodes;             // the nodes whose world transform changes over time (an animated or billboard node on the way to the root)
     readonly bool needCam;               // a billboard node or a particle system reads the camera
     readonly bool hasAligned;            // a system has NiPSAlignedQuadGenerator quads
-    Vector3 worldX = new(1, 0, 0), worldZ = new(0, 0, 1); float worldScale = 1f;
+    Vector3 worldX = new(1, 0, 0), worldZ = new(0, 0, 1);
     bool inTree, shown = true;           // shown: z's Visible as last set (a new node is visible)
     readonly Random rng;
     readonly float emitUntil, life;
@@ -608,24 +608,27 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (t > life) { Finished = true; QueueFree(); return; }
         long q0 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var cam = needCam ? FrameCamera() : null;
-        var camLocal = cam != null ? z.GlobalTransform.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
+        // the effect's world transform, fetched once for the camera and the aligned quads below
+        bool zIn = hasAligned && z.IsInsideTree();
+        var zg = cam != null || zIn ? z.GlobalTransform : Transform3D.Identity;
+        var camLocal = cam != null ? zg.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
         // the camera's right and up in this effect's space (file space), for the facing particle quads
         Vector3 camRight = new(1, 0, 0), camUp = new(0, 0, 1), camDir = new(0, 1, 0);
         if (cam != null)
         {
-            var inv = z.GlobalTransform.Basis.Inverse();
+            var inv = zg.Basis.Inverse();
             camRight = (inv * cam.GlobalBasis.X).Normalized(); camUp = (inv * cam.GlobalBasis.Y).Normalized();
             camDir = (inv * -cam.GlobalBasis.Z).Normalized();   // Godot's camera looks along -Z
         }
         camRightFx = camRight; camUpFx = camUp; camDirFx = camDir; camLocalFx = camLocal;
-        // the file's world X and Z axes (Z goes to Godot's up) and its world scale in this effect's space, for the aligned
-        // quads of world-space systems (AlignedQuad: the kernels' UNIT_X / UNIT_Z defaults and the world velocity)
+        // the file's world X and Z axes (Z goes to Godot's up) in this effect's space, for the aligned quads of world-space
+        // systems (AlignedQuad: the kernels' UNIT_X / UNIT_Z defaults)
         if (hasAligned)
         {
             // (the first step runs in the constructor, before the effect is in the tree: its own transform until then)
-            var zb = z.IsInsideTree() ? z.GlobalTransform.Basis : Transform.Basis * z.Transform.Basis;
+            var zb = zIn ? zg.Basis : Transform.Basis * z.Transform.Basis;
             var zi = zb.Inverse();
-            worldX = (zi * Vector3.Right).Normalized(); worldZ = (zi * Vector3.Up).Normalized(); worldScale = zb.Scale.X;
+            worldX = (zi * Vector3.Right).Normalized(); worldZ = (zi * Vector3.Up).Normalized();
         }
         // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
         foreach (int i in dynNodes) done[i] = false;
@@ -822,11 +825,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         float growTime = (float)d.GrowTime, shrinkTime = (float)d.ShrinkTime;
         // Aligned quads (AlignedQuad): the system's fixed normal and up and the kernels' defaults, in this effect's space. The
         // particles are kept here for a world-space system too, so its original world rotation is the system node's rotation
-        // here and the world axes are the file's world axes brought here; a local-space system's are its own axes. A
-        // world-space system's velocities are world ones (times the effect's world scale), a local one's its own (over the
-        // system's scale).
+        // here and the world axes are the file's world axes brought here; a local-space system's are its own axes. The
+        // client keeps the world scale out of a world-space system's data (NiPSParticleSystem::UpdateWorldData,
+        // NiPSParticleSystem.cpp:509-520) and its emitters only rotate the velocity (NiPSBoxEmitter.cpp:100-103), so in both
+        // spaces the client's speed is the spawned velocity here over the system's scale (AlignedQuad.ClientSpeed).
         var aN = System.Numerics.Vector3.Zero; var aU = aN; var aX = aN; var aZ = aN; var aO = aN;
-        float amtU = 0f, amtV = 0f, limU = 1f, limV = 1f, restU = 1f, restV = 1f, cenU = 0f, cenV = 0f, speedMul = 1f;
+        float amtU = 0f, amtV = 0f, limU = 1f, limV = 1f, restU = 1f, restV = 1f, cenU = 0f, cenV = 0f, speedScale = 1f;
         bool scaleSpeed = false, rotations = d.HasRotations, anyPer = false;
         int nMethod = d.NormalMethod, uMethod = d.UpMethod;
         if (aligned)
@@ -855,7 +859,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             limU = (float)d.ScaleLimitU; limV = (float)d.ScaleLimitV; restU = (float)d.ScaleRestU; restV = (float)d.ScaleRestV;
             cenU = (float)d.CenterU; cenV = (float)d.CenterV;
             scaleSpeed = amtU != 0f || amtV != 0f;
-            speedMul = d.WorldSpace ? worldScale : (psScale != 0 ? 1f / psScale : 0f);
+            speedScale = psScale;
         }
         var tex = ps.Tex;
         float cx = camLocal.X, cy = camLocal.Y, cz = camLocal.Z;
@@ -886,7 +890,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 float sU = 1f, sV = 1f;
                 if (scaleSpeed)
                 {
-                    float sp = vn.Length() * speedMul;
+                    float sp = AlignedQuad.ClientSpeed(vn, speedScale);
                     sU = AlignedQuad.SpeedScale(amtU, limU, restU, sp); sV = AlignedQuad.SpeedScale(amtV, limV, restV, sp);
                 }
                 var qn = aN; var qu = aU;
@@ -1028,7 +1032,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         }
         float speed = (float)e.Speed + Spread((float)e.SpeedVar / 2);
         if (e.SpeedFlipRatio > 0 && R() < e.SpeedFlipRatio) speed = -speed;
-        ps.Vel[i] = dir * (speed * psScale);
+        ps.Vel[i] = dir * AlignedQuad.SpawnSpeed(speed, psScale);
         ps.Life[i] = lifespan;
         ps.Size[i] = Mathf.Max(0f, (float)e.Size + Spread((float)e.SizeVar));
         ps.Age[i] = 0;
