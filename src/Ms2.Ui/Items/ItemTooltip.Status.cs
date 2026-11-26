@@ -8,9 +8,10 @@ namespace Ms2.Ui.Items;
 /// FUN_1409c9170 (:1102) and the compact count block FUN_1409cc090 (:1494). The texts are the unit statics
 /// FUN_1409e5480 (:644) loads.
 /// STILL-OPEN, left out (no "itemStatus" member): pets (the pet table, FUN_1405cb900 and the pet exp gauge are not
-/// ported), merge items (subtype 2, FUN_1409cb7b0), data with additional effects (SkillDataTableCli::FUN_140aafef0,
-/// IsVisibleItemOption), a skill level-up tier special option (0x4d-0x5a, FUN_140630ea0), and the compact block of an
-/// item whose socket max count comes from Lua (no socketDataId).
+/// ported), merge items (subtype 2, FUN_1409cb7b0), the additional-effect rows of a data that has them
+/// (SkillDataTableCli::FUN_140aafef0, IsVisibleItemOption and GetBuffName; the data's options, enchant and unlimited
+/// blocks are still shown), a skill level-up tier special option (0x4d-0x5a, FUN_140630ea0), and the compact block of
+/// an item whose socket max count comes from Lua (no socketDataId).
 /// </summary>
 public sealed partial class ItemTooltip
 {
@@ -126,7 +127,7 @@ public sealed partial class ItemTooltip
     {
         var d = item.Data;
         if (d.Subtype == 2) return;                         // FUN_1409cb7b0: STILL-OPEN
-        if (d.IsPetItem || d.AdditionalEffectIds.Count > 0) return;   // STILL-OPEN, see the class comment
+        if (d.IsPetItem) return;                            // STILL-OPEN, see the class comment
         var o = Tables.ItemOptions;
         var rec = item.Record;
         var kinds = new StringBuilder[5];

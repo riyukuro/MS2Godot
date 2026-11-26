@@ -428,6 +428,16 @@ public sealed class ItemOptionTables
     }
 
     /// <summary>
+    /// The enchant limit row of an item's slot (CItemEnchantLimitTable::Load, itemenchantlimittable.cpp:150): the level
+    /// band and the highest grade the slot takes, or null when the item is not a gear item or its slot has no row.
+    /// </summary>
+    public (int MinLevel, int MaxLevel, int MaxGrade)? EnchantLimitOf(ItemData d)
+    {
+        if (d == null || d.Type != 1) return null;
+        return Limits().TryGetValue(d.EquipSubtype, out var l) ? (l.MinLv, l.MaxLv, l.MaxGrade) : null;
+    }
+
+    /// <summary>
     /// CItemEnchantLimitTable::CanEnchant (itemenchantlimittable.cpp:185): an equip item that has not expired, has no
     /// unlimited enchant level, whose slot has a limit with the item's level limit inside it and the enchant level below
     /// its max grade, and whose data does not set exceptEnchant.
