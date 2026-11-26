@@ -3894,7 +3894,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             c.SendItemShop = request => { liveShop ??= CreateShopController(live); live.SendShop(request); };
             c.CanOpenShop = () => !GuideRefusesOpen("ShopDialog");
-            c.CloseShop = () => { if (ShopOpen) shop.CloseShop(); };
+            c.CloseShop = () => { if (ShopOpen) shop.RequestClose(); };   // RequestCloseDialog(0x4e3b): vfunc_67 only
             // the own player's PC bang grade, premium time, wedding state and character id: the item requirements (invenslot.cpp:2090-2120)
             var usePc = new Ms2.Ui.Hud.PcItemUse.Pc { ServerTime = () => live.ServerTime };
             c.UsePc = () =>

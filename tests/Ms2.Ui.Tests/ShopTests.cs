@@ -1142,6 +1142,27 @@ public class ShopTests
     }
 
     [Test]
+    public void TheInventorysShopCloseLeavesThePurchaseBoxWhichCloseShopCloses()
+    {
+        // RequestCloseDialog(0x4e3b) runs vfunc_68 -> vfunc_67 only (uidialog.cpp:620, uishopdialog.cpp:661): the buyItem box stays;
+        // UIShopDialog::CloseShop (:2641, the Escape key) closes it first.
+        var (_, c) = Load(NewModel());
+        int boxesClosed = 0, talkEnds = 0;
+        c.CloseBox = () => boxesClosed++;
+        c.SendNpcTalkEnd = () => talkEnds++;
+        c.CurrentBox = () => MessageBoxQueue.Create(0x11, "", c, "buyItem,1,1");
+        c.RequestClose();
+        Assert.That((boxesClosed, talkEnds), Is.EqualTo((0, 1)), "the shop closes (vfunc_67), its purchase box stays");
+        var (_, c2) = Load(NewModel());
+        int talkEnds2 = 0;
+        c2.CloseBox = () => boxesClosed++;
+        c2.SendNpcTalkEnd = () => talkEnds2++;
+        c2.CurrentBox = () => MessageBoxQueue.Create(0x11, "", c2, "buyItem,1,1");
+        c2.CloseShop();
+        Assert.That((boxesClosed, talkEnds2), Is.EqualTo((1, 1)), "CloseShop closes the box too");
+    }
+
+    [Test]
     public void RemainingCallbacksAnswerLinkPreviewRecipeEquipUgcConfirmAndCloseShop()
     {
         Packs();

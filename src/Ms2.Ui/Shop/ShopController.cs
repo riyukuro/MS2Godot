@@ -733,6 +733,12 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         sortKind = 0;
     }
 
+    /// <summary>
+    /// CUIService::RequestCloseDialog(0x4e3b) (@0x141adc690, uidialog.cpp:620 vfunc_68): runs vfunc_67 only (<see cref="Close"/>),
+    /// so a purchase box or a market bill that is open stays. <see cref="CloseShop"/> (the Escape key's close) is the one that closes those.
+    /// </summary>
+    public void RequestClose() { if (!IsClosed) Close(); }
+
     /// <summary>UIShopDialog::CloseShop (@0x141aff000, uishopdialog.cpp:2641): closes any active shop trade / buyItem
     /// message box, then closes the shop dialog.</summary>
     public void CloseShop()

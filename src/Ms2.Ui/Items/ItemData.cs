@@ -492,7 +492,10 @@ public sealed class ItemData
     }
     /// <summary>FUN_14053cbc0 (:663): an equipment item.</summary>
     public bool IsEquipItem => Type == 1;
-    /// <summary>GetShopId (:1181): param1 of a type 0x14 item (KMS), else the GMS2 data's <see cref="SystemShopId"/>, else 0.</summary>
+    /// <summary>GetShopId (commonfiles/itemdata.cpp:1181): param1 of a type 0x14 item (KMS), else the GMS2 data's
+    /// <see cref="SystemShopId"/>, else 0. The fallback applies to an item of any type: the GMS2 files give &lt;Shop systemShopID&gt;
+    /// on type 20 items only (item/2/03/20301082.xml), but no client code that reads the element is known (the GMS2 exe is
+    /// packed), so whether it is type-gated there is STILL-OPEN.</summary>
     public int ShopId => Type == 0x14 && Param1 > 0 ? Param1 : SystemShopId;
 
     /// <summary>The GMS2 item files' &lt;Shop systemShopID&gt; (item/2/03/20301082.xml: type 20, no param1, systemShopID 196); the KMS
