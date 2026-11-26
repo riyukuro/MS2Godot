@@ -20,6 +20,14 @@
 //   the dyed texture, plus the glow map (MS2StandardMaterial meshes, times GlowModifier), plus the specular; gamma
 //   space, written as the gamma value, as field_lit.gdshader.
 //
+// - Standard form (standard_light): a mesh whose NIF names MS2StandardMaterial or MS2AlphaBoostMaterial (material type
+//   0) on a character-path model (npcs, trigger, interact and breakable actors, items) is lit as the field's meshes are.
+//   MS2StandardMaterial::HandleMS2Light (@0x1427503e0, ms2standardmaterial.cpp:858-1048) gives type 0 the "MS2Light"
+//   node (ms2materialnodelibrary.cpp:20, 316-328: N.L, the light's ambient into the diffuse by 1 - N.L) with the light's
+//   own world direction, not gakCharacterLightDirection; binds no view vector (the node's default (0, 0, 0), so the half
+//   vector is the light vector), and no rim (FresnelBoost / FresnelExponent only for types 1-3). The colour boost
+//   (HandleColorBoost, :652-662) and the dye (HandleCustomMaps, :667-676) are types 1-3 only too.
+//
 // Not done: face decals.
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
@@ -34,6 +42,7 @@ global uniform vec3 ms2_ambient;       // scene ambient light colour * dimmer
 global uniform vec3 ms2_sun_color;     // directional light diffuse colour * dimmer
 global uniform vec3 ms2_sun_ambient;   // directional light ambient colour * dimmer
 global uniform vec3 ms2_sun_specular;  // directional light specular colour * dimmer
+global uniform vec3 ms2_sun_dir;       // world direction the light travels (the standard form's light, as field_lit)
 global uniform vec3 ms2_hfog_color;    // height fog colour (gamma space), as field_lit
 global uniform vec3 ms2_hfog;          // height fog: upper height, lower height, density (0 = none)
 
@@ -70,6 +79,7 @@ uniform bool skin = false;
 uniform vec3 sss_color = vec3(1.0, 0.2, 0.2);   // client defaults (rim light settings)
 uniform float sss_power = 1.0;
 uniform float light_pitch_deg = 30.0;
+uniform bool standard_light = false;   // material type 0: the MS2Light form (header)
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gloss_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D hair_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -120,6 +130,11 @@ float spec_term(vec3 l, vec3 n, vec3 v, vec3 ht, float hl) {
 	return hl <= 0.0 ? 0.0 : s;
 }
 
+// MS2Light's specular with no view vector: the half vector is the light vector, so N.H is N.L; cut where N.L <= 0.
+float std_spec(float ndl) {
+	return ndl > 0.0 ? pow(max(1e-5, ndl), spec_power) : 0.0;
+}
+
 void fragment() {
 	vec4 t = has_tex ? texture(base_tex, UV) : vec4(1.0);
 	// The opacity (ModelMesh.Opacity): the material alpha, or the NiAlphaController's value in its place, or the vertex alpha
@@ -131,7 +146,7 @@ void fragment() {
 	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
-	if (has_ctrl) {
+	if (has_ctrl && !standard_light) {
 		vec4 c = texture(ctrl_tex, UV);
 		vec3 dye = color0 * c.r + color1 * c.g + color2 * (1.0 - c.r);
 		t.rgb = mix(t.rgb, dye, c.a);
@@ -155,13 +170,17 @@ void fragment() {
 	float pitch = asin(clamp(-fwd.y, -1.0, 1.0));
 	vec3 light_dir = flat_dir * cos(tilt) - up * sin(tilt);
 	vec3 rim_dir = flat_dir * cos(pitch + tilt) - up * sin(pitch + tilt);
-	vec3 l = -light_dir;
+	bool own = own_lights > 0.5;
+	// STILL-OPEN: an own light pair's direction (UIPortrait::vfunc_14's directional light) for the standard form; it keeps
+	// the camera's light direction there
+	bool std_form = standard_light && !own;
+	vec3 l = std_form ? -ms2_sun_dir : -light_dir;
 
 	float half_lambert = pow(0.5 * dot(l, n) + 0.5, 2.0);
 	float fresnel = fresnel_boost * pow(1.0 - abs(dot(n, v)), fresnel_exponent);
 	float rim = max(0.0, -dot(rim_dir, n)) * fresnel;
-	float intensity = half_lambert + rim;
-	bool own = own_lights > 0.5;
+	// MS2Light: LightIntensity = max(0, N.L), no rim
+	float intensity = std_form ? max(dot(l, n), 0.0) : half_lambert + rim;
 	vec3 sun_color = own ? own_sun_color : ms2_sun_color;
 	vec3 sun_ambient = own ? own_sun_ambient : ms2_sun_ambient;
 	vec3 diffuse = sun_color * intensity + sun_ambient * (1.0 - intensity);
@@ -175,13 +194,27 @@ void fragment() {
 		vec2 d = texture(hair_tex, UV).rg * 2.0 - 1.0;
 		ht = normalize(tg * d.x + bn * d.y);
 	}
-	vec3 spec_light = specular_on ? (own ? own_sun_specular : ms2_sun_specular) * spec_term(l, n, v, ht, half_lambert) : vec3(0.0);
+	// the standard form's half vector is the light vector (no view vector bound) and its cut-off tests N.L > 0 (MS2Light)
+	vec3 spec_light = !specular_on ? vec3(0.0) : std_form ? ms2_sun_specular * std_spec(dot(l, n))
+		: (own ? own_sun_specular : ms2_sun_specular) * spec_term(l, n, v, ht, half_lambert);
 	// The field's point and spot lights (ms2_lights.gdshaderinc), each through the same light fragment as the sun with its own
 	// vector and Attenuate (MS2CharacterLight, ms2materialnodelibrary.cpp:1336-1440): the half-lambert term plus the rim
 	// (the rim does not depend on the light) times LightDiffuse * Attenuate, LightAmbient * (1 - that intensity) unattenuated,
 	// the skin's LambSkin band (:3385-3446) on the raw N.L times Attenuate, and the specular times Attenuate. A character gets
 	// every light of the field (FieldLightSet: OnRenderedEntityAdded attaches them all, LightService.cpp:1926-1932).
-	if (!own) {
+	// The standard form takes them through MS2Light as field_lit does (ms2_point_lights: N.L times Attenuate, the light's
+	// ambient by 1 - N.L where the light has one).
+	if (std_form) {
+		diffuse += ms2_point_lights(world_pos, n, 0);
+		if (specular_on) {
+			int count = int(ms2_light_count);
+			for (int i = 0; i < count; i++) {
+				vec3 pl;
+				float att = ms2_light_at(i, world_pos, pl);
+				spec_light += ms2_light_specular(i) * (std_spec(dot(pl, n)) * att);
+			}
+		}
+	} else if (!own) {
 		int count = int(ms2_light_count);
 		for (int i = 0; i < count; i++) {
 			vec3 pl;
@@ -199,7 +232,9 @@ void fragment() {
 			}
 		}
 	}
-	diffuse *= color_boost;
+	if (!standard_light) {
+		diffuse *= color_boost;
+	}
 
 	vec3 spec = vec3(0.0);
 	if (specular_on) {

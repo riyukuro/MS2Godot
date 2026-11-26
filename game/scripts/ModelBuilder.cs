@@ -989,6 +989,7 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.FresnelExponent, m.ExtraFloats.GetValueOrDefault("FresnelExponent", 4f));
         sm.SetShaderParameter(ShaderParam.ColorBoost, m.ExtraFloats.GetValueOrDefault("ColorBoost", 1f));
         sm.SetShaderParameter(ShaderParam.Skin, IsSkinMaterial(m));
+        sm.SetShaderParameter(ShaderParam.StandardLight, IsStandardLightMaterial(m));
         // normal map and specular (on with an enabled NiSpecularProperty; the gloss map scales it; hair adds the
         // anisotropic term from its tangent map, custom map 1)
         var normal = m.Tangents != null && m.Textures.TryGetValue("normal", out var nn) ? Texture(nn) : null;
@@ -1022,6 +1023,16 @@ public sealed class ModelBuilder
 
     /// <summary>Meshes the client gives the player's skin colours (its skin colour walk only touches this material).</summary>
     public static bool IsSkinMaterial(ModelMesh m) => m.Material == "MS2CharacterSkinMaterial";
+
+    /// <summary>
+    /// Whether a character-path mesh is lit in the standard form (character_lit's standard_light): its NIF names a material
+    /// of type 0 (<see cref="ModelData.IsStandardLightMaterial"/>). A render object takes its material by the name it stores
+    /// (<see cref="ModelData.StandardMaterialNames"/>), so the map actors (mostly MS2StandardMaterial) and the npc and item
+    /// meshes that name it are lit as the field's meshes are, not with the character light.
+    /// STILL-OPEN: names the client builds as other material classes (MS2GlassMaterial and the effect materials) and meshes
+    /// with no material name (NiStandardMaterial, Gamebryo's own light) keep the character form.
+    /// </summary>
+    public static bool IsStandardLightMaterial(ModelMesh m) => ModelData.IsStandardLightMaterial(m.Material);
 
     readonly Dictionary<string, Texture2DArray> flipArrays = new();
 

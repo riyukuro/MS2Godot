@@ -958,6 +958,24 @@ public sealed class ModelData
     /// <summary>The name is one the client builds as an MS2StandardMaterial (<see cref="StandardMaterialNames"/>).</summary>
     public static bool IsStandardMaterial(string name) => name != null && Array.IndexOf(StandardMaterialNames, name) >= 0;
 
+    /// <summary>The material type MS2StandardMaterial::Init (@0x142754010, ms2standardmaterial.cpp:1816-1851) gives a name it
+    /// builds: 0 for MS2StandardMaterial and MS2AlphaBoostMaterial, 1-3 for the character and chaos materials (GetMaterialType
+    /// @0x14274ee10, :465-476); the character light (m_bCharacterLighting, :1850) is types 1-3. -1: a name not built as an
+    /// MS2StandardMaterial (<see cref="StandardMaterialNames"/>).</summary>
+    public static int StandardMaterialType(string name) => name switch
+    {
+        "MS2StandardMaterial" or "MS2AlphaBoostMaterial" => 0,
+        "MS2CharacterMaterial" or "MS2ChaosMaterial" => 1,
+        "MS2CharacterSkinMaterial" or "MS2ChaosSkinMaterial" => 2,
+        "MS2CharacterHairMaterial" or "MS2ChaosHairMaterial" => 3,
+        _ => -1,
+    };
+
+    /// <summary>A material of type 0 (<see cref="StandardMaterialType"/>): HandleMS2Light (ms2standardmaterial.cpp:858-1048)
+    /// lights it with the "MS2Light" node and the lights' own directions, as the field's meshes, not with the character
+    /// light, whatever model the mesh hangs under.</summary>
+    public static bool IsStandardLightMaterial(string name) => StandardMaterialType(name) == 0;
+
     /// <summary>The client gives the render object (a mesh or a particle system) at block <paramref name="block"/>
     /// MS2AlphaBoostMaterial when it loads, whatever material it names: its own NiMaterialProperty has an alpha above 1, or
     /// that property's first controller is an NiAlphaController whose key-based interpolator has a float key above 1.

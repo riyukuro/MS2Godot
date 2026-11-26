@@ -71,6 +71,7 @@ static class ShaderParam
         Skin = "skin",
         SpecPower = "spec_power",
         SpecularOn = "specular_on",
+        StandardLight = "standard_light",
         VcolorAmbDiff = "vcolor_amb_diff",
         VcEmissive = "vc_emissive",
         VcDiffuse = "vc_diffuse",
