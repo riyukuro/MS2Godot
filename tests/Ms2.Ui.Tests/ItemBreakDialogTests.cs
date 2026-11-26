@@ -342,6 +342,41 @@ public class ItemBreakDialogTests
 
     /// <summary>A staged item below the 3 rows the bag shows scrolls the bag to its row (vfunc_85(false, index) from OnBagSlotChanged);
     /// one in the shown rows leaves it; one above scrolls back; the bag shows the top rows again after a break (RefreshActiveDialog).</summary>
+    static (double X, double Y) At(Rig r) =>
+        (Rt.ToNumber(r.Host.Get(r.Host.Entity, "x")), Rt.ToNumber(r.Host.Get(r.Host.Entity, "y")));
+
+    static void MoveTo(Rig r, double x, double y) { r.Host.Set(r.Host.Entity, "x", x); r.Host.Set(r.Host.Entity, "y", y); }
+
+    /// <summary>UIItemBreakBase::vfunc_43 (@0x1419a1bb0) and vfunc_66 (@0x1419a1a80): the dialog left of the open inventory (its x
+    /// minus this width, its y); the inventory closed, the "openWindowPos" message and no move.</summary>
+    [TestCase(false), TestCase(true)]
+    public void TheDialogDocksLeftOfTheOpenInventoryAndAsksForItWhenItIsClosed(bool donation)
+    {
+        var r = new Rig(donation);
+        var inv = new Rig();                                // any loaded window stands in for the inventory
+        MoveTo(inv, 700, 90);
+        MoveTo(r, 300, 200);
+        var asked = new List<int>();
+        r.C.InventoryWindowPos += asked.Add;
+
+        r.C.OpenInventory = () => null;
+        r.C.Layout(1280, 720);
+        r.C.PlaceBesideInventory();
+        Assert.That(asked, Is.EqualTo(new[] { r.C.Id }), "vfunc_66 with the inventory closed sends openWindowPos with the dialog's id");
+
+        asked.Clear();
+        r.C.OpenInventory = () => inv.C;
+        MoveTo(r, 300, 200);
+        r.C.PlaceBesideInventory();
+        Assert.That(asked, Is.Empty, "the inventory is open: no message");
+        r.C.Layout(1280, 720);
+        double width = Math.Ceiling(Rt.ToNumber(r.Host.Get(r.Host.Entity, "width")));
+        Assert.That(width, Is.GreaterThan(0));
+        var (x, y) = At(r);
+        Assert.That(x, Is.EqualTo(700 - width).Within(0.01));
+        Assert.That(y, Is.EqualTo(90).Within(0.01));
+    }
+
     [Test]
     public void TheBagScrollsToAStagedItemOutsideItsRowsAndBackAfterABreak()
     {

@@ -127,6 +127,18 @@ public abstract class UiController
         right.SetPosition(x + leftWidth + rightOffset.X, y + rightOffset.Y);
     }
 
+    /// <summary>
+    /// The dock of UIItemBreakBase::vfunc_43 (@0x1419a1bb0): this dialog at the inventory's x minus its own width
+    /// (ASDisplayObject::GetWidthCeil: the entity's "width" rounded up, asdisplayobject.cpp:539), at the inventory's y.
+    /// </summary>
+    protected void PlaceLeftOf(UiController other)
+    {
+        if (Host?.Entity == null || other?.Host?.Entity == null) return;
+        var (x, y) = other.Position();
+        float width = (float)Math.Ceiling(Rt.ToNumber(Host.Get(Host.Entity, "width")));
+        SetPosition(x - width, y);
+    }
+
     /// <summary>UIDialog::vfunc_66 (uidialog.cpp:597): the dialog's position as it opens, which it remembers (m_d8).</summary>
     public (float X, float Y) OpenPosition() => Position();
 

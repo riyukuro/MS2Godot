@@ -86,6 +86,13 @@ public partial class HudScene
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             ActionKeyDown = ActionKeyDown,
             LinkItem = ChatLog.LinkItem,
+            OpenInventory = () => inventory != null && !inventory.IsClosed ? inventory : null,
+        };
+        c.InventoryWindowPos += _ =>
+        {
+            // the inventory's "openWindowPos": it opens beside the asking dialog
+            if (inventory == null || inventory.IsClosed) OpenInventory();
+            itemBreak?.PlaceBesideOpenedInventory();
         };
         c.Button += name => GD.Print($"item break: {name} is not ported");
         void OnPacket(ItemDismantlePacket p) => mgr.OnPacket(p);
@@ -104,6 +111,7 @@ public partial class HudScene
         itemBreakMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"item break: load={itemBreakMovie.Loaded}");
         uiRoot.AddChild(itemBreakMovie);
+        c.PlaceBesideInventory();
     }
 
     /// <summary>--uigen-open itembreak: the dialog on a local manager with one item in the bag, for the gallery (no server).</summary>

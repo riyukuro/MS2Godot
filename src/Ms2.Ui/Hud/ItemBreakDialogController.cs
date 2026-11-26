@@ -20,7 +20,7 @@ public interface IItemBreakSlotOwner
 /// type and rank dropdowns, the break button's confirms, the progress calls, the preview (mode 5) and result (mode 3) rows.
 /// <para>The texts come from the table the client reads each from: <see cref="Loc"/> (GFxManager::Localize, the Flash table)
 /// and <see cref="Common"/> (GetStringByKey / GetStringCommonByKey / FUN_14028dfa0, the common table).</para>
-/// <para>STILL-OPEN: the dock beside the inventory (vfunc_43), the movie's reward slot toggles.</para>
+/// <para>STILL-OPEN: the movie's reward slot toggles.</para>
 /// </summary>
 public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, IItemBreakSlotOwner
 {
@@ -29,6 +29,37 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     {
         this.donation = donation;
         Unloaded += () => InventoryButtons?.Invoke();     // vfunc_26 (@0x1419a1830): the unload, once the close tween is done (IsClosed)
+    }
+
+    /// <summary>The inventory window (0x4e2d) when it is open (Unk_BreakDialog&lt;UIInventoryDialog&gt;(0x4e2d) and not closed, FUN_141924630), else null.</summary>
+    public Func<UiController> OpenInventory = () => null;
+    /// <summary>vfunc_66 with the inventory closed: the "openWindowPos" message to the inventory with this dialog's id.</summary>
+    public event Action<int> InventoryWindowPos;
+
+    /// <summary>
+    /// UIItemBreakBase::vfunc_43 (@0x1419a1bb0, uiinventorydialog.cpp:2442): with the inventory open, the dialog sits left of it
+    /// (its x minus this width, its y); else UIDialog's.
+    /// </summary>
+    public override void Layout(double stageW, double stageH)
+    {
+        if (Host?.Entity != null && OpenInventory() is { } inv) { PlaceLeftOf(inv); return; }
+        base.Layout(stageW, stageH);
+    }
+
+    /// <summary>UIItemBreakBase::vfunc_66 (@0x1419a1a80): UIDialog's (the place it opened at), then, only with the inventory
+    /// closed, the "openWindowPos" message to it with this dialog's id. With it open, the dock is <see cref="Layout"/>'s.</summary>
+    public void PlaceBesideInventory()
+    {
+        if (Host?.Entity == null || OpenInventory() != null) return;
+        InventoryWindowPos?.Invoke(Id);
+    }
+
+    /// <summary>The inventory that "openWindowPos" opened (UIInventoryDialog::vfunc_66, uiinventorydialog.cpp:1569): the two side
+    /// by side (FUN_141275c30) from this dialog's place at its open.</summary>
+    public void PlaceBesideOpenedInventory()
+    {
+        if (Host?.Entity == null || OpenInventory() is not { } inv) return;
+        PlaceSideBySide(this, OpenPosition(), inv);
     }
 
     public override string Movie => donation ? "uiitembreakdonationdialog" : "uiitembreakdialog";
