@@ -970,6 +970,171 @@ public class InventoryTests
     }
 
     [Test]
+    public void AShopItemDoubleClickIsRefusedByThePcBangVipWeddingAndOwnerBindBoxesAndSendsNothing()
+    {
+        // FUN_14140dea0 (invenslot.cpp:2080-2132), before the system shop is asked (:859-866): the expired box, PC bang (box 0xe2), VIP
+        // (s_item_err_puton_vip), wedding (s_item_err_puton_wedding), level, job, the owner bind (box 0xfe), gender (0x2d), in that order.
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        int shopItem = Enumerable.Range(20000000, 1700000)
+            .FirstOrDefault(id => t.Items.Get(id) is { ShopId: > 0, HasFunction: false, HasCubeTextureMesh: false, IsScoreItem: false, LevelLimit: <= 1, GenderLimit: 2, JobLimit.Count: 0 });
+        if (shopItem == 0) Assert.Inconclusive("this data has no item with a shop id");
+        var data = t.Items.Get(shopItem);
+        int tab = shopItem / 10000000;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        var gem = new SocketGem { GemId = 11000001, HasBind = true, BindCharacterId = 555 };
+        var socketed = new EquipItem { Id = shopItem, Uid = 33, InventorySlot = 3, Amount = 1, Rarity = 1 };
+        socketed.Socket.Gems.Add(gem);
+        book.Apply(new ItemMessage.LoadTab(tab, new[]
+        {
+            new EquipItem { Id = shopItem, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = shopItem, Uid = 32, InventorySlot = 2, Amount = 1, Rarity = 1, Transfer = { HasBinding = true, BindingId = 555 } },
+            socketed,
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        var pc = new PcItemUse.Pc { CharacterId = 777, ServerTime = () => 1000 };
+        c.UsePc = () => pc;
+        int shown = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == tab).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", shown);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var sent = new List<Ms2.Net.Packets.SystemShopCoinRequest>(); var boxes = new List<string>(); var closed = 0;
+        c.SendItemShop = r => sent.Add(r);
+        c.CanOpenShop = () => true;
+        c.CloseShop = () => closed++;
+        c.ShowBox = b => boxes.Add(b.Msg);
+        void Click(int slot) => c.OnCallback("notifySlotUse", new object[] { "InventoryDialog." + slot });
+        void Refused(int slot, string text, string why)
+        {
+            int before = boxes.Count;
+            Click(slot);
+            Assert.That((sent.Count, closed, boxes.Count, boxes.LastOrDefault()), Is.EqualTo((0, 0, before + 1, text)), why);
+        }
+        try
+        {
+            Click(0);
+            Assert.That(sent.Count, Is.EqualTo(1), "no requirement: the shop is asked");
+            sent.Clear(); closed = 0;
+
+            data.PCBang = true;
+            Refused(0, t.Common(InventoryController.PcBangBoxId), "a PC bang item without the PC bang grade: box 0xe2");
+            pc.PcBangGrade = 1;
+            Click(0);
+            Assert.That(sent.Count, Is.EqualTo(1), "with the grade the shop is asked"); sent.Clear(); closed = 0;
+            data.PCBang = false;
+
+            data.Vip = true;
+            Refused(0, t.Common(InventoryController.VipKey), "a VIP item with no premium time: the VIP box");
+            pc.PremiumTime = 1000;
+            Refused(0, t.Common(InventoryController.VipKey), "premium time that is not ahead of the server time is not VIP (pc.cpp:2209)");
+            pc.PremiumTime = 1001;
+            Click(0);
+            Assert.That(sent.Count, Is.EqualTo(1), "a premium time ahead of the server time: the shop is asked"); sent.Clear(); closed = 0;
+            data.Vip = false;
+
+            data.Wedding = true;
+            foreach (short state in new short[] { 0, 1, 5 })
+            {
+                pc.WeddingState = state;
+                Refused(0, t.Common(InventoryController.WeddingKey), $"wedding state {state}: the wedding box");
+            }
+            foreach (short state in new short[] { 2, 3, 4 })
+            {
+                pc.WeddingState = state; Click(0);
+                Assert.That(sent.Count, Is.EqualTo(1), $"wedding state {state}: the shop is asked"); sent.Clear(); closed = 0;
+            }
+            data.Wedding = false;
+
+            Refused(2, t.Common(InventoryController.OwnerBindBoxId), "an item bound to another character: box 0xfe");
+            Refused(3, t.Common(InventoryController.OwnerBindBoxId), "a socketed gem bound to another character: box 0xfe");
+            pc.CharacterId = 555;
+            Click(2); Click(3);
+            Assert.That(sent.Count, Is.EqualTo(2), "bound to this character: the shop is asked"); sent.Clear(); closed = 0;
+            pc.CharacterId = 777;
+
+            // the client's order: the PC bang box before the VIP box, the owner bind box before the gender box
+            data.PCBang = true; pc.PcBangGrade = 0; data.Vip = true; pc.PremiumTime = 0;
+            Refused(0, t.Common(InventoryController.PcBangBoxId), "PC bang is checked before VIP");
+            data.PCBang = false; data.Vip = false;
+            data.GenderLimit = 1;
+            c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Gender = 0, Equips = Array.Empty<EquipItem>() };
+            Refused(2, t.Common(InventoryController.OwnerBindBoxId), "the owner bind is checked before the gender");
+            Refused(0, t.Common(InventoryController.GenderKey), "then the gender box");
+        }
+        finally { data.PCBang = false; data.Vip = false; data.Wedding = false; data.GenderLimit = 2; }
+    }
+
+    [Test]
+    public void AUseIsRefusedByThePcBangVipWeddingAndOwnerBindBoxesAndSendsNothing()
+    {
+        // CanUseItem (unit_140d1ae30_itemfunctiondispatch.cpp:430-486): the PC bang, VIP and wedding boxes after the expiry, the owner bind
+        // box (0xfe) after the gender box; no use request is sent for a refused item.
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        bool Plain(ItemData d) => d is { HasFunction: true, HasCubeTextureMesh: false, IsScoreItem: false, LevelLimit: <= 1, GenderLimit: 2, JobLimit.Count: 0 }
+            && !InventoryController.OwnUseFunctions.Contains(d.FunctionName) && !d.IsPetItem && !d.HasMaidId;
+        int plain = Enumerable.Range(20000000, 2000).Concat(Enumerable.Range(20300000, 2000)).FirstOrDefault(id => t.Items.Get(id) is { } d && Plain(d));
+        Assert.That(plain, Is.Not.Zero, "an item with a plain use");
+        var data = t.Items.Get(plain);
+        int tab = plain / 10000000;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(tab, new[]
+        {
+            new EquipItem { Id = plain, Uid = 20, InventorySlot = 0, Amount = 3, Rarity = 1 },
+            new EquipItem { Id = plain, Uid = 21, InventorySlot = 1, Amount = 1, Rarity = 1, Transfer = { HasBinding = true, BindingId = 555 } },
+        }));
+        var (_, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        var pc = new PcItemUse.Pc { CharacterId = 777, ServerTime = () => 1000 };
+        c.UsePc = () => pc;
+        var sent = new List<long>(); var boxes = new List<string>();
+        c.View.RequestUse = (u, _) => sent.Add(u);
+        c.ShowBox = b => boxes.Add(b.Msg);
+        try
+        {
+            Assert.That(c.UseItem(c.FindItem(20), true), Is.True, "no requirement: used");
+            sent.Clear();
+            data.PCBang = true;
+            Assert.That((c.UseItem(c.FindItem(20), true), sent.Count, boxes.Last()), Is.EqualTo((false, 0, t.Common(InventoryController.PcBangBoxId))));
+            data.PCBang = false; data.Vip = true;
+            Assert.That((c.UseItem(c.FindItem(20), true), sent.Count, boxes.Last()), Is.EqualTo((false, 0, t.Common(InventoryController.VipKey))));
+            data.Vip = false; data.Wedding = true;
+            Assert.That((c.UseItem(c.FindItem(20), true), sent.Count, boxes.Last()), Is.EqualTo((false, 0, t.Common(InventoryController.WeddingKey))));
+            data.Wedding = false;
+            Assert.That((c.UseItem(c.FindItem(21), true), sent.Count, boxes.Last()), Is.EqualTo((false, 0, t.Common(InventoryController.OwnerBindBoxId))));
+            pc.CharacterId = 555;
+            Assert.That(c.UseItem(c.FindItem(21), true), Is.True, "bound to this character: used");
+        }
+        finally { data.PCBang = false; data.Vip = false; data.Wedding = false; }
+    }
+
+    [Test]
+    public void TheShopItemsWithEachRequirementFlagAreCountedAndEveryOneIsRefusedWithoutTheState()
+    {
+        // The whole list (every item with a shop id and a flag): PC bang, VIP and wedding items, per data set. Without the PC state each is
+        // refused by PcItemUse's own checks; the counts are in the test output.
+        Packs();
+        var t = NewModel().Tables;
+        var pc = new PcItemUse.Pc { CharacterId = 1, ServerTime = () => 1000 };
+        int shop = 0, bang = 0, vip = 0, wedding = 0, any = 0;
+        foreach (int id in Enumerable.Range(10000000, 50000000))
+        {
+            if (t.Items.Get(id) is not { ShopId: > 0 } d) continue;
+            shop++;
+            if (d.PCBang) { bang++; Assert.That(PcItemUse.PcBangOk(d, pc), Is.False, $"item {id}"); }
+            if (d.Vip) { vip++; Assert.That(PcItemUse.VipOk(d, pc), Is.False, $"item {id}"); }
+            if (d.Wedding) { wedding++; Assert.That(PcItemUse.WeddingOk(d, pc), Is.False, $"item {id}"); }
+            if (d.PCBang || d.Vip || d.Wedding) any++;
+        }
+        TestContext.WriteLine($"shop items {shop}: PC bang {bang}, VIP {vip}, wedding {wedding} (any flag {any}); the owner bind is the record's, not the data's");
+        Assert.That(shop, Is.GreaterThan(0), "this data has items with a shop id");
+    }
+
+    [Test]
     public void ARideItemDoubleClickGoesToItsItemSkill()
     {
         Packs();

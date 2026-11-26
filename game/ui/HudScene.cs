@@ -3895,6 +3895,14 @@ public partial class HudScene : Node, IUiStageHost
             c.SendItemShop = request => { liveShop ??= CreateShopController(live); live.SendShop(request); };
             c.CanOpenShop = () => !GuideRefusesOpen("ShopDialog");
             c.CloseShop = () => { if (ShopOpen) shop.CloseShop(); };
+            // the own player's PC bang grade, premium time, wedding state and character id: the item requirements (invenslot.cpp:2090-2120)
+            var usePc = new Ms2.Ui.Hud.PcItemUse.Pc { ServerTime = () => live.ServerTime };
+            c.UsePc = () =>
+            {
+                usePc.PcBangGrade = live.Me.User?.PcBangGrade ?? 0; usePc.PremiumTime = live.Me.PremiumTime;
+                usePc.WeddingState = live.Me.WeddingState; usePc.CharacterId = live.CharacterId;
+                return usePc;
+            };
         }
         // Unk_Inventory::SendEmotion: the own skill system's emotions, Emote mode 1
         c.Emotions = live?.Emotions;

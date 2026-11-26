@@ -991,16 +991,54 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         SendEmoteLearn?.Invoke(req);
     }
 
-    /// <summary>FUN_14140dea0 (invenslot.cpp:2082) on the record: box 225 for an expired item that is not a pet and has no maid
-    /// id; the level, job and gender boxes. Without the wearer's record only the expiry is checked.</summary>
+    /// <summary>The own player's state for the item requirements (PC bang grade, premium time, wedding state, character id): the
+    /// PC the client's checks read (MyPC FUN_141658f30, IsVip, vfunc_146, FUN_141656a80). Unset: those four checks are skipped.</summary>
+    public Func<PcItemUse.Pc> UsePc;
+
+    /// <summary>The common string box of a string id (FUN_140d73bc0(id, 0, 0, "")).</summary>
+    void ShowCommonBox(int id) => ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(id) ?? "", null, ""));
+
+    /// <summary>The PC bang box, FUN_140d73bc0(0xe2).</summary>
+    public const int PcBangBoxId = 0xe2;
+    /// <summary>The owner bind box, FUN_140d73bc0(0xfe).</summary>
+    public const int OwnerBindBoxId = 0xfe;
+    public const string VipKey = "s_item_err_puton_vip", WeddingKey = "s_item_err_puton_wedding";
+
+    /// <summary>The PC bang, VIP and wedding requirements of an item (FUN_14140dea0 invenslot.cpp:2090-2105, CanUseItem
+    /// unit_140d1ae30_itemfunctiondispatch.cpp:445-459): the box that refuses it, shown. No PC state: not checked.</summary>
+    bool RequirementsHold(Item item, PcItemUse.Pc pc)
+    {
+        if (pc == null) return true;
+        var d = item.Data;
+        if (!PcItemUse.PcBangOk(d, pc)) { ShowCommonBox(PcBangBoxId); return false; }
+        if (!PcItemUse.VipOk(d, pc)) { ShowCommonBox(VipKey); return false; }
+        if (!PcItemUse.WeddingOk(d, pc)) { ShowCommonBox(WeddingKey); return false; }
+        return true;
+    }
+
+    /// <summary>The owner bind (FUN_1406343b0, itemsocketsystemutil.cpp:2534) of the item's record: box 0xfe. An item without a
+    /// packet record carries no bind. No PC state: not checked.</summary>
+    bool OwnerBindHolds(Item item, PcItemUse.Pc pc)
+    {
+        if (pc == null || item.Record == null || PcItemUse.OwnerBindOk(item.Record, pc)) return true;
+        ShowCommonBox(OwnerBindBoxId);
+        return false;
+    }
+
+    /// <summary>FUN_14140dea0 (invenslot.cpp:2080) on the record, in the client's order: box 225 for an expired item that is not a
+    /// pet and has no maid id; the PC bang box (0xe2), the VIP and wedding boxes; the level and job boxes; the owner bind box (0xfe);
+    /// the gender box. Without the wearer's record only the expiry is checked (and the PC state, if set, the requirements).</summary>
     bool UseChecks(Item item)
     {
         var d = item.Data;
         var record = Wearer?.Invoke();
+        var pc = UsePc?.Invoke();
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
         if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return false; }
+        if (!RequirementsHold(item, pc)) return false;
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(UseLevelKey); return false; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return false; }
+        if (!OwnerBindHolds(item, pc)) return false;
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return false; }
         return true;
     }
@@ -1015,7 +1053,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     public Action<Ms2.Net.Packets.SystemShopCoinRequest> SendItemShop;
     /// <summary>CUIService::FUN_141adc7f0(0x4e3b) (UIDialog::vfunc_73, uidialog.cpp:666): false refuses the open and nothing is sent. Unset: may open.</summary>
     public Func<bool> CanOpenShop;
-    /// <summary>RequestCloseDialog(0x4e3b): closes the npc shop that is open (its close sends SystemShop(kind, 0) and the talk end).</summary>
+    /// <summary>RequestCloseDialog(0x4e3b): closes the npc shop that is open with vfunc_67 only (its close sends SystemShop(kind, 0) and the talk end;
+    /// a purchase box or a market bill stays).</summary>
     public Action CloseShop;
 
     /// <summary>The common string GetStringCommon(0xea) (commonstringtable.cpp:1851): CanUseItem's box for an item
@@ -1031,9 +1070,9 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// CanUseItem (unit_140d1ae30_itemfunctiondispatch.cpp:430): no local player, false; CItem::FUN_140528980 false: box 225
     /// (0xe1) when expired, else box 0xea; the level: ShowSystemNotice(s_err_not_enough_level, 1, 1) (:461), a notice, not a
     /// box; the job: ShowMessageBox(s_item_err_disable_job); the gender: box 45 (0x2d).
-    /// STILL-OPEN: the skill cooldown (the skill system's FUN_141765fe0 of the item's skill, box 0x55), the PC bang (0xe2), VIP,
-    /// wedding and owner-bind (0xfe) checks: their player states are not in the port. Without the wearer's record the
-    /// requirement checks are skipped.
+    /// The PC bang (0xe2), VIP, wedding and owner-bind (0xfe) checks read <see cref="UsePc"/>, at the client's places (the bind last).
+    /// STILL-OPEN: the skill cooldown (the skill system's FUN_141765fe0 of the item's skill, box 0x55). Without the wearer's
+    /// record the level, job and gender checks are skipped; without <see cref="UsePc"/> the other four.
     /// </summary>
     bool CanUseItem(Item item)
     {
@@ -1042,10 +1081,12 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= (View?.ServerTime() ?? 0);
         if (!Usable(item, expired)) { ShowCommonBox(expired ? ExpiredKey : InvalidUseKey); return false; }
         var record = Wearer?.Invoke();
+        var pc = UsePc?.Invoke();
+        if (!RequirementsHold(item, pc)) return false;
         if (record != null && !d.IsLevelAllowed(record.Level)) { SystemNotice?.Invoke(UseLevelKey); return false; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return false; }
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return false; }
-        return true;
+        return OwnerBindHolds(item, pc);
     }
 
     /// <summary>

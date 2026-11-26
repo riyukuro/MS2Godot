@@ -54,10 +54,27 @@ public static class PcItemUse
         if (item == null || pc == null || data == null) return false;
         if (!ItemUsable(item, data, pc)) return false;
         // FUN_14052a2d0 / FUN_14052a330 / FUN_14052a390: the data flag when the preview's flag 1 is not set
-        if (data.PCBang && pc.PcBangGrade == 0) return false;
-        if (data.Vip && pc.PremiumTime <= pc.ServerTime()) return false;
-        if (data.Wedding && pc.WeddingState is not (2 or 3 or 4)) return false;
-        // the bind, always checked (no fitting doll): the transfer's binding, then every socketed gem's bind
+        if (!PcBangOk(data, pc) || !VipOk(data, pc) || !WeddingOk(data, pc)) return false;
+        return OwnerBindOk(item, pc);
+    }
+
+    /// <summary>IsPCBangItem (the data's PCBang flag, item.cpp:1004) against the PC bang grade (FUN_141658f30: grade above 0).</summary>
+    public static bool PcBangOk(ItemData data, Pc pc) => !data.PCBang || pc.PcBangGrade != 0;
+
+    /// <summary>FUN_140525db0 (the limit flag "vip", item.cpp:1013) against IsVip (pc.cpp:2209: the premium time is ahead of the server time).</summary>
+    public static bool VipOk(ItemData data, Pc pc) => !data.Vip || pc.PremiumTime > pc.ServerTime();
+
+    /// <summary>HasWeddingLimit ("wedding", item.cpp:1022) against vfunc_146 (pc.cpp:2218: the wedding state 2, 3 or 4).</summary>
+    public static bool WeddingOk(ItemData data, Pc pc) => !data.Wedding || pc.WeddingState is 2 or 3 or 4;
+
+    /// <summary>
+    /// FUN_1406343b0 (itemsocketsystemutil.cpp:2534): the transfer's binding must be the character
+    /// (CItemTransfer::IsBindingCompatible, :2881) and so must every socketed gem's bind (AllGemsUsableByCharacter,
+    /// TSocketGemStoneInfo::IsUsableBy itemsocket.cpp:139).
+    /// </summary>
+    public static bool OwnerBindOk(EquipItem item, Pc pc)
+    {
+        if (item == null) return false;
         if (item.Transfer.HasBinding && item.Transfer.BindingId != pc.CharacterId) return false;
         if (item.Socket != null)
             foreach (var g in item.Socket.Gems)
