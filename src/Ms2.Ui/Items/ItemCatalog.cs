@@ -4,51 +4,170 @@ using Ms2.Formats.Pack;
 namespace Ms2.Ui.Items;
 
 /// <summary>
-/// The debug item browser's catalog: every item of the item tables with what a browser cell shows (the name, the bag
+/// The look item kinds a bag never holds: a hair style, a face, a face decoration, the ear shape and the skin colour. The
+/// client keeps them in the item tables but wears them through the beauty shop; the data marks them by the item model's
+/// first &lt;slots&gt;&lt;slot&gt; group (ModelGroup::Load, itemdatastruct.cpp:439), whose name Parse_14021bdc0
+/// (commonenum.cpp:1401) maps to the client's equip slot types: "HR" 1, "FA" 2, "FD" 3, "ER" 18. The server's look slots
+/// are the same four plus SK (GenderChangeRules.LookSlots; ValidEquipSlot, EquipManager.cs:492, refuses SK, OH, ER and
+/// Unknown), and a skin colour's model has no slot group at all (item 10100001's itemmodel is a bare &lt;customize&gt;).
+/// </summary>
+public enum BeautyKind
+{
+    /// <summary>&lt;slot name="HR"&gt; (the client's equip slot 1).</summary>
+    Hair = 1,
+    /// <summary>&lt;slot name="FA"&gt; (2).</summary>
+    Face = 2,
+    /// <summary>&lt;slot name="FD"&gt; (3).</summary>
+    FaceMark = 3,
+    /// <summary>&lt;slot name="ER"&gt; (18, the ear shape; the server refuses it as an equip too).</summary>
+    Ear = 18,
+    /// <summary>An equip whose model has no slot group: the skin colour (e.g. item 10100001 "Skin").</summary>
+    Skin = 0,
+}
+
+/// <summary>
+/// The debug item browser's catalog: every *bag* item of the item tables with what a browser cell shows (the name, the bag
 /// tab of <see cref="ItemData.InventoryTab"/>, the rank, the slot max and the icon), read through the table the inventory
 /// and tooltips use (<see cref="ItemDataTable"/>, <see cref="GameTables.ItemName"/>), not a second item reader.
-/// The client reads items by id only, so there is no client list to port: this is a tool's index, built once per pack
-/// set and kept (the item rows stay in the table's file cache either way, as the client keeps all CItemData).
+/// The beauty-salon items are left out (<see cref="Removed"/>), because the server's item command cannot put them in a bag;
+/// nothing else is dropped. The order is the bag's own: the tab, then CItem::GetItemKind and GetEquipSubtype (the
+/// CompareItems comparator, item.cpp:2484-2545), then the id. The client reads items by id only, so there is no client
+/// list to port: this is a tool's index, built once per pack set and kept (the item rows stay in the table's file cache
+/// either way, as the client keeps all CItemData).
 /// </summary>
 public sealed class ItemCatalog
 {
-    /// <summary>One item's cell data. <see cref="IconEntry"/> is the icon's Resource/Image entry ("item/icon/12345.png").</summary>
-    public readonly record struct Entry(int Id, string Name, int Tab, int Rank, int SlotMax, string IconEntry);
+    /// <summary>
+    /// One item's cell data. <see cref="Kind"/> is CItem::GetItemKind (item.cpp:2585): 6 PCBang, 5 VIP, 0 cash, 1 an item
+    /// with a skin type, 2 a consumable, 4 type 4, else 3. <see cref="Sub"/> is GetEquipSubtype (itemdata.cpp:509), 0 for
+    /// a non-equip. <see cref="IconEntry"/> is the icon's Resource/Image entry ("item/icon/12345.png").
+    /// </summary>
+    public readonly record struct Entry(int Id, string Name, int Tab, int Kind, int Sub, int Rank, int SlotMax, int LevelLimit, string IconEntry);
 
-    /// <summary>Every item of the item tables, ascending id (the client's CItemDataTable maps by id).</summary>
+    /// <summary>An item the browser leaves out, with its kind (the beauty kinds only).</summary>
+    public readonly record struct RemovedItem(BeautyKind Kind, int Id, string Name);
+
+    /// <summary>Every bag item, in the bag's order: tab, kind, equip subtype, the consumable's level and rank, id.</summary>
     public readonly IReadOnlyList<Entry> Entries;
     /// <summary>Items whose itemname.xml row is empty or missing (the client shows an empty name too).</summary>
     public readonly int WithoutName;
+    /// <summary>The beauty-salon items left out, in the tables' id order; never a bag item.</summary>
+    public readonly IReadOnlyList<RemovedItem> Removed;
+    /// <summary>How many items the tables hold before the beauty kinds are left out.</summary>
+    public readonly int Unfiltered;
 
-    ItemCatalog(List<Entry> entries, int withoutName) { Entries = entries; WithoutName = withoutName; }
+    ItemCatalog(List<Entry> entries, int withoutName, List<RemovedItem> removed, int unfiltered)
+    {
+        Entries = entries; WithoutName = withoutName; Removed = removed; Unfiltered = unfiltered;
+    }
 
     public int Count => Entries.Count;
 
     /// <summary>
-    /// Builds the catalog from the data's item tables. Every id <see cref="ItemDataTable.Ids"/> lists has a row there;
-    /// one that still gives no data is left out (no selected environment).
+    /// Builds the catalog from the data's item tables. Every id <see cref="ItemDataTable.Ids"/> lists has a row there
+    /// (one that still gives no data is left out, no selected environment); the beauty kinds go to <see cref="Removed"/>.
     /// </summary>
     public static ItemCatalog Build(PackSet packs, GameTables tables)
     {
         var table = tables.Items;
         var ids = table.Ids();
         var entries = new List<Entry>(ids.Count);
+        var removed = new List<RemovedItem>();
         int withoutName = 0;
         foreach (int id in ids)
         {
             if (table.Get(id) is not { } d) continue;
             string name = tables.ItemName(id);
+            var model = tables.ItemModels.Get(d.ItemPreset);
+            var beauty = BeautyKindOf(d, model);
+            if (beauty is { } kind) { removed.Add(new RemovedItem(kind, id, name)); continue; }
             if (name.Length == 0) withoutName++;
             var icon = ChatEmoticons.ChatEmoticonTable.ResourceImageEntry(d.IconPath);
-            entries.Add(new Entry(id, name, d.InventoryTab, d.Rank, (int)d.SlotMax, icon));
+            int kindOf = d.PCBang ? 6 : d.Vip ? 5 : d.IsCashItem ? 0 : d.HasSkinType ? 1 : d.Type == 2 ? 2 : d.Type == 4 ? 4 : 3;
+            entries.Add(new Entry(id, name, d.InventoryTab, kindOf, d.EquipSubtype, d.Rank, (int)d.SlotMax, d.LevelLimit, icon));
         }
-        return new ItemCatalog(entries, withoutName);
+        entries.Sort(Compare);
+        return new ItemCatalog(entries, withoutName, removed, entries.Count + removed.Count);
+    }
+
+    /// <summary>
+    /// The beauty kind of an item, null for a bag item: the item model's first &lt;slot&gt; group type 1, 2 or 3
+    /// (<see cref="ItemModelTable.Model.FirstSlotType"/>), and for an equip whose model has no slot group at all the skin
+    /// colour (the model file of item 10100001 is a bare &lt;customize&gt;). A model the data lacks is not judged here: an
+    /// equip without a model is not a beauty item but a hole in the data (the GMS2 data has three).
+    /// </summary>
+    static BeautyKind? BeautyKindOf(ItemData d, ItemModelTable.Model model)
+    {
+        if (model == null) return null;
+        switch (model.FirstSlotType)
+        {
+            case 1: return BeautyKind.Hair;
+            case 2: return BeautyKind.Face;
+            case 3: return BeautyKind.FaceMark;
+            case 18: return BeautyKind.Ear;
+        }
+        return d.Type == 1 && model.SlotTypes.Count == 0 ? BeautyKind.Skin : null;
+    }
+
+    /// <summary>
+    /// CompareItems (@0x14052a7e0, item.cpp:2484): the bag tab here, then GetItemKind (item.cpp:2585), then GetEquipSubtype
+    /// (itemdata.cpp:509), then for a consumable its level limit and rarity, then the id. The tab leads because the catalog
+    /// lists all tabs at once; the client compares inside one bag.
+    /// </summary>
+    static int Compare(Entry a, Entry b)
+    {
+        int c = a.Tab.CompareTo(b.Tab);
+        if (c != 0) return c;
+        c = a.Kind.CompareTo(b.Kind);
+        if (c != 0) return c;
+        c = a.Sub.CompareTo(b.Sub);
+        if (c != 0) return c;
+        if (a.Kind == 2)
+        {
+            c = a.LevelLimit.CompareTo(b.LevelLimit);
+            if (c != 0) return c;
+            c = a.Rank.CompareTo(b.Rank);
+            if (c != 0) return c;
+        }
+        return a.Id.CompareTo(b.Id);
     }
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, ItemCatalog> shared = new();
 
     /// <summary>The catalog of a pack set, built on the first call and kept for the run (main thread).</summary>
     public static ItemCatalog Shared(PackSet packs, GameTables tables) => shared.GetValue(packs, _ => Build(packs, tables));
+
+    /// <summary>How many items of <paramref name="kind"/> the build left out.</summary>
+    public int RemovedCount(BeautyKind kind)
+    {
+        int n = 0;
+        foreach (var r in Removed) if (r.Kind == kind) n++;
+        return n;
+    }
+
+    /// <summary>The left-out counts as "hair 259, face 191, ...", for the log and the window's status line.</summary>
+    public string RemovedSummary()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var kind in new[] { BeautyKind.Hair, BeautyKind.Face, BeautyKind.FaceMark, BeautyKind.Ear, BeautyKind.Skin })
+        {
+            int n = RemovedCount(kind);
+            if (n == 0) continue;
+            if (sb.Length > 0) sb.Append(", ");
+            sb.Append(KindName(kind)).Append(' ').Append(n);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>The kind's name ("hair", "face", "face mark", "skin").</summary>
+    public static string KindName(BeautyKind kind) => kind switch
+    {
+        BeautyKind.Hair => "hair",
+        BeautyKind.Face => "face",
+        BeautyKind.FaceMark => "face mark",
+        BeautyKind.Ear => "ear",
+        _ => "skin",
+    };
 
     /// <summary>
     /// CStringTable::GetInventoryTabName's common string keys (stringtable.cpp:931): the 15 bag tabs, in tab order.

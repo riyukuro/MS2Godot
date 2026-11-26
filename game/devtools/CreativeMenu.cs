@@ -67,9 +67,11 @@ public partial class CreativeMenu : Control
     SpinBox amountBox;
     ScrollContainer scroll;
     Control grid;
-    Label status, details;
+    Label status, details, group, excluded;
 
-    int tab = -1, firstRow = -1;
+    int tab = -1, firstRow = -1, shownTab = -1;
+    readonly int[] tabCounts = new int[ItemCatalog.TabKeys.Length];
+    readonly string[] tabText = new string[ItemCatalog.TabKeys.Length];
     string lastLine = "", lastAnswer = "";
     long scrollEvents, scrollBytes, iconLoads;
     double catalogMs;
@@ -118,8 +120,14 @@ public partial class CreativeMenu : Control
             var sw = Stopwatch.StartNew();
             catalog = ItemCatalog.Shared(packs, tables);
             catalogMs = sw.Elapsed.TotalMilliseconds;
-            GD.Print($"creative: {catalog.Count} items, {catalog.WithoutName} without a name, catalog in {catalogMs:0} ms");
+            string left = catalog.Removed.Count > 0 ? $"{catalog.Removed.Count} beauty-only ({catalog.RemovedSummary()}) left out, " : "";
+            GD.Print($"creative: {catalog.Count} bag items of {catalog.Unfiltered}, {left}{catalog.WithoutName} without a name, catalog in {catalogMs:0} ms");
+            foreach (var r in catalog.Removed.GroupBy(r => r.Kind).OrderBy(g => (int)g.Key))
+                GD.Print($"creative: left out {ItemCatalog.KindName(r.Key)} {r.Count()}: {string.Join(", ", r.Take(6).Select(x => x.Id + " '" + x.Name + "'"))}");
         }
+        excluded.Text = catalog.Removed.Count == 0
+            ? ""
+            : $"{catalog.Removed.Count} beauty-salon items are not bag items and are left out ({catalog.RemovedSummary()}).";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);   // the window may have been resized while hidden
         Visible = true;
         MouseFilter = MouseFilterEnum.Stop;
@@ -203,6 +211,10 @@ public partial class CreativeMenu : Control
         var title = new Label { Text = "Item browser (debug)" };
         title.AddThemeFontSizeOverride("font_size", 20);
         box.AddChild(title);
+        excluded = new Label { Text = "", ClipText = true, CustomMinimumSize = new Vector2(0, 18) };
+        excluded.AddThemeFontSizeOverride("font_size", 12);
+        excluded.AddThemeColorOverride("font_color", MutedColor);
+        box.AddChild(excluded);
 
         var top = new HBoxContainer();
         top.AddThemeConstantOverride("separation", 8);
@@ -227,6 +239,9 @@ public partial class CreativeMenu : Control
         close.Pressed += Close;
         top.AddChild(close);
 
+        group = new Label { Text = "", ClipText = true, CustomMinimumSize = new Vector2(0, 20), Visible = false };
+        group.AddThemeColorOverride("font_color", MutedColor);
+        box.AddChild(group);
         scroll = new ScrollContainer
         {
             CustomMinimumSize = new Vector2(0, 480), SizeFlagsVertical = SizeFlags.ExpandFill,
@@ -280,9 +295,13 @@ public partial class CreativeMenu : Control
     void Refilter(bool reset)
     {
         catalog.Filter(search.Text, tab, matches);
+        Array.Clear(tabCounts);
+        foreach (int i in matches) tabCounts[catalog.Entries[i].Tab]++;
+        for (int t = 0; t < tabText.Length; t++)
+            tabText[t] = tabCounts[t] > 0 ? $"{ItemCatalog.TabName(tables, t)} ({tabCounts[t]} items)" : null;
         int rows = (matches.Count + Columns - 1) / Columns;
         grid.CustomMinimumSize = new Vector2(Columns * CellW, rows * CellH);
-        if (reset) { scroll.ScrollVertical = 0; firstRow = -1; }
+        if (reset) { scroll.ScrollVertical = 0; firstRow = -1; shownTab = -1; }
         PlaceCells();
         status.Text = $"{matches.Count} of {catalog.Count} items";
     }
@@ -322,6 +341,23 @@ public partial class CreativeMenu : Control
             int at = absRow * Columns + c.Col;
             Assign(c, at < matches.Count ? matches[at] : -1);
         }
+        UpdateGroup();
+    }
+
+    /// <summary>
+    /// The all-tabs view names the group at the top of the list (the entries are sorted by bag tab, so every tab's items
+    /// sit together): a label above the grid says which tab the first visible row belongs to. The text of a tab is built
+    /// when the filter changes, so scrolling sets a label only at a tab boundary and never builds a string.
+    /// </summary>
+    void UpdateGroup()
+    {
+        if (tab >= 0 || matches.Count == 0) { group.Visible = false; shownTab = -1; return; }
+        group.Visible = true;
+        int at = Math.Clamp(firstRow, 0, (matches.Count - 1) / Columns) * Columns;
+        int tabOf = catalog.Entries[matches[at]].Tab;
+        if (tabOf == shownTab) return;
+        shownTab = tabOf;
+        group.Text = tabText[tabOf] ?? "";
     }
 
     void Assign(Cell c, int entryIndex)
@@ -465,7 +501,8 @@ public partial class CreativeMenu : Control
             ["open"] = Visible, ["count"] = catalog?.Count ?? 0, ["shown"] = matches.Count, ["firstRow"] = firstRow,
             ["tab"] = tab, ["search"] = search.Text, ["cells"] = cells.Count, ["icons"] = icons.Count, ["iconLoads"] = iconLoads,
             ["scrollEvents"] = scrollEvents, ["scrollBytes"] = scrollBytes, ["catalogMs"] = catalogMs,
-            ["lastLine"] = lastLine, ["lastAnswer"] = lastAnswer,
+            ["lastLine"] = lastLine, ["lastAnswer"] = lastAnswer, ["unfiltered"] = catalog?.Unfiltered ?? 0,
+            ["removed"] = catalog == null ? 0 : catalog.Removed.Count, ["removedSummary"] = catalog?.RemovedSummary() ?? "",
         };
         return o;
     }

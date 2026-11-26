@@ -10,9 +10,10 @@ using NUnit.Framework;
 namespace Ms2Godot.Tests;
 
 /// <summary>
-/// The debug item browser's catalog (<see cref="ItemCatalog"/>) and spawn line (<see cref="ItemSpawnCommand"/>): every item
-/// of the item tables, the name/tab/rank/stack/icon the tables give, search by name and id, and the server command's
-/// amount/rarity. Needs MS2_DATA (the KMS2 data); the GMS2 per-item layout has its own test.
+/// The debug item browser's catalog (<see cref="ItemCatalog"/>) and spawn line (<see cref="ItemSpawnCommand"/>): every bag
+/// item of the item tables (no beauty-salon item), the name/tab/rank/stack/icon the tables give, the bag's order, search by
+/// name and id, and the server command's amount/rarity. Needs MS2_DATA (the KMS2 data); the GMS2 per-item layout has its
+/// own test.
 /// </summary>
 [NonParallelizable]
 public class CreativeMenuTests
@@ -32,6 +33,9 @@ public class CreativeMenuTests
         return catalog;
     }
 
+    /// <summary>True for the KMS layout (itemdata/NNN.xml), false for the per-item data (GMS2).</summary>
+    static bool KmsLayout(ItemDataTable table) => packs.List("Xml").Any(n => n.StartsWith("itemdata/", StringComparison.OrdinalIgnoreCase));
+
     /// <summary>
     /// Every item id the item tables hold, counted the way ItemNameTests walks the pack (each itemdata/NNN.xml row whose
     /// env is selected, else the per-item files), independently of <see cref="ItemDataTable.Ids"/>.
@@ -50,17 +54,97 @@ public class CreativeMenuTests
     }
 
     [Test]
-    public void TheCatalogHasEveryItemOfTheItemTables()
+    public void TheCatalogHasEveryBagItemAndLeavesOutOnlyTheBeautyKinds()
     {
         var c = Catalog();
-        var expected = DataIds(tables.Items);
-        var got = c.Entries.Select(e => e.Id).ToList();
-        TestContext.Out.WriteLine($"catalog {c.Count} items ({c.WithoutName} without a name), data {expected.Count}");
+        var all = DataIds(tables.Items);
+        var kept = c.Entries.Select(e => e.Id).ToList();
+        var left = c.Removed.Select(r => r.Id).ToList();
+        TestContext.Out.WriteLine($"catalog {c.Count} bag items, {c.Removed.Count} beauty-only left out, {all.Count} items in the tables; {c.WithoutName} without a name");
         Assert.That(c.Count, Is.GreaterThan(0));
-        Assert.That(got.Count, Is.EqualTo(got.Distinct().Count()), "one entry per id");
-        Assert.That(got, Is.Ordered, "ascending id, as the client's id map");
-        Assert.That(new HashSet<int>(got), Is.EquivalentTo(expected), "every item of the tables, and no other id");
-        Assert.That(c.WithoutName, Is.LessThan(c.Count), "the data has named items");
+        Assert.That(c.Unfiltered, Is.EqualTo(all.Count), "the unfiltered count is every item of the tables");
+        Assert.That(c.Count + c.Removed.Count, Is.EqualTo(c.Unfiltered), "every item is kept or left out, none twice");
+        Assert.That(kept.Count, Is.EqualTo(kept.Distinct().Count()), "one entry per id");
+        Assert.That(left.Count, Is.EqualTo(left.Distinct().Count()), "one removed row per id");
+        for (int i = 1; i < c.Count; i++)
+        {
+            var a = c.Entries[i - 1]; var b = c.Entries[i];
+            bool same = a.Tab == b.Tab && a.Kind == b.Kind && a.Sub == b.Sub
+                && (a.Kind != 2 || (a.LevelLimit == b.LevelLimit && a.Rank == b.Rank));   // a consumable's level and rank lead the id
+            if (same) Assert.That(b.Id, Is.GreaterThan(a.Id), $"ids rise inside a tab/kind/subtype group ({i})");
+        }
+        Assert.That(new HashSet<int>(kept).Overlaps(left), Is.False, "a left-out item is not in the catalog");
+        Assert.That(new HashSet<int>(kept).Union(left), Is.EquivalentTo(all), "every table item, and no other id");
+    }
+
+    /// <summary>
+    /// The left-out ids are exactly the items itemname.xml's own class calls hair, face, face mark or skin (a second data
+    /// source for the same set: the model's slot group), each kind's count and samples, and an equip kept.
+    /// </summary>
+    [Test]
+    public void TheBeautyKindsAreLeftOut()
+    {
+        var c = Catalog();
+        foreach (var kind in new[] { BeautyKind.Hair, BeautyKind.Face, BeautyKind.FaceMark, BeautyKind.Ear, BeautyKind.Skin })
+        {
+            var rows = c.Removed.Where(r => r.Kind == kind).ToList();
+            TestContext.Out.WriteLine($"{ItemCatalog.KindName(kind)}: {rows.Count}, e.g. {string.Join(", ", rows.Take(4).Select(r => r.Id + " '" + r.Name + "'"))}");
+            Assert.That(rows, Is.Not.Empty, $"{ItemCatalog.KindName(kind)} items are in the tables");
+            Assert.That(c.Entries.Any(e => rows.Any(r => r.Id == e.Id)), Is.False, $"{ItemCatalog.KindName(kind)} left out");
+        }
+        // a normal equip stays: an entry of the gear tab with an equip subtype
+        var equip = c.Entries.FirstOrDefault(e => e.Tab == 0 && e.Sub != 0);
+        Assert.That(equip.Id, Is.GreaterThan(0), "a normal equip is in the catalog");
+        Assert.That(tables.Items.Get(equip.Id).Type, Is.EqualTo(1));
+
+        if (!KmsLayout(tables.Items)) return;
+        var classes = nameClasses();
+        if (classes.Count == 0) return;     // no itemname file to cross-check against
+        var byClass = DataIds(tables.Items).Where(id => classes.TryGetValue(id, out var cl) && cl is "hair" or "face" or "face mark" or "ear" or "skin").ToHashSet();
+        Assert.That(c.Removed.Select(r => r.Id).ToHashSet(), Is.EquivalentTo(byClass), "itemname's class names the same beauty items");
+    }
+
+    static Dictionary<int, string> nameClasses()
+    {
+        // every locale's file: a develop row can be missing from one language (six hair ids are in en only)
+        var map = new Dictionary<int, string>();
+        foreach (var entry in packs.List("Xml"))
+        {
+            string n = entry.Replace('\\', '/');
+            if (!n.StartsWith("string/", StringComparison.OrdinalIgnoreCase) || !n.EndsWith("/itemname.xml", StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (var e in GameStrings.Parse(packs.Read("Xml", entry)).Root.Elements("key"))
+                if (int.TryParse((string)e.Attribute("id"), out int id) && (string)e.Attribute("class") is { Length: > 0 } cl) map[id] = cl;
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// The order: CompareItems' keys (item.cpp:2484) with the bag tab first, so every tab's items are together in the tab
+    /// order, then the item's kind and equip subtype, then the consumable's level and rank, then the id. The sample takes
+    /// two tabs and two equip subtypes.
+    /// </summary>
+    [Test]
+    public void TheOrderIsTheBagsTabKindSubtypeAndId()
+    {
+        var c = Catalog();
+        static (int, int, int, int, int, int) Key(ItemCatalog.Entry e) => (e.Tab, e.Kind, e.Sub, e.Kind == 2 ? e.LevelLimit : 0, e.Kind == 2 ? e.Rank : 0, e.Id);
+        for (int i = 1; i < c.Count; i++)
+            Assert.That(Key(c.Entries[i]), Is.GreaterThanOrEqualTo(Key(c.Entries[i - 1])), $"entry {i} ({c.Entries[i].Id}) after {c.Entries[i - 1].Id}");
+
+        var tabs = c.Entries.Select(e => e.Tab).Distinct().OrderBy(t => t).ToList();
+        Assert.That(tabs.Count, Is.GreaterThanOrEqualTo(2), "at least two tabs have items");
+        int firstA = c.Entries.ToList().FindIndex(e => e.Tab == tabs[0]), firstB = c.Entries.ToList().FindIndex(e => e.Tab == tabs[1]);
+        TestContext.Out.WriteLine($"tab {tabs[0]} starts at {firstA}, tab {tabs[1]} at {firstB}");
+        Assert.That(firstA, Is.LessThan(firstB), "the lower tab's items come first");
+        Assert.That(c.Entries.Skip(firstB).All(e => e.Tab >= tabs[1]), "no lower tab's item after a higher tab's");
+
+        // two equip subtypes of the same tab and kind, e.g. a cap before a coat, keep the bag's order
+        var group = c.Entries.Where(e => e.Tab == 0 && e.Kind == 3 && e.Sub != 0).ToList();
+        var subs = group.Select(e => e.Sub).Distinct().OrderBy(s => s).ToList();
+        Assert.That(subs.Count, Is.GreaterThanOrEqualTo(2), "the gear tab has two equip subtypes");
+        int low = group.FindIndex(e => e.Sub == subs[0]), high = group.FindIndex(e => e.Sub == subs[^1]);
+        TestContext.Out.WriteLine($"tab 0 kind 3: subtype {subs[0]} starts at {low}, subtype {subs[^1]} at {high}");
+        Assert.That(low, Is.LessThan(high), "the lower subtype's items come first");
     }
 
     [Test]
@@ -82,6 +166,8 @@ public class CreativeMenuTests
             Assert.That(e.Rank, Is.EqualTo(d.Rank), $"{e.Id} rank");
             Assert.That(e.SlotMax, Is.EqualTo((int)d.SlotMax), $"{e.Id} slot max");
             Assert.That(e.IconEntry, Is.EqualTo(ChatEmoticonTable.ResourceImageEntry(d.IconPath)), $"{e.Id} icon entry");
+            Assert.That(e.Kind, Is.EqualTo(d.PCBang ? 6 : d.Vip ? 5 : d.IsCashItem ? 0 : d.HasSkinType ? 1 : d.Type == 2 ? 2 : d.Type == 4 ? 4 : 3), $"{e.Id} kind");
+            Assert.That(e.Sub, Is.EqualTo(d.EquipSubtype), $"{e.Id} equip subtype");
         }
         TestContext.Out.WriteLine($"{tabs} of 15 tabs have items, {empty} are empty");
         Assert.That(tabs, Is.GreaterThanOrEqualTo(10), "the KMS2 item tables fill most tabs");
@@ -169,24 +255,27 @@ public class CreativeMenuTests
     }
 
     /// <summary>
-    /// The GMS2 data keeps one file per item: the catalog's id list is the per-item index's ids with an available
-    /// environment, ascending, and the catalog reads them through the same table.
+    /// The GMS2 data keeps one file per item: the catalog's ids are the per-item index's ids with an available environment,
+    /// in the bag's order, and the catalog reads them through the same table. Nothing is dropped there unless the data
+    /// marks it a beauty kind (the left-out rows are counted).
     /// </summary>
     [Test]
     public void TheCatalogBuildsOnThePerItemData()
     {
         var d = Environment.GetEnvironmentVariable("MS2_GMS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_GMS2_DATA is not set");
-        var packs = TestData.Packs(d);
-        var tables = new GameTables(packs, "en");
-        var entries = packs.List("Xml").ToList();
+        var gpack = TestData.Packs(d);
+        var gtables = new GameTables(gpack, "en");
+        var entries = gpack.List("Xml").ToList();
         if (entries.Any(e => e.StartsWith("itemdata/", StringComparison.OrdinalIgnoreCase))) Assert.Ignore("not the per-item layout");
-        var expected = ItemDataTable.PerItemIndex(entries).Keys.Where(id => tables.Items.Get(id) != null).ToHashSet();
-        var catalog = ItemCatalog.Build(packs, tables);
-        TestContext.Out.WriteLine($"GMS2 catalog {catalog.Count} items, index {expected.Count}");
-        Assert.That(catalog.Count, Is.GreaterThan(0));
-        Assert.That(catalog.Entries.Select(e => e.Id).ToHashSet(), Is.EquivalentTo(expected));
-        Assert.That(catalog.Entries.Select(e => e.Id), Is.Ordered);
-        Assert.That(catalog.Entries.All(e => e.Tab is >= 0 and <= 14), "every entry has a client tab");
+        var expected = ItemDataTable.PerItemIndex(entries).Keys.Where(id => gtables.Items.Get(id) != null).ToHashSet();
+        var cat = ItemCatalog.Build(gpack, gtables);
+        TestContext.Out.WriteLine($"GMS2 catalog {cat.Count} bag items of {cat.Unfiltered}, index {expected.Count}, left out {cat.Removed.Count} ({cat.RemovedSummary()})");
+        Assert.That(cat.Count, Is.GreaterThan(0));
+        Assert.That(cat.Count + cat.Removed.Count, Is.EqualTo(expected.Count));
+        Assert.That(cat.Entries.Select(e => e.Id).Concat(cat.Removed.Select(r => r.Id)).ToHashSet(), Is.EquivalentTo(expected));
+        Assert.That(cat.Entries.All(e => e.Tab is >= 0 and <= 14), "every entry has a client tab");
+        for (int i = 1; i < cat.Count; i++)
+            Assert.That(cat.Entries[i].Tab, Is.GreaterThanOrEqualTo(cat.Entries[i - 1].Tab), "the tabs are together and in tab order");
     }
 }
