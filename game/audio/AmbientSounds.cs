@@ -19,7 +19,7 @@ namespace Ms2Godot;
 public partial class AmbientSounds : Node3D
 {
     readonly SoundLibrary library;
-    readonly Dictionary<string, Task<(Pcm16 Pcm, float Stereo)>> decoded = new();
+    readonly Dictionary<string, Task<(Pcm16 Pcm, StereoChannels Stereo)>> decoded = new();
     public int Count { get; private set; }
 
     /// <summary>The ambient players of every field now in the tree (made, not yet freed with their field).</summary>
@@ -36,21 +36,21 @@ public partial class AmbientSounds : Node3D
         public SoundClip Clip;
         public System.Numerics.Vector3 At;
         public float OldMin, OldMax;   // the inverse-distance range a clip without a curve plays with
-        public float Stereo = float.NaN;   // the decoded clip's channel correlation (Player3DOutput.Correlation; NaN: mono or not yet decoded)
+        public StereoChannels Stereo = StereoChannels.Mono;   // the decoded clip's channels (Player3DOutput.Channels; Mono: mono or not yet decoded)
         public float LoopFrom;   // where the loop plays again from when the listener comes back (s), past the fade-in
     }
 
     readonly List<Sound> rolled = new();
     readonly RolloffGains gains = new(16);
 
-    /// <summary>The curve gain of every playing ambient player with one, for a listener at <paramref name="listener"/>;
-    /// the volume is set only when it moves.</summary>
-    public void RollOff(System.Numerics.Vector3 listener)
+    /// <summary>The curve gain of every playing ambient player with one, for a listener at <paramref name="listener"/> whose
+    /// right is <paramref name="right"/>; the volume is set only when it moves.</summary>
+    public void RollOff(System.Numerics.Vector3 listener, System.Numerics.Vector3 right)
     {
         for (int i = 0; i < rolled.Count; i++)
         {
             var s = rolled[i];
-            if (gains.Update(s.Index, listener, out float db)) s.Player.VolumeDb = db;
+            if (gains.Update(s.Index, listener, right, out float db)) s.Player.VolumeDb = db;
             if (gains.PanChanged(s.Index, out float pan)) s.Player.PanningStrength = pan;
             if (gains.PastSilentChanged(s.Index, out bool past))
             {
@@ -106,7 +106,7 @@ public partial class AmbientSounds : Node3D
         s.On = on;
         if (s.Clip.Rolloff is { } curve)
         {
-            if (on) { gains.Set(s.Index, curve, s.Clip.Volume, s.At, stopsPastSilent: true, stereoCorrelation: s.Stereo); Place(s); }
+            if (on) { gains.Set(s.Index, curve, s.Clip.Volume, s.At, stopsPastSilent: true, stereoCorrelation: s.Stereo.Correlation, leftShare: s.Stereo.LeftShare); Place(s); }
             else gains.Clear(s.Index);
         }
         if (!on) s.Player.Stop();
@@ -165,7 +165,7 @@ public partial class AmbientSounds : Node3D
         {
             var pcm = SafeDecode.Decode(clip, out var failure);
             if (failure != null) EngineCalls.Warn(failure);
-            return pcm == null ? default : (pcm, Player3DOutput.Correlation(pcm));
+            return pcm == null ? default : (pcm, Player3DOutput.Channels(pcm));
         });
         task.ContinueWith(t => { if (t.IsFaulted || t.Result.Pcm == null) return; var (pcm, stereo) = t.Result; var data = EventFadeIn.Bytes(pcm, clip.Event?.FadeIn ?? 0, true, out int begin, out int end); started.Enqueue(() => Start(sound, pcm, stereo, data, begin, end)); });
     }
@@ -190,7 +190,8 @@ public partial class AmbientSounds : Node3D
     /// <summary>A curve sound's volume for the listener now, and which side of its silent distance it is on.</summary>
     void Place(Sound s)
     {
-        if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(s.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z), out float db))
+        if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(s.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z),
+            new(fa.ListenerRight.X, fa.ListenerRight.Y, fa.ListenerRight.Z), out float db))
             s.Player.VolumeDb = db;
         if (gains.PanChanged(s.Index, out float pan)) s.Player.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
     }
@@ -201,13 +202,13 @@ public partial class AmbientSounds : Node3D
     /// <summary>The decoded loop played: <paramref name="data"/> with the event's fade-in on its first pass, looping over
     /// [<paramref name="loopBegin"/>, <paramref name="loopEnd"/>) frames (<see cref="EventFadeIn"/>). A stereo clip's curve
     /// volume and panning strength are set again for its channels (<paramref name="stereo"/>, Player3DOutput).</summary>
-    void Start(Sound s, Pcm16 pcm, float stereo, byte[] data, int loopBegin, int loopEnd)
+    void Start(Sound s, Pcm16 pcm, StereoChannels stereo, byte[] data, int loopBegin, int loopEnd)
     {
         var p = s.Player;
         if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
         s.Stereo = stereo;
         s.LoopFrom = pcm.Rate > 0 ? (float)loopBegin / pcm.Rate : 0;
-        if (s.Clip.Rolloff != null && !float.IsNaN(stereo) && gains.Has(s.Index)) { gains.SetStereo(s.Index, stereo); Place(s); }
+        if (s.Clip.Rolloff != null && !float.IsNaN(stereo.Correlation) && gains.Has(s.Index)) { gains.SetStereo(s.Index, stereo.Correlation, stereo.LeftShare); Place(s); }
         p.Stream = new AudioStreamWav
         {
             Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = data,

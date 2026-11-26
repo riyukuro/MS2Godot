@@ -612,6 +612,7 @@ public sealed class FevProject
             // the curve is the first volume envelope of a layer driven by the "(distance)" parameter
             // and the pan level and direct occlusion the first 3D Pan Level / Occlusion envelope of such a layer
             float[] vd = null, vg = null, pd = null, pv = null, od = null, ov = null;
+            bool distance = false;
             int[] vs = null, ps = null, os = null;
             for (int q = 0; q < nParams && volumeEnvs.Count + panEnvs.Count + occlusionEnvs.Count > 0; q++)
             {
@@ -624,13 +625,19 @@ public sealed class FevProject
                     if (param == q) { Points(env, min, max, out pd, out pv, out ps); break; }
                 foreach (var (env, param) in occlusionEnvs)
                     if (param == q) { Points(env, min, max, out od, out ov, out os); break; }
+                distance = true;
                 break;
             }
+            // without a "(distance)" parameter (Voice/ko/Monster/60000700's is named "6000") nothing moves the envelopes: they hold
+            // their first point, the value at the parameter's start. FMOD plays that one at pan level 0 (probe render, channel pan3d 0);
+            // its volume envelope holds 1 there, as the render's channel vol, so only the pan level is taken.
+            float heldPan = 1;
+            if (!distance && ev.Is3D && panEnvs.Count > 0 && Points(panEnvs[0].Offset, 0, 1, out _, out var hp, out _)) heldPan = hp[0];
             p += 4 + 32 * nParams;
             // custom: the "(distance)" volume envelope, or gain 1 without one; a linear, linear square or inverse event: FMOD's
             // model on its range, times that envelope when it has one
             if (ev.Is3D && ev.RolloffModel == RolloffModel.Custom)
-                ev.Rolloff = new DistanceRolloff(vd ?? Array.Empty<float>(), vg ?? Array.Empty<float>(), shape: vs, panLevel: ev.PanLevel,
+                ev.Rolloff = new DistanceRolloff(vd ?? Array.Empty<float>(), vg ?? Array.Empty<float>(), shape: vs, panLevel: ev.PanLevel * heldPan,
                     panDistance: pd, panValue: pv, panShape: ps, occlusionDistance: od, occlusionValue: ov, occlusionShape: os);
             else if (ev.Is3D && ev.MaxDistance > ev.MinDistance)
                 ev.Rolloff = new DistanceRolloff(vd ?? Array.Empty<float>(), vg ?? Array.Empty<float>(), ev.RolloffModel, ev.MinDistance, ev.MaxDistance,

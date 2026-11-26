@@ -244,6 +244,91 @@ public class PanLevelTests
         Assert.That((curve, st, mix), Is.EqualTo((curves, stereo, mixed)));
     }
 
+    /// <summary>
+    /// Every stereo wave of a curve event, decoded: the louder channel's power over the quieter one's. 9 on KMS and 8 on GMS2
+    /// are past 2 : 1 (up to 5.55 : 1, Object_Key_A3; all at pan levels up to 0.49), so the gain takes each clip's own
+    /// channel powers and the side the sound is on (<see cref="LopsidedStereoKeepsFmodsPowerOnEitherSide"/>).
+    /// </summary>
+    [TestCase("MS2_DATA", 9)]
+    [TestCase("MS2_GMS2_DATA", 8)]
+    public void StereoWavesPastTwoToOne(string variable, int lopsided)
+    {
+        var lib = SoundLibrary.Shared(Path.Combine(DataDir(variable), "Sound"));
+        var fev = lib.Fev;
+        var seen = new HashSet<string>();
+        var ratios = new List<(double ratio, string name, string ev, DistanceRolloff c)>();
+        foreach (var ev in fev.AllEvents)
+        {
+            if (!ev.Is3D || ev.Rolloff is not { Count: > 0 }) continue;
+            foreach (int di in ev.Defs)
+                foreach (var w in fev.Defs[di].Entries)
+                {
+                    if (w.Kind != 0 || lib.FromWave(w) is not { Channels: 2 } clip || !seen.Add(clip.Name)) continue;
+                    var x = MpegDecoder.Decode(clip).Samples;
+                    double ll = 0, rr = 0;
+                    for (int i = 0; i + 1 < x.Length; i += 2) { ll += (double)x[i] * x[i]; rr += (double)x[i + 1] * x[i + 1]; }
+                    double r = Math.Max(ll, rr) / Math.Max(1e-9, Math.Min(ll, rr));
+                    ratios.Add((r, clip.Name, ev.FullPath, ev.Rolloff));
+                }
+        }
+        var over = ratios.Where(r => r.ratio > 2).OrderByDescending(r => r.ratio).ToList();
+        TestContext.Out.WriteLine($"{variable}: {ratios.Count} stereo waves; power ratio over 1.25: {ratios.Count(r => r.ratio > 1.25)}, "
+            + $"over 1.5: {ratios.Count(r => r.ratio > 1.5)}, over 2: {over.Count}; max {ratios.Max(r => r.ratio):0.00}");
+        foreach (var (r, name, ev, c) in over.Take(40))
+            TestContext.Out.WriteLine($"  {r:0.00} {name} {ev} pan level {c.PanLevelAt(0):0.00} {c.PanLevelAt(500):0.00} {c.PanLevelAt(1500):0.00} {c.PanLevelAt(3500):0.00} silent {c.Silent:0}");
+        Assert.That(over.Count, Is.EqualTo(lopsided));
+    }
+
+    /// <summary>
+    /// The lopsided Object/03500187 (Object_Key_A3, the most of the census) rendered by the FMOD probe at 1500 (pan level
+    /// 0.476, gain 1) against the same with the listener at the source: in unit channels the clip's powers are 1.6955 left,
+    /// 0.3045 right, rho 0.4289; FMOD put out 1.4687 / 0.5961 with the sound in front, 2.0579 / 0.0836 on the listener's left,
+    /// 0.4655 / 0.9820 on its right. Godot's measured pan law (each channel alone, side far / near 1 - s / 2, power 2 at
+    /// every strength; in front 1 and 1) with the side-aware gain gives FMOD's total at all three within 0.05 dB; the
+    /// balanced gain is 0.8 dB off at the sides.
+    /// </summary>
+    [TestCase(0f, 1.4687f, 0.5961f)]
+    [TestCase(-1f, 2.0579f, 0.0836f)]
+    [TestCase(1f, 0.4655f, 0.9820f)]
+    public void LopsidedStereoKeepsFmodsPowerOnEitherSide(float side, float fmodLeft, float fmodRight)
+    {
+        const float level = 0.476f, rho = 0.4289f, pl = 1.6955f, pr = 0.3045f;
+        float s = Player3DOutput.PanningStrength(level, rho), q = 1 - s / 2;
+        // Godot's ear power gains, left and right channel: the side's near 2 / (1 + q^2), far 2 q^2 / (1 + q^2)
+        float near = 2 / (1 + q * q), far = near * q * q;
+        float gl = side == 0 ? 1 : side < 0 ? near : far, gr = side == 0 ? 1 : side < 0 ? far : near;
+        float godot = gl * pl + gr * pr, fmod = fmodLeft + fmodRight;
+        float v = Player3DOutput.PanLevelGain(level, new StereoChannels(rho, pl / 2), side);
+        Assert.That(10 * MathF.Log10(v * v * godot / fmod), Is.EqualTo(0).Within(0.05f));
+        float balanced = Player3DOutput.PanLevelGain(level, rho);
+        if (side != 0) Assert.That(MathF.Abs(10 * MathF.Log10(balanced * balanced * godot / fmod)), Is.GreaterThan(0.7f));
+        // the side read from the listener's right; balanced and facing known, the side-aware gain is the mean's side and front terms
+        Assert.That(Player3DOutput.Side(new(-100, 0, 0), Vector3.Zero, Vector3.UnitX), Is.EqualTo(-1f));
+        Assert.That(float.IsNaN(Player3DOutput.Side(new(-100, 0, 0), Vector3.Zero, Vector3.Zero)), Is.True);
+        float front = Player3DOutput.PanLevelGain(level, rho, 0.5f, 0), sideGain = Player3DOutput.PanLevelGain(level, rho, 0.5f, 1);
+        Assert.That(Player3DOutput.PanLevelGain(level, rho), Is.EqualTo(MathF.Sqrt((front * front + sideGain * sideGain) / 2)).Within(1e-5f));
+    }
+
+    /// <summary>A stereo voice's gain in <see cref="RolloffGains"/> follows the listener's right when it is given.</summary>
+    [Test]
+    public void RolloffGainsTakeTheSide()
+    {
+        var c = new DistanceRolloff(new[] { 0f, 3000f }, new[] { 1f, 1f }, panLevel: 1,
+            panDistance: new[] { 0f, 1000f }, panValue: new[] { 0.476f, 0.476f });
+        var g = new RolloffGains(1);
+        g.Set(0, c, 1f, new Vector3(-1500, 0, 0), stereoCorrelation: 0.4289f, leftShare: 0.84775f);
+        Assert.That(g.Update(0, Vector3.Zero, Vector3.UnitX, out float left), Is.True);
+        g.Set(0, c, 1f, new Vector3(1500, 0, 0), stereoCorrelation: 0.4289f, leftShare: 0.84775f);
+        g.Update(0, Vector3.Zero, Vector3.UnitX, out float right);
+        g.Set(0, c, 1f, new Vector3(1500, 0, 0), stereoCorrelation: 0.4289f, leftShare: 0.84775f);
+        g.Update(0, Vector3.Zero, out float unknown);
+        var ch = new StereoChannels(0.4289f, 0.84775f);
+        Assert.That(left, Is.EqualTo(RolloffGains.ToDb(Player3DOutput.PanLevelGain(0.476f, ch, -1))).Within(1e-4f));
+        Assert.That(right, Is.EqualTo(RolloffGains.ToDb(Player3DOutput.PanLevelGain(0.476f, ch, 1))).Within(1e-4f));
+        Assert.That(unknown, Is.EqualTo(RolloffGains.ToDb(Player3DOutput.PanLevelGain(0.476f, 0.4289f))).Within(1e-4f));
+        Assert.That(left - right, Is.LessThan(-1f));   // the loud channel near: less gain than with it far
+    }
+
     /// <summary>The project leaves audio/general/3d_panning_strength at Godot's 0.5, which the strengths assume.</summary>
     [Test]
     public void ProjectKeepsGodotsGlobalPanningStrength()
@@ -280,7 +365,7 @@ public class PanLevelTests
     }
 
     /// <summary>The volume and the panning strength of 32 voices with a pan envelope, half of them stereo, the listener moving
-    /// every frame: no allocation, and the cost per voice.</summary>
+    /// and turning every frame: no allocation, and the cost per voice.</summary>
     [TestCase(32)]
     public void PanningAllocatesNothing(int voices)
     {
@@ -288,14 +373,16 @@ public class PanLevelTests
             panDistance: new[] { 0f, 73.7f, 461.9f }, panValue: new[] { 0f, 0f, 0.523f },
             shape: new[] { 1, 1 }, panShape: new[] { 1, 1, 1 });
         var g = new RolloffGains(voices);
-        for (int i = 0; i < voices; i++) g.Set(i, c, 0.8f, new Vector3(30 * i, 0, 20 * i), stereoCorrelation: i % 2 == 0 ? float.NaN : 0.32f);   // half stereo
+        for (int i = 0; i < voices; i++) g.Set(i, c, 0.8f, new Vector3(30 * i, 0, 20 * i), stereoCorrelation: i % 2 == 0 ? float.NaN : 0.32f,
+            leftShare: 0.7f);   // half stereo, lopsided
         int sets = 0, pans = 0;
         void Frame(int f)
         {
             var l = new Vector3(13 * f % 1500, 0, 7 * f % 900);
+            var right = Vector3.Normalize(new Vector3(MathF.Cos(f * 0.01f), 0, MathF.Sin(f * 0.01f)));   // the listener turning
             for (int i = 0; i < voices; i++)
             {
-                if (g.Update(i, l, out _)) sets++;
+                if (g.Update(i, l, right, out _)) sets++;
                 if (g.PanChanged(i, out _)) pans++;
             }
         }
@@ -323,7 +410,7 @@ public class PanLevelTests
     static readonly (int deg, float ratio)[] GodotAtStrengthOne = { (60, 1.786f), (45, 1.578f), (30, 1.366f) };
 
     /// <summary>Godot's far / near at the side for strength <paramref name="s"/>, between the recorded strengths.</summary>
-    static float GodotFarOverNear(float s)
+    internal static float GodotFarOverNear(float s)
     {
         s = Math.Clamp(s, 0, 2);
         for (int i = 1; i < GodotSide.Length; i++)
@@ -340,7 +427,7 @@ public class PanLevelTests
     static float GodotSideRatio(float s) => 1 / GodotFarOverNear(s);
 
     /// <summary>FMOD's left and right for pan level <paramref name="l"/> and a source <paramref name="deg"/> to the left.</summary>
-    static (float l, float r) Fmod(float l, int deg)
+    internal static (float l, float r) Fmod(float l, int deg)
     {
         float x = MathF.Sin(deg * MathF.PI / 180);
         float a = (1 - x) * MathF.PI / 4;

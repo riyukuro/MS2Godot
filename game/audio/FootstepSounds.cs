@@ -18,7 +18,7 @@ public partial class FootstepSounds : Node
     readonly GroundEffectTable table;
     readonly CharacterBody3D body;
     readonly AnimationPlayer anim;
-    readonly Dictionary<string, (AudioStreamWav Wav, float Stereo)> decoded = new();   // with a stereo clip's channel correlation (Player3DOutput.Correlation)
+    readonly Dictionary<string, (AudioStreamWav Wav, StereoChannels Stereo)> decoded = new();   // with a stereo clip's channels (Player3DOutput.Channels)
     readonly AudioStreamPlayer3D[] voices = new AudioStreamPlayer3D[4];
     int nextVoice;
     double lastPos = -1;
@@ -97,7 +97,7 @@ public partial class FootstepSounds : Node
             if (!decoded.TryGetValue(clip.Name, out var sound))
             {
                 var pcm = SafeDecode.Decode(clip);
-                decoded[clip.Name] = sound = pcm == null ? default : (new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() }, Player3DOutput.Correlation(pcm));
+                decoded[clip.Name] = sound = pcm == null ? default : (new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() }, Player3DOutput.Channels(pcm));
             }
             var wav = sound.Wav;
             if (wav == null) continue;
@@ -116,8 +116,9 @@ public partial class FootstepSounds : Node
                 v.MaxDistance = Player3DOutput.CurveMaxDistance(curve);
                 v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
                 float level = curve.PanLevelAt(d);
-                v.PanningStrength = Player3DOutput.PanningStrength(level, sound.Stereo);   // FMOD's pan level, its gain on the volume
-                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d) * Player3DOutput.PanLevelGain(level, sound.Stereo));
+                v.PanningStrength = Player3DOutput.PanningStrength(level, sound.Stereo.Correlation);   // FMOD's pan level, its gain on the volume
+                v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d) * Player3DOutput.PanLevelGain(level, sound.Stereo,
+                    Player3DOutput.Side(Num(body.GlobalPosition), Num(fa.ListenerAt), Num(fa.ListenerRight))));
             }
             else
             {
@@ -133,4 +134,6 @@ public partial class FootstepSounds : Node
 
     /// <summary>The landing sound (the client plays the "land" action from StateLand).</summary>
     public void Land() => Step("land");
+
+    static System.Numerics.Vector3 Num(Vector3 v) => new(v.X, v.Y, v.Z);
 }

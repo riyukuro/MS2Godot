@@ -30,6 +30,8 @@ public partial class FieldAudio
     /// <summary>Where the 3D sounds are heard from this frame (<see cref="HasListener"/> false: nowhere yet).</summary>
     public Vector3 ListenerAt { get; private set; }
     public bool HasListener { get; private set; }
+    /// <summary>The listener's unit right this frame (the camera's; zero with no camera), for the side a stereo clip is on.</summary>
+    public Vector3 ListenerRight { get; private set; }
 
     /// <summary>The listener for this frame: at <see cref="Viewer"/> with the camera's facing; at the camera when there is
     /// no viewer (Godot's own listener then).</summary>
@@ -43,12 +45,13 @@ public partial class FieldAudio
             if (!listenerOn || t != lastListener) { listener.GlobalTransform = t; lastListener = t; }
             if (!listenerOn) { listener.MakeCurrent(); listenerOn = true; }
             ListenerAt = eye;
+            ListenerRight = cam != null ? cam.GlobalBasis.X.Normalized() : Vector3.Right;
             HasListener = true;
             return;
         }
         if (listenerOn) { listener.ClearCurrent(); listenerOn = false; }
         HasListener = cam != null;
-        if (cam != null) ListenerAt = cam.GlobalPosition;
+        if (cam != null) { ListenerAt = cam.GlobalPosition; ListenerRight = cam.GlobalBasis.X.Normalized(); }
     }
     Transform3D lastListener;
 
@@ -58,9 +61,10 @@ public partial class FieldAudio
         UpdateListener();
         if (!HasListener) return;
         var l = ToNumerics(ListenerAt);
+        var r = ToNumerics(ListenerRight);
         for (int i = 0; i < EffectVoiceSlots.ClientChannels; i++)
         {
-            if (gains3d.Update(i, l, out float db)) voices3d[i].VolumeDb = db;
+            if (gains3d.Update(i, l, r, out float db)) voices3d[i].VolumeDb = db;
             if (gains3d.PanChanged(i, out float pan)) voices3d[i].PanningStrength = pan;
             if (gains3d.PastSilentChanged(i, out bool past))
             {
@@ -68,14 +72,14 @@ public partial class FieldAudio
                 else if (started3d[i]) voices3d[i].Play(loopFrom3d[i]);
             }
         }
-        Ambient?.RollOff(l);
+        Ambient?.RollOff(l, r);
     }
 
     /// <summary>A voice's attenuation for <paramref name="clip"/> at <paramref name="own"/> gain: its curve's gain from the
     /// listener with Godot's attenuation, max distance fade and filter off, or without a curve Godot's inverse distance and
     /// filter from the event's range (3000 / 300 when it has none). The curve also gives the panning strength (its pan level).
     /// The voice is reused, so each branch sets all of them.</summary>
-    void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position, float stereo)
+    void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position, StereoChannels stereo)
     {
         started3d[slot] = false;
         loopFrom3d[slot] = v.Stream is AudioStreamWav w && w.MixRate > 0 ? (float)w.LoopBegin / w.MixRate : 0;
@@ -84,8 +88,9 @@ public partial class FieldAudio
             v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
             v.MaxDistance = Player3DOutput.CurveMaxDistance(c);
             v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
-            gains3d.Set(slot, c, own, ToNumerics(position), stopsPastSilent: clip.Loops, stereoCorrelation: stereo);
-            v.VolumeDb = HasListener && gains3d.Update(slot, ToNumerics(ListenerAt), out float db) ? db : Mathf.LinearToDb(own);
+            gains3d.Set(slot, c, own, ToNumerics(position), stopsPastSilent: clip.Loops, stereoCorrelation: stereo.Correlation,
+                leftShare: stereo.LeftShare);
+            v.VolumeDb = HasListener && gains3d.Update(slot, ToNumerics(ListenerAt), ToNumerics(ListenerRight), out float db) ? db : Mathf.LinearToDb(own);
             if (gains3d.PanChanged(slot, out float pan)) v.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
             return;
         }

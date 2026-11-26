@@ -65,7 +65,7 @@ public sealed class DistanceRolloff
     /// <param name="model">The event's rolloff bit.</param>
     /// <param name="min">The event's min distance (the models other than custom).</param>
     /// <param name="max">The event's max distance (the models other than custom).</param>
-    /// <param name="panLevel">The event's 3D pan level property.</param>
+    /// <param name="panLevel">The event's 3D pan level property (times a pan level envelope that nothing moves).</param>
     /// <param name="panDistance">The 3D Pan Level envelope's distances (null: none).</param>
     /// <param name="panValue">Its values.</param>
     /// <param name="shape">The volume envelope's point shapes (null: linear).</param>
@@ -100,6 +100,13 @@ public sealed class DistanceRolloff
             while (i > 0 && gain[i - 1] == 0) i--;
             Silent = distance[i];
         }
+        // the direct occlusion takes the whole voice: from where it stays 1 the gain is 0 too
+        if (this.occlusionDistance != null && Math.Clamp(occlusionValue[^1], 0f, 1f) == 1)
+        {
+            int i = occlusionValue.Length - 1;
+            while (i > 0 && Math.Clamp(occlusionValue[i - 1], 0f, 1f) == 1) i--;
+            Silent = MathF.Min(Silent, occlusionDistance[i]);
+        }
         // the model's 0 is blended up by a pan level under 1
         if (model is RolloffModel.Linear or RolloffModel.LinearSquare && FullPanFrom(max)) Silent = MathF.Min(Silent, max);
         if (model == RolloffModel.Inverse && min == 0 && FullPanFrom(0)) Silent = MathF.Min(Silent, 0);   // min / d with a min of 0
@@ -116,7 +123,8 @@ public sealed class DistanceRolloff
     /// <summary>The shape of the segment ending at point <paramref name="i"/>.</summary>
     public int ShapeOf(int i) => shape?[i] ?? PointLinear;
 
-    /// <summary>The distance from which the gain stays 0 (infinity when the last point is not 0).</summary>
+    /// <summary>The distance from which the gain stays 0: the volume envelope's trailing 0 or the direct occlusion's trailing 1
+    /// (infinity when neither).</summary>
     public float Silent { get; }
 
     /// <summary>The event's 3D pan level property (record +0x9c).</summary>
@@ -212,7 +220,7 @@ public sealed class RolloffGains
     public const float SilentDb = -80f;
 
     DistanceRolloff[] curve;
-    float[] own, appliedDb, pan, appliedPan, stereo;
+    float[] own, appliedDb, pan, appliedPan, stereo, share;
     Vector3[] at;
     bool[] stops, past, crossed;
 
@@ -224,6 +232,7 @@ public sealed class RolloffGains
         pan = new float[capacity];
         appliedPan = new float[capacity];
         stereo = new float[capacity];
+        share = new float[capacity];
         at = new Vector3[capacity];
         stops = new bool[capacity];
         past = new bool[capacity];
@@ -234,14 +243,17 @@ public sealed class RolloffGains
 
     /// <summary>Voice <paramref name="i"/> now plays with <paramref name="rolloff"/> (null: none) at <paramref name="ownGain"/>,
     /// on this side of its silent distance; with <paramref name="stopsPastSilent"/> it is to stop past it. A stereo clip passes
-    /// its channels' <see cref="Player3DOutput.Correlation"/> as <paramref name="stereoCorrelation"/> (NaN: mono).</summary>
-    public void Set(int i, DistanceRolloff rolloff, float ownGain, Vector3 position, bool stopsPastSilent = false, float stereoCorrelation = float.NaN)
+    /// its channels' <see cref="Player3DOutput.Correlation"/> as <paramref name="stereoCorrelation"/> (NaN: mono) and the left
+    /// channel's part of their power as <paramref name="leftShare"/> (<see cref="StereoChannels.LeftShare"/>).</summary>
+    public void Set(int i, DistanceRolloff rolloff, float ownGain, Vector3 position, bool stopsPastSilent = false, float stereoCorrelation = float.NaN,
+        float leftShare = 0.5f)
     {
         if (i >= curve.Length) Grow(Math.Max(i + 1, curve.Length * 2));
         curve[i] = rolloff;
         own[i] = ownGain;
         at[i] = position;
         stereo[i] = stereoCorrelation;
+        share[i] = leftShare;
         appliedDb[i] = float.NaN;
         pan[i] = rolloff == null ? 1f : Player3DOutput.PanningStrength(rolloff.PanLevelAt(0), stereoCorrelation);
         appliedPan[i] = float.NaN;
@@ -251,11 +263,13 @@ public sealed class RolloffGains
     }
 
     public void Move(int i, Vector3 position) => at[i] = position;
-    /// <summary>Voice <paramref name="i"/>'s clip turned out stereo with <paramref name="stereoCorrelation"/> (it was set before
-    /// it was decoded): its volume and panning strength are passed again on the next <see cref="Update"/>.</summary>
-    public void SetStereo(int i, float stereoCorrelation)
+    /// <summary>Voice <paramref name="i"/>'s clip turned out stereo with <paramref name="stereoCorrelation"/> and
+    /// <paramref name="leftShare"/> (it was set before it was decoded): its volume and panning strength are passed again on the
+    /// next <see cref="Update(int, Vector3, out float)"/>.</summary>
+    public void SetStereo(int i, float stereoCorrelation, float leftShare = 0.5f)
     {
         stereo[i] = stereoCorrelation;
+        share[i] = leftShare;
         appliedDb[i] = float.NaN;
         appliedPan[i] = float.NaN;
     }
@@ -289,9 +303,14 @@ public sealed class RolloffGains
         return true;
     }
 
-    /// <summary>The volume of voice <paramref name="i"/> for a listener at <paramref name="listener"/>: true with it in
-    /// <paramref name="volumeDb"/> when the player's volume should change.</summary>
-    public bool Update(int i, Vector3 listener, out float volumeDb)
+    /// <summary>The volume of voice <paramref name="i"/> for a listener at <paramref name="listener"/> whose facing is not
+    /// known (a stereo clip takes <see cref="Player3DOutput.PanLevelGain(float, float)"/>, the mean of the front and the
+    /// sides): true with it in <paramref name="volumeDb"/> when the player's volume should change.</summary>
+    public bool Update(int i, Vector3 listener, out float volumeDb) => Update(i, listener, Vector3.Zero, out volumeDb);
+
+    /// <summary>The same for a listener whose right is the unit <paramref name="right"/> (zero: not known): a stereo clip's
+    /// gain then follows the side the sound is on (<see cref="Player3DOutput.PanLevelGain(float, float, float, float)"/>).</summary>
+    public bool Update(int i, Vector3 listener, Vector3 right, out float volumeDb)
     {
         var c = curve[i];
         volumeDb = 0;
@@ -301,7 +320,8 @@ public sealed class RolloffGains
         float level = c.PanLevelAt(d);
         float rho = stereo[i];
         pan[i] = Player3DOutput.PanningStrength(level, rho);
-        volumeDb = ToDb(own[i] * c.GainAt(d) * Player3DOutput.PanLevelGain(level, rho));
+        float side = Player3DOutput.Side(at[i], listener, right);
+        volumeDb = ToDb(own[i] * c.GainAt(d) * Player3DOutput.PanLevelGain(level, new StereoChannels(rho, share[i]), side));
         float last = appliedDb[i];
         if (!float.IsNaN(last) && MathF.Abs(volumeDb - last) < StepDb) return false;
         appliedDb[i] = volumeDb;
@@ -319,6 +339,7 @@ public sealed class RolloffGains
         Array.Resize(ref pan, n);
         Array.Resize(ref appliedPan, n);
         Array.Resize(ref stereo, n);
+        Array.Resize(ref share, n);
         Array.Resize(ref at, n);
         Array.Resize(ref stops, n);
         Array.Resize(ref past, n);
@@ -423,11 +444,53 @@ public static class Player3DOutput
         return MathF.Sqrt(MathF.Max(0, (side + front) / 2));
     }
 
-    /// <summary>The correlation of a stereo clip's two channels (sum l r / sqrt(sum l^2 sum r^2), 0 when either is silent);
-    /// NaN for a mono one. Taken once as the clip is decoded.</summary>
-    public static float Correlation(Pcm16 pcm)
+    /// <summary>
+    /// The gain for a stereo clip with the sound at <paramref name="side"/> (the unit direction's part on the listener's right:
+    /// -1 left, 0 ahead or behind, 1 right) and its left channel holding <paramref name="leftShare"/> of the power (0.5:
+    /// balanced; NaN <paramref name="stereo"/>: <see cref="PanLevelGain(float)"/>). FMOD Ex's ears are
+    /// ((1 - L) + L g) own + L g other with its 3D pan's g = cos / sin of (side + 1) pi / 4 (the FMOD probe's renders of the
+    /// lopsided Object/03500187, power 5.57 : 1 left to right, rho 0.429, L 0.476, at 1500 and 3500 in front, left and right:
+    /// every ear within 1e-4 of that with the clip's own channel powers; the balanced model is +0.77 dB off on the left and
+    /// -0.93 dB on the right). Godot pans each channel alone by its mono ear gains at the strength's level s / 2, power 2 in
+    /// all; the gain brings Godot's total to FMOD's. Balanced it is <see cref="PanLevelGain(float, float)"/>'s side term at
+    /// +-1 and its front term at 0.
+    /// </summary>
+    public static float PanLevelGain(float panLevel, float stereo, float leftShare, float side)
     {
-        if (pcm == null || pcm.Channels != 2) return float.NaN;
+        if (float.IsNaN(stereo)) return PanLevelGain(panLevel);
+        float l = Math.Clamp(panLevel, 0f, 1f), m = 1 - l, x = Math.Clamp(side, -1f, 1f);
+        float th = (x + 1) * (MathF.PI / 4), gl = MathF.Cos(th), gr = MathF.Sin(th);
+        float pl = 2 * Math.Clamp(leftShare, 0f, 1f), pr = 2 - pl, cross = 2 * stereo * MathF.Sqrt(pl * pr);
+        float al = m + l * gl, bl = l * gl, ar = m + l * gr, br = l * gr;
+        float fmod = al * al * pl + bl * bl * pr + al * bl * cross + ar * ar * pr + br * br * pl + ar * br * cross;
+        float lg = PanningStrength(l, stereo) * GlobalPanningStrength, el = 1 - lg + lg * gl, er = 1 - lg + lg * gr;
+        float godot = 2 * (el * el * pl + er * er * pr) / MathF.Max(1e-12f, el * el + er * er);
+        return MathF.Sqrt(MathF.Max(0, fmod) / MathF.Max(1e-12f, godot));
+    }
+
+    /// <summary>The gain for <paramref name="channels"/> at <paramref name="side"/> (NaN: the listener's facing is not known,
+    /// <see cref="PanLevelGain(float, float)"/>).</summary>
+    public static float PanLevelGain(float panLevel, StereoChannels channels, float side) => float.IsNaN(side)
+        ? PanLevelGain(panLevel, channels.Correlation) : PanLevelGain(panLevel, channels.Correlation, channels.LeftShare, side);
+
+    /// <summary>The unit direction from <paramref name="listener"/> to <paramref name="source"/> on the listener's unit
+    /// <paramref name="right"/> (NaN: no facing, zero <paramref name="right"/>, or the sound at the listener).</summary>
+    public static float Side(Vector3 source, Vector3 listener, Vector3 right)
+    {
+        var to = source - listener;
+        float d = to.Length();
+        return right == Vector3.Zero || d <= 1e-3f ? float.NaN : Vector3.Dot(to, right) / d;
+    }
+
+    /// <summary>The correlation of a stereo clip's two channels (sum l r / sqrt(sum l^2 sum r^2), 0 when either is silent);
+    /// NaN for a mono one.</summary>
+    public static float Correlation(Pcm16 pcm) => Channels(pcm).Correlation;
+
+    /// <summary>A stereo clip's channel correlation and left power share (<see cref="StereoChannels"/>); <see
+    /// cref="StereoChannels.Mono"/> for a mono one. Taken once as the clip is decoded, in one pass.</summary>
+    public static StereoChannels Channels(Pcm16 pcm)
+    {
+        if (pcm == null || pcm.Channels != 2) return StereoChannels.Mono;
         var x = pcm.Samples;
         double lr = 0, ll = 0, rr = 0;
         for (int i = 0; i + 1 < x.Length; i += 2)
@@ -435,6 +498,14 @@ public static class Player3DOutput
             double a = x[i], b = x[i + 1];
             lr += a * b; ll += a * a; rr += b * b;
         }
-        return ll <= 0 || rr <= 0 ? 0f : (float)(lr / Math.Sqrt(ll * rr));
+        return new(ll <= 0 || rr <= 0 ? 0f : (float)(lr / Math.Sqrt(ll * rr)), ll + rr <= 0 ? 0.5f : (float)(ll / (ll + rr)));
     }
+}
+
+/// <summary>A clip's two channels as the 3D gain needs them: <see cref="Correlation"/> (NaN: a mono clip) and
+/// <see cref="LeftShare"/>, the left channel's part of their power (0.5 balanced; 9 KMS and 8 GMS2 stereo waves of the 3D
+/// events are past 2 : 1, up to 5.55 : 1).</summary>
+public readonly record struct StereoChannels(float Correlation, float LeftShare)
+{
+    public static readonly StereoChannels Mono = new(float.NaN, 0.5f);
 }

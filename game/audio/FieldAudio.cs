@@ -817,7 +817,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// <summary>The event voices' sounds by clip, fade-in and loop (a clip can be played by events with different fade-ins, and
     /// by a looping event and a one-shot: <see cref="EventStream"/> bakes both), with a stereo clip's channel correlation
     /// (<see cref="Player3DOutput.Correlation"/>, NaN for a mono one).</summary>
-    readonly Dictionary<(string, int, bool), (AudioStreamWav Wav, float Stereo)> decoded = new();
+    readonly Dictionary<(string, int, bool), (AudioStreamWav Wav, StereoChannels Stereo)> decoded = new();
     /// <summary>Looping sounds stopped because <see cref="EffectVoiceSlots.MaxLooping"/> voices looped already.</summary>
     public int LoopsTaken;
     public int PositionalPlayed;
@@ -894,7 +894,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (!decoded.TryGetValue(key, out var sound))
         {
             var pcm = SafeDecode.Decode(clip);
-            decoded[key] = sound = pcm == null ? default : (EventStream(pcm, clip), Player3DOutput.Correlation(pcm));   // a looping event loops until stopped
+            decoded[key] = sound = pcm == null ? default : (EventStream(pcm, clip), Player3DOutput.Channels(pcm));   // a looping event loops until stopped
         }
         var wav = sound.Wav;
         if (wav == null) return 0;
