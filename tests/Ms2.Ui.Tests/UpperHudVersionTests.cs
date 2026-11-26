@@ -34,4 +34,24 @@ public partial class HudTests
         string common = m.Tables.Common("s_upper_hud_version") ?? "";
         if (common.Length > 0) Assert.That(v.Text, Is.Not.EqualTo(""));
     }
+
+    /// <summary>A non-release build shows its commit there, the field made multiline as the development client does.</summary>
+    [Test]
+    public void ANonReleaseBuildShowsItsCommitInTheVersionField()
+    {
+        var m = Model();
+        m.Features.Remove(Feature.VersionText);
+        var h = Load(new UpperHudController { BuildCommit = "0123abcde" }, m);
+        var v = h.FindNamed("m_version") as AsTextField;
+        Assert.That(v.visible, Is.True);
+        Assert.That(h.Get(v, "multiline"), Is.EqualTo(true));
+        Assert.That(v.Text, Is.EqualTo("0123abcde"));
+
+        m = Model();
+        m.Features.Add(Feature.VersionText);
+        h = Load(new UpperHudController { BuildCommit = "0123abcde" }, m);
+        v = h.FindNamed("m_version") as AsTextField;
+        Assert.That(v.visible, Is.True);
+        Assert.That(v.Text, Does.EndWith("0123abcde"));
+    }
 }

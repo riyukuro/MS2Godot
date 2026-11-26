@@ -18,6 +18,13 @@ public sealed class UpperHudController : UiController
     public bool PartySearching, HotTime;
     public int MaidReady;
 
+    /// <summary>
+    /// The short commit a non-release build was made from, shown in m_version, the field the development client's watermark
+    /// uses; "" (the default) in a release build, which shows what the retail client shows there: nothing, the field the
+    /// movie hides stays hidden unless the watermark feature (0xc9) is on.
+    /// </summary>
+    public string BuildCommit = "";
+
     int hour = -1, minute = -1;
 
     AsDisplayObject Root => Host.Entity as AsDisplayObject;
@@ -65,13 +72,21 @@ public sealed class UpperHudController : UiController
             if (Host.Child("m_gamePadOff") is { } padOff) Listen(padOff, "buttonClick", () => GamePadClick?.Invoke(true));
             ShowGamePadMode();
         }
-        // After the watermark branch below, the development client (uiupperhuddialog.cpp:316-322) also shows the field and makes
-        // it multiline with or without 0xc9, so the movie's own hidden text ("version") shows. The retail client has no such
-        // block (the GMS2 x64 build reads m_version only in its watermark branch, @0x140a6612e), so the field stays hidden there.
-        if (Model.IsFeatureEnabled(Feature.VersionText) && Host.Child("m_version") is { } ver)
+        bool watermark = Model.IsFeatureEnabled(Feature.VersionText);
+        if (watermark && Host.Child("m_version") is { } ver)
         {
             Host.SetVisible(ver, true);
             Host.Set(ver, "htmlText", Model.Tables.Common("s_upper_hud_version") ?? "");
+        }
+        // After the watermark branch, the development client (uiupperhuddialog.cpp:316-322) also shows the field and makes
+        // it multiline with or without 0xc9, so the movie's own hidden text ("version") shows. The retail client has no such
+        // block (the GMS2 x64 build reads m_version only in its watermark branch, @0x140a6612e), so the field stays hidden there. A
+        // non-release build of ours is the development client's case, with the build's commit in place of the movie's text.
+        if (BuildCommit.Length > 0 && Host.Child("m_version") is { } version)
+        {
+            Host.SetVisible(version, true);
+            Host.Set(version, "multiline", true);
+            Host.Set(version, "htmlText", watermark ? (Model.Tables.Common("s_upper_hud_version") ?? "") + "\n" + BuildCommit : BuildCommit);
         }
         if (Host.Child("m_maidStatusButton") is AsDisplayObject maid) Host.SetChildVisible("badge", false, maid);
         UpdateMoney();

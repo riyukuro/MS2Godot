@@ -817,6 +817,26 @@ public partial class HudScene : Node, IUiStageHost
     /// The clock, mesos, merats and the buttons at the top (UIUpperHudDialog, uiupperhuddialog.cpp). The mesos and merats are
     /// shown only; the features the controller tests are the client's (feature.xml by name). Kept across relayouts.
     /// </summary>
+    /// <summary>
+    /// The short commit this build was made from, for the upper HUD's version field (the development client's watermark), in
+    /// a non-release build only; "" in a release build and when the build was made outside a git tree. The SDK stamps the
+    /// commit at build time as the "+sha" part of the assembly's informational version; nothing runs git at game start. Perf
+    /// gate runs keep the release form (UpperHud), so the commit never varies their numbers.
+    /// </summary>
+    static string ShortBuildCommit()
+    {
+#if MS2_DEVTOOLS
+        string info = System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+            typeof(HudScene).Assembly)?.InformationalVersion ?? "";
+        int plus = info.IndexOf('+');
+        if (plus < 0) return "";
+        string sha = info[(plus + 1)..];
+        return sha.Length > 9 ? sha[..9] : sha;
+#else
+        return "";
+#endif
+    }
+
     void UpperHud(Control ui)
     {
         var model = upperHudModel = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
@@ -839,7 +859,8 @@ public partial class HudScene : Node, IUiStageHost
             int[] tokens = { 4, 5, 6, 7, 0xc, 0xd, 0xe, 0xf, 0x10 };
             for (int i = 0; i < tokens.Length; i++) model.Player.Tokens[tokens[i]] = w[5 + i];
         }
-        upperHudSide = new Ms2.Ui.Hud.UpperHudController { MouseMode = GameOptions.MouseControl.Value, GamePadMode = GameOptions.GamePad.Use };
+        upperHudSide = new Ms2.Ui.Hud.UpperHudController { MouseMode = GameOptions.MouseControl.Value, GamePadMode = GameOptions.GamePad.Use,
+            BuildCommit = GatePath != null ? "" : ShortBuildCommit() };
         upperHudSide.GamePadClick += use => GameOptions.SetGamepadEnabled(GameOptions.GamePad, use, use);
         GameOptions.GamepadEnabledChanged -= OnGamepadEnabled;
         GameOptions.GamepadEnabledChanged += OnGamepadEnabled;
