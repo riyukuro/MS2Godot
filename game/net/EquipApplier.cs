@@ -657,7 +657,7 @@ public sealed class EquipApplier
                     ? (parentWorld * ModelBuilder.ToGodot(m.Local)).AffineInverse() * ModelBuilder.ToGodot(md.Bones[pointBone].World) : null;
                 weaponHooks?.Add(new WeaponHook(att, mi, bone, targetLocal, baseLocal, point));
             }
-            ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name));
+            ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name), mb);
             made.Add(mi);
         }
         return made;

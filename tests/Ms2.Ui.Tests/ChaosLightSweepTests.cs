@@ -30,6 +30,7 @@ public class ChaosLightSweepTests
         using var packs = new PackSet(dir);
         var effects = new EffectTable(packs);
         int xmls = 0, parts = 0, keyed = 0, blinks = 0, frames = 0;
+        var layerIds = new SortedDictionary<int, int>();
         long bytes = 0;
         var badRead = new List<string>();
         var badRun = new List<string>();
@@ -54,6 +55,7 @@ public class ChaosLightSweepTests
                 string why = Read(e, part, p);
                 if (why != null) { badRead.Add($"{file} #{i}: {why}"); continue; }
                 if (p.Keys.Length > 0) keyed++;
+                layerIds[p.Layer] = layerIds.GetValueOrDefault(p.Layer) + 1;
                 if (p.Blink) blinks++;
 
                 long least = long.MaxValue;
@@ -68,11 +70,14 @@ public class ChaosLightSweepTests
             }
         }
         TestContext.Progress.WriteLine($"{env}: {xmls} effect xmls, {parts} chaoslight parts, {keyed} with keys, {blinks} blinking, {frames} frames, {bytes} B");
+        TestContext.Progress.WriteLine($"{env}: layer ids " + string.Join(", ", layerIds.Select(kv => $"{kv.Key} x{kv.Value}")));
         foreach (var s in badRead.Concat(badRun).Take(30)) TestContext.Progress.WriteLine("  " + s);
         Assert.That(parts, Is.GreaterThan(500), "the chaoslight parts are found");
         Assert.That(badRead, Is.Empty, "each part reads as its xml");
         Assert.That(badRun, Is.Empty, "each run stays within its values and ends at its end");
         Assert.That(bytes, Is.EqualTo(0), "a frame allocates nothing");
+        // ChaosLayers keeps a layer below the base's id (-1) after the base, where the client puts it under it
+        Assert.That(layerIds.Keys.First(), Is.GreaterThanOrEqualTo(-1), "no layer id below the base's");
     }
 
     static string Read(XElement e, EffectPart part, EffectChaosLightParam p)

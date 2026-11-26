@@ -217,7 +217,7 @@ public sealed class ModelBuilder
                 skel.AddChild(mi);
             }
             AddGlowTwin(mi, m, skin);
-            Attached(mi, m, skel, b => b);
+            Attached(mi, m, skel, b => b, this);
         }
 
         var player = new AnimationPlayer { Name = "AnimationPlayer" };
@@ -591,9 +591,12 @@ public sealed class ModelBuilder
     /// STILL-OPEN: a map on uv set 2 or above reads UV (the meshes carry two uv sets).</summary>
     /// <param name="uv2">the mesh carries its second uv set as UV2</param>
     /// <param name="field">a field mesh (vertex colours in CUSTOM0, field_lit's opacity rule) rather than a character mesh (COLOR)</param>
-    public Material GlowMaterial(ModelMesh m, bool uv2, float frozenAt = -1f, bool field = true)
+    /// <param name="chaos">the material under a chaos light layer, whose glow map is white (field_glow's chaos_glow): made for
+    /// a mesh without a glow map of its own too</param>
+    public Material GlowMaterial(ModelMesh m, bool uv2, float frozenAt = -1f, bool field = true, bool chaos = false)
     {
-        if (!m.Textures.TryGetValue("glow", out var glowName) || Texture(glowName) is not { } glow) return null;
+        Texture2D glow = m.Textures.TryGetValue("glow", out var glowName) ? Texture(glowName) : null;
+        if (glow == null && !chaos) return null;
         if (m.AlphaBlendOn && (((m.AlphaFlags >> 1) & 15) != 6 || ((m.AlphaFlags >> 5) & 15) != 7)) return null;   // NiAlphaProperty SRCALPHA 6, INVSRCALPHA 7
         var sm = new ShaderMaterial { Shader = GlowVariant(CullDefine(m), m.AlphaBlendOn, m.ZWrite) };
         bool OnUv2(string key) => uv2 && m.Maps.TryGetValue(key, out var map) && map.UvSet == 1;
@@ -601,7 +604,8 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
         if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
         sm.SetShaderParameter(ShaderParam.BaseUv2, OnUv2("base"));
-        sm.SetShaderParameter(ShaderParam.GlowTex, glow);
+        if (glow != null) sm.SetShaderParameter(ShaderParam.GlowTex, glow);
+        if (chaos) sm.SetShaderParameter(ShaderParam.ChaosGlow, true);
         sm.SetShaderParameter(ShaderParam.GlowUv2, OnUv2("glow"));
         // with a detail map the glow is Detail.a * Glow.a (MS2GlowMaterial::HandleGlowColor @0x1427761b0)
         var detail = m.Textures.TryGetValue("detail", out var detailName) ? Texture(detailName) : null;
@@ -884,7 +888,8 @@ public sealed class ModelBuilder
     /// A blended mesh that <see cref="ShadowCullingKeeps"/> drops casts nothing: no twin, and the mesh itself stops casting.
     /// </summary>
     /// <param name="skelBone">the skeleton's bone index for a bone index of the mesh's model</param>
-    public static void Attached(MeshInstance3D mi, ModelMesh m, Skeleton3D skel, System.Func<int, int> skelBone)
+    /// <param name="builder">makes a chaos light layer's glow pass twin (none: the mesh gets none)</param>
+    public static void Attached(MeshInstance3D mi, ModelMesh m, Skeleton3D skel, System.Func<int, int> skelBone, ModelBuilder builder = null)
     {
         if (m.Blend != BlendForm.Opaque && !ShadowCullingKeeps(m)) mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
         else if (m.Blend != BlendForm.Opaque && mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off
@@ -918,9 +923,14 @@ public sealed class ModelBuilder
             // no NiMaterialProperty of its own: it draws with the root's added one (EnsureAlphaProperties :426-441)
             if (m.Diffuse == null) mi.SetMeta(NodeFade.Inherit, true);
         }
-        // ChaosLightEffect::AddLayers puts its layers on the character materials
+        // ChaosLightEffect::AddLayers puts its layers on the character materials; a mesh without a glow pass twin gets one
+        // when a layer first goes on (ChaosLayers: the layer's glow map puts the mesh in the glow pass)
         if (Net.ChaosLightEffect.TakesLayer(m) && mi.Mesh?.SurfaceGetMaterial(0) is ShaderMaterial chaos && IsCharacterShader(chaos.Shader))
+        {
             mi.SetMeta(Net.ChaosLayers.Meta, true);
+            if (builder != null && GlowPass.Wanted && mi.GetParent()?.GetNodeOrNull(mi.Name + "_glow") == null)
+                mi.SetMeta(Net.ChaosLayers.GlowSource, new Net.ChaosGlowSource(builder, m));
+        }
         CharacterAlphaSort.Register(mi, m, skel, skelBone);
     }
 

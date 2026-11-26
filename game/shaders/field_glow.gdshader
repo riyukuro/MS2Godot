@@ -37,6 +37,9 @@ uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D detail_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_tex = false;
 uniform bool has_detail = false;
+// a chaos light layer is on: its glow map is the layer manager's 1x1 white texture (ChaosLightEffectLayer::vfunc_19,
+// chaoslighttransitiondata.cpp:289-303; the pixel, :313-320), so the glow is 1, times the detail alpha
+uniform bool chaos_glow = false;
 // the map reads the mesh's second uv set (TexMap.UvSet 1)
 uniform bool base_uv2 = false;
 uniform bool glow_uv2 = false;
@@ -79,7 +82,7 @@ void fragment() {
 	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
-	float g = texture(glow_tex, glow_uv).a;
+	float g = chaos_glow ? 1.0 : texture(glow_tex, glow_uv).a;
 	if (has_detail) {
 		g *= texture(detail_tex, detail_uv2 ? UV2 : UV).a;
 	}
