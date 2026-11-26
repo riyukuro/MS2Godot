@@ -77,6 +77,16 @@ public class ItemEnchantDialogTests
             return item;
         }
 
+        /// <summary>An item of a given id in the bag (a protector), with its data's rank.</summary>
+        public Ms2.Ui.Items.Item AddItem(long uid, int itemId)
+        {
+            var item = Ms2.Ui.Items.Item.Create(Model.Tables.Items, itemId, 1);
+            if (item == null) Assert.Ignore($"no item {itemId}");
+            item.Uid = uid;
+            Inv[uid] = item;
+            return item;
+        }
+
         public void Select(long uid, ItemEnchantMessage.Info info)
         {
             Book.Select(uid);
@@ -392,24 +402,169 @@ public class ItemEnchantDialogTests
         Assert.That(r.Sent.OfType<ItemEnchantRequest>(), Is.Empty);
     }
 
+    /// <summary>A protector's count in s_itemenchant_protector_use_warn is GetProtectorCount (uiitemenchantdialog.cpp:1861): the
+    /// grade of an EnchantScroll item's scroll; the rank GetProtectorRank (:1844) is that scroll's max rank. The super protector's
+    /// are its function arguments 0 and 1. Item 31000003 is scroll 20291003 (grade 3, rank 1), 31000111 scroll 20294003 (grade 3,
+    /// ranks 1-4), 31000205 the super protector ("5,9,14") in both regions.</summary>
     [Test]
     public void TheProtectorUseWarnTakesTheColouredNameAndTheTablesCount()
     {
         var r = new Rig();
-        r.Add(5); var prot = r.Add(9);
-        r.C.ProtectorCount = id => id == prot.ItemId ? 7 : 0;
+        Assert.That((r.C.ProtectorCount(31000003), r.C.ProtectorCount(31000111), r.C.ProtectorCount(31000205)), Is.EqualTo((3, 3, 9)));
+        Assert.That((r.C.ProtectorRank(31000003), r.C.ProtectorRank(31000111), r.C.ProtectorRank(31000205)), Is.EqualTo((1, 4, 5)));
+        Assert.That((r.C.ProtectorCount(0), r.C.ProtectorRank(0)), Is.EqualTo((0, 0)), "no item data is 0");
+        r.Add(5).Rarity = 1; var prot = r.AddItem(9, 31000003);
         r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 5, 2), p0: 9));
         r.C.OnCallback("onEnchant", new object[0]);
         var box = r.Boxes.Single();
         Assert.That(box.Type, Is.EqualTo(ItemEnchantDialogController.ProtectorBoxType));
+        Assert.That(box.ItemEntry?.Item?.Uid, Is.EqualTo(9));
         box.Check0Selected = true;
         r.Boxes.Clear();
         box.Callback(0, box);
         var warn = r.Boxes.Single().Msg;
         string raw = r.Model.Tables.Common("s_itemenchant_protector_use_warn");
-        string expect = Ms2.Quest.ClientFormat.Format(raw,
-            $"<FONT color='#{r.Model.Tables.Items.TextColor(prot.Rarity):x}'>{r.Model.Tables.ItemName(prot.ItemId)}</FONT>", 7);
+        string expect = Ms2.Quest.ClientFormat.Format(raw, Name(r, prot), 3);
         Assert.That(warn, Is.EqualTo(expect));
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>(), Is.Empty);
+    }
+
+    static string Name(Rig r, Ms2.Ui.Items.Item i) => $"<FONT color='#{r.Model.Tables.Items.TextColor(i.Rarity):x}'>{r.Model.Tables.ItemName(i.ItemId)}</FONT>";
+
+    static string RankName(Rig r, int rank) => $"<FONT color='#{r.Model.Tables.Items.TextColor(rank):x}'>"
+        + (rank == 0 ? r.Model.Tables.Common(0x4f9) : r.Model.Tables.Common($"s_word_rank_{rank:00}")) + "</FONT>";
+
+    /// <summary>OnEnchant (uiitemenchantdialog.cpp:678-699): with the super protector (m_220) in the inventory its box comes first;
+    /// checked, s_itemenchant_super_protector_use_warn(name) and then mode 4 with the super protector's uid (v 2).</summary>
+    [Test]
+    public void TheSuperProtectorIsAskedFirstAndItsYesSendsIt()
+    {
+        var r = new Rig();
+        r.Add(5).Rarity = 1; r.AddItem(30, 31000003); var super = r.AddItem(40, 31000205);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 30, p1: 40));
+        r.Sent.Clear();
+        r.C.OnCallback("onEnchant", new object[0]);
+        var box = r.Boxes.Single();
+        Assert.That(box.Type, Is.EqualTo(ItemEnchantDialogController.ProtectorBoxType));
+        Assert.That(box.ItemEntry?.Item?.Uid, Is.EqualTo(40), "the super protector's box");
+        box.Check0Selected = true;
+        box.Callback(0, box);
+        Assert.That(r.Boxes, Has.Count.EqualTo(2)); Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Boxes[1].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(r.Model.Tables.Common("s_itemenchant_super_protector_use_warn"), Name(r, super))));
+        r.Boxes[1].Callback(1, r.Boxes[1]);
+        Assert.That(r.Sent, Is.Empty, "no sends nothing");
+        r.Boxes[1].Callback(0, r.Boxes[1]);
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>().Single(), Is.EqualTo(new ItemEnchantRequest(5, 40)));
+    }
+
+    /// <summary>The super protector box unchecked (FUN_1419c5890's else) goes to the normal protector's box (FUN_1419c4360), whose
+    /// unchecked yes is the dont-use warning and then mode 4 with none.</summary>
+    [Test]
+    public void AnUncheckedSuperProtectorFallsBackToTheProtectorBox()
+    {
+        var r = new Rig();
+        r.Add(5).Rarity = 1; r.AddItem(30, 31000003); r.AddItem(40, 31000205);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 30, p1: 40));
+        r.Sent.Clear();
+        r.C.OnCallback("onEnchant", new object[0]);
+        r.Boxes[0].Callback(0, r.Boxes[0]);
+        Assert.That(r.Boxes, Has.Count.EqualTo(2)); Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Boxes[1].Type, Is.EqualTo(ItemEnchantDialogController.ProtectorBoxType));
+        Assert.That(r.Boxes[1].ItemEntry?.Item?.Uid, Is.EqualTo(30), "the normal protector's box");
+        r.Boxes[1].Callback(0, r.Boxes[1]);
+        Assert.That(r.Boxes, Has.Count.EqualTo(3)); Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Boxes[2].Msg, Is.EqualTo(r.Model.Tables.Common("s_itemenchant_protector_dont_use_warn")));
+        r.Boxes[2].Callback(0, r.Boxes[2]);
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>().Single(), Is.EqualTo(new ItemEnchantRequest(5, 0)));
+    }
+
+    /// <summary>FUN_1419c4e00 (uiitemenchantdialog.cpp:1281): a protector whose rank (GetProtectorRank) is above the item's rank
+    /// asks s_itemenchant_protector_rank_warn(the item's rank, the protector's rank, its name) first; its yes is the use warning
+    /// with the count (FUN_1419c4a50), its no sends nothing. A protector rank not above the item's goes straight to the use warning.</summary>
+    [Test]
+    public void AProtectorRankAboveTheItemsRankWarnsFirst()
+    {
+        var r = new Rig();
+        r.Add(5).Rarity = 1; var prot = r.AddItem(30, 31000111);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 30));
+        r.Sent.Clear();
+        r.C.OnCallback("onEnchant", new object[0]);
+        r.Boxes[0].Check0Selected = true;
+        r.Boxes[0].Callback(0, r.Boxes[0]);
+        Assert.That(r.Boxes, Has.Count.EqualTo(2)); Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Boxes[1].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(r.Model.Tables.Common("s_itemenchant_protector_rank_warn"),
+            RankName(r, 1), RankName(r, 4), Name(r, prot))));
+        r.Boxes[1].Callback(1, r.Boxes[1]);
+        Assert.That((r.Boxes.Count, r.Sent.Count), Is.EqualTo((2, 0)), "no stops the chain and sends nothing");
+        r.Boxes[1].Callback(0, r.Boxes[1]);
+        Assert.That(r.Boxes, Has.Count.EqualTo(3)); Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Boxes[2].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(r.Model.Tables.Common("s_itemenchant_protector_use_warn"), Name(r, prot), 3)));
+        r.Boxes[2].Callback(0, r.Boxes[2]);
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>().Single(), Is.EqualTo(new ItemEnchantRequest(5, 30)));
+
+        var q = new Rig();
+        q.Add(5).Rarity = 4; q.AddItem(30, 31000111);
+        q.Select(5, q.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 30));
+        q.C.OnCallback("onEnchant", new object[0]);
+        q.Boxes[0].Check0Selected = true;
+        q.Boxes[0].Callback(0, q.Boxes[0]);
+        Assert.That(q.Boxes[1].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(q.Model.Tables.Common("s_itemenchant_protector_use_warn"), Name(q, q.Inv[30]), 3)),
+            "rank 4 is not above rank 4");
+    }
+
+    /// <summary>OnEnchantInfoPacket (uiitemenchantdialog.cpp:982-991) keeps a protector uid only when the inventory
+    /// (FindItemByUid, not the worn equips) holds it; without one OnEnchant's box is the plain one and mode 4 sends none, and the
+    /// result's "protect" flag (:1056, the ids) is off.</summary>
+    [Test]
+    public void AProtectorTheInventoryDoesNotHoldIsDropped()
+    {
+        var r = new Rig();
+        r.Add(5);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 99, p1: 98));
+        Assert.That((r.Book.Protector0, r.Book.Protector1), Is.EqualTo((0L, 0L)), "unknown uids are not kept");
+        r.Sent.Clear();
+        r.C.OnCallback("onEnchant", new object[0]);
+        Assert.That(r.Boxes.Single().Type, Is.EqualTo(1));
+        r.Boxes[0].Callback(0, r.Boxes[0]);
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>().Single(), Is.EqualTo(new ItemEnchantRequest(5, 0)));
+    }
+
+    [Test]
+    public void AWornProtectorIsNotTheInventorys()
+    {
+        var r = new Rig();
+        r.Add(5); r.AddItem(30, 31000003);
+        r.Book.FindInInventory = u => u == 30 ? null : r.Book.Find(u);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 30));
+        Assert.That((r.Book.Protector0, r.Book.ProtectorId0), Is.EqualTo((0L, 0)));
+        r.Book.FindInInventory = null;
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 0, 0), p0: 30, p1: 30));
+        Assert.That((r.Book.Protector0, r.Book.ProtectorId0, r.Book.Protector1, r.Book.ProtectorId1), Is.EqualTo((30L, 31000003, 30L, 31000003)));
+    }
+
+    /// <summary>OnEnchant tests the protection rate with IsNearlyEqual (commonutil.cpp:668, |a - b| &lt; 1e-6): a rate under that
+    /// is none and mode 4 goes at once.</summary>
+    [Test]
+    public void ARateNearlyZeroIsNoProtection()
+    {
+        var r = new Rig();
+        r.Add(5);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 5e-7f, 0, 0)));
+        r.Sent.Clear();
+        r.C.OnCallback("onEnchant", new object[0]);
+        Assert.That(r.Boxes, Is.Empty);
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>().Single(), Is.EqualTo(new ItemEnchantRequest(5, 0)));
+    }
+
+    /// <summary>The protector text (Common 0x95f) takes (int)m_23c, 100 - (int)m_23c and (int)m_230 (uiitemenchantdialog.cpp:681-686).</summary>
+    [Test]
+    public void TheProtectorTextTakesTheRatesAsInts()
+    {
+        var r = new Rig();
+        r.Add(5, level: 2);
+        r.Select(5, r.Info(5, rates: new EnchantRates(40.6f, 0, 25.7f, 0, 0)));
+        r.C.OnCallback("onEnchant", new object[0]);
+        Assert.That(r.Boxes.Single().Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(r.Model.Tables.Common(0x95f), 3, 40, 60, 25)));
     }
 
     [Test]

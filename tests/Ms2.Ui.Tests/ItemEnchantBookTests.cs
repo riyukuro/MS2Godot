@@ -58,7 +58,7 @@ public class ItemEnchantBookTests {
     }
 
     static Rig Selected(int exp, out Item it) {
-        var t = new Rig(); t.B.ExpMode = (byte) exp; it = t.Add(5);
+        var t = new Rig(); t.B.ExpMode = (byte) exp; it = t.Add(5); t.Add(31); t.Add(32);   // the protectors are in the bag
         t.B.Apply(new ItemEnchantMessage.Info((short) exp, 5, new[] { new EnchantIngredient(1, 0, 1) }, 0, new Dictionary<int, int>(),
             exp == 1 ? new EnchantRates(40, 0, 0, 0, 0) : new EnchantRates(100, 0, 0, 0, 0), 31, 32, 0, 555, 3, 1));
         t.Sent.Clear(); return t;
@@ -82,6 +82,18 @@ public class ItemEnchantBookTests {
         t.B.ConfirmProtector(1);
         Assert.That(t.Sent[2], Is.EqualTo(new ItemEnchantRequest(5, 31)));
         t.Inv.Remove(5); Assert.That(t.B.ConfirmProtector(1), Is.EqualTo(EnchantStep.NoItem)); Assert.That(t.Sent, Has.Count.EqualTo(4));
+    }
+
+    /// <summary>OnEnchantInfoPacket (uiitemenchantdialog.cpp:982-991): a protector uid the inventory does not hold is not kept
+    /// (m_210 / m_220 stay 0), so mode 4 sends 0 for it.</summary>
+    [Test] public void AProtectorUidNotInTheBagIsNotKept() {
+        var t = new Rig(); t.Add(5); t.Add(31);
+        t.B.Apply(new ItemEnchantMessage.Info(1, 5, new[] { new EnchantIngredient(1, 0, 1) }, 0, new Dictionary<int, int>(),
+            new EnchantRates(40, 0, 25, 0, 0), 31, 32, 0, 555, 3, 1));
+        Assert.That((t.B.Protector0, t.B.Protector1), Is.EqualTo((31L, 0L)));
+        t.Sent.Clear();
+        Assert.That(t.B.ConfirmProtector(2), Is.EqualTo(EnchantStep.Sent));
+        Assert.That(t.Sent[0], Is.EqualTo(new ItemEnchantRequest(5, 0)));
     }
 
     [Test] public void AChargeAsksThePaybackBoxBeforeMode4() {

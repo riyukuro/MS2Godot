@@ -985,6 +985,11 @@ public sealed class GameTables
     /// smartPush above), read on first use.</summary>
     public Ms2.Ui.Items.ItemEnchantTransformTable EnchantTransform => enchantTransform ??= packs == null ? Ms2.Ui.Items.ItemEnchantTransformTable.Empty
         : new Ms2.Ui.Items.ItemEnchantTransformTable(Xml(TablePath.Resolve(packs, "itemenchanttransform.xml") ?? "table/itemenchanttransform.xml"), e => FeatureElements.IsAvailable(packs, e));
+    Ms2.Ui.Items.EnchantScrollTable enchantScrolls;
+    /// <summary>CEnchantScrollTable's scrolls (GetXmlPath("Table", "enchantScroll.xml"), the locale folder first), read on
+    /// first use.</summary>
+    public Ms2.Ui.Items.EnchantScrollTable EnchantScrolls => enchantScrolls ??= packs == null ? Ms2.Ui.Items.EnchantScrollTable.Empty
+        : new Ms2.Ui.Items.EnchantScrollTable(TableXml("enchantscroll.xml"), e => FeatureElements.IsAvailable(packs, e));
     Ms2.Ui.Items.ItemExtractionTable extraction;
     /// <summary>CItemExtractionTable (GetXmlPath("Table", "itemExtraction.xml"), the locale folder first), read on first use.</summary>
     public Ms2.Ui.Items.ItemExtractionTable Extraction => extraction ??= packs == null ? Ms2.Ui.Items.ItemExtractionTable.Empty

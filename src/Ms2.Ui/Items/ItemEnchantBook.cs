@@ -10,8 +10,7 @@ public enum EnchantStep { Sent, NoItem, AskRefund, Reset, AskEnchantedIngredient
 /// <summary>
 /// UIItemEnchantDialog's model and the client's checks before each send (client ms2/uiitemenchantdialog.cpp; UI id 0x4e92).
 /// The recv side is <see cref="ItemEnchantMessage"/> through <see cref="Apply"/>.
-/// <para>STILL-OPEN: the SWF fill (the dialog is not drawn), the over-enchanted ingredient box (FUN_1419c9490), the protector
-/// rank warnings (FUN_1419c4360 / FUN_1419c5890), the peachy binding rule's inputs (feature 0x87, FUN_1419c89b0), the
+/// <para>STILL-OPEN: the SWF fill (the dialog is not drawn), the over-enchanted ingredient box (FUN_1419c9490), the peachy binding rule's inputs (feature 0x87, FUN_1419c89b0), the
 /// movie's own bound of the fail stack buttons (SetFailStackInfo @0x1419c7610), and the three wiring delegates of the
 /// ingredient test (CanUseItem, OriginOrItemId, HasStringTag).</para>
 /// </summary>
@@ -52,6 +51,11 @@ public sealed class ItemEnchantBook
     /// EnchantJockerItemNormal..Epic (itemdatatable.cpp:1446-1451); see <see cref="ItemTags"/>.</summary>
     public Func<Item, int, bool> HasStringTag { get; set; } = (item, key) => item?.Data != null && ItemTags.ByName(item.Data.StringTag) == key;
     public Func<long, Item> Find { get; set; } = _ => null;
+    /// <summary>g_143ab2a90.FindItemByUid: the inventory only (no worn equips); the protectors are looked up here. Unset, it is
+    /// <see cref="Find"/>.</summary>
+    public Func<long, Item> FindInInventory { get; set; }
+    /// <summary>A protector uid found in the inventory now (<see cref="FindInInventory"/>), null for 0 or none.</summary>
+    public Item FindProtector(long uid) => uid == 0 ? null : (FindInInventory ?? Find)(uid);
     public Action<IOutPacket> Send { get; set; }
     /// <summary>The talk the dialog opened from: (talking, npc id), and the client constant m_69a0.</summary>
     public Func<(bool Talking, int NpcId)> Talk { get; set; } = () => (false, 0);
@@ -67,8 +71,13 @@ public sealed class ItemEnchantBook
     public IReadOnlyList<EnchantIngredient> Ingredients { get; private set; } = Array.Empty<EnchantIngredient>();
     public IReadOnlyDictionary<int, int> Options { get; private set; } = new Dictionary<int, int>();
     public EnchantRates Rates { get; private set; }
+    /// <summary>m_210 / m_220: the protector and super protector uids of the info packet (id0, id1), kept only when the
+    /// inventory held them then (OnEnchantInfoPacket, uiitemenchantdialog.cpp:982-991); 0 otherwise.</summary>
     public long Protector0 { get; private set; }
     public long Protector1 { get; private set; }
+    /// <summary>m_208 / m_218: those items' ids, 0 with no uid.</summary>
+    public int ProtectorId0 { get; private set; }
+    public int ProtectorId1 { get; private set; }
     public byte FailStackMode { get; private set; }
     public int FailStack { get; private set; }
     public int FailStackCount { get; private set; }
@@ -189,7 +198,7 @@ public sealed class ItemEnchantBook
             Step(2);
             return EnchantStep.Sent;
         }
-        if (Rates.Protect != 0) return EnchantStep.AskProtector;
+        if (!(MathF.Abs(Rates.Protect) < 1e-6f)) return EnchantStep.AskProtector;   // !IsNearlyEqual(m_230, 0) (commonutil.cpp:668)
         var step = ConfirmProtector(0);
         State = 0;
         return step;
@@ -233,7 +242,9 @@ public sealed class ItemEnchantBook
                 Reset();
                 if (x.ExpMode != ExpMode) { CloseRequested?.Invoke(); return; }
                 SelectedUid = x.Uid; Ingredients = x.Ingredients; Options = x.Options; Rates = x.Rates;
-                Protector0 = x.Protector0; Protector1 = x.Protector1; FailStackMode = x.FailStackMode;
+                if (FindProtector(x.Protector0) is { } p0) { ProtectorId0 = p0.ItemId; Protector0 = x.Protector0; }
+                if (FindProtector(x.Protector1) is { } p1) { ProtectorId1 = p1.ItemId; Protector1 = x.Protector1; }
+                FailStackMode = x.FailStackMode;
                 ResultItemId = x.ResultItemId; ResultRank = x.ResultRank; ResultCount = x.ResultCount;
                 infoRead = true; Changed?.Invoke();
                 break;
@@ -306,7 +317,7 @@ public sealed class ItemEnchantBook
     void Reset()
     {
         SelectedUid = 0; State = 0; infoRead = false; Ingredients = Array.Empty<EnchantIngredient>();
-        Options = new Dictionary<int, int>(); Rates = default; Protector0 = Protector1 = 0; FailStack = 0; FailStackCount = 0;
+        Options = new Dictionary<int, int>(); Rates = default; Protector0 = Protector1 = 0; ProtectorId0 = ProtectorId1 = 0; FailStack = 0; FailStackCount = 0;
         FailStackUids = Array.Empty<long>(); ResultItemId = 0; ResultRank = 0; ResultCount = 0;
     }
 }

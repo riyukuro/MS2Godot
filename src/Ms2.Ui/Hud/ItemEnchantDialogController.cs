@@ -13,8 +13,7 @@ namespace Ms2.Ui.Hud;
 /// confirm box chain (refund, enchanted ingredient, binding, protector, payback).
 /// <para>STILL-OPEN: the sale-rate text (saleDesc),
 /// the event bonus of the rate text, GetEnchantRatio (the "before" stat is the unscaled base), the exp divisor and the fail stack limit,
-/// the failure reward page (inventory 0x4e40), sounds, the protector
-/// rank warning, the EnchantScroll table behind ProtectorCount, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
+/// the failure reward page (inventory 0x4e40), sounds, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
 /// </summary>
 public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 {
@@ -57,8 +56,6 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
     public Func<Item, int> ExpDivisor = _ => 0;
     /// <summary>The fail stack limit; 0 = no limit known.</summary>
     public Func<int> FailStackLimit = () => 0;
-    /// <summary>GetProtectorCount (FUN_1419c8830): the protector count of an item id, from the EnchantScroll table (not loaded here: 1).</summary>
-    public Func<int, int> ProtectorCount = _ => 1;
     /// <summary>The NPC talk branch a finished result reports (state 1 success, 2 failure).</summary>
     public event Action<int> TalkBranch;
 
@@ -462,7 +459,7 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
             m.Add(("enchantStat", string.Join(",", parts)));
         }
         else m.Add(("failDesc", FailStackText(item, Book.FailType)));
-        if (!success) m.Add(("protect", Book.Protector0 != 0 || Book.Protector1 != 0 ? 1 : 0));
+        if (!success) m.Add(("protect", !(Book.ProtectorId0 == 0 && Book.ProtectorId1 == 0) ? 1 : 0));   // :1056, m_208 / m_218
         Host.Invoke(Ani, "setEnchantResult", Host.Obj(m.ToArray()));
     }
 
@@ -540,42 +537,108 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 
     void AskPayback() => Confirm("s_itemenchant_exp_payback", Book.ConfirmPayback);
 
-    /// <summary>The protector text: the level after, the success and failure chance, the protection rate (Common 0x95f).</summary>
-    string ProtectorText()
+    /// <summary>The protector text (Common 0x95f): the level after, the success and failure chance and the protection rate,
+    /// each cast to int as OnEnchant does ((int)m_23c, 100 - (int)m_23c, (int)m_230; uiitemenchantdialog.cpp:681-686).</summary>
+    string ProtectorText(Item item)
     {
-        int lv = (Selected?.EnchantLevel ?? 0) + 1;
-        float chance = Chance;
-        return ClientFormat.Format(Model.Tables.Common(0x95f), lv, chance, 100 - chance, Book.Rates.Protect);
+        int chance = (int)Chance;
+        return ClientFormat.Format(Model.Tables.Common(0x95f), item.EnchantLevel + 1, chance, 100 - chance, (int)Book.Rates.Protect);
     }
 
-    /// <summary>OnEnchant with a protection rate: a protector item box (type 0x1a, checkbox) or, without a protector, a plain box.</summary>
-    void AskProtector()
+    /// <summary>GetProtectorRank (@0x1419c86b0, uiitemenchantdialog.cpp:1844) of an item id.</summary>
+    public int ProtectorRank(int itemId) => EnchantScrollTable.ProtectorRank(Model?.Tables.Items.Get(itemId), Model?.Tables.EnchantScrolls);
+
+    /// <summary>GetProtectorCount (@0x1419c8830, uiitemenchantdialog.cpp:1861) of an item id.</summary>
+    public int ProtectorCount(int itemId) => EnchantScrollTable.ProtectorCount(Model?.Tables.Items.Get(itemId), Model?.Tables.EnchantScrolls);
+
+    bool HasItemData(int itemId) => itemId != 0 && Model?.Tables.Items.Get(itemId) != null;
+
+    /// <summary>A yes/no box whose yes (button 0) sends mode 4 with protector choice v (FUN_1419c5d20 -> FUN_1419c7a30); the
+    /// yes does nothing once the dialog is closed.</summary>
+    void AskThenEnchant(string text, int v)
     {
-        int v = Book.Protector0 != 0 ? 1 : Book.Protector1 != 0 ? 2 : 0;
-        if (v == 0)
-        {
-            var plain = MessageBoxQueue.CreateWithCallback(ProtectorText(), 1, (b, _) => { if (b == 0 && !closing) Step(Book.ConfirmProtector(0)); return true; });
-            ShowData(plain);
-            return;
-        }
-        var box = MessageBoxQueue.Create(ProtectorBoxType, ProtectorText(), null, "");
-        var pItem = Book.Find(v == 1 ? Book.Protector0 : Book.Protector1);
-        if (pItem != null) box.SetItemEntry(pItem, Colored(pItem.ItemId, pItem.Rarity), 0, 1, -1, -1, 1, Model.Tables.Items.TextColor);
+        var box = MessageBoxQueue.CreateWithCallback(text, 1, (b, _) => { if (b == 0 && !closing) Step(Book.ConfirmProtector(v)); return true; });
+        ShowData(box);
+    }
+
+    /// <summary>A protector item box (type 0x1a: the item, button preset 1, checkbox Common 0x961) with the text; its yes gets
+    /// the checkbox state.</summary>
+    MessageBoxData ProtectorBox(string text, Item protector, Action<bool> answered)
+    {
+        var box = MessageBoxQueue.Create(ProtectorBoxType, text, null, "");
+        box.SetItemEntry(protector, Colored(protector.ItemId, protector.Rarity), 0, 1, -1, -1, 1, Model.Tables.Items.TextColor);
         box.SetButtonPreset(1);
         box.SetCheckbox0(Model.Tables.Common(0x961), false);
-        box.Callback = (b, bx) =>
+        box.Callback = (b, bx) => { if (b == 0 && !closing) answered(bx.Check0Selected); return true; };
+        return box;
+    }
+
+    /// <summary>
+    /// OnEnchant with a protection rate (@0x1419c0440, uiitemenchantdialog.cpp:678-699): the super protector (m_220) first when
+    /// the inventory holds it, else <see cref="AskNormalProtector"/>. Its box's yes (FUN_1419c5890, :1338): the item must still
+    /// exist; checked, the super protector's data (m_218) and item must exist, then s_itemenchant_super_protector_use_warn(name)
+    /// and v 2; unchecked, the normal protector's box.
+    /// </summary>
+    void AskProtector()
+    {
+        if (Selected is not { } item) return;
+        if (Book.FindProtector(Book.Protector1) is not { } super) { AskNormalProtector(item.Uid); return; }
+        long uid = item.Uid;
+        ShowData(ProtectorBox(ProtectorText(item), super, use =>
         {
-            if (b != 0 || closing) return true;
-            bool use = bx.Check0Selected;
-            string key = !use ? "s_itemenchant_protector_dont_use_warn"
-                : v == 2 ? "s_itemenchant_super_protector_use_warn" : "s_itemenchant_protector_use_warn";
-            string pName = pItem != null ? Colored(pItem.ItemId, pItem.Rarity) : "";
-            if (!use) Confirm(key, () => Step(Book.ConfirmProtector(0)));
-            else if (v == 2) Confirm(key, () => Step(Book.ConfirmProtector(v)), pName);
-            else Confirm(key, () => Step(Book.ConfirmProtector(v)), pName, pItem != null ? ProtectorCount(pItem.ItemId) : 0);
-            return true;
-        };
-        ShowData(box);
+            if (Book.Find(uid) == null) return;
+            if (!use) { AskNormalProtector(uid); return; }
+            if (!HasItemData(Book.ProtectorId1)) return;
+            if (Book.FindProtector(Book.Protector1) is not { } sup) return;
+            AskThenEnchant(Fmt("s_itemenchant_super_protector_use_warn", Colored(sup.ItemId, sup.Rarity)), 2);
+        }));
+    }
+
+    /// <summary>
+    /// FUN_1419c4360 (@0x1419c4360, :1217): with the protector (m_210) in the inventory its box, else a plain box with the
+    /// same text whose yes enchants with none (v 0). The box's yes (FUN_1419c4e00, :1281): unchecked,
+    /// s_itemenchant_protector_dont_use_warn then v 0; checked, the item and the protector's data (m_208) and item must exist,
+    /// then a protector rank (GetProtectorRank) above the item's rarity asks s_itemenchant_protector_rank_warn(the item's rank,
+    /// the protector's rank, the protector's name) with button preset 1, whose yes is <see cref="AskUseWarn"/>; otherwise
+    /// s_itemenchant_protector_use_warn(name, GetProtectorCount(m_208)) then v 1.
+    /// </summary>
+    void AskNormalProtector(long uid)
+    {
+        if (Book.Find(uid) is not { } item) return;
+        string text = ProtectorText(item);
+        if (Book.FindProtector(Book.Protector0) is not { } prot) { AskThenEnchant(text, 0); return; }
+        ShowData(ProtectorBox(text, prot, use =>
+        {
+            if (!use) { AskThenEnchant(T("s_itemenchant_protector_dont_use_warn"), 0); return; }
+            if (Book.Find(uid) is not { } it || !HasItemData(Book.ProtectorId0)) return;
+            if (Book.FindProtector(Book.Protector0) is not { } p) return;
+            int rank = it.Rarity, need = ProtectorRank(Book.ProtectorId0);
+            if (need > rank)
+            {
+                var warn = MessageBoxQueue.CreateWithCallback(Fmt("s_itemenchant_protector_rank_warn", ColoredRank(rank), ColoredRank(need),
+                    Colored(p.ItemId, p.Rarity)), 1, (b, _) => { if (b == 0 && !closing) AskUseWarn(); return true; });
+                warn.SetButtonPreset(1);
+                ShowData(warn);
+            }
+            else AskThenEnchant(UseWarn(p, ProtectorCount(Book.ProtectorId0)), 1);
+        }));
+    }
+
+    /// <summary>FUN_1419c4a50 (:1257): the protector must still be in the inventory and have data; the count is its own item id's.</summary>
+    void AskUseWarn()
+    {
+        if (Book.FindProtector(Book.Protector0) is not { } p || !HasItemData(p.ItemId)) return;
+        AskThenEnchant(UseWarn(p, ProtectorCount(p.ItemId)), 1);
+    }
+
+    string UseWarn(Item p, int count) => Fmt("s_itemenchant_protector_use_warn", Colored(p.ItemId, p.Rarity), count);
+
+    /// <summary>The rank name (CStringTable::GetRankName @0x141813150: Common 0x4f9 for 0, else s_word_rank_{n:00}) in the
+    /// rank's text colour (FUN_14183e930).</summary>
+    string ColoredRank(int rank)
+    {
+        string name = rank == 0 ? Model.Tables.Common(0x4f9) : T("s_word_rank_" + rank.ToString("00", CultureInfo.InvariantCulture));
+        return $"<FONT color='#{Model.Tables.Items.TextColor(rank):x}'>{name}</FONT>";
     }
 
     // ---- IDragSlotOwner ----------------------------------------------------------------------------------------------

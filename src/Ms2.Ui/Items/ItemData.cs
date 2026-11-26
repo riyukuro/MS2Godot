@@ -645,7 +645,7 @@ public sealed class ItemData
     }
 
     // TiXmlElement::QueryIntAttribute (sscanf "%d"): a missing or unreadable attribute leaves the value
-    static void Int(XElement e, string name, ref int v)
+    internal static void Int(XElement e, string name, ref int v)
     {
         if ((string)e.Attribute(name) is { } s && TryScanInt(s, out long n)) v = (int)n;
     }
