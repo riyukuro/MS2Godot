@@ -2112,7 +2112,7 @@ public partial class LiveSession : Node
         FieldProperties.StepLights((float)delta);   // WorldService::UpdateAmbientLight/UpdateDirectionalLight (worldservice_1.cpp:9736-9737)
         TickTimeScale();   // before the game check: a ramp started in the game still ends when the link is gone
         if (game == null) { PumpLogin(); return; }
-        while (game != null && game.Incoming.TryDequeue(out var p)) { Handle(p); SyncDeadFlag(); }
+        DrainGame();   // each packet on its own: one that throws is warned and the next is handled (LiveSession.PacketFault.cs)
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
         guide?.OwnPcTick();   // MyPC::vfunc_53 (mypc.cpp:2976): only once the own pc is in the entered field
         LogGuideStatus();
@@ -3007,7 +3007,7 @@ public partial class LiveSession : Node
             }
             else if (LogPackets) GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
         }
-        catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
+        catch (Exception ex) { PacketFault(p, game?.Profile, ex); }
     }
 
     /// <summary>
