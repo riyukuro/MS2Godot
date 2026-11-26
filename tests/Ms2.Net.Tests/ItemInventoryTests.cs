@@ -126,4 +126,26 @@ public class ItemInventoryTests {
         Assert.That(BagSlots.Base(ItemBook.SurvivalTab, true, k => xml.GetValueOrDefault(k)), Is.EqualTo(48));   // GMS2 survival: no row
         Assert.Throws<System.ArgumentOutOfRangeException>(() => BagSlots.Base(ItemBook.Tabs, true, k => null));
     }
+    /// <summary>Mode 0xe (scenestategame.cpp:2960): CItem::ReadFromStream into the bag's item. The update is a new record of that
+    /// item with the body read in, so what the body does not write keeps its value (the new mark and its notified name, a
+    /// transfer binding the stream leaves out), and the bag's own item is not changed by the read.</summary>
+    [Test] public void UpdateReadsTheBodyIntoTheBagsItem() {
+        var book = new ItemBook();
+        book.Apply(Read(book, w => { w.WriteByte(6); w.WriteShort(1); Item(w, 20000001, 11, 3, 5); }));
+        var held = book.Get(11);
+        held.IsNew = true; held.NotifiedName = "named";
+        held.Transfer.HasBinding = true; held.Transfer.BindingId = 42; held.Transfer.BindingName = "bound"; held.Transfer.Count = 7;
+        var m = (ItemMessage.Update) Read(book, w => {
+            w.WriteByte(14); w.WriteLong(11);
+            var body = new byte[BodyLen]; System.BitConverter.GetBytes(9).CopyTo(body, 0); w.WriteBytes(body);
+        });
+        Assert.That(m.Item, Is.Not.SameAs(held));
+        Assert.That((m.Item.Amount, m.Item.Id, m.Item.InventorySlot), Is.EqualTo((9, 20000001, (short) 3)));
+        Assert.That((m.Item.IsNew, m.Item.NotifiedName), Is.EqualTo((true, "named")), "the client's in-place read keeps the new mark");
+        Assert.That((m.Item.Transfer.HasBinding, m.Item.Transfer.BindingId, m.Item.Transfer.BindingName, m.Item.Transfer.Count),
+            Is.EqualTo((true, 42L, "bound", 0)), "an earlier binding stays when the stream has none; the count is the stream's");
+        Assert.That((held.Amount, held.Transfer.Count), Is.EqualTo((5, 7)), "the read does not touch the bag's item");
+        book.Apply(m);
+        Assert.That((book.Get(11).Amount, book.Get(11).IsNew), Is.EqualTo((9, true)));
+    }
 }

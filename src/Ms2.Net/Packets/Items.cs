@@ -115,6 +115,8 @@ public sealed class ItemTransfer {
     /// (SetSocketTransferFlag; CanTransferSocket).</summary>
     public int Rule, Count, Max; public bool TransferFlag38, BreakDisabled, SocketTransferEnabled;
     public bool HasBinding; public long BindingId; public string BindingName = "";
+    /// <summary>A copy of the block (its fields are values and strings).</summary>
+    public ItemTransfer Copy() => (ItemTransfer) MemberwiseClone();
 }
 
 /// <summary>CItemSocket: m_nMaxSlot and the slots (null = empty). A gem: TSocketGemStoneInfo::ReadFromStream (itemsocket.cpp:228).</summary>
@@ -244,6 +246,21 @@ public static class ItemReader {
 
     public static void ReadBodyInto(ByteReader r, EquipItem it, ProtocolProfile profile) {
         ReadBody(r, it, it.Slot, gms2: profile.IsGms2);
+    }
+
+    /// <summary>
+    /// CItem::ReadFromStream into the item the bag already holds (OnItemInventory mode 0xe, scenestategame.cpp:2960, and the
+    /// enchant scroll's result, uienchantscrolldialog.cpp:277), as a new record: a <see cref="EquipItem.Clone"/> of
+    /// <paramref name="held"/> with its own transfer block, then the body read into it. What the body does not write keeps the
+    /// held item's value, as the client's read in place does: the new mark and its notified name (mode 7), a transfer binding the
+    /// stream leaves out (item.cpp vfunc_2 keeps an earlier one), and the blocks only some item kinds carry. The held item itself
+    /// is not changed, so a read that fails leaves the bag as it was.
+    /// </summary>
+    public static EquipItem ReadBodyCopy(ByteReader r, EquipItem held, ProtocolProfile profile) {
+        var it = held.Clone();
+        it.Transfer = held.Transfer.Copy();
+        ReadBody(r, it, it.Slot, gms2: profile.IsGms2);
+        return it;
     }
 
     /// <summary>

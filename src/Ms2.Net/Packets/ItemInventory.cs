@@ -60,9 +60,7 @@ public abstract record ItemMessage {
                 if (uid == 0) return new Update(0, null);
                 var it = find(uid);
                 if (it == null) return new Update(uid, null);       // the client skips an unknown uid; the rest of the packet is unread
-                var copy = new EquipItem { Id = it.Id, Uid = it.Uid, Rarity = it.Rarity, Slot = it.Slot, InventorySlot = it.InventorySlot };
-                ItemReader.ReadBodyInto(r, copy, profile);
-                return new Update(uid, copy);
+                return new Update(uid, ItemReader.ReadBodyCopy(r, it, profile));   // the body read into the bag's item
             }
             default: return new Other(gms2 && mode >= 100 ? mode - 100 : mode);
         }

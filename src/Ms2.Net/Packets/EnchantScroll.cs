@@ -114,10 +114,9 @@ public abstract record EnchantScrollMessage {
                 long uid = r.ReadLong();
                 var it = ctx.Find(uid);
                 if (it == null) return new Result(0, uid, null);   // :277, the body unread
-                var copy = new EquipItem { Id = it.Id, Uid = it.Uid, Rarity = it.Rarity, Slot = it.Slot, InventorySlot = it.InventorySlot };
-                ItemReader.ReadBodyInto(r, copy, profile);
+                var item = ItemReader.ReadBodyCopy(r, it, profile);   // spItem->ReadFromStream, into the bag's item
                 r.ExpectEnd("EnchantScroll result");
-                return new Result(0, uid, copy);
+                return new Result(0, uid, item);
             }
             case 4: {
                 int n = r.ReadInt();

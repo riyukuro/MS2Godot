@@ -116,8 +116,9 @@ public class EnchantScrollPacketTests {
         Assert.That((((EnchantScrollMessage.Preview) m).RowsRead, r.Available), Is.EqualTo((false, 4 + 2 * 6)));
     }
 
-    /// <summary>FUN_140f3c6c0: code 0 reads the uid and, for an item in the inventory, its body into a copy (the inventory item
-    /// is not touched by the read); a missing item leaves the body unread (:277); other codes carry nothing.</summary>
+    /// <summary>FUN_140f3c6c0: code 0 reads the uid and, for an item in the inventory, its body into a copy of that item (the
+    /// inventory item is not touched by the read, the copy keeps what the body does not write); a missing item leaves the body
+    /// unread (:277); other codes carry nothing.</summary>
     [Test] public void ModeThreeReadsTheItemBodyIntoACopy() {
         var c = new Ctx(77); var inv = c.Add(5, 1, level: 2); inv.Rarity = 3; inv.Slot = (EquipSlot) 4; inv.InventorySlot = 9;
         var body = new byte[KmsBodyLen];
@@ -127,6 +128,13 @@ public class EnchantScrollPacketTests {
         Assert.That(res.Item, Is.Not.SameAs(inv));
         Assert.That((res.Item.Id, res.Item.Uid, res.Item.Rarity, res.Item.Slot, res.Item.InventorySlot), Is.EqualTo((1, 5L, 3, inv.Slot, 9)));
         Assert.That(inv.Enchant.Level, Is.EqualTo(2));
+        // spItem->ReadFromStream reads into the bag's item: what the body does not write keeps its value
+        inv.IsNew = true; inv.NotifiedName = "named"; inv.Transfer.HasBinding = true; inv.Transfer.BindingId = 42; inv.Transfer.Count = 7;
+        (m, r) = c.Read(Of(w => { w.WriteByte(3); w.WriteShort(0); w.WriteLong(5); w.WriteBytes(body); }));
+        res = (EnchantScrollMessage.Result) m;
+        Assert.That((res.Item.IsNew, res.Item.NotifiedName, res.Item.Transfer.HasBinding, res.Item.Transfer.BindingId, res.Item.Transfer.Count),
+            Is.EqualTo((true, "named", true, 42L, 0)));
+        Assert.That((inv.Transfer.Count, inv.Enchant.Level), Is.EqualTo((7, 2)), "the bag's item is not touched by the read");
         (m, r) = c.Read(Of(w => { w.WriteByte(3); w.WriteShort(0); w.WriteLong(6); w.WriteBytes(body); }));
         Assert.That(((EnchantScrollMessage.Result) m).Item, Is.Null); Assert.That(r.Available, Is.EqualTo(KmsBodyLen));
         for (int code = 1; code <= 9; code++) {
