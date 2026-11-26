@@ -349,6 +349,16 @@ public sealed class UiHost
         return v;
     }
 
+    /// <summary>The declared type of a method parameter of the movie's own object (e.g. "String" or "int"), null when the member is not
+    /// a method the movie declares or has no such parameter. The movies of the two data sets declare different contracts for the same
+    /// call, so a caller can send what its movie takes.</summary>
+    public string ParamType(object target, string method, int index)
+    {
+        if (Get(target, method) is not AsMethodClosure { Method: AbcMethod m }) return null;
+        var types = m.Info.ParamTypes;
+        return types != null && index >= 0 && index < types.Length ? m.Ctx.TypeNameAt(types[index]) : null;
+    }
+
     /// <summary>GetChild&lt;T&gt;("m_x"): a member of the entity (the instance names the movie declares).</summary>
     public object Child(string name, object parent = null)
     {

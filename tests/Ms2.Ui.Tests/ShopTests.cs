@@ -81,6 +81,19 @@ public class ShopTests
         return (h, c);
     }
 
+    /// <summary>The text the movie shows in m_coinInfo (the coin count's field), what the player reads.</summary>
+    static string CoinText(UiHost h, ShopController c)
+    {
+        var info = h.Child("m_coinInfo", c.Dialog);
+        Assert.That(info, Is.Not.Null, "the movie has m_coinInfo");
+        var field = h.Get(info, "textField") as AsTextField;
+        Assert.That(field, Is.Not.Null, "m_coinInfo has its textField");
+        return field.Text ?? "";
+    }
+
+    /// <summary>The movie takes the count as an int (the GMS2 movie) or as the payitem markup (the KMS2_DEV movie).</summary>
+    static bool TakesPlainCount(UiHost h, ShopController c) => h.ParamType(c.Dialog, "gachaCoinAmount", 0) is "int" or "uint" or "Number";
+
     static List<string> ShownTexts(AsDisplayObject o)
     {
         var l = new List<string>();
@@ -117,6 +130,10 @@ public class ShopTests
             Assert.That(amount, Does.Contain("70"), $"shop {shopId}: the coin count");
             int tag = model.Tables.GachaBoxes.PaymentIconTagByShopId(shopId);
             if (tag != 0) Assert.That(amount, Does.Contain(tag.ToString()), $"shop {shopId}: the payment icon tag");
+            // what the movie shows: the plain count for the movie that takes an int (its icon is the gachaUIType clip), else the markup
+            string shown = CoinText(h, c);
+            if (TakesPlainCount(h, c)) Assert.That(shown.Trim(), Is.EqualTo("70"), $"shop {shopId}: the movie shows the count, not markup");
+            else Assert.That(shown, Does.Contain("70").And.Not.Contain("<"), $"shop {shopId}: the movie shows the count");
         }
     }
 
@@ -133,14 +150,23 @@ public class ShopTests
         var (h, c) = LoadGacha(model, shopId, id => id == coin ? owned : 0);
         string at70 = c.GachaCoinAmount();
         Assert.That(ShownTexts(h.Entity as AsDisplayObject), Has.Some.Contains("70"));
+        Assert.That(CoinText(h, c), Does.Contain("70"));
         owned = 3;
         c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteProductUpdate(1, 1))));
         for (int i = 0; i < 3; i++) h.Player.Tick();
         Assert.That(c.GachaCoinAmount(), Is.Not.EqualTo(at70));
+        // the text the movie shows after the packet (gachaCoinAmount's own parameter type decides what it takes: a string sent to the
+        // int movie shows NaN as 0)
+        string after = CoinText(h, c);
+        if (TakesPlainCount(h, c)) Assert.That(after.Trim(), Is.EqualTo("3"));
+        else Assert.That(after, Does.Contain("3").And.Not.Contain("70"));
         Assert.That(h.RT.Errors, Is.Empty);
         // owned is read as unsigned (FUN_140a5f180 result): a count of 0 shows 0
         owned = 0;
         Assert.That(c.GachaCoinAmount(), Does.Contain("0"));
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteProductUpdate(1, 1))));
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(CoinText(h, c), Does.Contain("0").And.Not.Contain("3"));
 
         int placed = 0;
         c.InventoryWindowPos += _ => placed++;

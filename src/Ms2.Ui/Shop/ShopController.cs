@@ -286,6 +286,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     bool newComplete;       // m_bNewComplete
     string search = "";     // m_strSearch
     object shop;            // m_spShop
+    internal object Dialog => shop;
     PendingSelection selection = new() { Index = -1, Secondary = -1 };
     bool shopEnabled = true;
 
@@ -679,7 +680,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         {
             // gachaUIType and the coin count with its payment icon tag (uishopdialog.cpp:865-869)
             data.Add(("gachaUIType", (uint)Model.Tables.GachaBoxes.UiByShopId(info.ShopId)));
-            data.Add(("coinAmount", GachaCoinAmount()));
+            data.Add(("coinAmount", GachaCoinValue()));
         }
         Host.Invoke(shop, "initData", Host.Obj(data.ToArray()));
         UpdateMoney();
@@ -1492,12 +1493,33 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         return CurrencyPriceText(2, owned, Model.Tables.GachaBoxes.PaymentIconTagByShopId(info.ShopId));
     }
 
+    /// <summary>
+    /// The coin count in the form the loaded movie takes. The KMS2_DEV movie's gachaCoinAmount(String) and initData's coinAmount put the
+    /// text in m_coinInfo.textField.htmlText (the payitem markup <see cref="GachaCoinAmount"/>); the GMS2 movie's gachaCoinAmount(int) and
+    /// initData set m_coinInfo.textField.text from the count (initData also plays m_coinInfo.m_icon "_"+gachaUIType, which is why the
+    /// icon tag is no part of its text). The movie's own declaration decides; the GMS2 exe is not decompiled, so the plain count (not a
+    /// grouped one) is the reading taken for it.
+    /// STILL-OPEN: the item-break path's UpdateGachaCoin call (itembreakmanager.cpp:360) is not ported.
+    /// </summary>
+    internal object GachaCoinValue()
+    {
+        switch (shop == null ? null : Host.ParamType(shop, "gachaCoinAmount", 0))
+        {
+            case "int": return ItemCountOfCoin();
+            case "uint": return (uint)ItemCountOfCoin();
+            case "Number": return (double)(uint)ItemCountOfCoin();
+            default: return GachaCoinAmount();
+        }
+    }
+
+    int ItemCountOfCoin() => (int)(uint)ItemCount(Model.Tables.GachaBoxes.CoinItemIdByShopId(info.ShopId), 0);
+
     /// <summary>UpdateGachaCoin (@0x141afbd10, uishopdialog.cpp:2120): a gacha shop's coin count, sent to the movie's gachaCoinAmount;
     /// run at the end of every shop packet (OnShopPacket :1569).</summary>
     void UpdateGachaCoin()
     {
         if (shop == null || info.ShopType != 4) return;
-        Host.Invoke(shop, "gachaCoinAmount", GachaCoinAmount());
+        Host.Invoke(shop, "gachaCoinAmount", GachaCoinValue());
     }
 
     /// <summary>UpdateMoney (@0x141b03800): the reset price; the reset-price sale event is not ported, so its original.</summary>
