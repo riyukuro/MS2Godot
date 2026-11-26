@@ -85,11 +85,17 @@ public class CreativeMenuTests
     public void TheBeautyKindsAreLeftOut()
     {
         var c = Catalog();
+        bool kms = KmsLayout(tables.Items);
         foreach (var kind in new[] { BeautyKind.Hair, BeautyKind.Face, BeautyKind.FaceMark, BeautyKind.Ear, BeautyKind.Skin })
         {
             var rows = c.Removed.Where(r => r.Kind == kind).ToList();
             TestContext.Out.WriteLine($"{ItemCatalog.KindName(kind)}: {rows.Count}, e.g. {string.Join(", ", rows.Take(4).Select(r => r.Id + " '" + r.Name + "'"))}");
-            Assert.That(rows, Is.Not.Empty, $"{ItemCatalog.KindName(kind)} items are in the tables");
+            if (rows.Count == 0)
+            {
+                // the per-item data has no skin colour item; every other kind is in both data sets
+                Assert.That(kind == BeautyKind.Skin && !kms, Is.True, $"{ItemCatalog.KindName(kind)} items are in the tables");
+                continue;
+            }
             Assert.That(c.Entries.Any(e => rows.Any(r => r.Id == e.Id)), Is.False, $"{ItemCatalog.KindName(kind)} left out");
         }
         // a normal equip stays: an entry of the gear tab with an equip subtype
@@ -205,10 +211,12 @@ public class CreativeMenuTests
         int sample = c.Entries.ToList().FindIndex(e => e.Name.Length >= 3);
         Assert.That(sample, Is.GreaterThanOrEqualTo(0), "a named item");
         string name = c.Entries[sample].Name;
-        string text = name.Substring(name.Length / 2, Math.Min(2, name.Length - name.Length / 2));
+        string text = name.Substring(name.Length / 2, Math.Min(2, name.Length - name.Length / 2)).Trim();   // the filter trims too
+        if (text.Length == 0) text = name.Trim();
         c.Filter(text, -1, found);
         Assert.That(found, Does.Contain(sample), $"'{text}' finds {c.Entries[sample].Id}");
-        Assert.That(found.All(i => c.Entries[i].Name.Contains(text, StringComparison.OrdinalIgnoreCase)), "name matches only");
+        Assert.That(found.All(i => c.Entries[i].Name.Contains(text, StringComparison.OrdinalIgnoreCase)
+            || (text.All(char.IsAsciiDigit) && c.Entries[i].Id.ToString().StartsWith(text, StringComparison.Ordinal))), "name matches (or an id prefix for digits)");
 
         // an id prefix: the item is found and every result matches the name or the id prefix
         var byId = c.Entries[c.Count / 2];
