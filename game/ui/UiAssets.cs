@@ -255,15 +255,15 @@ public sealed class UiAssets
         var key = "image:" + entry;
         if (textures.TryGetValue(key, out var t)) return t;
         Texture2D tex = ImageFileUncached(entry);
-        if (tex == null) GD.PushWarning($"image {entry} not available");
         textures[key] = tex;
         return tex;
     }
 
     /// <summary>
     /// The same read as <see cref="ImageFile"/> (a DDS or PNG of Resource/Image, null when absent) without the session
-    /// cache and without a warning: for a caller that keeps its own small cache and draws nothing for a missing image
-    /// (the debug item browser loads an icon when its cell becomes visible; many items have no icon in the data).
+    /// cache: for a caller that keeps its own small cache and draws nothing for a missing image (the debug item browser
+    /// loads an icon when its cell becomes visible; many items have no icon in the data). A missing image is quiet, as
+    /// <see cref="ImageFile"/>'s cache/branch is; a read error warns like it does there.
     /// </summary>
     public Texture2D ImageFileUncached(string entry)
     {
@@ -278,7 +278,7 @@ public sealed class UiAssets
                 Image img;
                 if (name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) { img = new Image(); if (img.LoadPngFromBuffer(bytes) != Error.Ok) img = null; }
                 else img = DdsLoader.Load(bytes);
-                if (img != null) tex = ImageTexture.CreateFromImage(img);
+                if (img != null) { tex = ImageTexture.CreateFromImage(img); img.Dispose(); }   // the texture copies the pixels
             }
         }
         catch (Exception e) { GD.PushWarning($"image {entry}: {e.Message}"); }
