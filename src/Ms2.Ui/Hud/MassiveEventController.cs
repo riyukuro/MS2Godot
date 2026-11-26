@@ -24,6 +24,8 @@ public sealed class MassiveEventController : UiController
     /// <summary>A method only the event's entity has (the host takes the first display object with it as m_30).</summary>
     protected override string EntityMethod => "clearAndSetPanel";
     protected override bool IsDialog => false;
+    /// <summary>The constructor clears m_58 (uimassiveevent.cpp:52); vfunc_43 (<see cref="Layout"/>) shows it again.</summary>
+    public override bool VisibleOnLoad => false;
     public override string TypeName => "MassiveEvent";      // GetTypeName (@0x1419f5740)
 
     /// <summary>GetTickCountMs2: the millisecond tick the countdown runs on.</summary>

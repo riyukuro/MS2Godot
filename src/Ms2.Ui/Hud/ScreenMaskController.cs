@@ -17,6 +17,8 @@ public sealed class ScreenMaskController : UiController
     public override string Movie => "uiscreenmask";
     protected override string EntityMethod => "load";      // the entity's own public method (loadComplete is private)
     protected override bool IsDialog => false;
+    /// <summary>The constructor clears m_58 (uiscreenmask.cpp:31); vfunc_43 (<see cref="Layout"/>) shows it again.</summary>
+    public override bool VisibleOnLoad => false;
     public override string TypeName => "ScreenMask";       // GetTypeName @0x141ad06f0
 
     /// <summary>

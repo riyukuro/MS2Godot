@@ -311,6 +311,12 @@ public abstract class UiController
     /// </summary>
     public virtual void OnLoadCompleteBeforeBase() { }
 
+    /// <summary>
+    /// The visibility UISwfEntity::OnLoadComplete gives the entity (m_58, 1 by default: uiswfentity.cpp:39; applied by
+    /// vfunc_8 at :445 -> :184). Subclasses whose constructor clears it start hidden until their movie shows itself.
+    /// </summary>
+    public virtual bool VisibleOnLoad => true;
+
     /// <summary>UIDialog::OnLoadComplete (uidialog.cpp:696): open (m_c0 0), shown, and startOpen when the tween is on (m_c4).</summary>
     public virtual void OnLoadComplete()
     {

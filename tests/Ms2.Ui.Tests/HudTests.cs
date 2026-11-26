@@ -3502,6 +3502,36 @@ public class HudTests
         Assert.That(c.ShownAction, Is.EqualTo(-1), "an empty caption hides it");
         Assert.That(new ActionTooltipController { HasPlayer = () => false }.Busy(), Is.True, "no player: busy");
     }
+    /// <summary>
+    /// GitHub issue #11: UIActionTooltip's constructor clears m_58 (uiactiontooltip.cpp:85), so UISwfEntity::OnLoadComplete
+    /// (uiswfentity.cpp:443, vfunc_8) hides the entity at load; with no action it stays hidden (its frame 0 holds the show
+    /// sweep's glow bars without the text), and the first show makes it visible.
+    /// </summary>
+    [Test]
+    public void ActionTooltipIsHiddenAtLoadUntilAnActionShowsIt()
+    {
+        var m = Model();
+        int current = ActionTooltipController.NoAction;
+        var c = new ActionTooltipController
+        {
+            HasPlayer = () => true,
+            Current = () => current,
+            Caption = () => "Talk",
+            Project = p => ((float)p.X, (float)p.Y),
+        };
+        var h = Load(c, m);
+        for (int i = 0; i < 10; i++) { c.Process(); h.Player.Tick(); }
+        Assert.That(c.ShownAction, Is.EqualTo(-1));
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.False, "no action: hidden from load");
+
+        current = 4;
+        c.Refresh();
+        for (int i = 0; i < 25; i++) h.Player.Tick();
+        Assert.That(c.ShownAction, Is.EqualTo(4));
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.True, "show() makes it visible");
+        Assert.That(Text(h, "actionName"), Is.EqualTo("Talk"));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
     /// <summary>TalkAction::vfunc_6: the npc's actionName (string table 0xe, keyed in 8 digits) or common 0x62d, then common 0x649
     /// with the npc's name; "" without an npc. Table 0xf (mapNamePortalTooltip) finds a 7-digit map id by its padded key.</summary>
     [Test]

@@ -201,6 +201,8 @@ public sealed class MessageBoxController : UiController
     protected override string EntityMethod => "closeCurrent";
     protected override bool IsDialog => false;
     public override string TypeName => "MessageBox";
+    /// <summary>The ctor clears m_58 (uimessagebox.cpp:373), so OnLoadComplete leaves the layer hidden until a box opens.</summary>
+    public override bool VisibleOnLoad => false;
 
     internal MessageBoxData data;    // m_data
     int count;              // m_count

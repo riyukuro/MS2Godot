@@ -17,6 +17,8 @@ public sealed class ActionTooltipController : UiController
     public override string Movie => "uiactiontooltip";
     protected override string EntityMethod => "show";
     protected override bool IsDialog => false;          // a UIHeadUpDisplay
+    /// <summary>The constructor clears m_58 (uiactiontooltip.cpp:85), so the entity is hidden at load until show().</summary>
+    public override bool VisibleOnLoad => false;
 
     /// <summary>Unk_ActionKeyManager m_nCur with no action (and FUN_1418b23a0 without a local player).</summary>
     public const int NoAction = 0x1e;
