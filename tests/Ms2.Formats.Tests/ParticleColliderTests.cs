@@ -39,6 +39,7 @@ public class ParticleColliderTests
                 foreach (var c in s.ColliderList)
                 {
                     string k = c.Sphere ? "sphere" : "plane";
+                    if (c.ObjectBlock >= 0 && c.Node < 0) bad.Add($"{entry} {s.Name}: {k} object block {c.ObjectBlock} ({nif.Blocks[c.ObjectBlock].Type}) is not a scene node");
                     Add($"{k}{(c.Active ? "" : " inactive")}{(c.Node < 0 ? " no object" : "")}{(c.DieOnCollide ? " die" : "")}{(c.SpawnOnCollide ? " spawn" : "")} bounce {c.Bounce:0.##}");
                     if (seen.Count < 12) seen.Add($"{entry} {s.Name}: {k} node {(c.Node >= 0 ? sc.Nodes[c.Node].Name : "-")} w {c.Width} h {c.Height} r {c.Radius} x {c.XAxis.X},{c.XAxis.Y},{c.XAxis.Z} y {c.YAxis.X},{c.YAxis.Y},{c.YAxis.Z}");
                 }
@@ -47,6 +48,28 @@ public class ParticleColliderTests
         foreach (var (k, c) in count) TestContext.Out.WriteLine($"{env}:   {k}: {c}");
         foreach (var l in seen) TestContext.Out.WriteLine($"{env}: {l}");
         Assert.That(bad, Is.Empty, string.Join("\n", bad.Take(20)));
+    }
+
+    /// <summary>A collider whose object is an NiAVObject that is not a scene node here: the client still takes that object's
+    /// world transform, so the load lists it as not read rather than quietly putting the collider at the system's origin.
+    /// The lava cave effect's deflector is pointed at the system's simulator block, which is no scene node.</summary>
+    [Test]
+    public void AColliderObjectThatIsNoSceneNodeIsListed()
+    {
+        var dir = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) Assert.Ignore("MS2_DATA not set");
+        using var packs = new PackSet(dir);
+        var nif = NifFile.Load(new NifSpec(NifEnv.NifXml()), packs.Read(Archive, "bg/cave/eff_ca_lava_emit_01.nif"));
+        var sc = EffectScene.Load(nif);
+        Assert.That(sc.Unsupported.Where(u => u.Contains(" object ", StringComparison.Ordinal)), Is.Empty);
+        var c = sc.Systems.SelectMany(s => s.ColliderList).First();
+        Assert.That(c.Node, Is.GreaterThanOrEqualTo(0));
+        Assert.That(sc.Nodes[c.Node].Name, Is.EqualTo("Deflector01"));
+        int sim = nif.Blocks.FindIndex(b => b.Type == "NiPSSimulator");
+        foreach (var b in nif.Blocks.Where(b => b.Type == "NiPSPlanarCollider")) b["Collider Object"] = (long)sim;
+        sc = EffectScene.Load(nif);
+        Assert.That(sc.Systems.SelectMany(s => s.ColliderList).Select(c => (c.ObjectBlock, c.Node)), Is.All.EqualTo((sim, -1)));
+        Assert.That(sc.Unsupported, Does.Contain("NiPSPlanarCollider object NiPSSimulator"));
     }
 
     static readonly V X = new(1, 0, 0), Y = new(0, 1, 0);

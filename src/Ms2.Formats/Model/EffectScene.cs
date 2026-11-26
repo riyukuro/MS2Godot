@@ -542,6 +542,8 @@ public sealed class ColliderDef
     public double Bounce = 1, Width = 1, Height = 1, Radius = 1;
     public Vec3 XAxis = new(1, 0, 0), YAxis = new(0, 1, 0);
     public int Node = -1, Spawner = -1; public string Type;
+    /// <summary>The "Collider Object" block as the file has it, -1 without one; Node is its scene node, -1 when it is not one.</summary>
+    public int ObjectBlock = -1;
 }
 
 public sealed class ParticleSystemDef
@@ -1051,7 +1053,12 @@ public sealed class EffectScene
                             if (cd.Sphere) cd.Radius = c.Float("Radius");
                             else { cd.Width = c.Float("Width"); cd.Height = c.Float("Height"); cd.XAxis = V3(c.Struct("X Axis")); cd.YAxis = V3(c.Struct("Y Axis")); }
                             long co = c.IntOr("Collider Object", -1);
+                            cd.ObjectBlock = co >= 0 && co < B.Count ? (int)co : -1;
                             if (co >= 0 && NodeOfBlock.TryGetValue((int)co, out int cn)) cd.Node = cn;
+                            // The collider takes its object's world transform whatever NiAVObject it is
+                            // (NiPSPlanarCollider.cpp:93-109); one that is not a scene node here would sit at the system's
+                            // origin instead, so it is listed as not read (0 in the data, EveryColliderIsRead).
+                            else if (cd.ObjectBlock >= 0) Unsupported.Add($"{c.Type} object {B[cd.ObjectBlock].Type}");
                             d.ColliderList.Add(cd);
                         }
                         break;
