@@ -1,10 +1,11 @@
+#if MS2_DEVTOOLS
 using System.Text.RegularExpressions;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Ui;
 using Ms2.Ui.ChatEmoticons;
 using Ms2.Ui.Items;
-using Ms2.Ui.Tests;
+using Ms2.Devtools;
 using NUnit.Framework;
 
 namespace Ms2Godot.Tests;
@@ -27,7 +28,7 @@ public class CreativeMenuTests
         if (catalog != null) return catalog;
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        packs = TestData.Packs(d);
+        packs = new PackSet(d);
         tables = new GameTables(packs, "en");
         catalog = ItemCatalog.Shared(packs, tables);
         return catalog;
@@ -48,7 +49,7 @@ public class CreativeMenuTests
         foreach (var entry in entries.Where(e => file.IsMatch(e.Replace('\\', '/'))))
             foreach (var e in GameStrings.Parse(packs.Read("Xml", entry)).Root.Elements("item"))
                 if (int.TryParse((string)e.Attribute("id"), out int id) && table.Get(id) != null) ids.Add(id);
-        foreach (int id in ItemDataTable.PerItemIndex(entries).Keys)
+        foreach (int id in Ms2.Formats.World.PerItemFiles.Index(entries).Keys)
             if (table.Get(id) != null) ids.Add(id);
         return ids;
     }
@@ -168,22 +169,39 @@ public class CreativeMenuTests
             var d = tables.Items.Get(e.Id);
             Assert.That(d, Is.Not.Null, $"{e.Id} has data");
             Assert.That(e.Name, Is.EqualTo(tables.ItemName(e.Id)), $"{e.Id} name");
-            Assert.That(e.Tab, Is.EqualTo(d.InventoryTab), $"{e.Id} tab");
+            Assert.That(e.Tab, Is.EqualTo(ItemCatalog.TabOf(d)), $"{e.Id} tab");
             Assert.That(e.Rank, Is.EqualTo(d.Rank), $"{e.Id} rank");
             Assert.That(e.SlotMax, Is.EqualTo((int)d.SlotMax), $"{e.Id} slot max");
             Assert.That(e.IconEntry, Is.EqualTo(ChatEmoticonTable.ResourceImageEntry(d.IconPath)), $"{e.Id} icon entry");
-            Assert.That(e.Kind, Is.EqualTo(d.PCBang ? 6 : d.Vip ? 5 : d.IsCashItem ? 0 : d.HasSkinType ? 1 : d.Type == 2 ? 2 : d.Type == 4 ? 4 : 3), $"{e.Id} kind");
             Assert.That(e.Sub, Is.EqualTo(d.EquipSubtype), $"{e.Id} equip subtype");
         }
         TestContext.Out.WriteLine($"{tabs} of 15 tabs have items, {empty} are empty");
         Assert.That(tabs, Is.GreaterThanOrEqualTo(10), "the KMS2 item tables fill most tabs");
     }
 
+    /// <summary>CItem::GetItemKind (item.cpp:2585), every arm and its precedence, over hand-made data rows.</summary>
+    [Test]
+    public void TheKindIsTheClients()
+    {
+        static int Kind(ItemData d) => ItemCatalog.KindOf(d);
+        Assert.That(Kind(new ItemData { PCBang = true }), Is.EqualTo(6), "a PC bang item");
+        Assert.That(Kind(new ItemData { PCBang = true, Vip = true }), Is.EqualTo(6), "PC bang before VIP");
+        Assert.That(Kind(new ItemData { Vip = true }), Is.EqualTo(5), "a VIP item");
+        Assert.That(Kind(new ItemData { ItemGroup = 4 }), Is.EqualTo(0), "a cash item");
+        Assert.That(Kind(new ItemData { Vip = true, ItemGroup = 4 }), Is.EqualTo(5), "VIP before cash");
+        Assert.That(Kind(new ItemData { Type = 1, SkinType = 2 }), Is.EqualTo(1), "an item with a skin type");
+        Assert.That(Kind(new ItemData { Type = 2 }), Is.EqualTo(2), "a consumable");
+        Assert.That(Kind(new ItemData { Type = 4 }), Is.EqualTo(4), "a type 4 item");
+        Assert.That(Kind(new ItemData { Type = 7 }), Is.EqualTo(3), "any other");
+        Assert.That(Kind(new ItemData { Type = 2, SkinType = 2 }), Is.EqualTo(1), "the skin type before the type");
+        Assert.That(Kind(new ItemData { Type = 1, ItemGroup = 4 }), Is.EqualTo(0), "cash before an equip");
+    }
+
     /// <summary>CItemData::FUN_14053e530 (itemdata.cpp:1381), every arm of the switch, over hand-made data rows.</summary>
     [Test]
     public void TheTabRuleIsTheClients()
     {
-        static int Tab(int type, int skin = 0) => new ItemData { Type = type, SkinType = skin }.InventoryTab;
+        static int Tab(int type, int skin = 0) => ItemCatalog.TabOf(new ItemData { Type = type, SkinType = skin });
         Assert.That(Tab(1), Is.EqualTo(0), "an equip");
         Assert.That(Tab(1, 2), Is.EqualTo(1), "an equip with a skin type is the outfit tab");
         foreach (int type in new[] { 6, 8, 0xc, 0x17 }) Assert.That(Tab(type), Is.EqualTo(4), $"type {type}");
@@ -249,13 +267,19 @@ public class CreativeMenuTests
     }
 
     [Test]
-    public void TheSpawnLineClampsTheAmountAndKeepsTheRarity()
+    public void TheSpawnLineClampsAStackAndKeepsOtherAmounts()
     {
         Assert.That(ItemSpawnCommand.Line(20000000, 1, 0, 1), Is.EqualTo("/item 20000000 --amount 1"));
         Assert.That(ItemSpawnCommand.Line(20000000, 99, 0, 50), Is.EqualTo("/item 20000000 --amount 50"), "a stack clamps to the slot max");
+        Assert.That(ItemSpawnCommand.Line(20000000, 20000, 0, 9999), Is.EqualTo("/item 20000000 --amount 9999"), "a stack clamps to the slot max");
         Assert.That(ItemSpawnCommand.Line(20000000, 0, 0, 10), Is.EqualTo("/item 20000000 --amount 1"), "at least one");
         Assert.That(ItemSpawnCommand.Line(20000000, -3, 0, 10), Is.EqualTo("/item 20000000 --amount 1"), "no negative amount");
-        Assert.That(ItemSpawnCommand.Line(20000000, 7, 0, 0), Is.EqualTo("/item 20000000 --amount 1"), "a slot max below 1 counts as 1");
+        Assert.That(ItemSpawnCommand.Line(20000000, 7, 0, 0), Is.EqualTo("/item 20000000 --amount 7"), "no slot max is not a stack cap");
+        // a slot max of 1 is a non-stackable: that many copies, the server caps them by free slots (ItemCommand.cs:84-100)
+        Assert.That(ItemSpawnCommand.Line(11200003, 5, 0, 1), Is.EqualTo("/item 11200003 --amount 5"));
+        Assert.That(ItemSpawnCommand.Line(11200003, 5, 0, 1), Does.Not.Contain("--rarity"));
+        // a currency keeps its amount uncapped (ItemCommand.cs:53-57, the id range of Item.IsCurrency)
+        Assert.That(ItemSpawnCommand.Line(90000001, 1000000, 0, 1), Is.EqualTo("/item 90000001 --amount 1000000"));
         Assert.That(ItemSpawnCommand.Line(20000000, 3, 4, 99), Is.EqualTo("/item 20000000 --amount 3 --rarity 4"));
         Assert.That(ItemSpawnCommand.Line(20000000, 3, 0, 99), Is.EqualTo("/item 20000000 --amount 3"), "rarity 0 is the item's own, sent as no flag");
         Assert.That(ItemSpawnCommand.Line(20000000, 3, -1, 99), Is.EqualTo("/item 20000000 --amount 3"));
@@ -272,11 +296,11 @@ public class CreativeMenuTests
     {
         var d = Environment.GetEnvironmentVariable("MS2_GMS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_GMS2_DATA is not set");
-        var gpack = TestData.Packs(d);
+        var gpack = new PackSet(d);
         var gtables = new GameTables(gpack, "en");
         var entries = gpack.List("Xml").ToList();
         if (entries.Any(e => e.StartsWith("itemdata/", StringComparison.OrdinalIgnoreCase))) Assert.Ignore("not the per-item layout");
-        var expected = ItemDataTable.PerItemIndex(entries).Keys.Where(id => gtables.Items.Get(id) != null).ToHashSet();
+        var expected = Ms2.Formats.World.PerItemFiles.Index(entries).Keys.Where(id => gtables.Items.Get(id) != null).ToHashSet();
         var cat = ItemCatalog.Build(gpack, gtables);
         TestContext.Out.WriteLine($"GMS2 catalog {cat.Count} bag items of {cat.Unfiltered}, index {expected.Count}, left out {cat.Removed.Count} ({cat.RemovedSummary()})");
         Assert.That(cat.Count, Is.GreaterThan(0));
@@ -287,3 +311,4 @@ public class CreativeMenuTests
             Assert.That(cat.Entries[i].Tab, Is.GreaterThanOrEqualTo(cat.Entries[i - 1].Tab), "the tabs are together and in tab order");
     }
 }
+#endif

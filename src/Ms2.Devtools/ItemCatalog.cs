@@ -1,7 +1,10 @@
+#if MS2_DEVTOOLS
 using System.Globalization;
 using Ms2.Formats.Pack;
+using Ms2.Ui;
+using Ms2.Ui.Items;
 
-namespace Ms2.Ui.Items;
+namespace Ms2.Devtools;
 
 /// <summary>
 /// The look item kinds a bag never holds: a hair style, a face, a face decoration, the ear shape and the skin colour. The
@@ -27,8 +30,8 @@ public enum BeautyKind
 
 /// <summary>
 /// The debug item browser's catalog: every *bag* item of the item tables with what a browser cell shows (the name, the bag
-/// tab of <see cref="ItemData.InventoryTab"/>, the rank, the slot max and the icon), read through the table the inventory
-/// and tooltips use (<see cref="ItemDataTable"/>, <see cref="GameTables.ItemName"/>), not a second item reader.
+/// tab of CItemData::FUN_14053e530 (<see cref="TabOf"/>), the rank, the slot max and the icon), read through the table the
+/// inventory and tooltips use (<see cref="ItemDataTable"/>, <see cref="GameTables.ItemName"/>), not a second item reader.
 /// The beauty-salon items are left out (<see cref="Removed"/>), because the server's item command cannot put them in a bag;
 /// nothing else is dropped. The order is the bag's own: the tab, then CItem::GetItemKind and GetEquipSubtype (the
 /// CompareItems comparator, item.cpp:2484-2545), then the id. The client reads items by id only, so there is no client
@@ -64,13 +67,13 @@ public sealed class ItemCatalog
     public int Count => Entries.Count;
 
     /// <summary>
-    /// Builds the catalog from the data's item tables. Every id <see cref="ItemDataTable.Ids"/> lists has a row there
-    /// (one that still gives no data is left out, no selected environment); the beauty kinds go to <see cref="Removed"/>.
+    /// Builds the catalog from the data's item tables. <see cref="ItemIds"/> lists every id the tables hold (one whose
+    /// files give no data is left out, no selected environment); the beauty kinds go to <see cref="Removed"/>.
     /// </summary>
     public static ItemCatalog Build(PackSet packs, GameTables tables)
     {
         var table = tables.Items;
-        var ids = table.Ids();
+        var ids = ItemIds(packs, table);
         var entries = new List<Entry>(ids.Count);
         var removed = new List<RemovedItem>();
         int withoutName = 0;
@@ -82,13 +85,91 @@ public sealed class ItemCatalog
             var beauty = BeautyKindOf(d, model);
             if (beauty is { } kind) { removed.Add(new RemovedItem(kind, id, name)); continue; }
             if (name.Length == 0) withoutName++;
-            var icon = ChatEmoticons.ChatEmoticonTable.ResourceImageEntry(d.IconPath);
-            int kindOf = d.PCBang ? 6 : d.Vip ? 5 : d.IsCashItem ? 0 : d.HasSkinType ? 1 : d.Type == 2 ? 2 : d.Type == 4 ? 4 : 3;
-            entries.Add(new Entry(id, name, d.InventoryTab, kindOf, d.EquipSubtype, d.Rank, (int)d.SlotMax, d.LevelLimit, icon));
+            var icon = Ms2.Ui.ChatEmoticons.ChatEmoticonTable.ResourceImageEntry(d.IconPath);
+            entries.Add(new Entry(id, name, TabOf(d), KindOf(d), d.EquipSubtype, d.Rank, (int)d.SlotMax, d.LevelLimit, icon));
         }
         entries.Sort(Compare);
         return new ItemCatalog(entries, withoutName, removed, entries.Count + removed.Count);
     }
+
+    /// <summary>
+    /// Every item id the tables hold, ascending: the ids of the itemdata/NNN.xml files (KMS, streaming each file's
+    /// &lt;item id&gt; attributes) or of the per-item entries (the other data layout, <see cref="Ms2.Formats.World.PerItemFiles"/>),
+    /// with <see cref="ItemDataTable.Get"/> asked for each so only items with an available environment stay. The client
+    /// reads items by id only (CItemDataTable maps them), so there is no client list to port; this is the tool's index.
+    /// The id pass reads the itemdata files' item attributes; the rows themselves then come from the table's own cache.
+    /// </summary>
+    static List<int> ItemIds(PackSet packs, ItemDataTable table)
+    {
+        var ids = new List<int>();
+        var names = packs.List("Xml");
+        var files = new List<int>();
+        foreach (var name in names)
+        {
+            string n = name.Replace('\\', '/');
+            if (!n.StartsWith("itemdata/", StringComparison.OrdinalIgnoreCase) || !n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
+            string number = n["itemdata/".Length..^".xml".Length];
+            if (number.Length > 0 && int.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out int file)) files.Add(file);
+        }
+        if (files.Count > 0)
+        {
+            files.Sort();
+            foreach (int file in files)
+            {
+                using var r = Ms2.Formats.Text.XmlRows.Open(packs.Read("Xml", $"itemdata/{file:000}.xml"));
+                r.MoveToContent();
+                if (r.IsEmptyElement) continue;
+                r.Read();
+                while (r.NodeType != System.Xml.XmlNodeType.EndElement && !r.EOF)
+                {
+                    if (r.NodeType != System.Xml.XmlNodeType.Element) { r.Read(); continue; }
+                    if (r.LocalName != "item" || r.NamespaceURI.Length != 0) { r.Skip(); continue; }
+                    var e = (System.Xml.Linq.XElement)System.Xml.Linq.XNode.ReadFrom(r);
+                    if (int.TryParse((string)e.Attribute("id"), out int id) && table.Get(id) != null) ids.Add(id);
+                }
+            }
+        }
+        else
+        {
+            foreach (int id in Ms2.Formats.World.PerItemFiles.Index(names).Keys)
+                if (table.Get(id) != null) ids.Add(id);
+        }
+        ids.Sort();
+        return ids;
+    }
+
+    /// <summary>
+    /// CItemData::FUN_14053e530 (itemdata.cpp:1381), the item's bag tab 0-14, as Unk_Inventory::FUN_140a61870
+    /// (inventory.cpp:1148) takes it: the type picks the tab, an equip with a skin type is the outfit tab (1) and any
+    /// other equip the gear tab (0), and a type the switch does not name is the etc tab (7). The tab names are
+    /// CStringTable::GetInventoryTabName (stringtable.cpp:931, common strings s_inventory_tab_*). The GMS2 client numbers
+    /// its tabs differently (<see cref="ItemData.Gms2InventoryTabOf"/>); this is the KMS rule.
+    /// </summary>
+    internal static int TabOf(ItemData d) => d.Type switch
+    {
+        1 => d.HasSkinType ? 1 : 0,
+        6 or 8 or 0xc or 0x17 => 4,
+        5 or 9 => 2,
+        0xd or 0xe => 6,
+        3 => 5,
+        0xf or 0x13 => 3,
+        0x10 => 8,
+        0xb => 9,
+        2 => 10,
+        0x14 => 0xb,
+        7 => 0xc,
+        0x15 => 0xd,
+        0x1b => 0xe,
+        _ => 7,
+    };
+
+    /// <summary>
+    /// CItem::GetItemKind (item.cpp:2585) for an item's data: 6 a PC bang item, 5 a VIP one, 0 a cash item, 1 an item with
+    /// a skin type, 2 a consumable (type 2), 4 a type 4 item, else 3. The order is the client's: the first test that holds
+    /// decides.
+    /// </summary>
+    internal static int KindOf(ItemData d) =>
+        d.PCBang ? 6 : d.Vip ? 5 : d.IsCashItem ? 0 : d.HasSkinType ? 1 : d.Type == 2 ? 2 : d.Type == 4 ? 4 : 3;
 
     /// <summary>
     /// The beauty kind of an item, null for a bag item: the item model's first &lt;slot&gt; group type 1, 2 or 3
@@ -223,3 +304,4 @@ public sealed class ItemCatalog
     /// <summary>The entry's id as the client's text (decimal), for logs and tooltips.</summary>
     public static string IdText(int id) => id.ToString(CultureInfo.InvariantCulture);
 }
+#endif

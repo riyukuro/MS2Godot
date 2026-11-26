@@ -12,5 +12,11 @@
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
     <Compile Include="../../src/Ms2.Devtools/*.cs" LinkBase="lib" />
+    <Compile Include="../Shared/Alloc.cs" Link="Alloc.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- the item browser's catalog reads the item tables through Ms2.Ui/Ms2.Formats, the same readers the inventory uses -->
+    <ProjectReference Include="../../src/Ms2.Ui/Ms2.Ui.csproj" />
+    <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
   </ItemGroup>
 </Project>
