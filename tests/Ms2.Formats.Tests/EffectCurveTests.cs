@@ -17,7 +17,7 @@ public class EffectCurveTests
         var (packs, spec) = NifEnv.Open();
         var curves = new List<Func<double, double>>();
         int t = 0, r = 0, s = 0, col = 0, alpha = 0, uv = 0, flip = 0, rate = 0, on = 0, force = 0, shade = 0;
-        double[] lit = new double[3], amb = new double[3];
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
         static double L(TimeCtl c, double x) => c != null ? c.Local(x) : x;
         // the first 80 bg/common effects, then further effects (in name order) until every curve kind below is in the set
         int files = 0;
@@ -39,7 +39,7 @@ public class EffectCurveTests
             foreach (var m in sc.Meshes)
             {
                 foreach (var ca in m.Colors) { col++; curves.Add(x => ca.Curve(L(ca.Ctl, x))[0]); }
-                if (m.Colors.Count > 0) { shade++; var em = m; curves.Add(x => { em.Shade(x, lit, amb); return lit[0] + amb[0]; }); }
+                if (m.Colors.Count > 0) { shade++; var em = m; curves.Add(x => { em.Shade(x, lit, dif, amb); return lit[0] + dif[0] + amb[0]; }); }
                 if (m.Alpha != null) { alpha++; curves.Add(m.Opacity); }
                 foreach (var op in m.Uv) { uv++; curves.Add(x => op.Curve(L(op.Ctl, x))); }
                 if (m.Flip?.Curve != null) { flip++; var f = m.Flip; curves.Add(x => f.Curve(L(f.Ctl, x))); }

@@ -958,6 +958,33 @@ public sealed class ModelData
     /// <summary>The name is one the client builds as an MS2StandardMaterial (<see cref="StandardMaterialNames"/>).</summary>
     public static bool IsStandardMaterial(string name) => name != null && Array.IndexOf(StandardMaterialNames, name) >= 0;
 
+    /// <summary>The client gives the render object (a mesh or a particle system) at block <paramref name="block"/>
+    /// MS2AlphaBoostMaterial when it loads, whatever material it names: its own NiMaterialProperty has an alpha above 1, or
+    /// that property's first controller is an NiAlphaController whose key-based interpolator has a float key above 1.
+    /// The controller's flags, times and key type don't matter (PrepareLoadedNif's render setup walk, @0x141567b60,
+    /// unit_141567000.cpp:349-362, calls @0x141569280, :853-865, which calls ApplyAndSetActiveMaterial; HasAlphaKeyAboveOne,
+    /// @0x141569170, :828-849).</summary>
+    public static bool AlphaBoost(NifFile nif, int block)
+    {
+        var B = nif.Blocks;
+        foreach (var p in B[block].Ints("Properties"))
+        {
+            if (p < 0 || B[(int)p].Type != "NiMaterialProperty") continue;
+            var prop = B[(int)p];
+            if (prop.Float("Alpha") > 1f) return true;
+            long c = prop.IntOr("Controller", -1);
+            if (c < 0 || B[(int)c].Type != "NiAlphaController") return false;
+            long ip = B[(int)c].IntOr("Interpolator", -1);
+            if (ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") return false;
+            long di = B[(int)ip].IntOr("Data", -1);
+            if (di < 0) return false;
+            foreach (var k in B[(int)di].Struct("Data").Structs("Keys"))
+                if (k.Float("Value") > 1f) return true;
+            return false;
+        }
+        return false;
+    }
+
     /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>
     static void ReadMaterial(NifFile nif, NifStruct b, ModelMesh mesh)
     {

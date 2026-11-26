@@ -10,7 +10,9 @@ static class FxParam
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
         BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
         HasDetail = "has_detail", DetailOpacity = "detail_opacity", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
-        Ambient = "mat_ambient", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity", MorphW = "morph_w";
+        Ambient = "mat_ambient", MatDiffuse = "mat_diffuse", LightForm = "light_form", LitNormals = "lit_normals", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity", MorphW = "morph_w",
+        AlphaBoost = "alpha_boost", NormalTex = "normal_tex", NormalR0 = "normal_r0", NormalR1 = "normal_r1", GlossTex = "gloss_tex",
+        HoEmi = "ho_emi", HoSpec = "ho_spec", HoPower = "ho_power", AlphaTest = "alpha_test", AlphaRef = "alpha_ref";
 }
 
 /// <summary>
@@ -26,17 +28,18 @@ public sealed partial class EffectInstance : Node3D
     {
         public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
         public bool NotFinite;                                   // hidden for a non-finite world transform (Place)
-        public string BaseKey; public TexMap BaseMap, GlowMap, DetailMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the drawn maps
-        public TexTransform BaseT, GlowT, DetailT;                // working transforms the uv controllers write each frame
+        public string BaseKey; public TexMap BaseMap, GlowMap, DetailMap, NormalMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the drawn maps
+        public TexTransform BaseT, GlowT, DetailT, NormalT;       // working transforms the uv controllers write each frame
         public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
-        public readonly double[] Lit = new double[3], Amb = new double[3];   // EffectMesh.Shade's output, reused every frame
+        public HoTechnique Ho;                                    // drawn through that _HO technique (EffectMesh.Ho: HoCode), else the standard shader
+        public readonly double[] Lit = new double[3], Dif = new double[3], Amb = new double[3];   // EffectMesh.Shade's output (Lit the emissive), reused every frame
         public bool Static, Placed;                               // no node from it to the root animates or faces the camera: placed once
         public EffectMorph Morph; public int MorphTargets;        // the drawn morph and its offset targets (CUSTOM0-3), 0 for none
         public Vector4 LastW;                                     // the morph weights last set (morph_w)
         // the last value set on each per-frame shader parameter: a parameter is set again only when its value changes
-        public Vector4 LastTint = Vector4.One; public Vector3 LastAmb; public float LastAlpha; public Texture2D LastTex;
-        // base r0 r1, glow r0 r1, detail r0 r1 (the shader defaults)
-        public readonly Vector3[] LastRows = { new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0) };
+        public Vector4 LastTint = Vector4.One; public Vector3 LastAmb, LastDif; public float LastAlpha; public Texture2D LastTex;
+        // base r0 r1, glow r0 r1, detail r0 r1, normal r0 r1 (the shader defaults)
+        public readonly Vector3[] LastRows = { new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0) };
     }
 
     sealed class PSys
@@ -106,9 +109,11 @@ uniform bool vc_emi = false;
 uniform bool vc_dif = false;
 uniform bool vc_amb = false;
 uniform bool vc_opacity = false;
+uniform bool alpha_boost = false;
 FOGDECL
+LIGHTDECL
 MORPHDECL
-void vertex() { MORPHVERT FOGVERT }
+void vertex() { MORPHVERT FOGVERT vec3 la, ld; light_vert(lit_normals ? normalize(mat3(MODEL_MATRIX) * NORMAL) : vec3(0.0), la, ld); light_amb = la; light_dif = ld; }
 // a map's uv: its texture transform's rows, then the clamp mode (bit 0 S, bit 1 T) as CLAMP addressing: the samplers
 // have no mipmaps, so holding the coordinate half a texel inside the edge is what clamped addressing reads
 vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
@@ -128,7 +133,8 @@ void fragment() {
         t.rgb *= d.rgb * 2.0;
         if (detail_opacity) t.a *= d.a;
     }
-    // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
+    // the texture colour times the diffuse coefficient: emissive (tint) + ambient * the ambient accumulator + diffuse * the
+    // diffuse accumulator, the lights' per vertex (LightDecl; EffectMesh.Shade, LightForm)
     // The coefficient is not saturated (EffectMesh.Shade), and neither is the colour the pixel shader writes:
     // HandleMS2FinalPixelOutputs (@0x14274fd00, ms2standardmaterial.cpp:758-792) ends in CompositeFinalRGBColor and CompositeFinalRGBAColor,
     // which pass the colour on as it is (NiStandardMaterialNodeLibrary.cpp:3057-3106). On a device with FP16 support the client blends
@@ -138,21 +144,23 @@ void fragment() {
     // Godot's 3D buffer is RGBA16F too, so the colour goes out unclamped.
     // The vertex colour takes the place of the terms EffectMesh.VertexColors names (Shade leaves those out of tint and
     // mat_ambient), and its alpha that of the material alpha (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450).
-    vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
+    vec3 coef = tint.rgb + mat_ambient * light_amb + mat_diffuse * light_dif;
     if (vc_emi) coef += COLOR.rgb;
-    if (vc_dif) coef += COLOR.rgb;
-    if (vc_amb) coef += COLOR.rgb * ms2_ambient;
+    if (vc_dif) coef += COLOR.rgb * light_dif;
+    if (vc_amb) coef += COLOR.rgb * light_amb;
     vec3 col = t.rgb * coef;
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
     // The opacity is not saturated either: CompositeFinalRGBAColor writes it as it is, and the FP16 target blends with it
     // unclamped, so an opacity above 1 (the 02020120 crystals' material alpha 1.2, their ring's controller peak 1.5) weighs
     // the colour by more than 1 (SRCALPHA) and an additive mesh adds more than its colour.
-    // STILL-OPEN: MS2AlphaBoostMaterial (ms2materialnodelibrary.cpp:839-846) also scales the colour by an opacity above 1;
-    // the particle shader (PartCode) still clamps its colour and opacity.
-    FOG = vec4(ms2_fog_color, fog_share);
-    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
-    ALPHA = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
+    float a = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
+    // MS2AlphaBoostMaterial (alpha_boost: EffectMesh.AlphaBoost) multiplies the fogged colour by an opacity above 1
+    // (ms2standardmaterial.cpp:774-790; the node, ms2materialnodelibrary.cpp:839-846): the depth fog's colour as well
+    float k = alpha_boost && a > 1.0 ? a : 1.0;
+    FOG = vec4(ms2_fog_color * k, fog_share);
+    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k;
+    ALPHA = a;
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
@@ -181,9 +189,13 @@ uniform bool vc_emi = false;
 uniform bool vc_dif = false;
 uniform bool vc_amb = false;
 uniform bool vc_opacity = false;
+uniform bool alpha_boost = false;
 varying vec2 cell;
 FOGDECL
-void vertex() { cell = INSTANCE_CUSTOM.xy; FOGVERT }
+LIGHTDECL
+// the quad's normal is its x axis cross its y axis (AlignedQuad.Quad: the aligned normal; a facing quad's camera right
+// cross up, the facing generator's normal, NiPSFacingQuadGenerator.cpp:340-341)
+void vertex() { cell = INSTANCE_CUSTOM.xy; FOGVERT vec3 la, ld; light_vert(normalize(cross(MODEL_MATRIX[0].xyz, MODEL_MATRIX[1].xyz)), la, ld); light_amb = la; light_dif = ld; }
 vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
     vec2 o = vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0)));
     vec2 h = 0.5 / vec2(max(size, ivec2(1)));
@@ -205,11 +217,13 @@ void fragment() {
         if (detail_opacity) t.a *= d.a;
     }
     // the mesh shader's colour terms (MeshCode, EffectMesh.Shade): the particle's key colour is its vertex colour
-    // (ParticleSystemDef.Material), so the material gives the terms the vertex colour mode leaves (AMB_DIFF: the emissive)
-    vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
+    // (ParticleSystemDef.Material), so the material gives the terms the vertex colour mode leaves (AMB_DIFF: the emissive).
+    // The quads have normals (NiPSAlignedQuadGenerator.cpp:181-195, NiPSFacingQuadGenerator.cpp:152-164), so the
+    // directional light reaches them (LightDecl)
+    vec3 coef = tint.rgb + mat_ambient * light_amb + mat_diffuse * light_dif;
     if (vc_emi) coef += COLOR.rgb;
-    if (vc_dif) coef += COLOR.rgb;
-    if (vc_amb) coef += COLOR.rgb * ms2_ambient;
+    if (vc_dif) coef += COLOR.rgb * light_dif;
+    if (vc_amb) coef += COLOR.rgb * light_amb;
     // neither the colour nor the opacity is saturated, as in the mesh shader (MeshCode): the quads draw through a
     // standard material (ParticleSystemDef.DetailOpacity), whose outputs go to the FP16 target as they are
     // (CompositeFinalRGBAColor, NiStandardMaterialNodeLibrary.cpp:3057-3106; postprocessingservice.cpp:1750-1751)
@@ -217,10 +231,134 @@ void fragment() {
     // the glow map adds its colour after the lighting (NiStandardMaterial::HandlePostLightTextureApplication,
     // NiStandardMaterial.cpp:5617-5700, HandleGlowMap :4816-4824), as the mesh shader's
     if (has_glow) col += texture(glow_tex, map_uv(uv, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
-    FOG = vec4(ms2_fog_color, fog_share);
-    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
-    ALPHA = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
+    float a = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
+    float k = alpha_boost && a > 1.0 ? a : 1.0;     // MS2AlphaBoostMaterial, as the mesh shader's
+    FOG = vec4(ms2_fog_color * k, fog_share);
+    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k;
+    ALPHA = a;
 }";
+    // A block naming an _HO technique (HoTechnique, which gives the formulas and the sampler modes) draws through that
+    // effect pass, for a mesh and for a particle system's quads alike: DISSOLVE, GLOW, WRAP (the base map wraps), VC (c0
+    // times the vertex colour, COLOR: a particle's key colour), GLOWVC (c1 times it) and PARTICLE (the quad's flipbook cell,
+    // as PartCode's) are the technique's defines. ho_emi is c0 (MATERIALEMISSIVE: the emissive and the material alpha),
+    // ho_spec c1's colour (MATERIALSPECULAR), ho_power the distortion (MATERIALPOWER, the glossiness). The pass reads only
+    // texcoord 0, whatever uv set the map names. There is no lighting (UsesNiLightState 0) and no height fog: the pass
+    // writes its colour and the fixed-function depth fog of the render state applies (NiDX9RenderState::UpdateRenderState,
+    // NiDX9RenderState.cpp:434-447). The render state also gives the blend and the alpha test (ApplyAlpha, :449-476):
+    // WRITE_ALPHA writes ALPHA (blending off draws the pass opaque), and alpha_test is the NiAlphaProperty test function
+    // (TEST_ALWAYS 0 .. TEST_NEVER 7, NiAlphaProperty.h:47-57; -1 off) against alpha_ref, its threshold / 255.
+    // A map the block lacks reads the texture the effect lends it (EffectMesh.Lent: the one the effect's other blocks of
+    // that file carry), else (0, 0, 0, 1), a NULL texture's value (hint_default_black).
+    static readonly string HoCode = @"shader_type spatial;
+render_mode unshaded, MESHSTATE, BLEND;
+DEFINES
+#if defined(WRAP)
+uniform sampler2D tex : repeat_enable, filter_linear, hint_default_black;
+#else
+uniform sampler2D tex : repeat_disable, filter_linear, hint_default_black;
+#endif
+uniform sampler2D detail_tex : repeat_enable, filter_linear, hint_default_black;
+uniform vec3 base_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
+uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
+#if defined(DISSOLVE)
+uniform sampler2D gloss_tex : repeat_disable, filter_linear, hint_default_black;
+#else
+uniform sampler2D normal_tex : repeat_enable, filter_linear, hint_default_black;
+uniform vec3 normal_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 normal_r1 = vec3(0.0, 1.0, 0.0);
+uniform float ho_power = 0.0;
+#endif
+#if defined(GLOW)
+uniform sampler2D glow_tex : repeat_enable, filter_linear, hint_default_black;
+uniform vec3 glow_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 glow_r1 = vec3(0.0, 1.0, 0.0);
+uniform vec3 ho_spec = vec3(0.0);
+#endif
+uniform vec4 ho_emi = vec4(0.0, 0.0, 0.0, 1.0);
+uniform int alpha_test = -1;
+uniform float alpha_ref = 0.0;
+#if defined(PARTICLE)
+uniform vec2 frames = vec2(1.0, 1.0);
+varying vec2 cell;
+#endif
+FOGDECL
+MORPHDECL
+void vertex() {
+#if defined(PARTICLE)
+    cell = INSTANCE_CUSTOM.xy;
+#endif
+    MORPHVERT FOGVERT }
+vec2 rows(vec2 uv, vec3 r0, vec3 r1) { return vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0))); }
+bool alpha_pass(float a) {
+    a = clamp(a, 0.0, 1.0);
+    switch (alpha_test) {
+        case 0: return true;
+        case 1: return a < alpha_ref;
+        case 2: return a == alpha_ref;
+        case 3: return a <= alpha_ref;
+        case 4: return a > alpha_ref;
+        case 5: return a != alpha_ref;
+        case 6: return a >= alpha_ref;
+        case 7: return false;
+    }
+    return true;
+}
+void fragment() {
+#if defined(PARTICLE)
+    vec2 uv = UV / frames + cell;
+#else
+    vec2 uv = UV;
+#endif
+    vec4 c0 = ho_emi;
+#if defined(VC)
+    c0 *= COLOR;
+#endif
+#if defined(DISSOLVE)
+    float x = 2.0 * c0.a + texture(detail_tex, rows(uv, detail_r0, detail_r1)).r - 1.0;
+    vec4 b = texture(tex, rows(uv, base_r0, base_r1));
+    vec3 col = b.rgb * c0.rgb + texture(gloss_tex, vec2(1.0 - 2.0 * x, 0.0)).rgb;
+    float a = x * b.a;
+#else
+    float n = texture(normal_tex, rows(uv, normal_r0, normal_r1)).r * ho_power;
+    vec4 b = pow(texture(tex, rows(uv, base_r0, base_r1) + n), vec4(1.8));
+    vec3 col = b.rgb * c0.rgb;
+#if defined(GLOW)
+    vec3 c1 = ho_spec;
+#if defined(GLOWVC)
+    c1 *= COLOR.rgb;
+#endif
+    col += texture(glow_tex, rows(uv, glow_r0, glow_r1) + n).rgb * c1 * 10.0;
+#endif
+    float a = clamp(texture(detail_tex, rows(uv, detail_r0, detail_r1)).r * b.a * c0.a * 5.0, 0.0, 1.0);
+#endif
+    if (!alpha_pass(a)) discard;
+    FOG = vec4(ms2_fog_color, fog_share);
+    ALBEDO = col;
+#if defined(WRITE_ALPHA)
+    ALPHA = a;
+#endif
+}";
+    static readonly Dictionary<string, Shader> hoShaders = new();
+
+    /// <summary>The shader of an _HO technique (HoCode) for a mesh (render modes as RenderModes) or a particle system
+    /// (<paramref name="particle"/>: the quads' modes, as PartCode's), with the block's blend: none (opaque), additive or mix.</summary>
+    static Shader HoShader(HoTechnique h, string state, bool particle, bool blendOn, bool add, int morphTargets = 0)
+    {
+        string key = h.Name + " " + state + (particle ? " particle" : "") + (!blendOn ? " opaque" : add ? " add" : " mix") + (morphTargets > 0 ? " morph" + morphTargets : "");
+        if (hoShaders.TryGetValue(key, out var sh)) return sh;
+        var defs = new System.Text.StringBuilder();
+        void Def(bool on, string name) { if (on) defs.Append("#define ").Append(name).Append('\n'); }
+        Def(h.Dissolve, "DISSOLVE"); Def(h.Glow, "GLOW"); Def(h.Wrap, "WRAP"); Def(h.VertexColor, "VC"); Def(h.GlowVertexColor, "GLOWVC");
+        Def(particle, "PARTICLE"); Def(blendOn, "WRITE_ALPHA");
+        string code = WithFog(HoCode).Replace("DEFINES", defs.ToString()).Replace("MESHSTATE", state).Replace("BLEND", add ? "blend_add" : "blend_mix");
+        return hoShaders[key] = new Shader { Code = WithMorph(code, morphTargets), ResourceName = h.Name };   // the name: the technique (tests)
+    }
+
+    // the alpha test of an NiAlphaProperty's flags as HoCode's alpha_test (bit 9 on, the function in bits 10-12), -1 off
+    static int AlphaTest(int alphaFlags) => alphaFlags >= 0 && (alphaFlags & 0x200) != 0 ? (alphaFlags >> 10) & 7 : -1;
+
     // The client's fog for an effect's meshes and particle systems. A NIF effect carries no NiFogProperty (none of the
     // effect pack's nifs has one), so its meshes take the default fog property ApplyEffect::SetFog sets for the field
     // (applyeffect.cpp:586-622: NiFogProperty::ms_spDefault), and their materials are the field's: MS2StandardMaterial
@@ -246,9 +384,32 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
 }";
     const string FogVert = "fog_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; fog_share = ms2_fog_share(VIEW_MATRIX, fog_world, CAMERA_VISIBLE_LAYERS);";
 
+    // The field's lights on an effect block, per vertex (EffectMesh.LightForm): the ambient and diffuse accumulators the
+    // material's ambient and diffuse terms (or the vertex colour in their place) multiply. ms2_ambient is the ambient
+    // light (SCM_DEF_AMBIENTLIGHT); the directional light adds sun * N.L to the diffuse and its ambient colour to the
+    // ambient (form 1, Gamebryo's Light) or sun * N.L + its ambient colour * (1 - N.L) to the diffuse (form 2, MS2Light).
+    // Without normals (lit_normals false) the directional light is dropped; form 0 (LightingE) takes no light.
+    const string LightDecl = @"global uniform vec3 ms2_sun_color;
+global uniform vec3 ms2_sun_ambient;
+global uniform vec3 ms2_sun_dir;
+uniform vec3 mat_diffuse = vec3(1.0);
+uniform int light_form = 1;
+uniform bool lit_normals = true;
+varying vec3 light_amb;
+varying vec3 light_dif;
+void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
+    float ndl = max(dot(n, -ms2_sun_dir), 0.0);
+    amb = vec3(0.0); dif = vec3(0.0);
+    if (light_form == 0) return;
+    amb = ms2_ambient;
+    if (!lit_normals) return;
+    if (light_form == 1) { amb += ms2_sun_ambient; dif = ms2_sun_color * ndl; }
+    else dif = ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl);
+}";
+
     // FogDecl / FogVert in place of the FOGDECL / FOGVERT marks: the height fog goes into the colour, the depth fog
-    // through FOG (as character_lit; the colour buffer holds gamma values)
-    static string WithFog(string code) => code.Replace("FOGDECL", FogDecl).Replace("FOGVERT", FogVert);
+    // through FOG (as character_lit; the colour buffer holds gamma values); LightDecl in place of LIGHTDECL
+    static string WithFog(string code) => code.Replace("FOGDECL", FogDecl).Replace("FOGVERT", FogVert).Replace("LIGHTDECL", LightDecl);
 
     // the engine's bAdditive for the height fog: an NiAlphaProperty whose dest blend is ONE, blending on or not
     // (NiStandardMaterial.cpp:690-692)
@@ -283,6 +444,13 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             meshShaders[key] = sh = new Shader { Code = WithMorph(WithFog(MeshCode), morphTargets).Replace("MESHSTATE", state).Replace("BLEND", add ? "blend_add" : "blend_mix") };
         return sh;
     }
+
+    // an effect mesh's shader: its _HO technique's (EffectMesh.Ho), else the standard one
+    static Shader ShaderOf(EffectMesh em, bool add, bool mirrored, int morphTargets) => em.Ho is { } h
+        ? HoShader(h, RenderModes(em.Mesh, mirrored), false, BlendOn(em.Mesh.AlphaFlags), add, morphTargets)
+        : MeshShader(em.Mesh, add, mirrored, morphTargets);
+
+    static bool BlendOn(int alphaFlags) => alphaFlags >= 0 && (alphaFlags & 1) != 0;
 
     static readonly string[] MorphTerms = { "morph_w.x * CUSTOM0.xyz", "morph_w.y * CUSTOM1.xyz", "morph_w.z * CUSTOM2.xyz", "morph_w.w * CUSTOM3.xyz" };
 
@@ -323,7 +491,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
             // a morph with more offset targets than custom arrays keeps the positions with its fixed weights baked
             if (em.Morph is { } mo && mo.Anim.Deltas.Length <= ModelBuilder.EffectMorphTargets) { ms.Morph = mo; ms.MorphTargets = mo.Anim.Deltas.Length; }
-            var mat = new ShaderMaterial { Shader = MeshShader(m, add, false, ms.MorphTargets) };
+            ms.Ho = em.Ho;
+            var mat = new ShaderMaterial { Shader = ShaderOf(em, add, false, ms.MorphTargets) };
             // SORTING_OFF meshes are drawn unsorted after the opaque buckets and before the depth-sorted alpha list
             // (MS2RenderListProcessor: RenderNoSortList then RenderAlphaList, ms2renderlistprocessor.cpp:264-266, :368-370): a
             // lower priority puts them ahead of the field's other transparent objects. STILL-OPEN: their order among
@@ -332,36 +501,42 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             ms.BaseKey = m.Textures.ContainsKey("base") ? "base" : "shader0";
             ms.Base = m.Textures.TryGetValue(ms.BaseKey, out var bn) ? mb.Texture(bn) : null;
             ms.BaseMap = m.Maps.GetValueOrDefault(ms.BaseKey);
-            mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
-            if (DestOne(m.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
-            if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
-            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt)
+            ms.Mat = mat; ms.Add = add;
+            ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform(); ms.DetailT = new TexTransform(); ms.NormalT = new TexTransform();
+            if (ms.Ho != null) HoSetup(ms, m);
+            else
             {
-                mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt);
-                ms.GlowMap = m.Maps.GetValueOrDefault("glow");
+                mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
+                if (DestOne(m.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
+                if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
+                if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt)
+                {
+                    mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt);
+                    ms.GlowMap = m.Maps.GetValueOrDefault("glow");
+                }
+                if (m.Textures.TryGetValue("detail", out var dn) && mb.Texture(dn) is { } dt)
+                {
+                    mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dt);
+                    if (em.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true);
+                    ms.DetailMap = m.Maps.GetValueOrDefault("detail");
+                }
+                MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
+                MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
+                MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp);
+                SetRows(ms, ms.BaseMap?.Transform, 0, true);
+                SetRows(ms, ms.GlowMap?.Transform, 1, true);
+                SetRows(ms, ms.DetailMap?.Transform, 2, true);
+                var vcu = em.VertexColors;
+                if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
+                if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
+                if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
+                if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
+                if (em.AlphaBoost) mat.SetShaderParameter(FxParam.AlphaBoost, true);
+                mat.SetShaderParameter(FxParam.LightForm, em.LightForm);
+                if (m.Normals == null) mat.SetShaderParameter(FxParam.LitNormals, false);
+                Shade(ms, 0, true);
+                mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
             }
-            if (m.Textures.TryGetValue("detail", out var dn) && mb.Texture(dn) is { } dt)
-            {
-                mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dt);
-                if (em.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true);
-                ms.DetailMap = m.Maps.GetValueOrDefault("detail");
-            }
-            MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
-            MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
-            MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp);
-            ms.Mat = mat;
-            SetRows(ms, ms.BaseMap?.Transform, 0, true);
-            SetRows(ms, ms.GlowMap?.Transform, 1, true);
-            SetRows(ms, ms.DetailMap?.Transform, 2, true);
-            ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform(); ms.DetailT = new TexTransform();
-            ms.Add = add;
-            var vcu = em.VertexColors;
-            if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
-            if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
-            if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
-            if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
-            Shade(ms, 0, true);
-            mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
             ms.LastTex = ms.Base;
             if (em.Flip != null)
             {
@@ -379,7 +554,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
             if (ms.Morph != null) SetMorphWeights(ms, 0, true);
             var morph = ms.Morph?.Anim;
-            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.VertexColors.Any, effectMorph: morph)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.Ho?.VertexColor ?? e.VertexColors.Any, effectMorph: morph)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
                 Visible = !scene.Nodes[em.Node].Culled };
             z.AddChild(ms.Node);
             meshes.Add(ms);
@@ -391,46 +566,60 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             int n = d.MaxParticles;
             ps.Pos = new Vector3[n]; ps.Vel = new Vector3[n]; ps.Age = new float[n]; ps.Life = new float[n]; ps.Size = new float[n]; ps.Rot = new float[n]; ps.RotSpeed = new float[n]; ps.Variance = new float[n]; ps.Tex = new AlignedQuad.TexAnim(d);
             ps.Accum = new double[d.Emitters.Count];
-            var mat = new ShaderMaterial { Shader = d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
+            // the quads draw through the system's _HO technique (EffectMesh.Ho on Material), else the standard shader
+            var ho = d.Material.Ho;
+            var mat = new ShaderMaterial { Shader = ho != null ? HoShader(ho, "cull_disabled, depth_draw_never", true, BlendOn(d.AlphaFlags), d.Additive)
+                : d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
             var tex = d.Texture != null ? mb.Texture(d.Texture) : null;
-            mat.SetShaderParameter(FxParam.HasTex, tex != null);
-            if (DestOne(d.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
-            if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
             if (ps.Tex.On) mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
             // the base and detail maps' transforms and clamp modes (ParticleSystemDef.Material's Maps; ReadSystem)
             var pm = d.Material.Mesh;
             var baseMap = pm.Maps.GetValueOrDefault("base") ?? pm.Maps.Values.Where(x => x.ShaderIndex >= 0 && x.File == d.Texture).OrderBy(x => x.ShaderIndex).FirstOrDefault();
-            var detailMap = pm.Maps.GetValueOrDefault("detail");
-            var glowMap = pm.Maps.GetValueOrDefault("glow");
-            var gtex = glowMap?.File != null ? mb.Texture(glowMap.File) : null;
-            if (gtex == null) glowMap = null;
-            else { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gtex); mat.SetShaderParameter(FxParam.GlowClamp, (glowMap.ClampS ? 1 : 0) | (glowMap.ClampT ? 2 : 0)); }
-            var dtex = detailMap?.File != null ? mb.Texture(detailMap.File) : null;
-            if (dtex == null) detailMap = null;
-            else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); if (d.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true); }
-            if (baseMap != null) mat.SetShaderParameter(FxParam.BaseClamp, (baseMap.ClampS ? 1 : 0) | (baseMap.ClampT ? 2 : 0));
-            if (detailMap != null) mat.SetShaderParameter(FxParam.DetailClamp, (detailMap.ClampS ? 1 : 0) | (detailMap.ClampT ? 2 : 0));
-            // The quads are drawn through the material the system block names (most name MS2StandardMaterial), or the
-            // renderer's default NiStandardMaterial when it names none (NiRenderer::NiRenderer, NiRenderer.cpp:49-54; nothing in
-            // the client calls SetDefaultMaterial; ParticleSystemDef.DetailOpacity): their colour is the standard material's, as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
-            // NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450). Nearly every
-            // system is AMB_DIFF with E_A_D (flags 40): the emissive is added to the key colour times the light, so a dark key
-            // colour over a dark texture still shows the emissive.
-            // SoftParticlesManager::RegisterModel takes only objects whose material is already SoftParticlesMaterial
-            // (softparticlesmanager.cpp:133-162); three systems name it. STILL-OPEN: their soft-depth opacity is not drawn.
-            // STILL-OPEN: the dark and decal maps and texture transform controllers on a system's maps are not either.
-            ps.Shading = new MeshState { Def = d.Material, Mat = mat, BaseMap = baseMap, GlowMap = glowMap, DetailMap = detailMap };
-            SetRows(ps.Shading, baseMap?.Transform, 0, true);
-            SetRows(ps.Shading, glowMap?.Transform, 1, true);
-            SetRows(ps.Shading, detailMap?.Transform, 2, true);
-            var vcu = d.Material.VertexColors;
-            if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
-            if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
-            if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
-            if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
-            Shade(ps.Shading, 0, true);
-            mat.SetShaderParameter(FxParam.Alpha, ps.Shading.LastAlpha = (float)d.Material.Opacity(0));
+            if (ho != null)
+            {
+                ps.Shading = new MeshState { Def = d.Material, Mat = mat, Ho = ho, Base = tex, BaseMap = baseMap };
+                HoSetup(ps.Shading, pm);
+            }
+            else
+            {
+                mat.SetShaderParameter(FxParam.HasTex, tex != null);
+                if (DestOne(d.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
+                if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
+                var detailMap = pm.Maps.GetValueOrDefault("detail");
+                var glowMap = pm.Maps.GetValueOrDefault("glow");
+                var gtex = glowMap?.File != null ? mb.Texture(glowMap.File) : null;
+                if (gtex == null) glowMap = null;
+                else { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gtex); mat.SetShaderParameter(FxParam.GlowClamp, (glowMap.ClampS ? 1 : 0) | (glowMap.ClampT ? 2 : 0)); }
+                var dtex = detailMap?.File != null ? mb.Texture(detailMap.File) : null;
+                if (dtex == null) detailMap = null;
+                else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); if (d.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true); }
+                if (baseMap != null) mat.SetShaderParameter(FxParam.BaseClamp, (baseMap.ClampS ? 1 : 0) | (baseMap.ClampT ? 2 : 0));
+                if (detailMap != null) mat.SetShaderParameter(FxParam.DetailClamp, (detailMap.ClampS ? 1 : 0) | (detailMap.ClampT ? 2 : 0));
+                // The quads are drawn through the material the system block names (most name MS2StandardMaterial), or the
+                // renderer's default NiStandardMaterial when it names none (NiRenderer::NiRenderer, NiRenderer.cpp:49-54; nothing in
+                // the client calls SetDefaultMaterial; ParticleSystemDef.DetailOpacity), or MS2AlphaBoostMaterial in their place
+                // (EffectMesh.AlphaBoost): their colour is the standard material's, as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
+                // NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450). Nearly every
+                // system is AMB_DIFF with E_A_D (flags 40): the emissive is added to the key colour times the light, so a dark key
+                // colour over a dark texture still shows the emissive.
+                // SoftParticlesManager::RegisterModel takes only objects whose material is already SoftParticlesMaterial
+                // (softparticlesmanager.cpp:133-162); three systems name it. STILL-OPEN: their soft-depth opacity is not drawn.
+                // STILL-OPEN: the dark and decal maps and texture transform controllers on a system's maps are not either.
+                ps.Shading = new MeshState { Def = d.Material, Mat = mat, BaseMap = baseMap, GlowMap = glowMap, DetailMap = detailMap };
+                SetRows(ps.Shading, baseMap?.Transform, 0, true);
+                SetRows(ps.Shading, glowMap?.Transform, 1, true);
+                SetRows(ps.Shading, detailMap?.Transform, 2, true);
+                var vcu = d.Material.VertexColors;
+                if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
+                if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
+                if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
+                if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
+                if (d.Material.AlphaBoost) mat.SetShaderParameter(FxParam.AlphaBoost, true);
+                mat.SetShaderParameter(FxParam.LightForm, d.Material.LightForm);
+                Shade(ps.Shading, 0, true);
+                mat.SetShaderParameter(FxParam.Alpha, ps.Shading.LastAlpha = (float)d.Material.Opacity(0));
+            }
             // The quad's corners sit at +-(right +- up) times the particle size (initial size times the size multiplier):
             // NiPSFacingQuadGeneratorKernel.cpp:127-131, NiPSAlignedQuadGeneratorKernelFF.cpp:145-169. So the quad is 2 x 2
             // and the per-particle basis carries the size (and for aligned quads the speed scale and pivot, AlignedQuad).
@@ -444,22 +633,58 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         Advance(0);
     }
 
-    /// <summary>A mesh's colour terms at effect time t (EffectMesh.Shade) as the tint and mat_ambient parameters, each set
-    /// only when it changed (always when force).
-    /// STILL-OPEN, the lights: the client lights effect meshes. A skill effect's EffectNode passes its parent's dynamic effects
-    /// (the lights) down only when useLighting, which defaults to true (LightUnaffectedNode::UpdateEffectsDownward,
-    /// lightunaffectednode.cpp:75; nifeffectparam.cpp:353). Which of the field's lights reach it there, and which reach a field
-    /// entity's EffectMesh graph, is not traced, so the mesh is drawn unshaded: diffuse at full light plus emissive, plus the
-    /// ambient colour times the field's ambient light.</summary>
+    /// <summary>A mesh's colour terms at effect time t (EffectMesh.Shade) as the tint (the emissive), mat_diffuse and
+    /// mat_ambient parameters, each set only when it changed (always when force). The lights they take are the shader's
+    /// (LightDecl, EffectMesh.LightForm).</summary>
     static void Shade(MeshState ms, double t, bool force)
     {
-        ms.Def.Shade(t, ms.Lit, ms.Amb);
+        ms.Def.Shade(t, ms.Lit, ms.Dif, ms.Amb);
         // a Vector4, not a Color: Godot converts a Color set on a vec4 uniform from sRGB to linear, which took 0.5 to 0.21;
         // the colour buffer holds gamma values (field_lit, ModelBuilder's Vector3 colours), so the coefficient goes in as it is
         var c = new Vector4((float)ms.Lit[0], (float)ms.Lit[1], (float)ms.Lit[2], 1f);
+        var d = new Vector3((float)ms.Dif[0], (float)ms.Dif[1], (float)ms.Dif[2]);
         var a = new Vector3((float)ms.Amb[0], (float)ms.Amb[1], (float)ms.Amb[2]);
         if (force || c != ms.LastTint) ms.Mat.SetShaderParameter(FxParam.Tint, ms.LastTint = c);
+        if (force || d != ms.LastDif) ms.Mat.SetShaderParameter(FxParam.MatDiffuse, ms.LastDif = d);
         if (force || a != ms.LastAmb) ms.Mat.SetShaderParameter(FxParam.Ambient, ms.LastAmb = a);
+    }
+
+    /// <summary>An _HO block's maps and constants (HoCode): the base, detail and the technique's other maps with their
+    /// transforms, the distortion (MATERIALPOWER: the glossiness, NiMaterialProperty's default 4 without one,
+    /// NiMaterialProperty.cpp:31-39), the alpha test, and the colours at time 0 (HoShade).</summary>
+    void HoSetup(MeshState ms, ModelMesh m)
+    {
+        var mat = ms.Mat; var h = ms.Ho;
+        if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
+        // a map the block lacks takes the texture the effect lends it (EffectMesh.Lent), under the identity transform
+        Texture2D Map(string slot) => m.Textures.TryGetValue(slot, out var f) || ms.Def.Lent?.TryGetValue(slot, out f) == true ? mb.Texture(f) : null;
+        if (Map("detail") is { } dt) { mat.SetShaderParameter(FxParam.DetailTex, dt); ms.DetailMap = m.Maps.GetValueOrDefault("detail"); }
+        if (h.Dissolve) { if (Map("gloss") is { } gl) mat.SetShaderParameter(FxParam.GlossTex, gl); }
+        else
+        {
+            if (Map("normal") is { } nt) { mat.SetShaderParameter(FxParam.NormalTex, nt); ms.NormalMap = m.Maps.GetValueOrDefault("normal"); }
+            mat.SetShaderParameter(FxParam.HoPower, m.Emissive != null ? m.Glossiness : 4f);
+        }
+        if (h.Glow && Map("glow") is { } gt) { mat.SetShaderParameter(FxParam.GlowTex, gt); ms.GlowMap = m.Maps.GetValueOrDefault("glow"); }
+        int test = AlphaTest(m.AlphaFlags);
+        if (test >= 0) { mat.SetShaderParameter(FxParam.AlphaTest, test); mat.SetShaderParameter(FxParam.AlphaRef, m.AlphaThreshold / 255f); }
+        SetRows(ms, ms.BaseMap?.Transform, 0, true);
+        SetRows(ms, ms.GlowMap?.Transform, 1, true);
+        SetRows(ms, ms.DetailMap?.Transform, 2, true);
+        SetRows(ms, ms.NormalMap?.Transform, 3, true);
+        HoShade(ms, 0, true);
+    }
+
+    /// <summary>An _HO block's c0 (the emissive with the opacity: ho_emi) and c1 (the specular: ho_spec, under a glow
+    /// technique) at effect time t (EffectMesh.HoColors, Opacity), each set only when it changed (always when force).</summary>
+    static void HoShade(MeshState ms, double t, bool force)
+    {
+        ms.Def.HoColors(t, ms.Lit, ms.Amb);
+        var c = new Vector4((float)ms.Lit[0], (float)ms.Lit[1], (float)ms.Lit[2], (float)ms.Def.Opacity(t));
+        if (force || c != ms.LastTint) ms.Mat.SetShaderParameter(FxParam.HoEmi, ms.LastTint = c);
+        if (!ms.Ho.Glow) return;
+        var s = new Vector3((float)ms.Amb[0], (float)ms.Amb[1], (float)ms.Amb[2]);
+        if (force || s != ms.LastAmb) ms.Mat.SetShaderParameter(FxParam.HoSpec, ms.LastAmb = s);
     }
 
     // MS2_PERF_FX=1: every effect's _Process timed (wall time and managed bytes allocated); from 600 frames after the first
@@ -522,7 +747,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (m == mirrored) return;
         mirrored = m;
         foreach (var ms in meshes)
-            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = MeshShader(ms.Def.Mesh, ms.Add, mirrored, ms.MorphTargets);
+            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
     }
     bool mirrored;
     public override void _ExitTree() => inTree = false;
@@ -649,8 +874,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         {
             var d = ms.Def;
             if (!ms.Static || !ms.Placed) { Place(ms, World(d.Node, t, camLocal)); ms.Placed = true; }
-            if (d.Colors.Count > 0) Shade(ms, t, false);
-            if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
+            if (ms.Ho != null) { if (d.Colors.Count > 0 || d.Alpha != null) HoShade(ms, t, false); }
+            else
+            {
+                if (d.Colors.Count > 0) Shade(ms, t, false);
+                if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
+            }
             if (d.Uv.Count > 0) AnimateUv(ms, t);
             if (ms.Morph != null) SetMorphWeights(ms, t, false);
             if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
@@ -668,8 +897,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         foreach (var ps in systems)
         {
             var sm = ps.Shading;
-            if (sm.Def.Colors.Count > 0) Shade(sm, t, false);
-            if (sm.Def.Alpha != null) { float a = (float)sm.Def.Opacity(t); if (a != sm.LastAlpha) sm.Mat.SetShaderParameter(FxParam.Alpha, sm.LastAlpha = a); }
+            if (sm.Ho != null) { if (sm.Def.Colors.Count > 0 || sm.Def.Alpha != null) HoShade(sm, t, false); }
+            else
+            {
+                if (sm.Def.Colors.Count > 0) Shade(sm, t, false);
+                if (sm.Def.Alpha != null) { float a = (float)sm.Def.Opacity(t); if (a != sm.LastAlpha) sm.Mat.SetShaderParameter(FxParam.Alpha, sm.LastAlpha = a); }
+            }
             Step(ps, dt, camLocal, camRight, camUp);
         }
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
@@ -680,7 +913,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
 
     // The uv controllers of one mesh at effect time t: each active controller replaces one component of its map's transform
     // (UvOp); a map without a static transform gets the controller's default one (TexTransform.ControllerDefault). Only the
-    // base, glow and detail maps are drawn here, so controllers on the dark, normal and decal maps have nothing to move.
+    // base, glow and detail maps are drawn here (and the normal map of an _HO technique), so controllers on the dark and decal
+    // maps, and on a standard block's normal map, have nothing to move.
     // The working transform is rebuilt from the static one each frame and the running controllers replayed over it. The
     // client instead keeps whatever UpdateValue last wrote into the map's transform, so the two differ only when one of two
     // controllers on a map stops (its range is over, or it is inactive) while the other runs: here the stopped component
@@ -692,7 +926,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     static readonly TexTransform NoTransform = TexTransform.ControllerDefault();
     static void AnimateUv(MeshState ms, float t)
     {
-        bool baseOn = false, glowOn = false, detailOn = false;
+        bool baseOn = false, glowOn = false, detailOn = false, normalOn = false;
         foreach (var op in ms.Def.Uv)
         {
             if (!op.Ctl.Active) continue;
@@ -700,12 +934,14 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (op.Slot == ms.BaseKey && ms.BaseMap != null) { if (!baseOn) { ms.BaseT.CopyFrom(ms.BaseMap.Transform ?? NoTransform); baseOn = true; } w = ms.BaseT; }
             else if (op.Slot == "glow" && ms.GlowMap != null) { if (!glowOn) { ms.GlowT.CopyFrom(ms.GlowMap.Transform ?? NoTransform); glowOn = true; } w = ms.GlowT; }
             else if (op.Slot == "detail" && ms.DetailMap != null) { if (!detailOn) { ms.DetailT.CopyFrom(ms.DetailMap.Transform ?? NoTransform); detailOn = true; } w = ms.DetailT; }
+            else if (op.Slot == "normal" && ms.NormalMap != null) { if (!normalOn) { ms.NormalT.CopyFrom(ms.NormalMap.Transform ?? NoTransform); normalOn = true; } w = ms.NormalT; }
             else continue;
             w.Set(op.Operation, (float)op.Curve(op.Ctl.Local(t)));
         }
         if (baseOn) SetRows(ms, ms.BaseT, 0, false);
         if (glowOn) SetRows(ms, ms.GlowT, 1, false);
         if (detailOn) SetRows(ms, ms.DetailT, 2, false);
+        if (normalOn) SetRows(ms, ms.NormalT, 3, false);
     }
 
     // the morph's weights at effect time t as morph_w, set only when they differ from the last ones set (always when force)
@@ -718,15 +954,15 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (force || v != ms.LastW) ms.Mat.SetShaderParameter(FxParam.MorphW, ms.LastW = v);
     }
 
-    // a map's texture transform as the shader's two rows (identity without one), map 0 base, 1 glow or 2 detail; a row is set only
+    // a map's texture transform as the shader's two rows (identity without one), map 0 base, 1 glow, 2 detail or 3 normal; a row is set only
     // when it differs from the last one set (always when force)
     static void SetRows(MeshState ms, TexTransform tt, int map, bool force)
     {
         Vector3 a = new(1, 0, 0), b = new(0, 1, 0);
         if (tt != null) { var r = ms.Rows; tt.Rows(r); a = new(r[0], r[1], r[2]); b = new(r[3], r[4], r[5]); }
         int k = map * 2;
-        if (force || a != ms.LastRows[k]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR0 : map == 1 ? FxParam.GlowR0 : FxParam.DetailR0, ms.LastRows[k] = a);
-        if (force || b != ms.LastRows[k + 1]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR1 : map == 1 ? FxParam.GlowR1 : FxParam.DetailR1, ms.LastRows[k + 1] = b);
+        if (force || a != ms.LastRows[k]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR0 : map == 1 ? FxParam.GlowR0 : map == 2 ? FxParam.DetailR0 : FxParam.NormalR0, ms.LastRows[k] = a);
+        if (force || b != ms.LastRows[k + 1]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR1 : map == 1 ? FxParam.GlowR1 : map == 2 ? FxParam.DetailR1 : FxParam.NormalR1, ms.LastRows[k + 1] = b);
     }
 
     // a map's uv set and clamp mode. The map reads its own uv set (TEXCOORD_MASK; NiStandardMaterialDescriptor.cpp:1006,

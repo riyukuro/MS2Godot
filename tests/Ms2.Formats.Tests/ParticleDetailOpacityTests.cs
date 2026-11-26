@@ -13,8 +13,9 @@ namespace Ms2.Formats.Tests;
 ///   by the detail alpha (ms2standardmaterial.cpp:681-694, :342-343). A system that names no material draws through the
 ///   renderer's default NiStandardMaterial, which takes the detail colour only (NiStandardMaterial.cpp:4765-4774).
 /// - Here: <see cref="EffectMesh.DetailOpacity"/> and <see cref="ParticleSystemDef.DetailOpacity"/>; the mesh and particle
-///   shaders multiply by the detail alpha when it is set. A name no library builds (the EffectUVDistortion* and
-///   EffectDissolve ones) leaves the block with the default material (NiRenderObject.cpp:420-424).
+///   shaders multiply by the detail alpha when it is set. The _HO names are effect shader techniques that read the detail
+///   as a red mask (<see cref="HoMaterialTests"/>), and a block boosted to MS2AlphaBoostMaterial takes the detail alpha
+///   whatever it names (<see cref="ModelData.AlphaBoost"/>).
 /// The captain hookfish's smoke (Supersmoke01) draws the opaque aura_00913 under the detail smoke_004, whose alpha makes
 /// the round puffs; with the colour only, each puff was a dark translucent square.
 /// </summary>
@@ -80,13 +81,20 @@ public class ParticleDetailOpacityTests
             var sc = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, nif)));
             return sc.Meshes.First(m => m.Mesh.Material == material && m.Mesh.Maps.TryGetValue("detail", out var d) && d.File != null);
         }
-        // the yeti face trap's face discs name no material: the default material, the detail colour only
-        var face = One("npc/skill/yetitwoheadwhite/eff_yetitwoheadwhite_facetrap.nif", null);
-        Assert.That(face.Mesh.Maps["detail"].File, Does.EndWith("gradient-circle2.dds").IgnoreCase);
-        Assert.That(face.DetailOpacity, Is.False);
+        // the yeti face trap's face discs name no material: the one whose alpha keys stay at or below 1 draws the default
+        // material, the detail colour only; the two whose alpha key reaches 2 draw MS2AlphaBoostMaterial, the detail alpha
+        var yeti = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, "npc/skill/yetitwoheadwhite/eff_yetitwoheadwhite_facetrap.nif")));
+        var faces = yeti.Meshes.Where(m => m.Mesh.Material == null && m.Mesh.Maps.TryGetValue("detail", out var d) && d.File != null).ToList();
+        Assert.That(faces.All(m => m.Mesh.Maps["detail"].File.EndsWith("gradient-circle2.dds", StringComparison.OrdinalIgnoreCase)));
+        Assert.That(faces.Where(m => !m.AlphaBoost).Select(m => m.Mesh.Name), Is.EqualTo(new[] { "PolyMesh#103" }));
+        Assert.That(faces.Where(m => m.AlphaBoost).Select(m => m.Mesh.Name), Is.EquivalentTo(new[] { "Cylinder03", "Cylinder04" }));
+        Assert.That(faces.All(m => m.DetailOpacity == m.AlphaBoost));
         Assert.That(One("bg/common/eff_bossportal_a01_opened.nif", "MS2StandardMaterial").DetailOpacity, Is.True);
         Assert.That(One("bg/common/eff_ugc_tank_01_hologram.nif", "MS2CharacterMaterial").DetailOpacity, Is.True);
-        Assert.That(One("additional/etc/eff_additional_jumpup_01_keep.nif", "EffectUVDistortionMaskGlowWrap_HO").DetailOpacity, Is.False);
+        // jumpup's _HO meshes draw their technique, which reads the detail red as the mask, not this alpha
+        var jump = One("additional/etc/eff_additional_jumpup_01_keep.nif", "EffectUVDistortionMaskGlowWrap_HO");
+        Assert.That(jump.Ho?.Name, Is.EqualTo("EffectUVDistortionMaskGlowWrap_HO"));
+        Assert.That(jump.DetailOpacity, Is.False);
     }
 
     /// <summary>The active material name, read here from the block on its own.</summary>
@@ -132,7 +140,7 @@ public class ParticleDetailOpacityTests
                 meshes++;
                 var name = Active(nif, nif.Blocks[m.Mesh.Block]);
                 if (m.Mesh.Material != name) bad.Add($"{entry} mesh {m.Mesh.Name}: material {m.Mesh.Material}, the block names {name}");
-                bool want = name != null && Array.IndexOf(standard, name) >= 0;
+                bool want = HoMaterialTests.Boosted(nif, m.Mesh.Block) || name != null && Array.IndexOf(standard, name) >= 0;
                 if (m.DetailOpacity != want) bad.Add($"{entry} mesh {m.Mesh.Name}: {name} DetailOpacity {m.DetailOpacity}");
                 if (m.DetailOpacity) meshOpacity++;
             }
@@ -142,7 +150,7 @@ public class ParticleDetailOpacityTests
                 var name = Active(nif, nif.Blocks[s.Material.Mesh.Block]);
                 byName[name ?? "(none)"] = byName.GetValueOrDefault(name ?? "(none)") + 1;
                 if (s.Material.Mesh.Material != name) bad.Add($"{entry} {s.Name}: material {s.Material.Mesh.Material}, the block names {name}");
-                bool want = name != null && Array.IndexOf(standard, name) >= 0;
+                bool want = HoMaterialTests.Boosted(nif, s.Material.Mesh.Block) || name != null && Array.IndexOf(standard, name) >= 0;
                 if (s.DetailOpacity != want) bad.Add($"{entry} {s.Name}: {name} DetailOpacity {s.DetailOpacity}");
                 if (s.DetailOpacity) { opacity++; if (s.Material.Mesh.Maps.TryGetValue("detail", out var dm) && dm.File != null) opacityDetail++; }
             }

@@ -101,54 +101,187 @@ public sealed class EffectMesh
     /// <summary>Which colour terms the mesh's vertex colours replace (ModelMesh.VertexColors).</summary>
     public VertexColorUse VertexColors => Mesh.VertexColors;
 
-    /// <summary>The detail map's alpha multiplies the opacity: the block names a material the client builds as an
+    /// <summary>The client swapped the block's material for MS2AlphaBoostMaterial when the effect loaded
+    /// (ModelData.AlphaBoost: a material alpha or an alpha key above 1), whatever material it names.</summary>
+    public bool AlphaBoost;
+
+    /// <summary>The material the client draws the block with: MS2AlphaBoostMaterial under <see cref="AlphaBoost"/>, else the
+    /// name the block stores (ModelMesh.Material), or null for none.</summary>
+    public string ActiveMaterial => AlphaBoost ? "MS2AlphaBoostMaterial" : Mesh?.Material;
+
+    /// <summary>The block draws through one of the two shipped effect files' techniques (HoTechnique), not a standard
+    /// material: it names one and is not swapped for MS2AlphaBoostMaterial.</summary>
+    public HoTechnique Ho => AlphaBoost ? null : HoTechnique.Of(Mesh?.Material);
+
+    /// <summary>Under an _HO technique (<see cref="Ho"/>), the texture the pass reads for a map it samples that the block
+    /// lacks (slot to file, null when none): the client sets no texture for it (NiD3DXEffectParameter::SetParameter returns
+    /// ENTRYNOTFOUND without SetTexture, NiD3DXEffectParameter.cpp:862-881), and every technique of an effect file shares the
+    /// file's one ID3DXEffect (NiD3DXEffectTechnique.cpp:66, GetRenderableEffect), so the pass reads the texture the last
+    /// block drawn through that file set for the map. The map's texture transform is the identity (the block has none:
+    /// NiD3DXEffectParameter.cpp:1755-1812). Taken here as the effect's own other drawn _HO blocks of the same file: when they
+    /// carry that map with exactly one texture, it is lent (EffectScene.LendMissingMaps); else none, and the pass reads
+    /// (0, 0, 0, 1), a NULL texture's value. STILL-OPEN: in the client the map also depends on the frame's draw order and on
+    /// the other effects on screen.</summary>
+    public Dictionary<string, string> Lent;
+
+    /// <summary>The detail map's alpha multiplies the opacity: the active material is one the client builds as an
     /// MS2StandardMaterial (ModelData.IsStandardMaterial; NiRenderObject::LoadBinary builds the named material,
     /// NiRenderObject.cpp:385-399, :77-86), whose HandleDetailMap samples the detail alpha into m_pkDetailOpacity
-    /// (ms2standardmaterial.cpp:681-694) and multiplies the opacity by it (:342-343). A block whose name builds nothing
-    /// is given the renderer's default material, an NiStandardMaterial (NiRenderObject.cpp:420-424; NiRenderer.cpp:49-54,
-    /// nothing in the client calls SetDefaultMaterial), which takes the detail colour only (NiStandardMaterial::
-    /// HandleDetailMap, NiStandardMaterial.cpp:4765-4774), as does SoftParticlesMaterial. That covers the blocks that name
-    /// none and the EffectUVDistortion* and EffectDissolve names: MS2MaterialLibrary::CreateMaterial returns null for them
-    /// (ms2materiallibrary.cpp:443-503) and the shipped Shaders folders hold no effect file a shader library would build
-    /// them from. Every effect block that names a material names one, active.</summary>
-    public bool DetailOpacity => ModelData.IsStandardMaterial(Mesh?.Material);
+    /// (ms2standardmaterial.cpp:681-694) and multiplies the opacity by it (:342-343). A block that names none is given the
+    /// renderer's default material, an NiStandardMaterial (NiRenderObject.cpp:420-424; NiRenderer.cpp:49-54, nothing in the
+    /// client calls SetDefaultMaterial), which takes the detail colour only (NiStandardMaterial::HandleDetailMap,
+    /// NiStandardMaterial.cpp:4765-4774), as does SoftParticlesMaterial. The EffectUVDistortion*_HO and EffectDissolve*_HO
+    /// names draw through their effect file's technique (<see cref="Ho"/>), which reads the detail map's red channel as a
+    /// mask and not through this.</summary>
+    public bool DetailOpacity => ModelData.IsStandardMaterial(ActiveMaterial);
+
+    /// <summary>The material's emissive and specular colours at effect time t (NiMaterialColorController keys applied,
+    /// Target 3 emissive, 2 specular; else the NiMaterialProperty's): the MATERIALEMISSIVE and MATERIALSPECULAR constants
+    /// a technique of <see cref="Ho"/> reads (NiD3DShaderConstantMap.cpp:2165-2201). Their alpha is the material alpha,
+    /// <see cref="Opacity"/>.</summary>
+    public void HoColors(double t, double[] emi, double[] spec)
+    {
+        double[] e = null, s = null;
+        foreach (var a in Colors)
+        {
+            if (a.Target != 2 && a.Target != 3) continue;
+            var v = a.Curve(a.Ctl != null ? a.Ctl.Local(t) : t);
+            if (a.Target == 3) e = v; else s = v;
+        }
+        var m = Mesh;
+        for (int i = 0; i < 3; i++)
+        {
+            emi[i] = e != null ? e[i] : m.Emissive != null ? m.Emissive[i] : 0;
+            spec[i] = s != null ? s[i] : m.Specular != null ? m.Specular[i] : 0;
+        }
+    }
 
     /// <summary>The material's colour terms at effect time t, NiMaterialColorController keys applied (Target 0 ambient, 1
-    /// diffuse, 3 emissive): lit = emissive + diffuse, amb = the ambient colour, which the scene's ambient light multiplies.
-    /// The client's diffuse coefficient is emissive + matAmbient * lightAmbient + matDiffuse * lightDiffuse
-    /// (NiStandardMaterial::HandleColorAccumulation -> HandleShadingCoefficients, NiStandardMaterial.cpp:3677-3740), and the
-    /// base map's colour is multiplied by it. Without lights reaching the mesh the diffuse light is taken as full (white).
+    /// diffuse, 3 emissive): emi the emissive, dif the diffuse and amb the ambient colour.
+    /// The client's diffuse coefficient is emissive + matAmbient * ambientAccum + matDiffuse * diffuseAccum
+    /// (ComputeShadingCoefficients; NiStandardMaterial::HandleColorAccumulation, NiStandardMaterial.cpp:3677-3740), and the
+    /// base map's colour is multiplied by it. The accumulators are the lights' (<see cref="LightForm"/>), which the shader
+    /// adds per vertex, as the client's vertex lighting does: an effect mesh has no shadow, normal or parallax map path that
+    /// would force per-pixel lighting (NiStandardMaterial.cpp:640-675).
     /// A mesh without any colour gets nothing from emissive and diffuse: an additive mesh lit only by its ambient colour
     /// (portal_b's Box01: ambient blue, diffuse and emissive black) draws that colour, not white.
     /// Without an NiMaterialProperty: diffuse white, emissive and ambient black.
     /// LightingE drops the light's ambient and diffuse terms (NiStandardMaterial.cpp:3719-3723), so the coefficient is the emissive
-    /// colour alone: lit = emissive, amb = 0. The opacity then comes from the emissive constant's alpha (:4437-4444), which
+    /// colour alone: dif = amb = 0. The opacity then comes from the emissive constant's alpha (:4437-4444), which
     /// is the material alpha like the diffuse constant's (D3D11ShaderConstantMap.cpp:3216-3229, 3264-3276), so Opacity holds.
     /// The coefficient is not saturated: ComputeShadingCoefficients clamps only with m_bSaturateShading, which is false by
-    /// default and never set (SetSaturateShading has no callers), so lit may exceed 1.
-    /// The terms the vertex colours replace (VertexColors) are left out of lit and amb here; the shader adds the vertex colour in
-    /// their place (EffectInstance's mesh shader).
-    /// STILL-OPEN: the light diffuse is taken as white; the client adds the directional light's colour * N.L per vertex
-    /// (ms2standardmaterial.cpp:1640-1700), not ported.</summary>
-    public void Shade(double t, double[] lit, double[] amb)
+    /// default and never set (SetSaturateShading has no callers), so it may exceed 1.
+    /// The terms the vertex colours replace (VertexColors) are left out here; the shader adds the vertex colour in
+    /// their place (EffectInstance's mesh shader).</summary>
+    public void Shade(double t, double[] emi, double[] dif, double[] amb)
     {
-        double[] dif = null, emi = null, am = null;
+        double[] di = null, em = null, am = null;
         foreach (var a in Colors)
         {
             var v = a.Curve(a.Ctl != null ? a.Ctl.Local(t) : t);
-            if (a.Target == 0) am = v; else if (a.Target == 1) dif = v; else if (a.Target == 3) emi = v;
+            if (a.Target == 0) am = v; else if (a.Target == 1) di = v; else if (a.Target == 3) em = v;
         }
         var m = Mesh;
         var vc = VertexColors;
         for (int i = 0; i < 3; i++)
         {
-            double d = dif != null ? dif[i] : m.Diffuse != null ? m.Diffuse[i] : 1, e = emi != null ? emi[i] : m.Emissive != null ? m.Emissive[i] : 0;
+            double d = di != null ? di[i] : m.Diffuse != null ? m.Diffuse[i] : 1, e = em != null ? em[i] : m.Emissive != null ? m.Emissive[i] : 0;
             if (vc.Emissive) e = 0;
             if (vc.Diffuse) d = 0;
-            if (LightingE) { lit[i] = e; amb[i] = 0; continue; }
-            lit[i] = d + e;
+            emi[i] = e;
+            if (LightingE) { dif[i] = 0; amb[i] = 0; continue; }
+            dif[i] = d;
             amb[i] = vc.Ambient ? 0 : am != null ? am[i] : m.Ambient != null ? m.Ambient[i] : 0;
         }
+    }
+
+    /// <summary>How the field's lights shade the block: 0 not at all (LightingE: the emissive alone), 1 through Gamebryo's
+    /// "Light" fragment, 2 through MS2's "MS2Light".
+    /// The lights reach an effect: CEffectService attaches every light entity (FlatModel 0x2c4767f5: the field's ambient
+    /// and directional lights) to each effect root it keeps (AttachEntityLight, effectservice.cpp:1780-1810), and a skill
+    /// effect's EffectNode passes them down with useLighting, true by default (LightUnaffectedNode::UpdateEffectsDownward,
+    /// lightunaffectednode.cpp:75; nifeffectparam.cpp:353). The ambient light is the ambient accumulator's start
+    /// (SCM_DEF_AMBIENTLIGHT, ms2standardmaterial.cpp:1675-1685). For the directional light, with N.L = max(0, N . -dir):
+    /// 1, the renderer's default NiStandardMaterial (a block that names no material, or a non-MS2 one; ModelData.IsStandardMaterial):
+    /// diffuseAccum += sun * N.L and ambientAccum += its ambient colour (the Light fragment, StandardMaterialNodeLibraryFragments.xml);
+    /// 2, an MS2StandardMaterial of type 0 (MS2StandardMaterial and MS2AlphaBoostMaterial, MS2StandardMaterial::Init,
+    /// ms2standardmaterial.cpp:1816-1850; HandleMS2Light :852-875): diffuseAccum += sun * N.L + its ambient colour * (1 - N.L),
+    /// the ambient accumulator untouched (MS2Light, ms2materialnodelibrary.cpp:316-328).
+    /// Without normals the directional lights are dropped (NiStandardMaterial.cpp:668-673) and the ambient light alone stays.
+    /// STILL-OPEN: the character types (MS2CharacterMaterial and the Chaos names) use MS2CharacterLight's half-Lambert
+    /// (ms2materialnodelibrary.cpp:1084-1110) and are drawn here as 2; the field's point lights are not added.</summary>
+    public int LightForm => LightingE ? 0 : ModelData.IsStandardMaterial(ActiveMaterial) ? 2 : 1;
+
+    /// <summary>The ambient and diffuse accumulators of light form <paramref name="form"/> (<see cref="LightForm"/>) for one
+    /// channel: the field's ambient light, the directional light's colour and ambient colour, and ndl = max(0, N . -dir).
+    /// The effect shader's light_vert is this, per vertex.</summary>
+    public static (double Amb, double Dif) Light(int form, bool normals, double ndl, double ambient, double sun, double sunAmbient)
+    {
+        if (form == 0) return (0, 0);
+        if (!normals) return (ambient, 0);
+        ndl = Math.Max(ndl, 0);
+        return form == 1 ? (ambient + sunAmbient, sun * ndl) : (ambient, sun * ndl + sunAmbient * (1 - ndl));
+    }
+}
+
+/// <summary>
+/// A technique of the two effect files the client ships for the _HO material names (Resource/Shaders.m2d:
+/// fx/effectuvdistortionmask_ho.fxo and fx/effectdissolve_ho.fxo). ShaderService creates the NiD3DXEffectShaderLibrary
+/// over that folder (ShaderService.cpp:356-380; NiD3DXEffectShaderLibrary.cpp:405-417), each technique is a shader named
+/// after it (NiD3DXEffectParser.cpp:504-505), and NiSingleShaderMaterialLibrary gives a block naming one that shader. Each
+/// is one ps_2_0 / vs_1_1 pass with UsesNiRenderState 1 (the block's alpha, z-buffer and stencil properties apply) and
+/// UsesNiLightState 0 (no lighting). Read from the compiled passes:
+/// <list type="bullet">
+/// <item>Mask (EffectUVDistortionMask*): every map reads texcoord 0 through its own texture transform (TEXTRANSFORM base,
+/// detail, normal, glow). n = Normal.r; the base and glow maps are read at their uv + n * MATERIALPOWER (the glossiness);
+/// b = pow(Base, 1.8) in all four channels; rgb = b.rgb * c0.rgb (+ Glow.rgb * c1.rgb * 10 for the Glow techniques);
+/// a = saturate(Detail.r * b.a * c0.a * 5). c0 is MATERIALEMISSIVE (emissive rgb, material alpha), times the vertex colour
+/// for the Particle techniques; c1 is MATERIALSPECULAR, times the vertex colour for ParticleGlowLife. The base map clamps
+/// except in the Wrap techniques; the detail, normal and glow maps wrap.</item>
+/// <item>Dissolve (EffectDissolve*): x = 2 * c0.a + Detail.r - 1; rgb = Base.rgb * c0.rgb + Gloss(1 - 2x, 0).rgb;
+/// a = x * Base.a, not saturated. c0 is MATERIALEMISSIVE, times the vertex colour for DissolveParticle. The base and
+/// detail maps take their texture transforms, the gloss map none; the base and gloss maps clamp, the detail map wraps.</item>
+/// </list>
+/// </summary>
+public sealed class HoTechnique
+{
+    public readonly string Name;
+    public readonly bool Dissolve;     // EffectDissolve*, else EffectUVDistortionMask*
+    public readonly bool Glow;         // the glow map term (Mask only)
+    public readonly bool Wrap;         // the base map wraps (Mask only)
+    public readonly bool VertexColor;  // c0 is times the vertex colour (the Particle techniques)
+    public readonly bool GlowVertexColor;  // c1 is times the vertex colour (ParticleGlowLife)
+
+    /// <summary>The maps (ModelMesh.Textures slots) the pass samples: base, detail and gloss for Dissolve; base, detail and
+    /// normal, and glow for the Glow techniques, for Mask.</summary>
+    public readonly string[] Maps;
+
+    HoTechnique(string name, bool dissolve, bool glow, bool wrap, bool vc, bool glowVc)
+    {
+        Name = name; Dissolve = dissolve; Glow = glow; Wrap = wrap; VertexColor = vc; GlowVertexColor = glowVc;
+        Maps = dissolve ? new[] { "base", "detail", "gloss" } : glow ? new[] { "base", "detail", "normal", "glow" } : new[] { "base", "detail", "normal" };
+    }
+
+    /// <summary>The nine techniques, in the files' order.</summary>
+    public static readonly HoTechnique[] All =
+    {
+        new("EffectUVDistortionMask_HO", false, false, false, false, false),
+        new("EffectUVDistortionMaskGlow_HO", false, true, false, false, false),
+        new("EffectUVDistortionMaskParticle_HO", false, false, false, true, false),
+        new("EffectUVDistortionMaskParticleGlow_HO", false, true, false, true, false),
+        new("EffectUVDistortionMaskParticleGlowLife_HO", false, true, false, true, true),
+        new("EffectUVDistortionMaskWrap_HO", false, false, true, false, false),
+        new("EffectUVDistortionMaskGlowWrap_HO", false, true, true, false, false),
+        new("EffectDissolve_HO", true, false, false, false, false),
+        new("EffectDissolveParticle_HO", true, false, false, true, false),
+    };
+
+    /// <summary>The technique of that name, or null (every shipped block spells it as the technique does).</summary>
+    public static HoTechnique Of(string name)
+    {
+        if (name == null) return null;
+        foreach (var h in All) if (h.Name == name) return h;
+        return null;
     }
 }
 
@@ -416,16 +549,18 @@ public sealed class ParticleSystemDef
     public int MaxParticles = 100; public bool WorldSpace;
     public bool PreRpi = true;                   // "Pre RPI": the emitters' direction method (EmitterDef.Direction)
     public int Colliders, Spawners;
-    /// <summary>The system's colour terms, read as an effect mesh's: its NiMaterialProperty and NiVertexColorProperty, and the
-    /// NiMaterialColorControllers on that material (Material.Colors). The client draws the particle quads through the same
-    /// NiStandardMaterial path as any mesh: the facing quad generator gives them a normal (camRight x camUp,
+    /// <summary>The system's material and colour terms, read as an effect mesh's: the material name, maps, NiAlphaProperty,
+    /// NiMaterialProperty and NiVertexColorProperty, and the NiMaterialColorControllers on that material (Material.Colors).
+    /// The client draws the particle quads through the material the block names, as a mesh's: an _HO technique
+    /// (EffectMesh.Ho, with the key colour as its vertex colour), MS2AlphaBoostMaterial under EffectMesh.AlphaBoost, or else
+    /// a standard material, the same path as any mesh: the facing quad generator gives them a normal (camRight x camUp,
     /// NiPSFacingQuadGenerator.cpp:340-364) and, when the system has colours, a COLOR index 0 stream (:191-207), so the key
     /// colour stands in for the terms the vertex colour mode names (EffectMesh.VertexColors) and the material gives the rest
     /// (EffectMesh.Shade). Material.Mesh.Colors is an empty array when the system has colours ("Has Colors",
     /// NiPSParticleSystem::LoadBinary, NiPSParticleSystem.cpp:1227-1228), null without.</summary>
     public EffectMesh Material;
-    /// <summary>The detail map's alpha multiplies the opacity: the system block names its material as a mesh does
-    /// (EffectMesh.DetailOpacity on Material).</summary>
+    /// <summary>The detail map's alpha multiplies the opacity: the system's active material is a standard one, as a mesh's
+    /// (EffectMesh.DetailOpacity on Material: the boost swap counts, an _HO technique reads the detail as a mask).</summary>
     public bool DetailOpacity => Material?.DetailOpacity == true;
 }
 
@@ -555,6 +690,28 @@ public sealed class EffectScene
         return (0, 0);
     }
 
+    /// <summary>EffectMesh.Lent for every drawn _HO block (the meshes, and the systems with an emitter): each map its
+    /// technique samples that it lacks, when the effect's other drawn _HO blocks of the same file carry it with one texture.</summary>
+    void LendMissingMaps()
+    {
+        var drawn = new List<EffectMesh>();
+        foreach (var m in Meshes) if (m.Ho != null) drawn.Add(m);
+        foreach (var s in Systems) if (s.Emitters.Count > 0 && s.Material?.Ho != null) drawn.Add(s.Material);
+        foreach (var em in drawn)
+            foreach (var slot in em.Ho.Maps)
+            {
+                if (em.Mesh.Textures.ContainsKey(slot)) continue;
+                string only = null; bool several = false;
+                foreach (var o in drawn)
+                    if (o != em && o.Ho.Dissolve == em.Ho.Dissolve && o.Mesh.Textures.TryGetValue(slot, out var f))
+                    {
+                        if (only == null) only = f;
+                        else if (!string.Equals(only, f, StringComparison.OrdinalIgnoreCase)) several = true;
+                    }
+                if (only != null && !several) (em.Lent ??= new())[slot] = only;
+            }
+    }
+
     public static EffectScene Load(NifFile n)
     {
         var B = n.Blocks;
@@ -585,7 +742,7 @@ public sealed class EffectScene
         foreach (var m in model.Meshes)
         {
             if (m.Block < 0 || !sc.NodeOfBlock.TryGetValue(m.Block, out int node)) continue;
-            var em = new EffectMesh { Mesh = m, Node = node };
+            var em = new EffectMesh { Mesh = m, Node = node, AlphaBoost = ModelData.AlphaBoost(n, m.Block) };
             sc.Meshes.Add(em); meshOf[m.Block] = em;
         }
         var systems = new Dictionary<int, ParticleSystemDef>();
@@ -610,6 +767,7 @@ public sealed class EffectScene
             }
         }
         foreach (var s in systems.Values) sc.Systems.Add(s);
+        sc.LendMissingMaps();
         foreach (var t in B.Select(b => b.Type).Distinct())
             if (t.StartsWith("NiPS", StringComparison.Ordinal) && !KnownPs.Contains(t) && !EmitterFloatCtlrs.ContainsKey(t)) sc.Unsupported.Add(t);
         return sc;
@@ -776,24 +934,26 @@ public sealed class EffectScene
         if (b.Has("Up Direction")) d.UpDirection = V3(b.Struct("Up Direction"));
         // The quads are drawn through the material the system block names, as a mesh's (ModelData.MaterialName; most name
         // MS2StandardMaterial, see ParticleSystemDef.DetailOpacity), or the renderer's default NiStandardMaterial when it
-        // names none (NiRenderer::ApplyDefaultMaterial, NiRenderer.cpp:343-345). Both are standard materials whose
+        // names none (NiRenderer::ApplyDefaultMaterial, NiRenderer.cpp:343-345), or MS2AlphaBoostMaterial in its place
+        // (AlphaBoost), or an _HO technique (EffectMesh.Ho, which reads the maps as HoTechnique gives). The standard ones'
         // HandlePreLightTextureApplication applies the base map and then the detail map at twice its colour
         // (NiStandardMaterial::HandleBaseMap / HandleDetailMap, NiStandardMaterial.cpp:4500-4527, 4765-4774, called at
         // :5517-5541), each through its own texture transform (GetTextureTransformMappingFromEnum, :364-430): so the system keeps its maps as a mesh does (ModelMesh.Maps).
         var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null,
                                   Textures = ModelData.TexturesOf(n, blk), Maps = ModelData.MapsOf(n, blk), Material = ModelData.MaterialName(n, b) };
-        d.Material = new EffectMesh { Mesh = mat, Node = node };
+        d.Material = new EffectMesh { Mesh = mat, Node = node, AlphaBoost = ModelData.AlphaBoost(n, blk) };
 
         foreach (var pi in b.Ints("Properties"))
         {
             if (pi < 0) continue;
             var p = B[(int)pi];
-            if (p.Type == "NiAlphaProperty") d.AlphaFlags = (int)p.Int("Flags");
+            if (p.Type == "NiAlphaProperty") { d.AlphaFlags = mat.AlphaFlags = (int)p.Int("Flags"); mat.AlphaThreshold = (int)p.IntOr("Threshold", 0); }
             else if (p.Type == "NiVertexColorProperty") mat.VertexColorFlags = (int)p.Int("Flags");
             else if (p.Type == "NiMaterialProperty")
             {
                 float[] Rgb(string k) { var c = p.Struct(k); return new[] { c.Float("r"), c.Float("g"), c.Float("b") }; }
                 mat.Ambient = Rgb("Ambient Color"); mat.Diffuse = Rgb("Diffuse Color"); mat.Emissive = Rgb("Emissive Color");
+                mat.Specular = Rgb("Specular Color"); mat.Glossiness = p.Float("Glossiness");
                 mat.MaterialAlpha = p.Float("Alpha");
             }
             else if (p.Type == "NiTexturingProperty")

@@ -61,35 +61,39 @@ public class EffectMaterialTests
         var sc = Load("bg/common/eff_com_portal_b.nif");
         var box = sc.Meshes.Single(m => m.Mesh.Name == "Box01");
         Assert.That(box.Mesh.AlphaFlags & 1, Is.EqualTo(1), "blended");
-        double[] lit = new double[3], amb = new double[3];
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
         for (double t = 0; t < 3; t += 0.5)
         {
-            box.Shade(t, lit, amb);
-            Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), "emissive + diffuse");
+            box.Shade(t, lit, dif, amb);
+            Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), "emissive");
+            Assert.That(dif, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), "diffuse");
             Assert.That(amb, Is.EqualTo(new[] { 0.1137, 0.3412, 0.9137 }).Within(1e-3), "ambient");
         }
     }
 
-    /// <summary>Without a material: diffuse white (full light), no emissive and no ambient.</summary>
+    /// <summary>Without a material: diffuse white (the lights at full), no emissive and no ambient.</summary>
     [Test]
     public void NoMaterialShadesWhite()
     {
         var m = new EffectMesh { Mesh = new ModelMesh() };
-        double[] lit = new double[3], amb = new double[3];
-        m.Shade(0, lit, amb);
-        Assert.That(lit, Is.EqualTo(new[] { 1.0, 1.0, 1.0 }));
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
+        m.Shade(0, lit, dif, amb);
+        Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }));
+        Assert.That(dif, Is.EqualTo(new[] { 1.0, 1.0, 1.0 }));
         Assert.That(amb, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }));
     }
 
-    /// <summary>An NiMaterialColorController on the ambient colour (Target 0) replaces it; diffuse + emissive is not clamped (a sum above 1 stays).</summary>
+    /// <summary>An NiMaterialColorController on the ambient colour (Target 0) replaces it; the diffuse and emissive stay apart
+    /// (the diffuse is scaled by the field's lights in the shader, the emissive is not).</summary>
     [Test]
     public void ColourControllersReplaceTheirTerm()
     {
         var m = new EffectMesh { Mesh = new ModelMesh { Ambient = new[] { 1f, 1f, 1f }, Diffuse = new[] { 0.8f, 0.2f, 0f }, Emissive = new[] { 0.5f, 0f, 0f } } };
         m.Colors.Add(new ColorAnim { Target = 0, Curve = _ => new[] { 0.25, 0.5, 0.75 } });
-        double[] lit = new double[3], amb = new double[3];
-        m.Shade(0, lit, amb);
-        Assert.That(lit, Is.EqualTo(new[] { 1.3, 0.2, 0.0 }).Within(1e-6));
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
+        m.Shade(0, lit, dif, amb);
+        Assert.That(lit, Is.EqualTo(new[] { 0.5, 0.0, 0.0 }).Within(1e-6));
+        Assert.That(dif, Is.EqualTo(new[] { 0.8, 0.2, 0.0 }).Within(1e-6));
         Assert.That(amb, Is.EqualTo(new[] { 0.25, 0.5, 0.75 }));
     }
 
@@ -99,14 +103,15 @@ public class EffectMaterialTests
     [Test]
     public void MilkywayRibbonTakesItsVertexColours()
     {
-        double[] lit = new double[3], amb = new double[3];
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
         foreach (var entry in new[] { "bg/eliinia/el_eff_milkywaya_02.nif", "bg/eliinia/el_eff_milkywaya_03.nif" })
         {
             var m = Load(entry).Meshes.Single();
             Assert.That(m.Mesh.Colors, Is.Not.Null, entry);
             Assert.That(Enumerable.Range(0, m.Mesh.Colors.Length / 4).Select(i => m.Mesh.Colors[i * 4 + 3]).Min(), Is.EqualTo(0f), entry + ": the ribbon ends fade out");
-            m.Shade(0, lit, amb);
-            Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), entry + ": emissive black, diffuse from the vertices");
+            m.Shade(0, lit, dif, amb);
+            Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), entry + ": emissive black");
+            Assert.That(dif, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), entry + ": diffuse from the vertices");
             Assert.That(amb, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), entry + ": ambient from the vertices");
             Assert.That(m.VertexColors, Is.EqualTo(new VertexColorUse(false, true, true, true)), entry);
         }
@@ -141,15 +146,16 @@ public class EffectMaterialTests
     [Test]
     public void LightingEKeepsOnlyEmissive()
     {
-        double[] lit = new double[3], amb = new double[3];
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
         var mat = new ModelMesh { Ambient = new[] { 0.3f, 0.3f, 0.3f }, Diffuse = new[] { 0.5f, 0.5f, 0.5f }, Emissive = new[] { 0.2f, 0.1f, 0f } };
         var e = new EffectMesh { Mesh = mat };
         e.Colors.Add(new ColorAnim { Target = 1, Curve = _ => new[] { 0.9, 0.9, 0.9 } });
-        foreach (var (flags, l, a) in new[] { (0, new[] { 0.2, 0.1, 0.0 }, 0.0), (8, new[] { 1.1, 1.0, 0.9 }, 0.3), (-1, new[] { 1.1, 1.0, 0.9 }, 0.3) })
+        foreach (var (flags, d, a) in new[] { (0, 0.0, 0.0), (8, 0.9, 0.3), (-1, 0.9, 0.3) })
         {
             mat.VertexColorFlags = flags;
-            e.Shade(0, lit, amb);
-            Assert.That(lit, Is.EqualTo(l).Within(1e-6), $"flags {flags}");
+            e.Shade(0, lit, dif, amb);
+            Assert.That(lit, Is.EqualTo(new[] { 0.2, 0.1, 0.0 }).Within(1e-6), $"flags {flags}");
+            Assert.That(dif, Is.EqualTo(new[] { d, d, d }).Within(1e-6), $"flags {flags}");
             Assert.That(amb, Is.EqualTo(new[] { a, a, a }).Within(1e-6), $"flags {flags}");
         }
         // the shadow spin cast: its LIGHTING_E meshes (grey ambient and diffuse, black emissive) shade black, its others keep their terms
@@ -159,10 +165,101 @@ public class EffectMaterialTests
         foreach (var m in modeE)
         {
             Assert.That(m.Mesh.Diffuse[0], Is.GreaterThan(0.5f), m.Mesh.Name);
-            m.Shade(0.2, lit, amb);
-            Assert.That(lit.Concat(amb), Is.All.EqualTo(0.0), m.Mesh.Name);
+            m.Shade(0.2, lit, dif, amb);
+            Assert.That(lit.Concat(dif).Concat(amb), Is.All.EqualTo(0.0), m.Mesh.Name);
         }
         Assert.That(sc.Meshes.Any(m => !m.LightingE), "meshes with LIGHTING_E_A_D");
+    }
+
+    /// <summary>The healing spot pillars (bg/common/eff_com_recovery.nif PArray01): the block names no material, so it is the
+    /// default NiStandardMaterial (light form 1), and its NiVertexColorProperty is AMB_DIFF with E_A_D, so the key colour is the
+    /// diffuse and ambient. Its aligned quads face world +X; under Tria's lights (ambient 1 x dimmer 0.8 x 1.1 without HDR,
+    /// a white sun at 0.8 along (0.501, -0.214, -0.839)) N . L is below 0, so the sun adds nothing and a pillar shades
+    /// emissive + key colour x 0.88. The effect shading used to take the diffuse at a full white light: key colour x 1.88,
+    /// which drew the pillars about twice too bright and showed their quad edges.</summary>
+    [Test]
+    public void HealingSpotPillarsTakeTheFieldLights()
+    {
+        var sc = Load("bg/common/eff_com_recovery.nif");
+        var p = sc.Systems.Single(s => s.Name == "PArray01").Material;
+        Assert.That(p.ActiveMaterial, Is.Null.Or.Not.StartWith("MS2"), "no MS2 material");
+        Assert.That(p.LightForm, Is.EqualTo(1));
+        Assert.That(p.VertexColors, Is.EqualTo(new VertexColorUse(false, true, true, true)));
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
+        p.Shade(0, lit, dif, amb);
+        Assert.That(lit, Is.EqualTo(p.Mesh.Emissive.Select(x => (double)x).ToArray()).Within(1e-6), "the emissive");
+        Assert.That(dif.Concat(amb), Is.All.EqualTo(0.0), "the material's diffuse and ambient give way to the key colour");
+        double ndl = -(1 * 0.501);   // N (1, 0, 0) . -dir
+        var (la, ld) = EffectMesh.Light(p.LightForm, true, ndl, 1 * 0.8 * 1.1, 1 * 0.8, 0);
+        Assert.That(la + ld, Is.EqualTo(0.88).Within(1e-9), "the key colour's factor: the ambient light alone");
+        // the same quad facing the sun takes it
+        var (fa, fd) = EffectMesh.Light(1, true, 1, 0.88, 0.8, 0);
+        Assert.That(fa + fd, Is.EqualTo(1.68).Within(1e-9));
+    }
+
+    /// <summary>The light forms: none under LIGHTING_E, form 1 adds the sun's ambient colour to the ambient accumulator,
+    /// form 2 (MS2Light) puts it into the diffuse weighted by 1 - N.L, and a block without normals keeps the ambient light alone.</summary>
+    [Test]
+    public void LightFormsByMaterial()
+    {
+        var mat = new ModelMesh { VertexColorFlags = 8 };
+        var e = new EffectMesh { Mesh = mat };
+        Assert.That(e.LightForm, Is.EqualTo(1), "no material");
+        mat.Material = "MS2StandardMaterial";
+        Assert.That(e.LightForm, Is.EqualTo(2));
+        mat.Material = "MS2AlphaBoostMaterial";
+        Assert.That(e.LightForm, Is.EqualTo(2));
+        mat.Material = "NiStandardMaterial";
+        Assert.That(e.LightForm, Is.EqualTo(1), "a non-MS2 name");
+        mat.VertexColorFlags = 0;
+        Assert.That(e.LightForm, Is.EqualTo(0), "LIGHTING_E");
+        Assert.That(EffectMesh.Light(0, true, 1, 0.5, 0.8, 0.3), Is.EqualTo((0.0, 0.0)));
+        Assert.That(EffectMesh.Light(1, true, 0.25, 0.5, 0.8, 0.3), Is.EqualTo((0.8, 0.2)));
+        var (a2, d2) = EffectMesh.Light(2, true, 0.25, 0.5, 0.8, 0.3);
+        Assert.That(a2, Is.EqualTo(0.5));
+        Assert.That(d2, Is.EqualTo(0.2 + 0.3 * 0.75).Within(1e-12));
+        Assert.That(EffectMesh.Light(1, false, 1, 0.5, 0.8, 0.3), Is.EqualTo((0.5, 0.0)), "no normals: the ambient light alone");
+        Assert.That(EffectMesh.Light(1, true, -0.5, 0.5, 0.8, 0.3), Is.EqualTo((0.8, 0.0)), "facing away");
+    }
+
+    /// <summary>Every effect nif's blocks by light form, on both data sets: LIGHTING_E blocks take none, MS2 standard
+    /// materials (and the boost) MS2Light, the rest the default Light fragment. Counts the mesh blocks without normals (the
+    /// ambient light alone), the character-type names (half-Lambert, drawn as form 2) and the vertex-coloured blocks per form.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryBlockTakesItsLightForm(string env)
+    {
+        var dir = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) Assert.Ignore($"{env} not set");
+        using var packs = new PackSet(dir);
+        var spec = new NifSpec(NifEnv.NifXml());
+        var count = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        void Add(string k) => count[k] = count.GetValueOrDefault(k) + 1;
+        var bad = new List<string>();
+        int nifs = 0;
+        foreach (var entry in packs.List(Archive).Where(e => e.EndsWith(".nif", StringComparison.Ordinal)))
+        {
+            EffectScene sc;
+            try { sc = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, entry))); }
+            catch (Exception) { continue; }
+            nifs++;
+            var items = sc.Meshes.Select(m => ("mesh", m)).Concat(sc.Systems.Select(s => ("system", s.Material)));
+            foreach (var (kind, em) in items)
+            {
+                int f = em.LightForm, want = em.LightingE ? 0 : ModelData.IsStandardMaterial(em.ActiveMaterial) ? 2 : 1;
+                if (f != want) bad.Add($"{entry} {kind} {em.Mesh.Name}: form {f}, want {want}");
+                Add($"{kind} form {f}");
+                if (em.VertexColors.Any) Add($"{kind} form {f}, vertex colours");
+                if (kind == "mesh" && em.Mesh.Normals == null) Add($"mesh form {f}, no normals");
+                if (f == 2 && em.ActiveMaterial.Contains("Character", StringComparison.Ordinal) || f == 2 && em.ActiveMaterial.Contains("Chaos", StringComparison.Ordinal))
+                    Add($"{kind} {em.ActiveMaterial} (half-Lambert, open)");
+            }
+        }
+        TestContext.Out.WriteLine($"{env}: {nifs} nifs");
+        foreach (var (k, c) in count) TestContext.Out.WriteLine($"  {k}: {c}");
+        Assert.That(nifs, Is.GreaterThan(1000));
+        Assert.That(bad, Is.Empty, string.Join("\n", bad.Take(20)));
+        Assert.That(count.GetValueOrDefault("system form 1"), Is.GreaterThan(0));
     }
 
     const string Flamethrower = "ch/skill/heavygunner/eff_heavygunner_flamethrower_loop_01_a.nif";
@@ -181,11 +278,11 @@ public class EffectMaterialTests
         Assert.That(m.Mesh.Colors, Is.Not.Null, "the system has colours");
         Assert.That(smoke.Additive, Is.False);
         Assert.That(m.VertexColors, Is.EqualTo(new VertexColorUse(false, true, true, true)));
-        double[] lit = new double[3], amb = new double[3];
-        m.Shade(0, lit, amb);
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
+        m.Shade(0, lit, dif, amb);
         Assert.That(lit, Is.EqualTo(m.Mesh.Emissive.Select(x => (double)x).ToArray()).Within(1e-6));
         Assert.That(lit, Is.All.GreaterThan(0.3));
-        Assert.That(amb, Is.All.EqualTo(0.0));
+        Assert.That(dif.Concat(amb), Is.All.EqualTo(0.0), "the key colour is the diffuse and ambient");
     }
 
     /// <summary>A colour controller on a system's material reaches the system: the flamethrower's additive PArray05 animates
@@ -200,12 +297,12 @@ public class EffectMaterialTests
         Assert.That(fire.Additive);
         Assert.That(m.Colors.Select(c => c.Target), Is.EquivalentTo(new[] { 0, 1, 3 }));
         var emi = m.Colors.Single(c => c.Target == 3);
-        double[] lit = new double[3], amb = new double[3];
+        double[] lit = new double[3], dif = new double[3], amb = new double[3];
         for (double t = 0; t < 2; t += 0.25)
         {
-            m.Shade(t, lit, amb);
+            m.Shade(t, lit, dif, amb);
             Assert.That(lit, Is.EqualTo(emi.Curve(emi.Ctl != null ? emi.Ctl.Local(t) : t)).Within(1e-9), $"t {t}");
-            Assert.That(amb, Is.All.EqualTo(0.0));
+            Assert.That(dif.Concat(amb), Is.All.EqualTo(0.0));
         }
     }
 
