@@ -998,6 +998,30 @@ public class ShopTests
         Assert.That(gate.OnAnswer(headerRead: true, open: true), Is.False, "an open dialog is not opened twice");
     }
 
+    /// <summary>The items arrive with the header, ahead of the answer that opens the dialog, so the controller reads them with no host
+    /// yet (the first live run of the answer gate lost them: the read threw on the missing model and the shop opened empty). They are
+    /// kept, and the dialog built afterwards lists them.</summary>
+    [Test]
+    public void TheItemsReadBeforeTheDialogExistsFillItWhenItOpens()
+    {
+        Packs();
+        var model = NewModel();
+        var c = new ShopController { Categories = new ShopCategoryTable(Packs()), Npcs = new Ms2.Formats.World.NpcTable(Packs()), BoundModel = model };
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteInfo(Header()))));
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteProducts(Products()))));
+        Assert.That(c.Products(0).Count, Is.EqualTo(3), "the items are kept with no dialog");
+
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var h = new UiHost(p, c, model);
+        Assert.That(h.Load(), Is.True, string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) p.Tick();
+        var rows = c.Tabs(0);
+        Assert.That(rows.Count, Is.GreaterThanOrEqualTo(3));
+        Assert.That(rows[0].Products.Count, Is.EqualTo(3), "the opened dialog lists them");
+    }
+
     /// <summary>The answer before the header (the other drain order): the open waits for the header, and a talk that ended first
     /// drops the wait.</summary>
     [Test]

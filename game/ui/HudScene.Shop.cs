@@ -30,6 +30,7 @@ public partial class HudScene
         long Now() => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var c = new ShopController
         {
+            BoundModel = hudModel,
             Categories = new ShopCategoryTable(assets.Packs),
             Npcs = World.FieldContents.Npcs(assets.Packs),
             ServerTime = Now,

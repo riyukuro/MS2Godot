@@ -287,6 +287,13 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     PendingSelection selection = new() { Index = -1, Secondary = -1 };
     bool shopEnabled = true;
 
+    /// <summary>The model the shop's data reads before the dialog's movie has a host: the header and the items arrive ahead of the
+    /// talk window's answer that opens the dialog (CNpc::OpenTalkUi, uitalkcinematic.cpp:1474), and the client's UIShopDialog object
+    /// exists, with its tables, before its movie loads.</summary>
+    public UiModel BoundModel;
+    new UiModel Model => Host?.Model ?? BoundModel;
+    new PlayerState Pc => Model.Player;
+
     public ShopInfo Info => info;
     /// <summary>The shop's own dialog initShop made (m_spShop).</summary>
     public object ShopView => shop;
