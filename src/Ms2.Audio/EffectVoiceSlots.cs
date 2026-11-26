@@ -6,6 +6,12 @@ namespace Ms2.Audio;
 /// after it (m_dStopTime = now + 10.0) unless it ended before (CSoundEventEffect::vfunc_9 @0x1417771a0, :585-590). A
 /// ticket names one sound in one voice: a voice taken by a newer sound drops the older ticket and its pending stop.
 /// <see cref="Start"/> chooses the voice of a new event sound as the client's FMOD event system does (see there).
+/// A looping sound (the FEV event's loop mode, read through FMOD_EVENT_INFO.lengthms -1) never ends by itself: it plays
+/// until its effect stops it (CEffectService::FUN_1411a6060, effectservice.cpp:1446-1461), and a released effect whose only
+/// looping thing is the sound plays on (FUN_1411a69e0, :1510-1528, stops only for a part whose vfunc_11 is 0, and the
+/// sound's m_b2c is false, soundeventmgr.cpp:498, CEffect::vfunc_11 :427-431). So a looping sound holds its voice until it
+/// is stopped, and at most <see cref="MaxLooping"/> voices loop: past that a new looping sound takes the oldest looping
+/// voice, and no other sound takes a looping one, so a looping sound whose owner is never stopped cannot take every voice.
 /// No allocation after the constructor.
 /// </summary>
 public sealed class EffectVoiceSlots
@@ -17,20 +23,28 @@ public sealed class EffectVoiceSlots
     readonly int[] tickets;
     readonly double[] stopAt;   // 0 = no stop pending
     readonly object[] events;   // the event a Start sound is an instance of, null for none
-    readonly double[] endAt;    // when a Start sound ends (its start delay and its wave's length)
+    readonly double[] endAt;    // when a Start sound ends (its start delay and its wave's length; never for a looping one)
     readonly float[] audible;
     readonly int[] priority;
+    readonly long[] loopSince;  // 0 = the slot's sound does not loop, else the order it was taken in
     int sequence;
+    long takes;
 
-    public EffectVoiceSlots(int count)
+    /// <param name="count">The voices.</param>
+    /// <param name="maxLooping">The voices looping sounds may hold, under <paramref name="count"/> (0: half of them).</param>
+    public EffectVoiceSlots(int count, int maxLooping = 0)
     {
         if (count < 1 || count > 1 << SlotBits) throw new ArgumentOutOfRangeException(nameof(count));
+        if (maxLooping == 0) maxLooping = Math.Max(1, count / 2);
+        if (maxLooping < 1 || (maxLooping >= count && count > 1)) throw new ArgumentOutOfRangeException(nameof(maxLooping));
         tickets = new int[count];
         stopAt = new double[count];
         events = new object[count];
         endAt = new double[count];
         audible = new float[count];
         priority = new int[count];
+        loopSince = new long[count];
+        MaxLooping = maxLooping;
     }
 
     /// <summary>The client's FMOD channel count: CSoundService::OnInit's EventSystem::init(100, ...)
@@ -51,9 +65,15 @@ public sealed class EffectVoiceSlots
     /// important sound (the highest event priority number, +0x28, 0 the most important), the oldest of those, and fails
     /// when every sounding one is more important. <paramref name="audibility"/> is the new sound's volume at the listener.
     /// <paramref name="stolen"/> is set when the voice still held a sounding one, which the caller stops.
+    /// A <paramref name="loops"/> sound sounds until stopped (<paramref name="end"/> is not used). The two limits combine in
+    /// that order: the event's max playbacks first (its victim is one of its own instances), then the voice: a looping sound
+    /// with <see cref="MaxLooping"/> voices looping takes the oldest looping voice (stolen); otherwise a free voice, else the
+    /// least important of the voices no looping sound holds.
     /// </summary>
-    public int Start(object ev, int maxPlaybacks, int behavior, int eventPriority, float audibility, double now, double end, out bool stolen)
+    public int Start(object ev, int maxPlaybacks, int behavior, int eventPriority, float audibility, double now, double end, out bool stolen,
+        bool loops = false)
     {
+        if (loops) end = double.PositiveInfinity;
         stolen = false;
         int slot = -1;
         if (ev != null && maxPlaybacks > 0)
@@ -81,22 +101,28 @@ public sealed class EffectVoiceSlots
                 stolen = true;
             }
         }
+        if (slot < 0 && loops && Looping >= MaxLooping)
+        {
+            slot = OldestLooping();
+            stolen = true;
+        }
         if (slot < 0)
         {
             int least = -1;
             for (int i = 0; i < tickets.Length && slot < 0; i++)
             {
                 if (!Sounding(i, now)) { slot = i; break; }
+                if (loopSince[i] != 0) continue;   // a looping sound gives its voice only to a newer looping one
                 if (least < 0 || priority[i] > priority[least]
                     || priority[i] == priority[least] && tickets[i] >> SlotBits < tickets[least] >> SlotBits) least = i;
             }
             if (slot < 0)
             {
-                if (priority[least] < eventPriority) return 0;
+                if (least < 0 || priority[least] < eventPriority) return 0;
                 slot = least; stolen = true;
             }
         }
-        int ticket = Take(slot);
+        int ticket = Take(slot, loops);
         events[slot] = ev; endAt[slot] = end; audible[slot] = audibility; priority[slot] = eventPriority;
         return ticket;
     }
@@ -122,13 +148,33 @@ public sealed class EffectVoiceSlots
 
     public int Count => tickets.Length;
 
+    /// <summary>The voices looping sounds may hold.</summary>
+    public int MaxLooping { get; }
+
+    /// <summary>The voices a looping sound holds now.</summary>
+    public int Looping { get; private set; }
+
+    /// <summary>Whether <paramref name="slot"/> holds a looping sound.</summary>
+    public bool Loops(int slot) => loopSince[slot] != 0;
+
+    int OldestLooping()
+    {
+        int best = -1;
+        for (int i = 0; i < loopSince.Length; i++)
+            if (loopSince[i] != 0 && (best < 0 || loopSince[i] < loopSince[best])) best = i;
+        return best < 0 ? 0 : best;
+    }
+
     /// <summary>Voices with a doNotStop stop pending.</summary>
     public int Pending { get; private set; }
 
-    /// <summary>A new sound in <paramref name="slot"/>: its ticket (never 0). The slot's older sound and its pending stop go.</summary>
-    public int Take(int slot)
+    /// <summary>A new sound in <paramref name="slot"/>: its ticket (never 0). The slot's older sound and its pending stop go.
+    /// A <paramref name="loops"/> sound holds the slot until it is stopped or freed.</summary>
+    public int Take(int slot, bool loops = false)
     {
         ClearPending(slot);
+        ClearLoop(slot);
+        if (loops) { loopSince[slot] = ++takes; Looping++; }
         sequence = sequence == int.MaxValue >> SlotBits ? 1 : sequence + 1;
         events[slot] = null; endAt[slot] = double.PositiveInfinity; audible[slot] = 0; priority[slot] = 0;
         return tickets[slot] = (sequence << SlotBits) | slot;
@@ -173,8 +219,16 @@ public sealed class EffectVoiceSlots
     public void Free(int slot)
     {
         ClearPending(slot);
+        ClearLoop(slot);
         tickets[slot] = 0;
         events[slot] = null;
+    }
+
+    void ClearLoop(int slot)
+    {
+        if (loopSince[slot] == 0) return;
+        loopSince[slot] = 0;
+        Looping--;
     }
 
     void ClearPending(int slot)

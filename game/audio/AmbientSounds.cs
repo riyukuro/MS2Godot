@@ -19,6 +19,9 @@ public partial class AmbientSounds : Node3D
     readonly SoundLibrary library;
     readonly Dictionary<string, Task<Pcm16>> decoded = new();
     public int Count { get; private set; }
+
+    /// <summary>The ambient players of every field now in the tree (made, not yet freed with their field).</summary>
+    public static int Live { get; private set; }
     public readonly List<string> Log = new();
 
     public AmbientSounds(SoundLibrary library) { this.library = library; Name = "AmbientSounds"; }
@@ -82,6 +85,7 @@ public partial class AmbientSounds : Node3D
         AddChild(player);
         var sound = sounds[e] = new Sound { Player = player };
         Count++;
+        Live++;
         Log.Add($"{e.Name} at {pos} -> {id} = {clip.Name} vol {clip.Volume:F2} range {min}..{max}");
         var key = clip.Name;
         if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() =>
@@ -96,6 +100,14 @@ public partial class AmbientSounds : Node3D
     /// <summary>The clips decoded on the pool threads, started on the main thread (<see cref="_Process"/>): a pool thread makes
     /// no engine call, since one finishing during the quit reached the engine's teardown (see FieldAudio).</summary>
     readonly System.Collections.Concurrent.ConcurrentQueue<Action> started = new();
+
+    /// <summary>The players free with the field (the client's map leave removes the point sounds, CEffectService::vfunc_3
+    /// @0x1411a8210, FUN_1411a6490 effectservice.cpp:1595-1621).</summary>
+    public override void _ExitTree()
+    {
+        Live -= Count;
+        Count = 0;
+    }
 
     public override void _Process(double delta)
     {

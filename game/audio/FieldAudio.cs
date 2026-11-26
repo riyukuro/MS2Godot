@@ -32,6 +32,13 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         lock (poolGate) poolClosed = true;
         Unchain();
         if (Instance == this) Instance = null;
+        // the field's voices free with it, looping ones too: none outlives its field
+        int made = made3d;
+        Live3dPlayers -= made3d;
+        made3d = 0;
+        if (Ms2Godot.Net.LiveSession.LiveCheck)
+            GD.Print($"audio: field audio leaves: {lastPlaying3d} 3d playing on its last frame, {voiceSlots.Looping} looping, {made} 3d players made, "
+                + $"{LoopsStoppedWithNode} loops stopped with their node, {LoopsTaken} loops taken, {Live3dPlayers} 3d players live after");
     }
 
     SoundLibrary library;
@@ -468,6 +475,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         while (decodedSegments.TryDequeue(out var decoded)) decoded();
         if (following3d > 0) FollowVoices();
+        if (Ms2Godot.Net.LiveSession.LiveCheck) lastPlaying3d = Playing3d;   // the leave's count: the voices stop as they leave first
         audioClock += delta;
         if (voiceSlots.Pending > 0)
             for (int due; (due = voiceSlots.NextDue(audioClock)) >= 0;) StopVoice(due);
@@ -740,7 +748,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             a.Ambient = new AmbientSounds(a.library);
             a.AddChild(a.Ambient);
             a.Ambient.Build(map);
-            GD.Print($"audio: {a.Ambient.Count} ambient sound entities");
+            GD.Print($"audio: {a.Ambient.Count} ambient sound entities, {AmbientSounds.Live} ambient players live, {Live3dPlayers} 3d players live");
             return a;
         }
         catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); return a; }   // the footsteps' ground effects stay
@@ -748,26 +756,64 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     // the client's 100 channels; a voice's player is made at its first sound
     readonly AudioStreamPlayer3D[] voices3d = new AudioStreamPlayer3D[EffectVoiceSlots.ClientChannels];
-    readonly EffectVoiceSlots voiceSlots = new(EffectVoiceSlots.ClientChannels);   // which sound each voice holds, the doNotStop stops pending
+    // which sound each voice holds, the doNotStop stops pending, and the voices looping sounds hold (at most half)
+    readonly EffectVoiceSlots voiceSlots = new(EffectVoiceSlots.ClientChannels, EffectVoiceSlots.ClientChannels / 2);
     readonly Node3D[] followed3d = new Node3D[EffectVoiceSlots.ClientChannels];    // the node a voice follows (attachToNode), null for none
     readonly Vector3[] followOffset3d = new Vector3[EffectVoiceSlots.ClientChannels];
     int following3d;
     /// <summary>Event sounds that failed for their event's max playbacks or for no channel (<see cref="EffectVoiceSlots.Start"/>).</summary>
     public int EventSoundsFailed;
 
-    /// <summary>The followed voices to their nodes' places (CSoundEventEffect::vfunc_9's SetPosition, soundeventmgr.cpp:582).
-    /// A node that left the tree ends the follow; the sound stays where it was.</summary>
+    /// <summary>The 3D players of every field's audio now in the tree (made and not yet freed with their field).</summary>
+    public static int Live3dPlayers { get; private set; }
+    int made3d, lastPlaying3d;
+
+    /// <summary>The 3D voices a looping sound holds now (<see cref="EffectVoiceSlots.Looping"/>).</summary>
+    public int Looping3d => voiceSlots.Looping;
+
+    /// <summary>The 3D voices playing now.</summary>
+    public int Playing3d
+    {
+        get
+        {
+            int n = 0;
+            foreach (var v in voices3d) if (v != null && IsInstanceValid(v) && v.Playing) n++;
+            return n;
+        }
+    }
+
+    /// <summary>Looping sounds stopped as the node they followed left the tree.</summary>
+    public int LoopsStoppedWithNode;
+
+    /// <summary>
+    /// The followed voices to their nodes' places (CSoundEventEffect::vfunc_9's SetPosition, soundeventmgr.cpp:582).
+    /// A node that left the tree ends the follow; a one-shot sound stays where it was and plays to its end. A looping sound
+    /// stops there: it never ends by itself, and the client's owners stop their kept looping effects as they go (the mount's
+    /// loop and run effects in ~Ridee @0x141704240, ridee.cpp:390-407; a skill state's on its end, StateSkill::vfunc_5,
+    /// stateskill.cpp:515-567; a buff's keep effect with the buff).
+    /// </summary>
     void FollowVoices()
     {
         for (int i = 0; i < followed3d.Length; i++)
         {
             var n = followed3d[i];
             if (n == null) continue;
-            if (!IsInstanceValid(n) || !n.IsInsideTree() || !IsInstanceValid(voices3d[i])) { followed3d[i] = null; following3d--; continue; }
-            voices3d[i].GlobalPosition = n.GlobalPosition + followOffset3d[i];
+            if (IsInstanceValid(n) && n.IsInsideTree() && IsInstanceValid(voices3d[i]))
+            {
+                voices3d[i].GlobalPosition = n.GlobalPosition + followOffset3d[i];
+                continue;
+            }
+            followed3d[i] = null;
+            following3d--;
+            if (!voiceSlots.Loops(i)) continue;
+            voiceSlots.Free(i);
+            StopVoice(i);
+            LoopsStoppedWithNode++;
         }
     }
     readonly Dictionary<string, AudioStreamWav> decoded = new();
+    /// <summary>Looping sounds stopped because <see cref="EffectVoiceSlots.MaxLooping"/> voices looped already.</summary>
+    public int LoopsTaken;
     public int PositionalPlayed;
     /// <summary>The camera's actor, where the client measures an effect's view distance from (EffectSkipMgr::IsOutOfView,
     /// effectskipmgr.cpp:140-145, CameraMgr::FUN_140a38d60); null when there is none, and then nothing is out of view.</summary>
@@ -840,22 +886,30 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (!decoded.TryGetValue(clip.Name, out var wav))
         {
             var pcm = SafeDecode.Decode(clip);
-            decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
+            decoded[clip.Name] = wav = pcm == null ? null : Stream(pcm, pcm.ToBytes(), clip.Loops);   // a looping event loops until stopped
         }
         if (wav == null) return 0;
         // the event's instance is taken as the effect is made, so it is held through the start delay too
         var ev = clip.Event;
         float audibility = Audibility(clip, clip.Volume * volume, position);
         double length = clip.Seconds > 0 ? clip.Seconds : wav.GetLength();
+        bool loopsFull = clip.Loops && voiceSlots.Looping >= voiceSlots.MaxLooping;
         int ticket = voiceSlots.Start(ev, ev?.MaxPlaybacks ?? 0, ev?.MaxPlaybacksBehavior ?? 0, ev?.Priority ?? 0, audibility,
-            audioClock, audioClock + delay + length, out bool stolen);
+            audioClock, audioClock + delay + length, out bool stolen, clip.Loops);
         if (Ms2Godot.Net.LiveSession.LiveCheck || LogVoices)
             GD.Print($"audio: voice {audioClock:F3} {ev?.FullPath ?? clip.Name} max {ev?.MaxPlaybacks} behavior {ev?.MaxPlaybacksBehavior} "
                      + (ticket == 0 ? "failed" : $"slot {voiceSlots.SlotOf(ticket)}{(stolen ? " stolen" : "")}") + $" sounding {voiceSlots.SoundingCount(audioClock)} of the event {voiceSlots.SoundingOf(ev, audioClock)}");
         if (ticket == 0) { EventSoundsFailed++; return 0; }
         int slot = voiceSlots.SlotOf(ticket);
+        if (loopsFull && stolen) LoopsTaken++;   // the oldest looping sound gave its voice to a newer one
         var v = voices3d[slot];
-        if (v == null) { v = voices3d[slot] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; AddChild(v); }
+        if (v == null)
+        {
+            v = voices3d[slot] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 };
+            AddChild(v);
+            made3d++;
+            Live3dPlayers++;
+        }
         if (followed3d[slot] != null) following3d--;
         followed3d[slot] = follow;
         if (follow != null) { followOffset3d[slot] = position - follow.GlobalPosition; following3d++; }
@@ -907,7 +961,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         int playing = 0;
         foreach (var v in voices3d)
             if (v != null && IsInstanceValid(v) && v.Playing) { playing++; sb.Append($"3d {v.Bus} own {Mathf.DbToLinear(v.VolumeDb):F2} bus {SoundBuses.BusGain(v.Bus):F2}; "); }
-        sb.Append($"{playing} 3d playing; buses {SoundBuses.Describe()}");
+        sb.Append($"{playing} 3d playing, {voiceSlots.Looping} looping, {Live3dPlayers} 3d players live, {AmbientSounds.Live} ambient players live; buses {SoundBuses.Describe()}");
         return sb.ToString();
     }
 
