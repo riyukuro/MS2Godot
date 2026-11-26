@@ -1035,17 +1035,18 @@ public class InventoryTests
             data.Vip = false;
 
             data.Wedding = true;
-            foreach (short state in new short[] { 0, 1, 5 })
+            pc.WeddingState = 3;   // the field user's state is not what MyPC asks (mypc.cpp:1409): the manager's is
+            foreach (int state in new[] { 0, 1, 5 })
             {
-                pc.WeddingState = state;
+                pc.Manager = PcItemUseTests.Manager(state);
                 Refused(0, t.Common(InventoryController.WeddingKey), $"wedding state {state}: the wedding box");
             }
-            foreach (short state in new short[] { 2, 3, 4 })
+            foreach (int state in new[] { 2, 3, 4 })
             {
-                pc.WeddingState = state; Click(0);
+                pc.Manager = PcItemUseTests.Manager(state); Click(0);
                 Assert.That(sent.Count, Is.EqualTo(1), $"wedding state {state}: the shop is asked"); sent.Clear(); closed = 0;
             }
-            data.Wedding = false;
+            data.Wedding = false; pc.Manager = null; pc.WeddingState = 0;
 
             Refused(2, t.Common(InventoryController.OwnerBindBoxId), "an item bound to another character: box 0xfe");
             Refused(3, t.Common(InventoryController.OwnerBindBoxId), "a socketed gem bound to another character: box 0xfe");
@@ -1132,7 +1133,13 @@ public class InventoryTests
             if (d.PCBang || d.Vip || d.Wedding) any++;
         }
         TestContext.WriteLine($"shop items {shop}: PC bang {bang}, VIP {vip}, wedding {wedding} (any flag {any}); the owner bind is the record's, not the data's");
-        Assert.That(shop, Is.GreaterThan(0), "this data has items with a shop id");
+        // the counts of each data set (11-26 scan of the five millions): GMS2 71, KMS2_DEV and the restored client 96, raw KMS2 115. None of them
+        // has a flagged shop item (PC bang, VIP, wedding all 0), so the sweep holds the checks to "no shop item is refused wrongly or let through";
+        // the flagged cases are the tests above and PcItemUseTests, on a made item.
+        string dir = Environment.GetEnvironmentVariable("MS2_DATA") ?? "";
+        bool raw = string.Equals(new DirectoryInfo(dir).Parent?.Name, "KMS2", StringComparison.OrdinalIgnoreCase);
+        int expected = LobbyFeatures.LocaleOf(Packs()) == "NA" ? 71 : raw ? 115 : 96;
+        Assert.That((shop, bang, vip, wedding), Is.EqualTo((expected, 0, 0, 0)), $"the shop items and flagged ones of {dir}");
     }
 
     [Test]

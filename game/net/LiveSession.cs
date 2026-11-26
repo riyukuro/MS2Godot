@@ -1689,6 +1689,27 @@ public partial class LiveSession : Node
         else if (remote == null || !remote.SetPremiumTime(m.PlayerId, m.EndTime)) return;   // WorldService::FindPCById found no player: the client returns
     }
 
+    /// <summary>WeddingManager's proxy state (m_proxy.m_nState), what WeddingManager::IsInProgress reads (the item requirements).</summary>
+    public readonly Ms2.Ui.Hud.WeddingManagerState Wedding = new();
+    bool? weddingFeature;
+    bool WeddingFeature()
+    {
+        if (weddingFeature is { } on) return on;
+        try { on = Ms2.Ui.LobbyFeatures.IsEnabledByName(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), Ms2.Ui.FeatureTable.Names[Ms2.Ui.Hud.WeddingManagerState.Feature - 1]); }
+        catch (Exception e) { GD.Print($"live: feature table unavailable ({e.Message})"); on = false; }
+        weddingFeature = on;
+        return on;
+    }
+
+    /// <summary>WeddingManager::OnPacket (weddingmanager.cpp:198): read only with feature 0x104; the proxy modes set the state. STILL-OPEN:
+    /// the tickets, invitations, hall list and the wedding dialogs are not ported (read, not applied).</summary>
+    void OnWeddingPacket(Ms2.Net.Wire.RawPacket p)
+    {
+        if (!WeddingFeature()) return;
+        var m = Ms2.Net.Packets.WeddingPacket.Read(p.Reader());
+        if (!Wedding.OnPacket(m)) ReadNotApplied("Wedding", m.Mode);
+    }
+
     readonly HashSet<(string, int)> packetsNotApplied = new();
 
     /// <summary>A packet read whole but not applied (its client state has no home here yet): logged once per packet name and mode.</summary>
@@ -2859,7 +2880,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ServerList)) { }   // the server list sent again after the field entry: CSceneStateGame::OnPacket has no case for it (only CSceneStateLogin::OnPacket reads it, scenestatelogin.cpp:117), so the client drops it unread
             else if (game.Is(p, Inbound.World)) { }   // CSceneStateGame::OnWorld (scenestategame.cpp:3883) reads no field: it sets WorldService m_2bc = 1 (worldservice_1.cpp:459), which no port code reads
             else if (game.Is(p, Inbound.Wedding))
-                ReadNotApplied("Wedding", Ms2.Net.Packets.WeddingPacket.Read(p.Reader()).Mode);   // the wedding manager and its dialogs are not ported (the client reads the packet only with feature 0x104)
+                OnWeddingPacket(p);   // WeddingManager::OnPacket (weddingmanager.cpp:198)
             else if (game.Is(p, Inbound.Survival))
                 ReadNotApplied("Survival", Ms2.Net.Packets.SurvivalPacket.Read(p.Reader()).Mode);   // the survival season pass and medals; no client handler is named in the decompile and the survival UI is not ported
             else if (game.Is(p, Inbound.Mentoring))

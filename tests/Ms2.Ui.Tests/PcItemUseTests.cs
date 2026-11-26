@@ -84,6 +84,44 @@ public class PcItemUseTests
         Assert.That(PcItemUse.CanUseItem(it, Data(wedding: false), Pc()), Is.True);
     }
 
+    /// <summary>The wedding manager after a proxy packet of this state (Wedding mode 0, WeddingProxy::Read).</summary>
+    internal static WeddingManagerState Manager(int state, byte mode = 0)
+    {
+        var m = new WeddingManagerState();
+        m.OnPacket(new WeddingPacket(mode) { Proxy = new WeddingProxyState(0, (byte)state, 0, 0, default, default, 0, "", "", "", "", Array.Empty<WeddingLogEntry>()) });
+        return m;
+    }
+
+    [Test]
+    public void TheOwnPlayersWeddingRequirementIsTheManagersNotTheFieldUsersState()
+    {
+        // MyPC::vfunc_146 (mypc.cpp:1409) is WeddingManager::IsInProgress (m_proxy.m_nState 2, 3, 4); PC::vfunc_146 (pc.cpp:2218) is m_n1220
+        var it = new EquipItem();
+        foreach (int state in new[] { 0, 1, 2, 3, 4, 5 })
+        {
+            bool on = state is 2 or 3 or 4;
+            var own = Pc(wedding: (short)(on ? 0 : 3)); own.Manager = Manager(state);
+            Assert.That(PcItemUse.CanUseItem(it, Data(wedding: true), own), Is.EqualTo(on), $"own player, manager state {state}, field state {own.WeddingState}");
+            Assert.That(PcItemUse.CanUseItem(it, Data(wedding: true), Pc(wedding: (short)state)), Is.EqualTo(on), $"another player, field state {state}");
+        }
+        Assert.That(new WeddingManagerState().IsInProgress, Is.False, "WeddingProxy's constructor sets the state 0 (weddingproxy.cpp:186)");
+    }
+
+    [Test]
+    public void OnlyTheProxyModesSetTheManagersState()
+    {
+        // WeddingManager::OnProxy (mode 0) and OnProposeAccepted (mode 6) run m_proxy.Read; the other modes leave it
+        Assert.That(Manager(3, 0).IsInProgress, Is.True);
+        Assert.That(Manager(4, 6).IsInProgress, Is.True);
+        var m = Manager(2);
+        Assert.That(m.OnPacket(new WeddingPacket(2) { Result = 1 }), Is.False);
+        Assert.That(m.OnPacket(new WeddingPacket(0x17)), Is.False);
+        Assert.That(m.ProxyState, Is.EqualTo(2));
+        Assert.That(m.OnPacket(new WeddingPacket(1) { Proxy = null }), Is.False);
+        Assert.That(m.OnPacket(new WeddingPacket(0) { Proxy = new WeddingProxyState(0, 1, 0, 0, default, default, 0, "", "", "", "", Array.Empty<WeddingLogEntry>()) }), Is.True);
+        Assert.That(m.IsInProgress, Is.False, "a proxy packet of state 1 ends it");
+    }
+
     [Test]
     public void TheOwnerBindIsTheTransfersAndTheSocketGems()
     {

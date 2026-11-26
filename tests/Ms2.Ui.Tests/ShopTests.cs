@@ -1163,6 +1163,21 @@ public class ShopTests
     }
 
     [Test]
+    public void TheHudScenesBagCloseIsTheShopsRequestCloseNotCloseShop()
+    {
+        // The bag's shop-item close is wired in HudScene (RequestCloseDialog(0x4e3b): vfunc_67 only, see the test above). The wiring lives in
+        // the game project, so it is read from its source: the line that sets InventoryController.CloseShop must call RequestClose.
+        var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MS2Godot.sln"))) dir = dir.Parent;
+        Assert.That(dir, Is.Not.Null);
+        var wired = File.ReadAllLines(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"))
+            .Where(l => l.Contains("c.CloseShop =")).ToList();
+        Assert.That(wired, Has.Count.EqualTo(1), "one place wires the bag's shop close");
+        Assert.That(wired[0], Does.Contain("shop.RequestClose()"));
+        Assert.That(wired[0], Does.Not.Contain("shop.CloseShop()"), "CloseShop (the Escape key's close) also closes the purchase box and market bill");
+    }
+
+    [Test]
     public void RemainingCallbacksAnswerLinkPreviewRecipeEquipUgcConfirmAndCloseShop()
     {
         Packs();

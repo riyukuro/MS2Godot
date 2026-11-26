@@ -2812,7 +2812,7 @@ public partial class HudScene : Node, IUiStageHost
             c.CanUseItem = Ms2.Ui.Hud.LapenshardSystemController.CanUseFrom(hudModel.Tables.Items, () =>
             {
                 use.PcBangGrade = live.Me.User?.PcBangGrade ?? 0; use.PremiumTime = live.Me.PremiumTime;
-                use.WeddingState = live.Me.WeddingState; use.CharacterId = live.CharacterId;
+                use.Manager = live.Wedding; use.CharacterId = live.CharacterId;
                 return use;
             });
         }
@@ -3900,7 +3900,7 @@ public partial class HudScene : Node, IUiStageHost
             c.UsePc = () =>
             {
                 usePc.PcBangGrade = live.Me.User?.PcBangGrade ?? 0; usePc.PremiumTime = live.Me.PremiumTime;
-                usePc.WeddingState = live.Me.WeddingState; usePc.CharacterId = live.CharacterId;
+                usePc.Manager = live.Wedding; usePc.CharacterId = live.CharacterId;
                 return usePc;
             };
         }

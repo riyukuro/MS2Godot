@@ -115,7 +115,7 @@ public partial class HudScene
             tag =>
             {
                 use.PcBangGrade = live.Me.User?.PcBangGrade ?? 0; use.PremiumTime = live.Me.PremiumTime;
-                use.WeddingState = live.Me.WeddingState; use.CharacterId = live.CharacterId;
+                use.Manager = live.Wedding; use.CharacterId = live.CharacterId;
                 return Ms2.Ui.Items.InventoryCount.HasItemWithTag(live.Items.All, hudModel.Tables.Items, tag,
                     (item, data) => Ms2.Ui.Hud.PcItemUse.CanUseItem(item, data, use));
             });

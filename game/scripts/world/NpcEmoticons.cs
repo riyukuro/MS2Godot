@@ -371,6 +371,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
                     PcBangGrade = v.PcBangGrade,
                     PremiumTime = v.PremiumTime,
                     WeddingState = v.WeddingState,
+                    Manager = v.Me ? s.Wedding : null,   // MyPC::vfunc_146: the manager's state
                     CharacterId = v.Char,
                     ServerTime = () => s.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 };

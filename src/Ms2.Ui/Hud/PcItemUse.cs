@@ -34,7 +34,7 @@ public static class PcItemUse
 {
     /// <summary>
     /// The owner's state the check reads, as the add packets leave it: the PC bang grade byte (PC m_nFF8), the premium
-    /// club time (m_n1190, FieldAddUser), the wedding state (m_n1220, FieldAddUser) and the character id
+    /// club time (m_n1190, FieldAddUser), the wedding state (m_n1220, FieldAddUser; the own player's is the wedding manager's, see WeddingManagerState) and the character id
     /// (FUN_141656a80). ServerTime is the client's GetServerTime: the session's clock, falling back to the local UTC
     /// when there is no session.
     /// </summary>
@@ -43,6 +43,8 @@ public static class PcItemUse
         public byte PcBangGrade;
         public long PremiumTime;
         public short WeddingState;
+        /// <summary>The own player's wedding manager: MyPC::vfunc_146 (mypc.cpp:1409) asks it instead of the field state. Null for another player.</summary>
+        public WeddingManagerState Manager;
         public long CharacterId;
         public Func<long> ServerTime = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     }
@@ -64,8 +66,13 @@ public static class PcItemUse
     /// <summary>FUN_140525db0 (the limit flag "vip", item.cpp:1013) against IsVip (pc.cpp:2209: the premium time is ahead of the server time).</summary>
     public static bool VipOk(ItemData data, Pc pc) => !data.Vip || pc.PremiumTime > pc.ServerTime();
 
-    /// <summary>HasWeddingLimit ("wedding", item.cpp:1022) against vfunc_146 (pc.cpp:2218: the wedding state 2, 3 or 4).</summary>
-    public static bool WeddingOk(ItemData data, Pc pc) => !data.Wedding || pc.WeddingState is 2 or 3 or 4;
+    /// <summary>
+    /// HasWeddingLimit ("wedding", item.cpp:1022) against vfunc_146: MyPC's (mypc.cpp:1409) is WeddingManager::IsInProgress
+    /// (weddingmanager.cpp:1174, the manager's proxy state 2, 3 or 4: <see cref="WeddingManagerState"/>); another PC's (PC::vfunc_146,
+    /// pc.cpp:2218) is its own wedding state 2, 3 or 4.
+    /// </summary>
+    public static bool WeddingOk(ItemData data, Pc pc) =>
+        !data.Wedding || (pc.Manager?.IsInProgress ?? WeddingManagerState.InProgress(pc.WeddingState));
 
     /// <summary>
     /// FUN_1406343b0 (itemsocketsystemutil.cpp:2534): the transfer's binding must be the character
