@@ -9,7 +9,7 @@ static class FxParam
     public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
         BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
-        HasDetail = "has_detail", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
+        HasDetail = "has_detail", DetailOpacity = "detail_opacity", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
         Ambient = "mat_ambient", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity", MorphW = "morph_w";
 }
 
@@ -161,6 +161,7 @@ uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
 uniform int base_clamp = 0;
 uniform sampler2D detail_tex : repeat_enable, filter_linear;
 uniform bool has_detail = false;
+uniform bool detail_opacity = false;
 uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
 uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
 uniform int detail_clamp = 0;
@@ -189,19 +190,25 @@ vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
 }
 void fragment() {
     // the quad's texture coordinate (the flipbook cell's), then each map's own transform and clamp mode as the mesh
-    // shader's map_uv; the detail map multiplies the colour by twice its colour (NiStandardMaterial::HandleDetailMap,
-    // NiStandardMaterial.cpp:4765-4774: RGB only, the opacity stays the base map's)
+    // shader's map_uv; the detail map multiplies the colour by twice its colour, and under an MS2StandardMaterial the
+    // opacity by its alpha (detail_opacity: ParticleSystemDef.DetailOpacity; MS2StandardMaterial::HandleDetailMap,
+    // ms2standardmaterial.cpp:681-694, :342-343; NiStandardMaterial::HandleDetailMap, NiStandardMaterial.cpp:4765-4774,
+    // takes the colour only)
     vec2 uv = UV / frames + cell;
     vec4 t = has_tex ? texture(tex, map_uv(uv, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
-    if (has_detail) t.rgb *= texture(detail_tex, map_uv(uv, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0))).rgb * 2.0;
+    if (has_detail) {
+        vec4 d = texture(detail_tex, map_uv(uv, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0)));
+        t.rgb *= d.rgb * 2.0;
+        if (detail_opacity) t.a *= d.a;
+    }
     // the mesh shader's colour terms (MeshCode, EffectMesh.Shade): the particle's key colour is its vertex colour
     // (ParticleSystemDef.Material), so the material gives the terms the vertex colour mode leaves (AMB_DIFF: the emissive)
     vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
     if (vc_emi) coef += COLOR.rgb;
     if (vc_dif) coef += COLOR.rgb;
     if (vc_amb) coef += COLOR.rgb * ms2_ambient;
-    // neither the colour nor the opacity is saturated, as in the mesh shader (MeshCode): the quads draw through
-    // SoftParticlesMaterial, a standard material whose outputs go to the FP16 target as they are
+    // neither the colour nor the opacity is saturated, as in the mesh shader (MeshCode): the quads draw through a
+    // standard material (ParticleSystemDef.DetailOpacity), whose outputs go to the FP16 target as they are
     // (CompositeFinalRGBAColor, NiStandardMaterialNodeLibrary.cpp:3057-3106; postprocessingservice.cpp:1750-1751)
     vec3 col = t.rgb * coef;
     // the glow map adds its colour after the lighting (NiStandardMaterial::HandlePostLightTextureApplication,
@@ -214,7 +221,7 @@ void fragment() {
     // The client's fog for an effect's meshes and particle systems. A NIF effect carries no NiFogProperty (none of the
     // effect pack's nifs has one), so its meshes take the default fog property ApplyEffect::SetFog sets for the field
     // (applyeffect.cpp:586-622: NiFogProperty::ms_spDefault), and their materials are the field's: MS2StandardMaterial
-    // (CalculateBiasedFog, ms2standardmaterial.cpp:535-584), or a plain NiStandardMaterial (SoftParticlesMaterial), whose
+    // (CalculateBiasedFog, ms2standardmaterial.cpp:535-584), or a plain NiStandardMaterial (the renderer's default), whose
     // CalculateFog takes the same FogStartEnd and gakFogBias with the same linear-z formula (NiStandardMaterial.cpp:5074-5131,
     // NiStandardMaterialNodeLibrary.cpp:1663-1792). So the depth fog is ms2_fog.gdshaderinc's, per vertex, and ApplyFog
     // lerps to the fog colour by it in every blend mode (an additive effect adds the fog colour at a distance). The height
@@ -397,17 +404,17 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             else { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gtex); mat.SetShaderParameter(FxParam.GlowClamp, (glowMap.ClampS ? 1 : 0) | (glowMap.ClampT ? 2 : 0)); }
             var dtex = detailMap?.File != null ? mb.Texture(detailMap.File) : null;
             if (dtex == null) detailMap = null;
-            else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); }
+            else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); if (d.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true); }
             if (baseMap != null) mat.SetShaderParameter(FxParam.BaseClamp, (baseMap.ClampS ? 1 : 0) | (baseMap.ClampT ? 2 : 0));
             if (detailMap != null) mat.SetShaderParameter(FxParam.DetailClamp, (detailMap.ClampS ? 1 : 0) | (detailMap.ClampT ? 2 : 0));
-            // The system blocks name no material, so the quads are drawn through the renderer's default, NiStandardMaterial
-            // (NiRenderer::NiRenderer, NiRenderer.cpp:49-54; nothing in the client calls SetDefaultMaterial): their colour is
-            // the standard material's, as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
+            // The quads are drawn through the material the system block names (most name MS2StandardMaterial), or the
+            // renderer's default NiStandardMaterial when it names none (NiRenderer::NiRenderer, NiRenderer.cpp:49-54; nothing in
+            // the client calls SetDefaultMaterial; ParticleSystemDef.DetailOpacity): their colour is the standard material's, as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
             // NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450). Nearly every
             // system is AMB_DIFF with E_A_D (flags 40): the emissive is added to the key colour times the light, so a dark key
             // colour over a dark texture still shows the emissive.
             // SoftParticlesManager::RegisterModel takes only objects whose material is already SoftParticlesMaterial
-            // (softparticlesmanager.cpp:133-162) and nothing gives it to a particle system, so there is no soft-depth opacity.
+            // (softparticlesmanager.cpp:133-162); three systems name it. STILL-OPEN: their soft-depth opacity is not drawn.
             // STILL-OPEN: the dark and decal maps and texture transform controllers on a system's maps are not either.
             ps.Shading = new MeshState { Def = d.Material, Mat = mat, BaseMap = baseMap, GlowMap = glowMap, DetailMap = detailMap };
             SetRows(ps.Shading, baseMap?.Transform, 0, true);

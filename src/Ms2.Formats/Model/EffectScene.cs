@@ -412,6 +412,14 @@ public sealed class ParticleSystemDef
     /// (EffectMesh.Shade). Material.Mesh.Colors is an empty array when the system has colours ("Has Colors",
     /// NiPSParticleSystem::LoadBinary, NiPSParticleSystem.cpp:1227-1228), null without.</summary>
     public EffectMesh Material;
+    /// <summary>The detail map's alpha multiplies the opacity: the system names a material the client builds as an
+    /// MS2StandardMaterial (ModelData.IsStandardMaterial), whose HandleDetailMap samples the detail alpha into
+    /// m_pkDetailOpacity (ms2standardmaterial.cpp:681-694) and multiplies the opacity by it (:342-343). The renderer's
+    /// default NiStandardMaterial, for a system that names none, and SoftParticlesMaterial take the detail colour only
+    /// (NiStandardMaterial::HandleDetailMap, NiStandardMaterial.cpp:4765-4774).
+    /// STILL-OPEN: the EffectUVDistortion* and EffectDissolve shader materials some systems name are not read; they keep
+    /// the colour-only detail map.</summary>
+    public bool DetailOpacity => ModelData.IsStandardMaterial(Material?.Mesh?.Material);
 }
 
 /// <summary>
@@ -751,12 +759,14 @@ public sealed class EffectScene
         d.NormalMethod = (int)b.IntOr("Normal Method", AlignedQuad.Camera); d.UpMethod = (int)b.IntOr("Up Method", AlignedQuad.Camera);
         if (b.Has("Normal Direction")) d.NormalDirection = V3(b.Struct("Normal Direction"));
         if (b.Has("Up Direction")) d.UpDirection = V3(b.Struct("Up Direction"));
-        // The quads are drawn through an NiStandardMaterial (SoftParticlesMaterial, softparticlesmaterial.cpp:241-251), whose
+        // The quads are drawn through the material the system block names, as a mesh's (ModelData.MaterialName; most name
+        // MS2StandardMaterial, see ParticleSystemDef.DetailOpacity), or the renderer's default NiStandardMaterial when it
+        // names none (NiRenderer::ApplyDefaultMaterial, NiRenderer.cpp:343-345). Both are standard materials whose
         // HandlePreLightTextureApplication applies the base map and then the detail map at twice its colour
         // (NiStandardMaterial::HandleBaseMap / HandleDetailMap, NiStandardMaterial.cpp:4500-4527, 4765-4774, called at
         // :5517-5541), each through its own texture transform (GetTextureTransformMappingFromEnum, :364-430): so the system keeps its maps as a mesh does (ModelMesh.Maps).
         var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null,
-                                  Textures = ModelData.TexturesOf(n, blk), Maps = ModelData.MapsOf(n, blk) };
+                                  Textures = ModelData.TexturesOf(n, blk), Maps = ModelData.MapsOf(n, blk), Material = ModelData.MaterialName(n, b) };
         d.Material = new EffectMesh { Mesh = mat, Node = node };
 
         foreach (var pi in b.Ints("Properties"))

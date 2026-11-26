@@ -922,26 +922,43 @@ public sealed class ModelData
         };
     }
 
+    /// <summary>The active material name of a render object block (its "Material Data"), or null when it names none.</summary>
+    internal static string MaterialName(NifFile nif, NifStruct b)
+    {
+        if (!(b.TryGetValue("Material Data", out var mdv) && mdv is NifStruct md && md.IntOr("Num Materials", 0) > 0)) return null;
+        long active = md.IntOr("Active Material", -1);
+        var names = md.TryGetValue("Material Name", out var nv) ? nv : null;
+        object pick = names switch
+        {
+            long[] l => l[active >= 0 && active < l.Length ? active : 0],
+            object[] o => o[active >= 0 && active < o.Length ? active : 0],
+            _ => null,
+        };
+        return pick switch
+        {
+            long l => nif.Str(l),
+            NifStruct st when st.TryGetValue("Index", out var ix) && ix is long li => nif.Str(li),
+            _ => null,
+        };
+    }
+
+    /// <summary>The material names MS2MaterialLibrary::CreateMaterial builds as an MS2StandardMaterial
+    /// (ms2materiallibrary.cpp:486-500). A render object gets its material by the name it stores
+    /// (NiRenderObject::LoadBinary, NiRenderObject.cpp:385-418, through ApplyMaterial and NiMaterialLibrary::CreateMaterial,
+    /// :77-86).</summary>
+    public static readonly string[] StandardMaterialNames =
+    {
+        "MS2StandardMaterial", "MS2CharacterMaterial", "MS2CharacterSkinMaterial", "MS2CharacterHairMaterial",
+        "MS2AlphaBoostMaterial", "MS2ChaosMaterial", "MS2ChaosSkinMaterial", "MS2ChaosHairMaterial",
+    };
+
+    /// <summary>The name is one the client builds as an MS2StandardMaterial (<see cref="StandardMaterialNames"/>).</summary>
+    public static bool IsStandardMaterial(string name) => name != null && Array.IndexOf(StandardMaterialNames, name) >= 0;
+
     /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>
     static void ReadMaterial(NifFile nif, NifStruct b, ModelMesh mesh)
     {
-        if (b.TryGetValue("Material Data", out var mdv) && mdv is NifStruct md && md.IntOr("Num Materials", 0) > 0)
-        {
-            long active = md.IntOr("Active Material", -1);
-            var names = md.TryGetValue("Material Name", out var nv) ? nv : null;
-            object pick = names switch
-            {
-                long[] l => l[active >= 0 && active < l.Length ? active : 0],
-                object[] o => o[active >= 0 && active < o.Length ? active : 0],
-                _ => null,
-            };
-            mesh.Material = pick switch
-            {
-                long l => nif.Str(l),
-                NifStruct st when st.TryGetValue("Index", out var ix) && ix is long li => nif.Str(li),
-                _ => null,
-            };
-        }
+        mesh.Material = MaterialName(nif, b);
         foreach (var e in b.Ints("Extra Data List"))
         {
             if (e < 0) continue;
