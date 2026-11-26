@@ -129,7 +129,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         var user = add.User;
         string name = user.Name ?? "", prefix = "";
         if (add.Title != 0 && tables.TitleName(add.Title) is { Length: > 0 } title) prefix = title + " ";
-        string guild = string.IsNullOrEmpty(user.GuildName) ? "" : "<" + user.GuildName + ">";
+        string guild = GuildText(user.GuildName);
         var color = self ? myColor : pcColor;
         var node = NpcPresence.BuildTag(movie, u, prefix + name, guild, color);
         if (node == null) return;
@@ -170,6 +170,36 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         t.Level = level; t.PrestigeLevel = adventureLevel;
         Symbol(t);
         return true;
+    }
+
+    /// <summary>
+    /// A player's guild name changed (PC::vfunc_129, pc.cpp:1511: m_strNameDC8, then FUN_141a60f00 refreshes its UINameTag
+    /// entity, setData again): the guild line "&lt;guild&gt;" above the name, empty for none, and the symbol line, which sits
+    /// higher with a guild line. False when the player has no tag.
+    /// </summary>
+    public bool SetGuild(Node3D root, string guildName)
+    {
+        if (root == null || !tags.TryGetValue(root, out var t) || t.Row != null) return false;
+        string guild = GuildText(guildName);
+        NpcPresence.SetLabel(t.Node.FindClip("m_guild"), guild, null, t.Color);
+        t.GuildLine = guild.Length > 0;
+        Symbol(t);
+        return true;
+    }
+
+    /// <summary>setData's guild line (UINameTag::Entity::FUN_141a5ff60): StringFormat("&lt;{0}&gt;", GetGuildName()), "" for none.</summary>
+    internal static string GuildText(string guildName) => string.IsNullOrEmpty(guildName) ? "" : "<" + guildName + ">";
+
+    /// <summary>The text of a tag's guild line (the test's view), null without a tag.</summary>
+    public string ShownGuild(Node3D root) =>
+        root != null && tags.TryGetValue(root, out var t) ? LineText(t.Node.FindClip("m_guild")) : null;
+
+    /// <summary>The first text field's text under a tag line, "" with none.</summary>
+    internal static string LineText(MovieClipNode line)
+    {
+        foreach (var c in line?.AllClips() ?? [])
+            foreach (var f in c.TextFields) return f.Text ?? "";
+        return "";
     }
 
     /// <summary>The field's property 5 symbols (team 1, team 2), null without one: the field properties' view.</summary>

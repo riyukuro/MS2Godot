@@ -242,6 +242,27 @@ public partial class LiveSession : Node
     /// packet command takes it: each byte in hex, the opcode first.</summary>
     /// <summary>A ResponseRide for the own pc as the server's debug packet command takes it (hex bytes): mode 0 with a
     /// RideOnAction of type 0 (ride id, the mount's object id, and KMS's flag byte), or mode 1 with a plain RideOffAction.</summary>
+    /// <summary>
+    /// A Guild packet the server's debug packet command sends back (the live check of the name tags' guild line):
+    /// 0x4d (FUN_1413c7700) the name and the guild name, 0x4e (FUN_1413c7810) the name, 0x22 (OnPacketGuildRenamed)
+    /// the guild name; <paramref name="mode"/> is the KMS mode, sent as this region's.
+    /// </summary>
+    internal string GuildTagBytes(byte mode, string name, string guildName)
+    {
+        byte wire = mode;
+        if (game.Profile.IsGms2)
+            foreach (var (w2, kms) in GuildModes.Gms2Receive) if (kms == mode) { wire = w2; break; }
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        w.WriteShort((short)game.Profile.Number(Ms2.Net.Inbound.Guild));
+        w.WriteByte(wire);
+        if (mode != 0x22) w.WriteUnicodeString(name ?? "");
+        if (mode != 0x4e) w.WriteUnicodeString(guildName ?? "");
+        return string.Join(" ", w.ToArray().Select(b => b.ToString("X2")));
+    }
+
+    /// <summary>The guild line another player's tag shows (null when no player of that name is here). The live check's view.</summary>
+    internal string RemoteTagGuild(string name) => remote != null && IsInstanceValid(remote) ? remote.ShownGuild(name) : null;
+
     internal string OwnRideBytes(bool on, int rideId, int mountObjectId)
     {
         var w = new Maple2.PacketLib.Tools.ByteWriter();
@@ -951,9 +972,31 @@ public partial class LiveSession : Node
     public Ms2.Ui.BuddyBook Buddies => buddies ??= new Ms2.Ui.BuddyBook { Send = SendBuddy };
     Ms2.Ui.BuddyBook buddies;
     /// <summary>CGuildManager: the guild id, this character's join requests and the search results from the Guild packets
-    /// (0x8A); live only. Its sends (Guild 0x4B) go out while the game connection is up.</summary>
-    public Ms2.Ui.GuildBook Guilds => guilds ??= new Ms2.Ui.GuildBook { Send = SendGuild };
+    /// (0x8A); live only. Its sends (Guild 0x4B) go out while the game connection is up; its name over a player's head goes
+    /// to that PC (<see cref="HeadGuildName"/>).</summary>
+    public Ms2.Ui.GuildBook Guilds
+    {
+        get
+        {
+            if (guilds != null) return guilds;
+            guilds = new Ms2.Ui.GuildBook { Send = SendGuild };
+            guilds.HeadGuildName += HeadGuildName;
+            return guilds;
+        }
+    }
     Ms2.Ui.GuildBook guilds;
+
+    /// <summary>
+    /// PC::vfunc_129 for the guild packets' name over a head (0x4d / 0x4e by name, 0x22 the local player's): the own
+    /// character's (<see cref="MyCharacter.ApplyHeadGuildName"/>; the HUD's own tag follows its Changed) or another player's
+    /// here (<see cref="RemoteLayer.SetGuildName"/>); WorldService::FUN_141bd1420 searches both.
+    /// </summary>
+    void HeadGuildName(string name, string guildName)
+    {
+        bool own = Me.ApplyHeadGuildName(name, guildName);
+        bool other = !own && remote != null && IsInstanceValid(remote) && remote.SetGuildName(name, guildName);
+        if (LiveCheck) GD.Print($"live: head guild name '{guildName}' on {(own ? "own" : other ? "other" : "nobody here")}");
+    }
     /// <summary>OnMinimapPing @0x14173de10 (scenestategame.cpp:6806-6815): the ping for the minimap dialog's AddPing (set by the HUD).</summary>
     public event Action<MinimapPingMessage> MinimapPinged;
     public event Action<MassiveEventMessage> MassiveEventReceived;
@@ -3418,9 +3461,39 @@ public partial class LiveSession : Node
             }
             string step = System.Environment.GetEnvironmentVariable("MS2_LIVE_GUILD_STEP") ?? "";
             await Frames(240);
-            guildHud.OpenGuildScripted();
-            await Until(() => guildHud.GuildDialog != null, 600); await Frames(180);
-            switch (step)
+            // MS2_LIVE_TAG_WATCH=<seconds> (with MS2_LIVE_TAG_NAMES=<name>,...): the own tag's guild line and those players'
+            // printed and shot on every change while the step runs, then until the seconds are up
+            Task tagWatch = Task.CompletedTask;
+            if (int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_TAG_WATCH"), out int watchSeconds) && watchSeconds > 0)
+            {
+                var names = (System.Environment.GetEnvironmentVariable("MS2_LIVE_TAG_NAMES") ?? "").Split(',', System.StringSplitOptions.RemoveEmptyEntries);
+                async Task WatchTags()
+                {
+                    string last = null; int shots = 0;
+                    ulong end = Time.GetTicksMsec() + (ulong)watchSeconds * 1000;
+                    while (Time.GetTicksMsec() < end && IsInstanceValid(guildHud))
+                    {
+                        string now = $"own '{guildHud.OwnTagGuildScripted}'" + string.Concat(names.Select(n => $", {n} '{Instance?.RemoteTagGuild(n) ?? "(not here)"}'"));
+                        if (now != last) { last = now; GD.Print("live: tags " + now); await Frames(20); Shot($"tags_{++shots}.png"); }
+                        await Frames(15);
+                    }
+                }
+                tagWatch = WatchTags();
+            }
+            bool tagStep = step == "idle" || step.StartsWith("tagraw:");   // no guild window: the tags only
+            if (step.StartsWith("tagraw:"))   // tagraw:<mode>:<name>:<guild>;...: Guild packets by the debug packet command, 5 s apart
+            {
+                await Frames(300);
+                foreach (var one in step.Substring(7).Split(';'))
+                {
+                    var a = one.Split(':');
+                    string bytes = Instance?.GuildTagBytes(System.Convert.ToByte(a[0], 16), a.Length > 1 ? a[1] : "", a.Length > 2 ? a[2] : "");
+                    GD.Print($"live: guild tag packet {a[0]} sent {guildHud.SubmitChatLine("/debug packet " + bytes)}");
+                    await Frames(300);
+                }
+            }
+            if (!tagStep) { guildHud.OpenGuildScripted(); await Until(() => guildHud.GuildDialog != null, 600); await Frames(180); }
+            switch (tagStep ? "" : step)
             {
                 case "create":
                 {
@@ -3572,6 +3645,7 @@ public partial class LiveSession : Node
                     break;
                 }
             }
+            await tagWatch;
         }
         // MS2_LIVE_BM_SHOTS=<dir> with MS2_LIVE_BM="sell:<item id>:<price>" or "buy": the black market opened as its open
         // answer does. sell registers one of that item twice (the register page's OnClickRegister, as the slot and the

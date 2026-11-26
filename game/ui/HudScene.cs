@@ -3155,6 +3155,8 @@ public partial class HudScene : Node, IUiStageHost
     Ms2.Ui.Items.ItemUse itemUse;
 
     PlayerNameTag playerNameTag;
+    /// <summary>The own tag's guild line as shown ("" without one; null before the tag). The live check's view.</summary>
+    public string OwnTagGuildScripted => playerNameTag?.ShownGuild;
     Action unwatchLivePlayer;
 
     /// <summary>
@@ -3176,6 +3178,7 @@ public partial class HudScene : Node, IUiStageHost
                 foreach (var e in changed) Ms2.Ui.Hud.PartyOwnStatus.Apply(partyBook, live.CharacterId, model.Player, e);
             OwnMinimapPicture(live);
             if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(OwnTagName());
+            playerNameTag?.SetGuild(live.Me.GuildName);   // PC::vfunc_129's tag refresh (the own FieldAddUser, the guild packets)
             if (live.Me.User is { } me) playerNameTag?.SetSymbol(live.Me.Insignia, live.Me.InsigniaShown, me.Level, me.PrestigeLevel,
                 NameTagSymbolLine.FieldOrTeam(live.FieldProperties.UserTagSymbol, live.Me.Team, live.Me.PvpPoint, live.Me.PvpMode));
             if (changed.Contains(Ms2.Ui.StatusEvent.Hp))

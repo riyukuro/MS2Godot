@@ -101,6 +101,26 @@ public class CharacterInfoTests {
         Assert.That(me.Dead, Is.False);
     }
 
+    [Test] public void TheOwnHeadGuildNameFollowsTheFieldAddUserThenTheGuildPackets() {
+        // PC::vfunc_129 (pc.cpp:1511): the own FieldAddUser's guild name (scenestategame.cpp:11148), then CGuildManager's
+        // 0x4d / 0x4e by name (guildmanager.cpp:3108 / :3121, WorldService::FUN_141bd1420 finds the own PC too) and the
+        // rename (:2211); PC::vfunc_125's info (m_3f8, pc.cpp:4147) reads it
+        var me = new MyCharacter();
+        Assert.That(me.ApplyHeadGuildName("a", "G"), Is.False, "before the own FieldAddUser: no local player");
+        me.Apply(new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a", GuildName = "G" } });
+        Assert.That((me.GuildName, me.ToPcInfo(0).GuildName), Is.EqualTo(("G", "G")), "the own FieldAddUser's");
+        int changed = 0; me.Changed += () => changed++;
+        Assert.That((me.ApplyHeadGuildName("b", "X"), me.GuildName, changed), Is.EqualTo((false, "G", 0)), "another player's name");
+        Assert.That((me.ApplyHeadGuildName("A", "X"), me.GuildName), Is.EqualTo((false, "G")), "the name match is exact");
+        Assert.That((me.ApplyHeadGuildName("a", "H"), me.GuildName, me.ToPcInfo(0).GuildName, changed), Is.EqualTo((true, "H", "H", 1)),
+            "0x4d (a join, a rename) on the own name");
+        Assert.That((me.ApplyHeadGuildName("a", "H"), changed), Is.EqualTo((true, 1)), "the same name again: no change");
+        Assert.That((me.ApplyHeadGuildName("a", ""), me.GuildName, me.ToPcInfo(0).GuildName, changed), Is.EqualTo((true, "", "", 2)),
+            "0x4e (a leave, a break) on the own name");
+        me.Apply(new FieldAddUser { ObjectId = 10, User = new UserBlock { Name = "a", GuildName = "J" } });
+        Assert.That(me.GuildName, Is.EqualTo("J"), "the next own FieldAddUser's again");
+    }
+
     [Test] public void UserStateEntersTheStateBeforeTheDie() {
         var me = new MyCharacter();
         var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };

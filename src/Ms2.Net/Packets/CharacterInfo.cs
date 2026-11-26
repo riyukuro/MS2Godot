@@ -284,6 +284,9 @@ public sealed class MyCharacter {
     public ushort Insignia;
     /// <summary>Whether the symbol is shown (PC m_n10fc, FUN_141661e20; the own FieldAddUser's flag after the insignia).</summary>
     public bool InsigniaShown;
+    /// <summary>The guild name over the own head (PC m_strNameDC8, GetGuildName): the own FieldAddUser's (vfunc_129,
+    /// scenestategame.cpp:11148), then the guild packets' (<see cref="ApplyHeadGuildName"/>).</summary>
+    public string GuildName = "";
     /// <summary>The own FieldAddUser's PvP point and mode (CPvPInfo) and team byte (m_unk_af8), the name tag's team symbols' inputs.</summary>
     public int PvpPoint; public byte PvpMode, Team;
     public long HomeCommendMonth; public int HomeCommendMonthly, HomeCommendPoint;
@@ -332,6 +335,7 @@ public sealed class MyCharacter {
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
     public void Apply(FieldAddUser u) {
         ObjectId = u.ObjectId; User = u.User; Title = u.Title; Insignia = (ushort)u.Insignia; InsigniaShown = u.InsigniaShown;
+        GuildName = u.User?.GuildName ?? "";
         PvpPoint = u.PvpPoint; PvpMode = u.PvpMode; Team = u.Team;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
@@ -344,6 +348,21 @@ public sealed class MyCharacter {
         MesoRevivalsUsed = 0;   // the own FieldAddUser makes a new MyPC (scenestategame.cpp:11117-11120), whose ctor zeroes m_n1644 (mypc.cpp:880)
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// A guild packet's name over a player's head (PC::vfunc_129, pc.cpp:1511): CGuildManager's FUN_1413c7700 / FUN_1413c7810
+    /// (guildmanager.cpp:3108 / :3121) find the PC by name among all the field's PCs (WorldService::FUN_141bd1420, the own one
+    /// included) and OnPacketGuildRenamed (:2211) takes the local player. True when the name is the own character's; the
+    /// MyInfo dialog's PC info reads it (PC::vfunc_125's m_3f8), so <see cref="Changed"/> follows a change.
+    /// </summary>
+    public bool ApplyHeadGuildName(string name, string guildName) {
+        if (User == null || name == null || name != User.Name) return false;
+        guildName ??= "";
+        if (guildName == GuildName) return true;
+        GuildName = guildName;
+        Changed?.Invoke();
+        return true;
     }
 
     /// <summary>
@@ -767,7 +786,7 @@ public sealed class MyCharacter {
             IsLocal = true, Level = (ushort) User.Level, JobGroup = User.JobCode, SubJob = User.Job,
             AccountId = User.AccountId, CharacterId = User.CharacterId, Title = Title, Gender = User.Gender,
             HomeCommendPoint = HomeCommendPoint, HomeCommendMonthly = GetMonthlyCount(serverTime),
-            Picture = User.Picture ?? "", Name = User.Name ?? "", GuildName = User.GuildName ?? "", Motto = User.Motto ?? "",
+            Picture = User.Picture ?? "", Name = User.Name ?? "", GuildName = this.GuildName, Motto = User.Motto ?? "",
             PrestigeLevel = User.PrestigeLevel, CodiStart = CodiStart, CodiEnd = CodiEnd, CodiItems = CodiItems,
             Equips = Equips, Outfit2 = Outfit2, Gems = Gems,
         };

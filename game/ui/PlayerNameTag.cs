@@ -8,7 +8,7 @@ namespace Ms2Godot.Ui;
 /// The own player's name tag. PC::vfunc_82 creates the PC's UINameTag entity (CreateNameTagEntity) with font size 0x12 and
 /// NameTagColorFriendly; every frame PC::vfunc_53 sets the colour by relation, NameTagColorMyPC for the local player.
 /// <list type="bullet">
-/// <item>Data (UINameTag::Entity::FUN_141a5ff60, setData): the name, the guild as "&lt;guild&gt;" (none here), visibleSymbol
+/// <item>Data (UINameTag::Entity::FUN_141a5ff60, setData): the name, the guild as "&lt;guild&gt;" (<see cref="SetGuild"/>), visibleSymbol
 /// and visibleName from the game options, the name tag item's symbol (<see cref="SetSymbol"/>; no field symbol or PvP team),
 /// font size and colour, no skin.</item>
 /// <item>Anchor (UIHudEntity::Entity::vfunc_10): the world point of the actor's "Eff_UI" node, the player's row of
@@ -37,6 +37,8 @@ public sealed partial class PlayerNameTag : CanvasLayer
     Player player;
     Camera3D camera;
     Color color;                         // NameTagColorMyPC
+    bool guildLine;                      // a guild line is shown (the symbol line sits higher)
+    (ushort Id, bool Shown, int Level, int AdventureLevel, string Special) symbolArgs;   // the last SetSymbol's
 
     public PlayerNameTag(UiAssets ui, ClientConstants constants, string name, Vector2 window)
     {
@@ -98,10 +100,32 @@ public sealed partial class PlayerNameTag : CanvasLayer
     /// <summary>
     /// The own PC's name tag symbol (the own FieldAddUser's insignia, then the Insignia packet: CSceneStateGame::OnNametag,
     /// scenestategame.cpp:7314-7331, refreshes the MyPC's UINameTag entity too, FUN_141a60f00): setData's symbol line
-    /// (<see cref="NameTagSymbolLine"/>) with the PC's level and adventure level; the own tag has no guild line here.
+    /// (<see cref="NameTagSymbolLine"/>) with the PC's level and adventure level, above the guild line when there is one.
     /// </summary>
-    public void SetSymbol(ushort id, bool shown, int level, int adventureLevel, string special = null) =>
-        symbol.Set(node, movie, u, Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).NametagSymbols, id, shown, level, adventureLevel, false, special);
+    public void SetSymbol(ushort id, bool shown, int level, int adventureLevel, string special = null)
+    {
+        symbolArgs = (id, shown, level, adventureLevel, special);
+        symbol.Set(node, movie, u, Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).NametagSymbols, id, shown, level, adventureLevel, guildLine, special);
+    }
+
+    /// <summary>
+    /// The own PC's guild name (PC::vfunc_129, pc.cpp:1511: the own FieldAddUser, then the guild packets' name over the
+    /// head and OnPacketGuildRenamed; FUN_141a60f00 refreshes the MyPC's UINameTag entity): setData's guild line
+    /// "&lt;guild&gt;", empty for none, and the symbol line again, which sits higher with a guild line.
+    /// </summary>
+    public void SetGuild(string guildName)
+    {
+        string text = Ms2Godot.Net.LiveNameTags.GuildText(guildName);
+        if (node == null || text == ShownGuild) return;
+        NpcPresence.SetLabel(node.FindClip("m_guild"), text, null, color);
+        ShownGuild = text;
+        guildLine = text.Length > 0;
+        var (id, shown, level, adventureLevel, special) = symbolArgs;
+        SetSymbol(id, shown, level, adventureLevel, special);
+    }
+
+    /// <summary>The text the own tag's guild line shows.</summary>
+    public string ShownGuild { get; private set; } = "";
 
     /// <summary>The mark class the own tag shows, null for none.</summary>
     public string ShownMark => symbol.ShownMark(node);

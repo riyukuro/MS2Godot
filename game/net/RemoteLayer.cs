@@ -26,7 +26,7 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>The minimap's view of it, made once.</summary>
         public ShownPc Shown;
         public int ObjectId; public long CharacterId; public string Picture = "";
-        /// <summary>FieldAddUser's guild name (PC::GetGuildName). STILL-OPEN: the guild packets that change it later.</summary>
+        /// <summary>The guild name over the head (PC::GetGuildName): FieldAddUser's, then the guild packets' (<see cref="SetGuildName"/>).</summary>
         public string GuildName = "";
         public long HpCur, HpMax; public bool InBattle; public int Emotion;         // PCBase's stat pair and battle stance (m_unk_160)
         public EquipApplier.WeaponRig Weapons;
@@ -149,6 +149,35 @@ public sealed partial class RemoteLayer : Node3D
     {
         CatchUp(objectId, npc: false);
         return users.TryGetValue(objectId, out var r) && tags.SetSymbol(r.Root, symbol, shown);
+    }
+
+    /// <summary>
+    /// A guild packet's name over another player's head (CGuildManager FUN_1413c7700 / FUN_1413c7810, guildmanager.cpp:3108 /
+    /// :3121): the first PC of that name in the field (WorldService::FUN_141bd1420, an exact name match) takes it
+    /// (PC::vfunc_129) and its name tag is set again (<see cref="LiveNameTags.SetGuild"/>). False when no other player here has the name.
+    /// </summary>
+    public bool SetGuildName(string name, string guildName)
+    {
+        if (string.IsNullOrEmpty(name)) return false;
+        int pending = -1;                     // a player of the name still queued is built first, as SetSymbol does
+        foreach (var ev in Tracker.Events)
+            if (ev is UserAddedEvent u && u.User.User?.Name == name) pending = u.User.ObjectId;
+        if (pending >= 0) CatchUp(pending, npc: false);
+        foreach (var r in users.Values)
+        {
+            if (r.Name != name) continue;
+            r.GuildName = guildName ?? "";
+            tags.SetGuild(r.Root, r.GuildName);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>The guild line another player's name tag shows (the live run's view), null when no player here has the name.</summary>
+    public string ShownGuild(string name)
+    {
+        foreach (var r in users.Values) if (r.Name == name) return tags.ShownGuild(r.Root);
+        return null;
     }
 
     /// <summary>NpcNotice mode 1 on an npc (<see cref="NpcLayer.SetOwnerEffect"/>); false when there is no npc of the id.</summary>
