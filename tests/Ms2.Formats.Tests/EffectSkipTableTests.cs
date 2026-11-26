@@ -154,6 +154,52 @@ public class EffectSkipTableTests
         Assert.That(t.PartOutOfView(Part("swoosh"), 3, new Vector3(99999, 0, 0), eye), Is.False, "not tested as it is made");
     }
 
+    /// <summary>CreateEffect's test for a vibrate part (effectservice.cpp:322-330): row 0xc at the row's distance for the caster,
+    /// never with offSkip, never for kind 0 or without the camera's actor; the target's no-cull flag counts only on row 1
+    /// (effectskipmgr.cpp:133-155) and a viewDistance is not a vibrate param.</summary>
+    [Test]
+    public void AVibratePartIsOutOfViewPastItsCastersRow()
+    {
+        var t = EffectSkipTable.Parse("""
+            <ms2><option2><vibrate>
+              <element caster="myPC" viewDistance="0"/>
+              <element caster="monster" viewDistance="1500"/>
+              <element caster="bossMonster" viewDistance="3000"/>
+            </vibrate></option2></ms2>
+            """, 1);
+        var eye = Vector3.Zero;
+        var far = new Vector3(1600, 0, 0);
+        Assert.That(t.PartOutOfView(Part("vibrate"), 5, far, eye), Is.True, "a monster's past 1500");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 5, new Vector3(1400, 0, 0), eye), Is.False, "a monster's nearer");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 6, far, eye), Is.False, "a boss's row is 3000");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 6, new Vector3(3000, 0, 0), eye), Is.True, "not nearer than 3000");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 1, new Vector3(99999, 0, 0), eye), Is.False, "myPC's row is 0");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 0, far, eye), Is.False, "kind 0");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 5, far, null), Is.False, "no camera's actor");
+        Assert.That(t.PartOutOfView(Part("vibrate", offSkip: true), 5, far, eye), Is.False, "offSkip");
+        Assert.That(t.PartOutOfView(Part("vibrate"), 5, far, eye, noCull: true), Is.True, "no-cull is a nif test");
+        Assert.That(t.PartOutOfView(Part("vibrate", view: 99999), 5, far, eye), Is.True, "the row's distance, not a viewDistance");
+    }
+
+    /// <summary>The shipped table's vibrate rows on each data set: myPC's is 0 for every quality (an own shake is never out of
+    /// view) and the monster's is read.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void TheShippedTableNeverSkipsAnOwnVibrate(string env)
+    {
+        var data = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(data) || !Directory.Exists(data)) Assert.Ignore($"{env} not set");
+        string xml = System.Text.Encoding.UTF8.GetString(new PackSet(data).Read("Xml", "table/effectoption.xml"));
+        for (int q = 0; q <= 3; q++)
+        {
+            var t = EffectSkipTable.Parse(xml, q);
+            var row = Enumerable.Range(0, 8).Select(c => t.ViewDistance(EffectSkipTable.RowVibrate, c)).ToArray();
+            TestContext.Progress.WriteLine($"{env} quality {q}: vibrate {string.Join(",", row)}");
+            Assert.That(row[1], Is.EqualTo(0f), $"quality {q}: myPC");
+            Assert.That(row[5], Is.GreaterThan(0f), $"quality {q}: monster");
+        }
+    }
+
     /// <summary>
     /// CNifEffect::vfunc_3's view test (nifeffectparam.cpp:757-766) as every effect caller meets it: row 1 at the part's own
     /// viewDistance, the row's distance for the caster when it has none (-1, CNifEffectParam's default, :356), never with

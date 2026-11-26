@@ -34,6 +34,9 @@ public sealed class CombatLayer
     /// <summary>The view distances of the graphic quality (Table/effectOption.xml, read once per data set).</summary>
     Ms2.Formats.World.EffectSkipTable Skip => skip ??= FieldAudio.EffectSkip(packs);
     Ms2.Formats.World.EffectSkipTable skip;
+
+    /// <summary>The camera actor's place the view tests measure from (EffectView.Viewer); a check gives its own.</summary>
+    internal System.Func<System.Numerics.Vector3?> ViewerOf;
     public readonly HashSet<string> MissingEffects = new();
     public readonly HashSet<string> ParticleEffects = new();
     public bool ShowEffects = true;
@@ -146,8 +149,8 @@ void fragment() {
         var parts = effects.Get(xmlPath);
         if (parts == null) { EffectsNoXml++; MissingEffects.Add(xmlPath); return; }
         var owner = EffectOwners.Of(casterKind, actor);
-        // the camera's actor for the nif parts' view test; kind 0 is never out of view (IsOutOfView, effectskipmgr.cpp:136)
-        var eye = casterKind != 0 && Skip != null ? EffectView.Viewer : null;
+        // the camera's actor for the nif and vibrate parts' view tests; kind 0 is never out of view (IsOutOfView, effectskipmgr.cpp:136)
+        var eye = casterKind != 0 && Skip != null ? (ViewerOf != null ? ViewerOf() : EffectView.Viewer) : null;
         // a random part makes one child, picked once for this play (CRandomEffect::vfunc_3, randomeffectparam.cpp:143-178)
         foreach (var part in Ms2.Formats.World.EffectRandom.PlayList(parts, 0, Ms2.Formats.World.EffectRandom.Tick, playParts, owner))
         {
@@ -177,6 +180,9 @@ void fragment() {
             }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate)
             {
+                // CreateEffect's view test at the target's place, the actor's else the hit point (effectservice.cpp:316-330)
+                if (eye != null && Skip.PartOutOfView(part, casterKind, EffectView.Client(actor != null ? actor.GlobalPosition : at), eye))
+                { PartsOutOfView++; continue; }
                 if (!CameraShakes.Play(parts, part, owner)) EffectsNotNif++;   // the camera shake (CVibrateEffect::vfunc_3)
                 continue;
             }

@@ -221,6 +221,11 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// root's world translate, nifeffectparam.cpp:936-939).</summary>
     static Vec3 PartPlace(Xform world, Ms2.Formats.World.EffectPart part) => world.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));
 
+    /// <summary>Where a part's view test is taken: a vibrate part at the target's place (CreateEffect, effectservice.cpp:316-319:
+    /// the object's translate, else the transform's), the others at their own world place.</summary>
+    static Vec3 TestPlace(Xform world, Ms2.Formats.World.EffectPart part) =>
+        part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate ? world.T : PartPlace(world, part);
+
     /// <summary>The viewer's distance to the first point, for the log; -1 without a viewer.</summary>
     float ViewerDistance(Vec3[] pts) =>
         pts.Length > 0 && Viewer is { } eye ? System.Numerics.Vector3.Distance(eye, N(pts[0])) : -1;
@@ -334,8 +339,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// <summary>The effect xml's parts at a Gamebryo world transform: nif parts through the effect scene runtime (startDelay,
     /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point, soundMusic parts for <paramref name="casterKind"/>. Null
     /// when the xml is missing.
-    /// A nif or soundEvent part out of view of the camera's actor for <paramref name="casterKind"/>
-    /// (<see cref="Ms2.Formats.World.EffectSkipTable.PartOutOfView"/>, at the part's world place) is not made, and null comes
+    /// A nif, soundEvent or vibrate part out of view of the camera's actor for <paramref name="casterKind"/>
+    /// (<see cref="Ms2.Formats.World.EffectSkipTable.PartOutOfView"/>, at the part's world place; a vibrate part at the
+    /// target's, the actor's place else the request's) is not made, and null comes
     /// back when no part is made (InsertEffect's nCount 0, effectservice.cpp:1288-1289): each top level part refused by
     /// CEffectParam::vfunc_7's filters (<see cref="Ms2.Formats.World.EffectPart.SkippedFor"/>) or by the view. Kind 0 (the
     /// triggers, reactors, lift markers, the invincible effect) is never out of view. The per-name count limit and the lod
@@ -368,7 +374,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         foreach (var part in parts)
         {
             if (part.SkippedFor(owner)) continue;
-            if (eye != null && (skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye, noCull)
+            if (eye != null && (skipTable.PartOutOfView(part, casterKind, N(TestPlace(world, part)), eye, noCull)
                     || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
             { PartsOutOfView++; continue; }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh && (actor == null || SwooshOutOfView(part, actor, casterKind, eye))) continue;
@@ -415,7 +421,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate)
             {
-                CameraShakes.Play(all, part, owner);   // the camera shake (CVibrateEffect::vfunc_3); it has no view test
+                // CreateEffect's view test at the target's place (effectservice.cpp:316-330), counted by the pre-pass above
+                if (eye != null && skipTable.PartOutOfView(part, casterKind, N(world.T), eye)) continue;
+                CameraShakes.Play(all, part, owner);   // the camera shake (CVibrateEffect::vfunc_3)
                 continue;
             }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh)

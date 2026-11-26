@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using System.Linq;
+using Ms2.Formats.Model;
+using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2Godot.Net;
+using Ms2Godot.World;
 
 namespace Ms2Godot.Tests;
 
@@ -13,6 +17,9 @@ namespace Ms2Godot.Tests;
 ///   (x, z, -y), and keeps its rotation; before the start it does not move it, and from the end on the shake is dropped and
 ///   the camera left;
 /// - another PC's part (kind 3) is not made, and with no field the made part queues nothing;
+/// - CreateEffect's view test (effectservice.cpp:316-330), where region skills and the combat layer make a monster's vibrate
+///   part: the camera's actor past the vibrate row's distance from the target makes none, nearer makes it; the own player's
+///   part is made at any distance;
 /// - a frame allocates nothing.
 /// Quits with 0 when it holds, else 1.
 /// </summary>
@@ -72,6 +79,8 @@ public partial class CameraShakeCheck : Node
         Check(CameraShakes.Played == played + (made ? 1 : 0), "counted when made");
         Check(effects.Count == 0, "with no field nothing is queued");
 
+        Sites();
+
         // a long shake: 0 B a frame
         effects.Add(new CameraVibrate(0, 1e9, 15, 10, 0.5f, 0, true), true);
         Frames(camera, 200);
@@ -81,6 +90,65 @@ public partial class CameraShakeCheck : Node
         GD.Print($"camera shake: {least} B over 1000 frames");
         effects.Clear();
         camera.QueueFree();
+    }
+
+    const int Monster = 5;
+
+    /// <summary>A monster's vibrate part from a region skill and from the combat layer, the camera's actor near and far.</summary>
+    void Sites()
+    {
+        var packs = PackSet.Shared(Settings.DataDir);
+        var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
+        var table = new EffectTable(packs);
+        float row = FieldAudio.EffectSkip(packs).ViewDistance(EffectSkipTable.RowVibrate, Monster);
+        Check(row > 0, $"the monster's vibrate row is read ({row})");
+        var monster = EffectOwner.OfKind(Monster);
+        string xml = null;
+        var entries = new List<string>(packs.List("Xml"));
+        entries.Sort(StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            if (!entry.StartsWith("effect/", StringComparison.OrdinalIgnoreCase) || !entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
+            var file = entry.Substring("effect/".Length);
+            var list = table.Get(file);
+            if (list != null && list.Any(p => p.TypeId == EffectSkipTable.TypeVibrate && p.TopLevel && p.RandomParent < 0 && !p.OffSkip
+                    && !p.SkippedFor(monster) && !p.SkippedFor(EffectOwner.OfKind(EffectOwner.KindMyPc)) && !p.SkippedFor(EffectOwner.OfKind(0)))
+                && list.All(p => p.RandomParent < 0)) { xml = file; break; }
+        }
+        Check(xml != null, "an effect with a vibrate part a monster makes");
+        if (xml == null) return;
+        var option = GameOptions.Current.CameraOption;
+        bool wasOn = option.VibrateEffect;
+        option.VibrateEffect = true;
+        var field = new Node3D();
+        AddChild(field);
+        var skills = new RegionSkills(packs, builder);
+        AddChild(skills);
+        var combat = new CombatLayer(packs, builder, table, field);
+        System.Numerics.Vector3? eye = null;
+        skills.ViewerOf = () => eye;
+        combat.ViewerOf = () => eye;
+        var at = new Ms2.Formats.Model.Vec3(100, 200, 0);   // client space; Godot (100, 0, -200)
+        var gAt = new Vector3(100, 0, -200);
+        var c = new System.Numerics.Vector3(100, 200, 0);
+        int Region(int kind) { int n = CameraShakes.Played; skills.Insert(xml, new Xform(at, Xform.Identity.R, 1), false, 0, kind); return CameraShakes.Played - n; }
+        int Combat(int kind) { int n = CameraShakes.Played; combat.PlayEffect(xml, gAt, 0f, kind); return CameraShakes.Played - n; }
+        foreach (var (name, play) in new (string, Func<int, int>)[] { ("region skill", Region), ("combat layer", Combat) })
+        {
+            eye = c + new System.Numerics.Vector3(row - 50, 0, 0);
+            Check(play(Monster) == 1, $"{name}: the camera's actor {row - 50} away, the shake is made");
+            eye = c + new System.Numerics.Vector3(0, row + 50, 0);
+            Check(play(Monster) == 0, $"{name}: the camera's actor {row + 50} away, no shake");
+            Check(play(EffectOwner.KindMyPc) == 1, $"{name}: the own player's shake {row + 50} away is made (its row is 0)");
+            Check(play(0) == 1, $"{name}: kind 0 is never out of view");
+            eye = null;
+            Check(play(Monster) == 1, $"{name}: no camera's actor, nothing is out of view");
+        }
+        GD.Print($"camera shake: {xml}, monster row {row}: near made, far refused, on both sites");
+        CameraShakes.Effects.Clear();
+        option.VibrateEffect = wasOn;
+        skills.QueueFree();
+        field.QueueFree();
     }
 
     static long Frames(Camera3D camera, int count)

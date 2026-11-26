@@ -140,8 +140,11 @@ public sealed class EffectSkipTable
     /// <item>A nif part: CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766), row 1 with the part's viewDistance, unless offSkip
     /// or the target's no-cull flag (m_b30: the buffs' keep effects set it, no region skill target does).</item>
     /// <item>A soundEvent part: <see cref="SoundEventOutOfView"/>.</item>
+    /// <item>A vibrate part: CreateEffect (effectservice.cpp:322-330), row 0xc at the row's distance for the caster, unless
+    /// offSkip. The no-cull flag counts only on row 1 (IsOutOfView, effectskipmgr.cpp:133-155), so not here. The place is the
+    /// target's: its object's translate, else its transform's (:316-319), not the part's own.</item>
     /// </list>
-    /// True when the part is refused, and so not made. CreateEffect's other screen kinds (monochrome, radialBlur, vibrate,
+    /// True when the part is refused, and so not made. CreateEffect's other screen kinds (monochrome, radialBlur,
     /// cameraMove, screenMasking, gaussianBlur, postShimmer) are not played by the callers.
     /// </summary>
     public bool PartOutOfView(EffectPart part, int caster, Vector3 at, Vector3? viewer, bool noCull = false)
@@ -149,6 +152,7 @@ public sealed class EffectSkipTable
         if (part.OffSkip) return false;
         if (part.TypeId == TypeNif) return !noCull && IsOutOfView(RowNif, caster, at, viewer, part.ViewDistance);
         if (part.TypeId == TypeSoundEvent) return SoundEventOutOfView(this, part, caster, at, viewer);
+        if (part.TypeId == TypeVibrate) return IsOutOfView(RowVibrate, caster, at, viewer);
         return false;
     }
 
