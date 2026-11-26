@@ -676,8 +676,8 @@ public sealed partial class NpcTalk : Node
         return null;
     }
 
-    /// <summary>CNpc::GetTalkUiId of the npc's kind (<see cref="Ms2.Ui.Hud.NpcTalkUi.UiIdOf"/>).</summary>
-    static int TalkUiOf(FieldNpcs.Placed npc) => Ms2.Ui.Hud.NpcTalkUi.UiIdOf(npc.Row.Kind, k => tables?.Fame.IsOfficerNpc(k) ?? false);
+    /// <summary>CNpc::GetTalkUiId of the npc's type (CNpcData::GetNpcType, so kinds 11-29 are shops; <see cref="Ms2.Ui.Hud.NpcTalkUi.UiIdOf"/>).</summary>
+    static int TalkUiOf(FieldNpcs.Placed npc) => Ms2.Ui.Hud.NpcTalkUi.UiIdOf(npc.Row.NpcType, k => tables?.Fame.IsOfficerNpc(k) ?? false);
 
     /// <summary>UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971) for the window.</summary>
     void OnLiveTalk(NpcTalkMessage m)

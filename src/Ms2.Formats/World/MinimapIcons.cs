@@ -63,15 +63,13 @@ public sealed class MinimapIcons
     static string Lookup(Dictionary<string, string> d, int id) =>
         d.TryGetValue(id.ToString(), out var s) || d.TryGetValue(id.ToString("D8"), out s) ? s : null;
 
-    static int NpcType(NpcRow r) => r.Kind == 1 || (r.Kind > 10 && r.Kind < 30) ? 1 : r.Kind is >= 30 and < 40 ? 4 : r.Kind;
-
     /// <summary>UIMinimapEntity::GetNpcIcon ("empty" when the npc is not on the minimap).</summary>
     public static string NpcIcon(NpcRow r)
     {
         if (!r.Minimap) return "empty";
         if (!string.IsNullOrEmpty(r.MinimapIcon)) return r.MinimapIcon;
         if (r.PropertyTags.Contains("13")) return "event_boss";
-        int type = NpcType(r);
+        int type = r.NpcType;
         if (type == 0 && r.IsBoss) return r.Class is 3 or 7 ? "elite_boss" : "boss";
         if (type == 0x55) return "gatekeeper";
         if (KindIcons.TryGetValue(r.Kind, out var k)) return k;
@@ -82,7 +80,7 @@ public sealed class MinimapIcons
     public static string NpcFrame(string icon) => icon is "elite_boss" or "boss" or "event_boss" ? "alive" : "";
 
     public static string NpcLayer(NpcRow r, string icon) =>
-        NpcType(r) switch { 1 => "shop", 0x55 => "interact", _ => icon == "friendly" ? "friendly" : "npc" };
+        r.NpcType switch { 1 => "shop", 0x55 => "interact", _ => icon == "friendly" ? "friendly" : "npc" };
 
     /// <summary>A spawned npc (UpdateNpc without quests).</summary>
     public static Entity Npc(NpcRow r)

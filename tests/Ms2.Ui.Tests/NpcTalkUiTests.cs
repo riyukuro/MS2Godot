@@ -1,4 +1,9 @@
 using System.Collections.Generic;
+using System;
+using System.IO;
+using System.Linq;
+using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
@@ -44,5 +49,33 @@ public class NpcTalkUiTests
         var calls = new List<string>();
         NpcTalkUi.OpenStore(book, () => calls.Add("load"), () => calls.Add(book.Ready ? "open ready" : "open reset"));
         Assert.That(calls, Is.EqualTo(new[] { "open reset" }), "CStore::Reset before OpenDialog(0x4e47)");
+    }
+
+    /// <summary>CNpc::GetTalkUiId reads CNpcData::GetNpcType (npcdata.cpp:893), not the raw kind: kinds 1 and 11-29 are shops (type 1),
+    /// 30-39 are type 4. A shop npc of kind 12 (the data's own shop npcs) must open the shop.</summary>
+    [Test]
+    public void TheTalkUiIsChosenByTheNpcTypeNotTheRawKind()
+    {
+        static int Ui(int kind) => NpcTalkUi.UiIdOf(new NpcRow { Kind = kind }.NpcType, null);
+        Assert.That(Ui(1), Is.EqualTo(0x4e3b));
+        for (int k = 11; k < 30; k++) Assert.That(Ui(k), Is.EqualTo(0x4e3b), "shop kind " + k);
+        Assert.That(Ui(10), Is.EqualTo(0), "kind 10 is not a shop kind");
+        Assert.That(Ui(30), Is.EqualTo(0), "kinds 30-39 are type 4");
+        Assert.That(new NpcRow { Kind = 35 }.NpcType, Is.EqualTo(4));
+        Assert.That(Ui(2), Is.EqualTo(0x4e47), "the bank kind stays its own type");
+        Assert.That(new NpcRow { Kind = 0x56 }.NpcType, Is.EqualTo(0x56));
+    }
+
+    /// <summary>Every npc of the data: a shop kind opens the shop, whatever number its kind is.</summary>
+    [TestCase("MS2_DATA")]
+    public void EveryShopKindNpcOfTheDataOpensTheShop(string variable)
+    {
+        string data = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrEmpty(data) || !Directory.Exists(data)) Assert.Ignore(variable + " not set");
+        using var packs = new PackSet(data);
+        var rows = new NpcTable(packs).Rows.Where(r => r.IsShopKind).ToList();
+        TestContext.WriteLine($"{rows.Count} shop-kind npcs, {rows.Count(r => r.Kind != 1)} of them not kind 1");
+        Assert.That(rows, Is.Not.Empty);
+        foreach (var r in rows) Assert.That(NpcTalkUi.UiIdOf(r.NpcType, null), Is.EqualTo(0x4e3b), "npc " + r.Id + " kind " + r.Kind);
     }
 }

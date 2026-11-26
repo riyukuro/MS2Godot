@@ -93,6 +93,15 @@ public sealed class NpcRow
     public string[] DeadDefaultActions = Array.Empty<string>(), DeadUpActions = Array.Empty<string>();
     public bool Nametag;                         // environment nametag: the npc shows a name tag
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
+
+    /// <summary>CNpcData::IsShopKind (@0x1406ccf80, npcdata.cpp:828): kind 1 and kinds 11-29 are shop npcs.</summary>
+    public bool IsShopKind => Kind == 1 || (Kind > 10 && Kind < 30);
+
+    /// <summary>
+    /// CNpcData::GetNpcType (@0x1406cd0f0, npcdata.cpp:893): 1 for a shop kind, 4 for kinds 30-39, else the kind. This is what
+    /// CNpc::GetTalkUiId (@0x141094170) and the minimap icon read, not the raw kind.
+    /// </summary>
+    public int NpcType => IsShopKind ? 1 : Kind >= 30 && Kind < 40 ? 4 : Kind;
     public bool Minimap = true;                  // environment minimap: shown on the minimap
     public string MinimapIcon;                   // environment minimapIconName: the minimap icon class suffix, when set
     public string Icon = "";                     // environment iconName (NpcDataCli m_strIcon, npcdatacli.cpp:169)
