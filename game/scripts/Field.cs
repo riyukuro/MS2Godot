@@ -302,8 +302,10 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
             Player.CancelSwingKeyIsDown = k.Int("CancelSwing_KeyIsDown", 0);   // StateSkill::FUN_1417ed7f0 (stateskill.cpp:1523)
         }
         catch (Exception ex) { GD.PushWarning("constants: " + ex.Message); }
-        // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
-        camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true, CullMask = MainCullMask };
+        // Gamebryo's camera FOV is vertical, as Godot's (keep height). The planes are the field camera entity's
+        // (MS2GameplayCamera.flat: 10 / 100000, CameraFrustum); the camera modes' 250 / 18000 are its depth of field
+        var planes = CameraFrustum.Gameplay(flats);
+        camera = new Camera3D { Fov = cam.FovDeg, Near = planes.Near, Far = planes.Far, Current = true, CullMask = MainCullMask };
         RasterOrigin();
         rasterSource = GetViewport();
         rasterSource.SizeChanged += RasterOrigin;
@@ -1029,6 +1031,16 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         camera.FrustumOffset = new Vector2(-0.5f * px, 0.5f * px);
     }
 
+    /// <summary>The half width and half height of the near plane the blocked check casts from: CTargetCameraMode::vfunc_38
+    /// (targetcameramode.cpp:732-736) takes the frustum's near plane and aspect with tan of the whole FOV, not its half,
+    /// so its points lie outside the drawn near plane.</summary>
+    public Vector2 BlockedCheckHalfExtents()
+    {
+        float near = camera.Near, tan = Mathf.Tan(Mathf.DegToRad(camera.Fov));
+        float asp = GetViewport().GetVisibleRect().Size.Aspect();
+        return new Vector2(near * tan * asp, near * tan);
+    }
+
     /// <summary>The client's nine points of the near plane (corners, edge midpoints between them) each cast to the target
     /// and back; a hit both ways, or a hit from the target side alone, means the view is blocked.</summary>
     bool NearPlaneBlocked(Transform3D pose, Vector3 look)
@@ -1037,10 +1049,10 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         var fwd = -pose.Basis.Z.Normalized();
         var right = pose.Basis.X.Normalized();
         var up = pose.Basis.Y.Normalized();
-        float near = camera.Near, tan = Mathf.Tan(Mathf.DegToRad(camera.Fov) * 0.5f);
-        float asp = GetViewport().GetVisibleRect().Size.Aspect();
+        float near = camera.Near;
+        var half = BlockedCheckHalfExtents();
         var c = eye + fwd * near;
-        Vector3 hx = right * near * tan * asp, hy = up * near * tan;
+        Vector3 hx = right * half.X, hy = up * half.Y;
         var p = new Vector3[9];
         p[0] = c - hx + hy; p[1] = c + hx + hy; p[2] = c - hx - hy; p[3] = c + hx - hy;
         p[4] = (p[0] + p[3]) * 0.5f; p[5] = (p[0] + p[1]) * 0.5f; p[6] = (p[0] + p[2]) * 0.5f;
