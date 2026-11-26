@@ -900,7 +900,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (wav == null) return 0;
         // the event's instance is taken as the effect is made, so it is held through the start delay too
         var ev = clip.Event;
-        float audibility = Audibility(clip, clip.Volume * volume, position, sound.Stereo);
+        float audibility = Audibility(clip, clip.Volume * volume, position);
         double length = clip.Seconds > 0 ? clip.Seconds : wav.GetLength();
         bool loopsFull = clip.Loops && voiceSlots.Looping >= voiceSlots.MaxLooping;
         int ticket = voiceSlots.Start(ev, ev?.MaxPlaybacks ?? 0, ev?.MaxPlaybacksBehavior ?? 0, ev?.Priority ?? 0, audibility,
@@ -945,14 +945,15 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public static bool LogVoices;
 
     /// <summary>The new sound's volume at the listener for the quietest choices, measured from the camera's actor where the
-    /// listener stands (Field's listener, soundservice.cpp:975-999). That is its gain times its curve's gain and its pan level's
-    /// gain at that distance (the volume its voice is given, <see cref="RolloffGains.Update"/>; the curve starts at FMOD's 3D
-    /// min of 0), or without a curve times the inverse distance from the event's range. Without a viewer it is the gain alone.</summary>
-    float Audibility(SoundClip clip, float gain, Vector3 position, float stereo)
+    /// listener stands (Field's listener, soundservice.cpp:975-999). That is its gain times its curve's audibility at that
+    /// distance (FMOD_EVENT_INFO.audibility: the occlusion blended by the pan level and no pan level gain,
+    /// <see cref="DistanceRolloff.AudibilityAt"/>; the curve starts at FMOD's 3D min of 0), or without a curve times the
+    /// inverse distance from the event's range. Without a viewer it is the gain alone.</summary>
+    float Audibility(SoundClip clip, float gain, Vector3 position)
     {
         if (Viewer?.Invoke() is not { } at) return gain;
         float d = at.DistanceTo(position);
-        if (clip.Rolloff is { } curve) return gain * curve.GainAt(d) * Player3DOutput.PanLevelGain(curve.PanLevelAt(d), stereo);
+        if (clip.Rolloff is { } curve) return gain * curve.AudibilityAt(d);
         float max = clip.MaxDistance > 0 ? clip.MaxDistance : 3000, unit = clip.MinDistance > 0 ? clip.MinDistance : 300;
         return d >= max ? 0 : d <= unit ? gain : gain * unit / d;
     }

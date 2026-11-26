@@ -185,6 +185,31 @@ public class DistanceRolloffTests
         Assert.That(c.Silent, Is.EqualTo(4500f));
     }
 
+    /// <summary>The probe's query of ambient 11100001 in front of the listener (FMOD_EVENT_INFO.audibility, the client's fmod
+    /// DLL): every row is its own volume times vol(d) (1 - occ(d) L(d)), the occlusion blended by the pan level and no pan level
+    /// gain. That is the measure the max playbacks steal compares, so it is not the mixed gain.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void AudibilityIsFmodsBlend(string variable)
+    {
+        var c = Event(variable, "AMB", "11100001");
+        const float own = 0.5309f;   // the audibility at 0
+        var rows = new (float D, float Audibility)[]
+        {
+            (500, 0.5087f), (1000, 0.4374f), (1500, 0.3471f), (2000, 0.2511f), (2250, 0.2054f), (2500, 0.1631f),
+            (3000, 0.0917f), (3500, 0.0406f), (4000, 0.0103f),
+        };
+        Assert.That(c.AudibilityAt(0), Is.EqualTo(1f));
+        foreach (var (d, audibility) in rows)
+        {
+            float fmod = audibility / own;
+            TestContext.Out.WriteLine($"{d}: audibility {c.AudibilityAt(d):F4}, FMOD {fmod:F4}, gain {c.GainAt(d):F4}");
+            Assert.That(c.AudibilityAt(d), Is.EqualTo(fmod).Within(fmod * 0.015f + 2e-4f));
+        }
+        // from 2000 on the mixed gain is clearly lower than the audibility (the full occlusion against 0.447 of it)
+        Assert.That(c.GainAt(2250), Is.LessThan(c.AudibilityAt(2250) * 0.8f));
+    }
+
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
     public void HitSoundsKeepTheirShape(string variable)

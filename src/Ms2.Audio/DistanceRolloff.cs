@@ -144,7 +144,14 @@ public sealed class DistanceRolloff
     }
 
     /// <summary>The gain at <paramref name="d"/> world units from the listener.</summary>
-    public float GainAt(float d)
+    public float GainAt(float d) => Gain(d, false);
+
+    /// <summary>FMOD's audibility of the voice at <paramref name="d"/> over its own volume, the measure the max playbacks
+    /// steal compares (FMOD_EVENT_INFO.audibility): the gain with the direct occlusion blended by the pan level,
+    /// vol(d) (1 - occ(d) L(d)), as Channel::getAudibility does, and no pan level gain (that one only corrects Godot's pan law).</summary>
+    public float AudibilityAt(float d) => Gain(d, true);
+
+    float Gain(float d, bool audibility)
     {
         float g = Model switch
         {
@@ -155,7 +162,7 @@ public sealed class DistanceRolloff
         };
         float l = PanLevelAt(d);
         if (Model != RolloffModel.Custom && l < 1) g = g * l + (1 - l);
-        if (occlusionDistance != null) g *= 1 - OcclusionAt(d);
+        if (occlusionDistance != null) g *= 1 - (audibility ? OcclusionAt(d) * l : OcclusionAt(d));
         return distance.Length == 0 ? g : g * At(distance, gain, shape, d);
     }
 
