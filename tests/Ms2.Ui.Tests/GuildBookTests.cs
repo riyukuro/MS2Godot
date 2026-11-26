@@ -1195,4 +1195,66 @@ public class GuildBookTests {
             r.Apply(t, m => m with { Name = "bo", NewName = "Ma", Value = 1, Value2 = 1, Result = 1, Kind = 1, EventId = 3 });
         Assert.That((r.Lines.Count, r.Calls.Count), Is.EqualTo((0, 0)));
     }
+
+    /// <summary>The game menu's guild count (UIGameMenuDialog::FUN_1419381c0) is drawn again after the request list's own redraw
+    /// by OnPacketJoinRequestsForGuild 0x55 (guildmanager.cpp:2909), FUN_1413c6180 0x2f (:3057, before its line),
+    /// OnPacketJoinRequestReceived 0x2d (:3079) and OnPacketJoinRequestWithdrawn 0x2e (:3102).</summary>
+    [Test]
+    public void TheRequestModesRedrawTheGameMenuCount() {
+        var r = new Rig();
+        r.Apply(0x55, m => m with { GuildRequests = new[] { new GuildJoinRequestForGuild { Id = 4, Name = "zz" } } });
+        r.Apply(0x2d, m => m with { NewRequest = new GuildJoinRequestForGuild { Id = 5, Name = "zy" } });
+        r.Apply(0x2e, m => m with { RequestId = 5 });
+        Assert.That(r.Calls, Is.EqualTo(new[] { "requests", "menu", "requests", "menu", "requests", "menu" }));
+        r.Calls.Clear();
+        int lineAtMenu = -1;
+        r.B.GameMenuGuildRefresh += () => lineAtMenu = r.Lines.Count;
+        r.Apply(0x2f, m => m with { Name = "Gd", Applicant = "zz", Accepted = true, RequestId = 4 });
+        Assert.That((r.Calls, lineAtMenu, r.Lines.Count), Is.EqualTo((new[] { "requests", "menu" }, 0, 1)), "the count before the line");
+        Assert.That(r.B.RequestsForGuild, Is.Empty);
+    }
+
+    /// <summary>OnPacketMemberJoined 0x12 with a full record (mode 3) and OnPacketMemberLeft 0x13 end with the guild skill page
+    /// FUN_14196e590 (guildmanager.cpp:1945 and the 0x13 handler), the latter also for a name not found; FUN_1413c3110 0x6b
+    /// (:2476) only sets f358.</summary>
+    [Test]
+    public void TheMemberModesRedrawTheSkillPageAndTheTrophyModeNothing() {
+        var r = new Rig();
+        var full = Member("zz", 14, 1, 30, 100); full.Mode = 3;
+        r.Apply(0x12, m => m with { Name = "Ma", Applicant = "zz", Member = full });
+        Assert.That(r.Calls, Is.EqualTo(new[] { "info", "row zz", "skills" }));
+        r.Calls.Clear();
+        r.Apply(0x13, m => m with { Name = "zz" });
+        r.Apply(0x13, m => m with { Name = "nobody" });
+        Assert.That(r.Calls, Is.EqualTo(new[] { "info", "remove zz", "skills", "info", "remove nobody", "skills" }));
+        r.Calls.Clear();
+        r.Apply(0x6b, m => m with { Value = 99 });
+        Assert.That((r.B.Info.F358, r.Calls.Count), Is.EqualTo((99, 0)));
+    }
+
+    /// <summary>FUN_1413b5e80 (guildmanager.cpp:218), each tick: in a guild, once IsNotRecentDayChange(m_nextRefreshTime) the game
+    /// menu count and UpdateAttendBackground are drawn again and m_nextRefreshTime is the server time. The guild info sets it
+    /// (:1546), so the same day draws nothing; LeaveGame (FUN_1413b5f90) sets it to 0; outside a guild nothing runs.</summary>
+    [Test]
+    public void TheDayChangeRedrawsTheMenuCountAndTheAttendButtonOnce() {
+        var r = new Rig();
+        long t = Now;
+        r.B.ServerTime = () => t;
+        var info = r.B.Info;
+        r.Apply(0, m => m with { GuildId = 7, Info = info });
+        r.Calls.Clear();
+        r.B.Update();
+        t += 60; r.B.Update();
+        Assert.That(r.Calls, Is.Empty, "the guild info's day");
+        t += 86400; r.B.Update(); r.B.Update();
+        t += 1; r.B.Update();
+        Assert.That(r.Calls, Is.EqualTo(new[] { "menu", "attend" }), "once on the next day");
+        r.Calls.Clear();
+        t += 86400; r.B.Update();
+        Assert.That(r.Calls, Is.EqualTo(new[] { "menu", "attend" }), "and again a day later");
+        r.Calls.Clear();
+        r.B.LeaveGame();
+        t += 86400; r.B.Update();
+        Assert.That((r.B.InGuild, r.Calls.Count), Is.EqualTo((false, 0)), "outside a guild");
+    }
 }

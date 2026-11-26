@@ -638,6 +638,7 @@ public sealed class GuildBook
                 Info = m.Info;
                 myRequests.Clear();
                 requests.Clear();
+                nextRefreshTime = ServerTime();   // m_nextRefreshTime = GetServerTime() (:1546)
                 StorageHistoryReceived = false;   // m_400 = false after the Reset (guildmanager.cpp:253)
                 storageHistory.Clear();
                 if (Info != null)
@@ -749,7 +750,8 @@ public sealed class GuildBook
             case 0x12:
             {
                 // OnPacketMemberJoined (@0x1413bfaf0): the member is added (or updated) by name; a full record (mode 3)
-                // also draws the dialog again and prints the line 0x3a8 when the notice byte is set.
+                // prints the line 0x3a8 when the notice byte is set and draws the dialog again: UpdateGuildInfo,
+                // FUN_141973b20 of the name and the guild skill page FUN_14196e590 (:1945).
                 if (!InGuild) break;
                 if (FindMemberByName(m.Applicant) is { } old) Info.Members.Remove(old);
                 if (m.Member is { } member) Info.Members.Add(member);
@@ -758,17 +760,20 @@ public sealed class GuildBook
                     if (m.Notify) ChatLine?.Invoke(ClientFormat.Format(Common(0x3a8), m.Name, m.Applicant), 0xd);
                     GuildInfoRefresh?.Invoke();
                     MemberRefresh?.Invoke(m.Applicant);
+                    SkillsRefresh?.Invoke();
                 }
                 break;
             }
             case 0x13:
             {
                 // OnPacketMemberLeft (@0x1413bfe50): the member of the name is removed with the line 0x3a6, but only
-                // when such a member is; the dialog's UpdateGuildInfo and RemoveMember run whatever was found.
+                // when such a member is; the dialog's UpdateGuildInfo, RemoveMember and the guild skill page FUN_14196e590
+                // run whatever was found.
                 if (!InGuild) break;
                 if (FindMemberByName(m.Name) is { } gone) { Info.Members.Remove(gone); ChatLine?.Invoke(ClientFormat.Format(Common(0x3a6), m.Name), 0xd); }
                 GuildInfoRefresh?.Invoke();
                 MemberRemoved?.Invoke(m.Name);
+                SkillsRefresh?.Invoke();
                 break;
             }
             case 0x54:
@@ -778,26 +783,31 @@ public sealed class GuildBook
                     ChatLine?.Invoke(ClientFormat.Format(Common(m.Accepted ? 0x3d0 : 0x3d1), m.Applicant), 0xd);
                 break;
             case 0x55:
-                // OnPacketJoinRequestsForGuild (@0x1413c5690): the list replaced, then the dialog's FUN_14196da70.
+                // OnPacketJoinRequestsForGuild (@0x1413c5690, :2909): the list replaced, then the dialog's FUN_14196da70 and
+                // the game menu's FUN_1419381c0 (the guild count).
                 if (!InGuild) break;
                 requests.Clear();
                 requests.AddRange(m.GuildRequests);
                 RequestsForGuildRefresh?.Invoke();
+                GameMenuGuildRefresh?.Invoke();
                 break;
             case 0x2d:
-                // OnPacketJoinRequestReceived (@0x1413c6460): the request added, then the dialog's FUN_14196da70.
+                // OnPacketJoinRequestReceived (@0x1413c6460, :3079): the request added, then the dialog's FUN_14196da70 and
+                // the game menu's FUN_1419381c0.
                 if (!InGuild) break;
                 requests.Add(m.NewRequest);
                 RequestsForGuildRefresh?.Invoke();
+                GameMenuGuildRefresh?.Invoke();
                 break;
             case 0x2e:
             {
-                // OnPacketJoinRequestWithdrawn (@0x1413c6580): the first request of the id is removed, then the dialog's
-                // FUN_14196da70.
+                // OnPacketJoinRequestWithdrawn (@0x1413c6580, :3102): the first request of the id is removed, then the
+                // dialog's FUN_14196da70 and the game menu's FUN_1419381c0.
                 if (!InGuild) break;
                 int i = requests.FindIndex(r => r.Id == m.RequestId);
                 if (i >= 0) requests.RemoveAt(i);
                 RequestsForGuildRefresh?.Invoke();
+                GameMenuGuildRefresh?.Invoke();
                 break;
             }
             case 0xf:
@@ -981,12 +991,14 @@ public sealed class GuildBook
                 break;
             case 0x2f:
             {
-                // FUN_1413c6180 (@0x1413c6180): the first request of the id is removed, the dialog draws the list again
-                // and the line 0x3bd (accepted) or 0x3be (rejected) names the guild and the applicant.
+                // FUN_1413c6180 (@0x1413c6180, :3057): the first request of the id is removed, the dialog draws the list
+                // again (FUN_14196da70), the game menu its guild count (FUN_1419381c0), and the line 0x3bd (accepted) or
+                // 0x3be (rejected) names the guild and the applicant.
                 if (!InGuild) break;
                 int i = requests.FindIndex(r => r.Id == m.RequestId);
                 if (i >= 0) requests.RemoveAt(i);
                 RequestsForGuildRefresh?.Invoke();
+                GameMenuGuildRefresh?.Invoke();
                 ChatLine?.Invoke(ClientFormat.Format(Common(m.Accepted ? 0x3bd : 0x3be), m.Name, m.Applicant), 0xd);
                 break;
             }
@@ -1007,7 +1019,8 @@ public sealed class GuildBook
                 break;
             case 0xb:
             {
-                // FUN_1413be670 (:1698): the member of the name is removed (vfunc_1), with no line and no dialog call.
+                // FUN_1413be670 (:1698): the member of the name is removed (vfunc_1), with no line and no dialog call. The
+                // GMS2 client's case 11 (@0x140a92589) is the same: FindMemberByName, AddPreloadPlayer, then the removal.
                 if (!InGuild) break;
                 if (FindMemberByName(m.Name) is { } gone) Info.Members.Remove(gone);
                 break;
@@ -1217,10 +1230,9 @@ public sealed class GuildBook
                 MarkRefresh?.Invoke(m.Code);
                 break;
             case 0x6b:
-                // FUN_1413c3110 (:2476): FUN_1404d3600, the guild's own trophies (f358). No in-guild check.
+                // FUN_1413c3110 (:2476): FUN_1404d3600, the guild's own trophies (f358). No in-guild check and no dialog call.
                 if (Info == null) break;
                 Info.F358 = m.Value;
-                GuildInfoRefresh?.Invoke();
                 break;
             case 0xe:
                 // FUN_1413beb10 (:1761): the member's data f20 (the item level); no dialog call.
@@ -1373,6 +1385,28 @@ public sealed class GuildBook
         if (!InGuild) return;
         ResetGuild();
         StorageHistoryReceived = false;
+        nextRefreshTime = 0;
+    }
+
+    /// <summary>m_nextRefreshTime: the last day check's server time, set by the guild info (:1546) and by Update, 0 after
+    /// LeaveGame.</summary>
+    long nextRefreshTime, lastDayCheck;
+
+    /// <summary>FUN_1413b5e80 (@0x1413b5e80, guildmanager.cpp:218), run each world tick (worldservice_1.cpp:9830): in a guild,
+    /// when IsNotRecentDayChange(m_nextRefreshTime) the game menu's guild count (FUN_1419381c0) and the guild dialog's
+    /// UpdateAttendBackground are drawn again and m_nextRefreshTime becomes the server time. Its m_noticeAttendance part waits
+    /// for IsGuildChampionshipOpen, which is never open here. The check runs once per server second (the same second gives
+    /// the same answer).</summary>
+    public void Update()
+    {
+        if (!InGuild) return;
+        long now = ServerTime();
+        if (now == lastDayCheck) return;
+        lastDayCheck = now;
+        if (IsNotRecentDayChange(nextRefreshTime) == 0) return;
+        GameMenuGuildRefresh?.Invoke();
+        AttendRefresh?.Invoke();
+        nextRefreshTime = now;
     }
 
     /// <summary>FUN_1413b5f90's Reset: the guild state is gone (the request lists are kept, as the client keeps them).</summary>

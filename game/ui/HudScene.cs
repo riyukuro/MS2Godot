@@ -4570,6 +4570,7 @@ public partial class HudScene : Node, IUiStageHost
         TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
         TickPartyDps();                                                      // UIPartyDPSDialog::vfunc_72
         TickDungeonRoom();                                                   // UIDungeonRoomDialog's list
+        if (guildWatched) Ms2Godot.Net.LiveSession.Instance?.Guilds.Update();   // CGuildManager::FUN_1413b5e80: the guild day change
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
