@@ -850,7 +850,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
     /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
     /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
-    /// <see cref="UseItem"/>. An item without a function: a shop id and a pet are not ported (raised); on the GMS2 data a skill
+    /// <see cref="UseItem"/>. An item without a function: a shop id opens the system shop (<see cref="SendItemShop"/>, invenslot.cpp:859-866; raised while unset) and a pet is not ported (raised); on the GMS2 data a skill
     /// book item (subtype 8, GMS2 only) runs <see cref="LearnSkillBook"/>; an emotion item (type
     /// 0x18, FUN_14053ce40) that passes FUN_14140dea0 asks first (<see cref="LearnEmotionBox"/>); an equipment item (type 1, :886) is put on as by the right click (FUN_1414056b0's layer) only while the
     /// shop dialog 0x4e3b is open, else nothing; type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
@@ -867,8 +867,19 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (d.HasCubeTextureMesh || d.IsScoreItem) { Button?.Invoke("notifySlotUse"); return; }
         if (!d.HasFunction)
         {
-            // :853-872: a shop id and a pet have their own handlers (raised); type 0x13 none
-            if (d.ShopId > 0 || d.IsPetItem) { Button?.Invoke("notifySlotUse"); return; }
+            // :853-872: a shop id opens the system shop (below); a pet has its own handler (raised); type 0x13 none
+            if (d.ShopId > 0)
+            {
+                // :859-867: the record checks, then the shop dialog's open guard (FUN_141adc7f0(0x4e3b)); an open shop is asked to close
+                // and SystemShop(10, 1, item id) goes out. Unset: raised (notifySlotUse).
+                if (SendItemShop == null) { Button?.Invoke("notifySlotUse"); return; }
+                if (!UseChecks(item)) return;
+                if (CanOpenShop != null && !CanOpenShop()) return;
+                CloseShop?.Invoke();
+                SendItemShop(new Ms2.Net.Packets.SystemShopCoinRequest(item.ItemId));
+                return;
+            }
+            if (d.IsPetItem) { Button?.Invoke("notifySlotUse"); return; }
             // GMS2 only (@0x140ab83e5-0x140ab8820, between the pet and the emotion item): a skill book item (subtype 8)
             if (d.IsGms2SkillBook) { LearnSkillBook(item); return; }
             // :873-884 (FUN_14053ce40, type 0x18; the GMS2 client's subtype 14 @0x140346cd0): FUN_14140dea0, then the learn box
@@ -998,6 +1009,14 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// not type 0x13: a type 2, skill (5) or ride (9) item casts its item skill (FUN_141769320) at level 1 with the item uid on
     /// the record; other types do nothing there. Unset: raised (notifySlotUse).</summary>
     public Action<Item> UseItemSkill;
+
+    /// <summary>The system shop open of an item with a shop id (invenslot.cpp:859-866): SystemShop (u8 10, u8 1, i32 item id). Unset:
+    /// the double click is raised.</summary>
+    public Action<Ms2.Net.Packets.SystemShopCoinRequest> SendItemShop;
+    /// <summary>CUIService::FUN_141adc7f0(0x4e3b) (UIDialog::vfunc_73, uidialog.cpp:666): false refuses the open and nothing is sent. Unset: may open.</summary>
+    public Func<bool> CanOpenShop;
+    /// <summary>RequestCloseDialog(0x4e3b): closes the npc shop that is open (its close sends SystemShop(kind, 0) and the talk end).</summary>
+    public Action CloseShop;
 
     /// <summary>The common string GetStringCommon(0xea) (commonstringtable.cpp:1851): CanUseItem's box for an item
     /// FUN_140528980 refuses that has not expired.</summary>

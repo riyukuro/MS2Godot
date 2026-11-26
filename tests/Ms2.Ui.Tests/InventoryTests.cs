@@ -910,6 +910,55 @@ public class InventoryTests
     }
 
     [Test]
+    public void AShopItemDoubleClickAsksTheSystemShopAndOpensNothingLocally()
+    {
+        // InvenSlot::vfunc_13 (invenslot.cpp:859-866): an item without a function whose GetShopId > 0 passes FUN_14140dea0 and the shop
+        // dialog's open guard FUN_141adc7f0(0x4e3b), asks the open shop to close (RequestCloseDialog(0x4e3b)), then writes SystemShop
+        // (u8 10, u8 1, i32 item id). Nothing opens until the server's answer.
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        int shopItem = Enumerable.Range(20000000, 1700000)
+            .FirstOrDefault(id => t.Items.Get(id) is { ShopId: > 0, HasFunction: false, HasCubeTextureMesh: false, IsScoreItem: false, LevelLimit: <= 1, GenderLimit: 2, JobLimit.Count: 0 });
+        if (shopItem == 0) Assert.Inconclusive("this data has no item with a shop id");
+        TestContext.WriteLine($"shop item {shopItem}: shop {t.Items.Get(shopItem).ShopId}");
+        int tab = shopItem / 10000000;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(tab, new[]
+        {
+            new EquipItem { Id = shopItem, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = shopItem, Uid = 31, InventorySlot = 1, Amount = 1, Rarity = 1, ExpiryTime = 500 },
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        int shown = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == tab).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", shown);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var sent = new List<Ms2.Net.Packets.SystemShopCoinRequest>(); var raised = new List<string>(); var boxes = new List<string>();
+        var order = new List<string>(); bool canOpen = true;
+        c.Button += raised.Add;
+        c.ShowBox = b => boxes.Add(b.Msg);
+
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That((raised.Count, sent.Count), Is.EqualTo((1, 0)), "unset: raised, nothing sent");
+        c.SendItemShop = r => { sent.Add(r); order.Add("send"); };
+        c.CanOpenShop = () => canOpen;
+        c.CloseShop = () => order.Add("close");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That(sent.Select(x => x.ItemId), Is.EqualTo(new[] { shopItem }));
+        Assert.That(order, Is.EqualTo(new[] { "close", "send" }), "the open shop is closed first, then the request");
+        Assert.That(raised.Count, Is.EqualTo(1));
+        canOpen = false;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That(sent.Count, Is.EqualTo(1), "the dialog's open guard refuses: nothing sent, nothing closed");
+        Assert.That(order.Count, Is.EqualTo(2));
+        canOpen = true;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((1, t.Common(InventoryController.ExpiredKey))), "FUN_14140dea0 first: the expired box, nothing sent");
+    }
+
+    [Test]
     public void ARideItemDoubleClickGoesToItsItemSkill()
     {
         Packs();

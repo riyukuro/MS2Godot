@@ -3889,6 +3889,13 @@ public partial class HudScene : Node, IUiStageHost
         c.RevertSelect = item => itemRevert?.UseFromInventory(item);
         c.RevertOpen = OpenItemRevert;
         c.UseItemSkill = CastItemSkill;
+        // invenslot.cpp:859-866: an item with a shop id asks the server for its system shop (the answer opens it, HudScene.Shop.cs)
+        if (live != null)
+        {
+            c.SendItemShop = request => { liveShop ??= CreateShopController(live); live.SendShop(request); };
+            c.CanOpenShop = () => !GuideRefusesOpen("ShopDialog");
+            c.CloseShop = () => { if (ShopOpen) shop.CloseShop(); };
+        }
         // Unk_Inventory::SendEmotion: the own skill system's emotions, Emote mode 1
         c.Emotions = live?.Emotions;
         c.SendEmoteLearn = req => { if (live == null || !live.SendEmote(req)) GD.Print($"inventory: emotion learn of item {req.ItemUid} not sent (offline)"); };
