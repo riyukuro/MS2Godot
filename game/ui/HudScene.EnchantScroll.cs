@@ -61,6 +61,36 @@ public partial class HudScene
         uiRoot.AddChild(enchantScrollMovie);
     }
 
+    // ---- the scripted live run's hooks (LiveSession.CombatRun's scroll steps) ----------------------------------------
+
+    /// <summary>The scroll window is open with its movie loaded.</summary>
+    public bool EnchantScrollOpenScripted() => EnchantScrollOpen && enchantScrollMovie?.Loaded == true;
+
+    /// <summary>The bag item <paramref name="itemId"/> dragged from its bag slot onto the window's slot (the movie's notifySlotDrop on
+    /// "EnchantScrollDialog" with the bag as the source, the controller's SlotDroppedOn); false without the window or the item.</summary>
+    public bool EnchantScrollDropScripted(int itemId, int tab)
+    {
+        if (!EnchantScrollOpen || BagSlotScripted(itemId, tab) is not { } from) return false;
+        enchantScroll.SlotDroppedOn(EnchantScrollDialogController.Slot, from, inventory);
+        return true;
+    }
+
+    /// <summary>A click on the window's enchant button (m_enchant's CLICK, the movie's onEnchant with its m_guid).</summary>
+    public bool EnchantScrollPressScripted()
+    {
+        if (!EnchantScrollOpenScripted() || enchantScrollMovie.Host.Child("m_enchant") is not { } button) return false;
+        var h = enchantScrollMovie.Host;
+        h.Invoke(button, "dispatchEvent", h.RT.Construct(h.RT.GetClass("flash.events.MouseEvent"), new object[] { "click" }));
+        return true;
+    }
+
+    /// <summary>The window's book as the run reads it: the scroll, the type, the target level and the item on the slot.</summary>
+    public (long Scroll, int Type, int Target, long Slot, bool Open) EnchantScrollStateScripted() =>
+        Ms2Godot.Net.LiveSession.Instance?.ScrollBook is { } b ? (b.ScrollUid, b.Type, b.TargetLevel, b.SlotItemUid, EnchantScrollOpen) : default;
+
+    /// <summary>The window closed as its close button closes it.</summary>
+    public void EnchantScrollCloseScripted() { if (EnchantScrollOpen) enchantScroll.Close(); }
+
     /// <summary>UIDialog's key handling: Escape closes the window (vfunc_67).</summary>
     bool EnchantScrollKeys(InputEventKey k)
     {

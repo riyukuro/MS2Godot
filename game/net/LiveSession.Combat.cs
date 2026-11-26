@@ -2758,6 +2758,82 @@ public partial class LiveSession
                 }
                 continue;
             }
+            if (step.StartsWith("scroll"))      // the enchant scroll steps: scrolluse:<scroll id>, scrollput:<gear id>[:<result code>[:<rarity>]], scrollpress:<level>
+            {
+                string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
+                long Count(int id) { long n = 0; foreach (var e in live.Items.All) if (e.Id == id) n += e.Amount; return n; }
+                long UidOf(int id) { foreach (var e in live.Items.All) if (e.Id == id) return e.Uid; return 0; }
+                int LevelOf(long uid) => live.Items.Get(uid)?.Enchant?.Level ?? -1;
+                var book = live.ScrollBook;
+                var notices = new System.Collections.Generic.List<int>();
+                void Noticed(int id) => notices.Add(id);
+                book.Notice += Noticed;
+                try
+                {
+                    switch (step[..(step.Contains(':') ? step.IndexOf(':') : step.Length)])
+                    {
+                        case "scrolluse":      // the scroll given when missing and double clicked in the bag: the server's mode 0 opens the window
+                        {
+                            int id = int.Parse(arg);
+                            if (Count(id) == 0) { hud.SubmitChatLine($"/item {id} --amount 2"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                            long n0 = Count(id), uid = UidOf(id);
+                            string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                            GD.Print($"live: combat scroll use {id} ({slot}, {n0} held): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                            await until(() => hud.EnchantScrollOpenScripted(), 60 * 5); await frames(90);
+                            var st = hud.EnchantScrollStateScripted();
+                            GD.Print($"live: combat scroll window: open={st.Open} scroll={st.Scroll} type={st.Type} target={st.Target} levels={book.LevelMin}-{book.LevelMax} types=[{string.Join(",", book.EquipTypes)}] ranks=[{string.Join(",", book.Ranks)}]");
+                            Check($"scroll {id}: the window is open on its uid ({uid}), the scroll kept ({n0} -> {Count(id)})", st.Open && st.Scroll == uid && st.Type > 0 && Count(id) == n0);
+                            Shot($"scroll_open_{id}.png");
+                            break;
+                        }
+                        case "scrollput":      // the gear given when missing (at its own rank, or the rarity given where the data has no fixed rank) and dropped on the window's slot: a preview, or the answer code given
+                        {
+                            var parts = arg.Split(':');
+                            int id = int.Parse(parts[0]); int code = parts.Length > 1 ? int.Parse(parts[1]) : 0;
+                            string rarity = parts.Length > 2 ? " --rarity " + int.Parse(parts[2]) : "";
+                            if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}{rarity}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                            long uid = UidOf(id); int lv0 = LevelOf(uid);
+                            Check($"gear {id} is in the bag ({uid})", uid != 0);
+                            if (uid == 0) break;
+                            GD.Print($"live: combat scroll put {id} ({uid}, level {lv0}): {(hud.EnchantScrollDropScripted(id, live.Items.TabOf(id)) ? "dropped" : "no window")}");
+                            await until(() => hud.EnchantScrollStateScripted().Slot == uid || notices.Count > 0, 60 * 5); await frames(60);
+                            var st = hud.EnchantScrollStateScripted();
+                            GD.Print($"live: combat scroll put {id}: slot={st.Slot} open={st.Open} notices [{string.Join(",", notices.Select(n => $"0x{n:x}"))}]");
+                            if (code == 0) Check($"gear {id}: the preview put it on the slot, no notice, level kept ({lv0} -> {LevelOf(uid)})", st.Slot == uid && notices.Count == 0 && LevelOf(uid) == lv0);
+                            else Check($"gear {id}: answer {code} gives notice 0x{Ms2.Ui.Items.EnchantScrollBook.FirstNotice + code - 1:x}, the slot empty, level kept ({lv0} -> {LevelOf(uid)})",
+                                notices.SequenceEqual(new[] { Ms2.Ui.Items.EnchantScrollBook.FirstNotice + code - 1 }) && st.Slot != uid && LevelOf(uid) == lv0);
+                            Shot($"scroll_put_{id}{(code == 0 ? "" : "_" + code)}.png");
+                            break;
+                        }
+                        case "scrollpress":      // the enchant button: the server's result 0 stores the item at the level given, the scroll used, the result box shown; its OK closes the window
+                        {
+                            int level = int.Parse(arg);
+                            var st0 = hud.EnchantScrollStateScripted();
+                            var scroll = live.Items.Get(st0.Scroll); int scrollId = scroll?.Id ?? 0;
+                            long n0 = Count(scrollId); int lv0 = LevelOf(st0.Slot);
+                            GD.Print($"live: combat scroll press (item {st0.Slot} level {lv0}, scroll {scrollId} x{n0}): {(hud.EnchantScrollPressScripted() ? "clicked" : "no button")}");
+                            await until(() => LevelOf(st0.Slot) != lv0 || notices.Count > 0, 60 * 5); await frames(60);
+                            var box = hud.ShownBoxScripted();
+                            GD.Print($"live: combat scroll result: level {lv0} -> {LevelOf(st0.Slot)}, scroll {n0} -> {Count(scrollId)}, box \"{box?.Extra}\" notices [{string.Join(",", notices.Select(n => $"0x{n:x}"))}]");
+                            Check($"the item is stored at level {level} ({lv0} -> {LevelOf(st0.Slot)}), one scroll used ({n0} -> {Count(scrollId)}), the result box shown",
+                                LevelOf(st0.Slot) == level && Count(scrollId) == n0 - 1 && box?.Extra == Ms2.Ui.Hud.EnchantScrollDialogController.ResultTag && notices.Count == 0);
+                            Shot("scroll_result.png");
+                            GD.Print($"live: combat scroll result OK: {(hud.BagBoxAnswerScripted(box, 0, box?.Extra ?? "") ? "answered" : "no box")}");
+                            await until(() => !hud.EnchantScrollStateScripted().Open, 60 * 3); await frames(60);
+                            Check("the result box's OK closed the window", !hud.EnchantScrollStateScripted().Open);
+                            Shot("scroll_closed.png");
+                            break;
+                        }
+                        case "scrollclose":
+                            hud.EnchantScrollCloseScripted(); await frames(60);
+                            Check("the scroll window closed", !hud.EnchantScrollStateScripted().Open);
+                            break;
+                        default: GD.Print($"live: combat: unknown step {step}"); break;
+                    }
+                }
+                finally { book.Notice -= Noticed; }
+                continue;
+            }
             if (step.StartsWith("enchant"))      // the item enchant steps: enchantopen, enchantselect, enchantpress, enchantclose
             {
                 switch (step)
