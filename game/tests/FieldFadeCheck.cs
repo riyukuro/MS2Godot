@@ -62,6 +62,11 @@ public partial class FieldFadeCheck : Node
         b.Fade = new FieldFade(b.Fb.FadeDraws, () => feet, () => cam);
         b.Root.AddChild(b.Fade);
         b.Fade.UseProps(b.Props, b.Fb.DrawnElsewhere, b.Fb.ReactableElsewhere);
+        // the fade passes warmed as Field does at load; a second call builds no more copies
+        b.Fade.Warm();
+        int warmed = b.Fade.Warmed;
+        b.Fade.Warm();
+        if (b.Fade.Warmed != warmed) fails.Add($"warm: {xblock}: a second Warm built {b.Fade.Warmed - warmed} more copies");
         b.Props.Entities.AddRange(b.Fb.DrawnElsewhere);
         b.Props.NotReceiving.UnionWith(b.Fb.NotReceivingElsewhere);
         foreach (var (e, off) in b.Fb.LightOffElsewhere) b.Props.LightOff[e] = off;
@@ -123,6 +128,7 @@ public partial class FieldFadeCheck : Node
     void Settle()
     {
         var b = BuildField("02000110_bf");
+        if (b.Fade.Warmed == 0) fails.Add("warm: 02000110_bf: no hidden copies of the fade passes");
         Cost(b, "02000110_bf");
         int n = 0;
         foreach (var (e, draws) in b.Fb.FadeDraws)

@@ -226,6 +226,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         Interacts = new World.FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders, fb.InteractReactableDraws, fb.InteractColliders) { Fade = Fade };
         Interacts.UseProps(contents.Props, fb.DrawnElsewhere, fb.ReactableElsewhere);   // the animated ones, built with the contents
         Fade.UseProps(contents.Props, fb.DrawnElsewhere, fb.ReactableElsewhere);       // BGTransparencyMgr fades those too
+        Fade.Warm();   // the fade passes built behind the loading screen, not in the first fade's frame
         AddChild(Interacts.Fader);
         Liftables = new World.FieldLiftables(Net.LiveSession.Instance?.Liftables, fb.LiftableMeshDraws, fb.LiftableFadeDraws);
         AddChild(Liftables.Fader);

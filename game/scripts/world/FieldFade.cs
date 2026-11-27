@@ -241,6 +241,7 @@ public partial class FieldFade : Node
                 t.Props.Add(pk);
             }
         Outer(t);
+        foreach (var pk in t.Props) WarmProp(pk);
         return true;
     }
 
@@ -266,6 +267,59 @@ public partial class FieldFade : Node
         if (r >= 0) r *= 2;
         if (t.DrawsRadius >= 0) (c, r) = r < 0 ? (t.DrawsCentre, t.DrawsRadius) : AlphaSort.Merge(t.DrawsCentre, t.DrawsRadius, c, r);
         t.OuterCentre = c; t.OuterRadius = r;
+    }
+
+    // the fade's passes already built for a mesh format: (additive form, culling, vertex format, prop copy), which give
+    // the two passes' shaders (ModelBuilder.FadeForm) and so their pipelines
+    readonly HashSet<(bool, string, ulong, bool)> warmed = new();
+    /// <summary>The hidden copies <see cref="Warm"/> and the props' build made.</summary>
+    public int Warmed { get; private set; }
+
+    /// <summary>A mesh's colour material, the one Apply fades (a fluid shell's colour pass, not its depth pass).</summary>
+    static ShaderMaterial Colour(Mesh mesh)
+    {
+        if (mesh?.GetSurfaceCount() is not > 0 || mesh.SurfaceGetMaterial(0) is not ShaderMaterial colour) return null;
+        return colour.NextPass is ShaderMaterial next && colour.Shader != next.Shader ? next : colour;
+    }
+
+    static ulong Format(Mesh mesh) => mesh is ArrayMesh am ? (ulong)am.SurfaceGetFormat(0) : 0;
+
+    /// <summary>
+    /// Builds the fade's two passes (<see cref="ModelBuilder.FadeMaterial"/>, <see cref="ModelBuilder.FadeShell"/>) for the
+    /// static draws of every target, at the field load and behind the loading screen: one hidden copy, made as Apply makes
+    /// its own, for each vertex format and pair of fade shaders the targets take. Godot builds a shader and its pipelines
+    /// for a mesh when an instance of it enters the scene (its pipeline precompile), hidden or not; without the copies
+    /// that happened in the frame of the first fade. The animated props' meshes are warmed when they are built
+    /// (<see cref="PropsBuilt"/>). The copies stay hidden for the field's life.
+    /// </summary>
+    public void Warm()
+    {
+        foreach (var t in targets)
+            foreach (var d in t.Draws)
+            {
+                if (!ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial)) continue;
+                var (add, cull) = ModelBuilder.FadeForm(d.Mesh);
+                if (warmed.Contains((add, cull, Format(d.Mm.Mesh), false)) || Colour(d.Mm.Mesh) is not { } colour) continue;
+                warmed.Add((add, cull, Format(d.Mm.Mesh), false));
+                var shell = ModelBuilder.FadeShell(ModelBuilder.FadeMaterial(colour, d.Mesh), d.Mesh);
+                var one = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, Mesh = d.Mm.Mesh, InstanceCount = 1 };
+                one.SetInstanceTransform(0, d.Mm.GetInstanceTransform(d.Index));
+                d.Parent.AddChild(new MultiMeshInstance3D { Name = "fade_warm", Multimesh = one, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Visible = false });
+                Warmed++;
+            }
+    }
+
+    /// <summary>A prop mesh's fade passes, as <see cref="Warm"/>: a hidden copy of its mesh beside it.</summary>
+    void WarmProp(PropPick pk)
+    {
+        var node = pk.M.Node;
+        if (!ModelData.IsStandardMaterial(pk.M.Mesh.ActiveMaterial) || !GodotObject.IsInstanceValid(node) || node.GetParent() is not Node3D parent
+            || Colour(node.Mesh) is not { } colour) return;
+        var (add, cull) = ModelBuilder.FadeForm(pk.M.Mesh);
+        if (!warmed.Add((add, cull, Format(node.Mesh), true))) return;
+        var shell = ModelBuilder.FadeShell(ModelBuilder.FadeMaterial(colour, pk.M.Mesh), pk.M.Mesh);
+        parent.AddChild(new MeshInstance3D { Name = "fade_warm", Mesh = node.Mesh, Transform = node.Transform, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Visible = false });
+        Warmed++;
     }
 
     /// <summary>Whether the prop mesh is drawn now (its node, or the entity's, not hidden; the node not freed).</summary>

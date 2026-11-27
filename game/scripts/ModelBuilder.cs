@@ -720,13 +720,18 @@ public sealed class ModelBuilder
     public static ShaderMaterial FadeMaterial(ShaderMaterial colour, ModelMesh m)
     {
         var fade = (ShaderMaterial)colour.Duplicate();
-        fade.Shader = FieldVariant(m.AlphaBlendOn && ((m.AlphaFlags >> 5) & 15) == 0 ? "#define BLEND\n#define ADD\n#define FADE\n" : "#define BLEND\n#define FADE\n", CullDefine(m));
+        var (add, cull) = FadeForm(m);
+        fade.Shader = FieldVariant(add ? "#define BLEND\n#define ADD\n#define FADE\n" : "#define BLEND\n#define FADE\n", cull);
         fade.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
         // the mesh's own NiVertexColorProperty is swapped for one with source mode 3 (TransparencyMaterial::FUN_141860140,
         // TransparencyStandardMaterial::vfunc_2); an inherited one is left as it is
         fade.SetShaderParameter(ShaderParam.FadeVcSwap, m.VertexColorFlags >= 0);
         return fade;
     }
+
+    /// <summary>What a mesh's fade passes (<see cref="FadeMaterial"/>, <see cref="FadeShell"/>) take their shaders from: the
+    /// additive blend (destination factor ONE) or not, and the mesh's culling.</summary>
+    internal static (bool Add, string Cull) FadeForm(ModelMesh m) => (m.AlphaBlendOn && ((m.AlphaFlags >> 5) & 15) == 0, CullDefine(m));
 
     /// <summary>
     /// The first pass of a faded mesh: BGTransparencyMgr::Apply marks the faded entity's scene into an alpha shell group of
