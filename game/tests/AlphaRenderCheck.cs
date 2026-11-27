@@ -104,13 +104,13 @@ public partial class AlphaRenderCheck : Node
 
     /// <summary>One mesh played by the effect runtime (EffectInstance), blended (0xED) at the material alpha, in a new
     /// viewport; the camera sits at file (0,0,10) looking down file -z.</summary>
-    void Effect(string name, Func<Color, string> check, ModelMesh m, float alpha)
+    void Effect(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u)
     {
         m.AlphaFlags = 0xED; m.MaterialAlpha = alpha;
         var sc = new EffectScene { Duration = 10 };
         sc.Nodes.Add(new EffectNode { Name = "n" });
         sc.Meshes.Add(new EffectMesh { Mesh = m, Node = 0 });
-        var vp = View(1u);
+        var vp = View(mask);
         var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
         vp.AddChild(fx);
         fx.FileSpace = Transform3D.Identity;
@@ -120,7 +120,7 @@ public partial class AlphaRenderCheck : Node
 
     /// <summary>One still particle at the effect's origin, shaded by <paramref name="m"/> as the system's material (blended
     /// 0xED at the material alpha), in a new viewport; the camera as in <see cref="Effect"/>.</summary>
-    void Particle(string name, Func<Color, string> check, ModelMesh m, float alpha)
+    void Particle(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u)
     {
         m.AlphaFlags = 0xED; m.MaterialAlpha = alpha;
         var sc = new EffectScene { Duration = 10 };
@@ -128,7 +128,7 @@ public partial class AlphaRenderCheck : Node
         var sys = new ParticleSystemDef { Node = 0, Name = "p", AlphaFlags = 0xED, MaxParticles = 1, Material = new EffectMesh { Mesh = m, Node = 0 } };
         sys.Emitters.Add(new EmitterDef { Kind = EmitterKind.Box, Name = "e", Node = 0, Size = 20, Lifespan = 100, Rate = _ => 100, RateCtl = new TimeCtl() });
         sc.Systems.Add(sys);
-        var vp = View(1u);
+        var vp = View(mask);
         var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
         vp.AddChild(fx);
         fx.FileSpace = Transform3D.Identity;
@@ -325,6 +325,12 @@ public partial class AlphaRenderCheck : Node
         Model("fog_off", fogged, Grey(1, "a NoFog mesh draws without the depth fog"), NoFog(Quad("q", 0)));
         Field("field_fog_on", fogged, Grey(0, "field: full depth fog to black"), Quad("q", 0));
         Field("field_fog_off", fogged, Grey(1, "field: a NoFog mesh draws without the depth fog"), NoFog(Quad("q", 0)));
+        // the effect runtime: PrepareLoadedNif runs the same walk on effect nifs, so an effect mesh or a particle system's
+        // material in a fog-off subtree draws without the depth fog too (blended at alpha 1 over black)
+        Effect("fx_fog_on", Grey(0, "effect: full depth fog to black"), Emit(Quad("q", 0), 1, 1, 1), 1f, fogged);
+        Effect("fx_fog_off", Grey(1, "effect: a NoFog mesh draws without the depth fog"), NoFog(Emit(Quad("q", 0), 1, 1, 1)), 1f, fogged);
+        Particle("fx_part_fog_on", Grey(0, "particle: full depth fog to black"), Emit(Quad("q", 0), 1, 1, 1), 1f, fogged);
+        Particle("fx_part_fog_off", Grey(1, "particle: a NoFog system material draws without the depth fog"), NoFog(Emit(Quad("q", 0), 1, 1, 1)), 1f, fogged);
         // fog, then saturate, then blend (PS 0x42a9d9d0's depth-fog mad before the A8R8G8B8 write): a blended type-0 quad
         // 0.5 from the camera (a share of 0.5 under the same fog), emissive 3 at alpha 0.5 over black stores sat(1.5) * 0.5
         // = 0.5; the fog after the saturate, or none, gives 0.75

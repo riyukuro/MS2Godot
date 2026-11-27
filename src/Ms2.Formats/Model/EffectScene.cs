@@ -771,7 +771,7 @@ public sealed class EffectScene
         }
         var systems = new Dictionary<int, ParticleSystemDef>();
         foreach (var (blk, node) in sc.NodeOfBlock)
-            if (B[blk].Type is "NiPSParticleSystem" or "NiPSMeshParticleSystem") systems[blk] = sc.ReadSystem(n, blk, node);
+            if (B[blk].Type is "NiPSParticleSystem" or "NiPSMeshParticleSystem") systems[blk] = sc.ReadSystem(n, blk, node, parent);
 
         // mesh blocks that reference a property block (texturing) so texture controllers can find their meshes, and the
         // particle systems' materials (ParticleSystemDef.Material), so a colour controller on a system's material reaches it
@@ -947,7 +947,7 @@ public sealed class EffectScene
         }
     }
 
-    ParticleSystemDef ReadSystem(NifFile n, int blk, int node)
+    ParticleSystemDef ReadSystem(NifFile n, int blk, int node, IReadOnlyDictionary<int, int> parent)
     {
         var B = n.Blocks; var b = B[blk];
         var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
@@ -965,6 +965,9 @@ public sealed class EffectScene
         // :5517-5541), each through its own texture transform (GetTextureTransformMappingFromEnum, :364-430): so the system keeps its maps as a mesh does (ModelMesh.Maps).
         var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null,
                                   Textures = ModelData.TexturesOf(n, blk), Maps = ModelData.MapsOf(n, blk), Material = ModelData.MaterialName(n, b) };
+        // the fog-off subtrees as a mesh's (ModelMesh.NoFog): PrepareLoadedNif runs FUN_141567b60 on every loaded nif, effects
+        // too (CNifLoadingService::CreateCachedNif, nifeffectparam.cpp:2338), and its walk tests a particle system as any object
+        (_, mat.NoFog) = ModelData.SubtreeTags(n, parent, n.Roots[0], blk);
         d.Material = new EffectMesh { Mesh = mat, Node = node, AlphaBoost = ModelData.AlphaBoost(n, blk) };
 
         foreach (var pi in b.Ints("Properties"))

@@ -6,7 +6,7 @@ namespace Ms2Godot.Net;
 /// <summary>The effect shader's parameter names, allocated once: a string literal passed to SetShaderParameter makes a new finalizable StringName on every call.</summary>
 static class FxParam
 {
-    public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
+    public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", NoFog = "no_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
         BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
         HasDetail = "has_detail", DetailOpacity = "detail_opacity", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
@@ -367,7 +367,13 @@ void fragment() {
     // (CalculateBiasedFog, ms2standardmaterial.cpp:535-584), or a plain NiStandardMaterial (the renderer's default), whose
     // CalculateFog takes the same FogStartEnd and gakFogBias with the same linear-z formula (NiStandardMaterial.cpp:5074-5131,
     // NiStandardMaterialNodeLibrary.cpp:1663-1792). So the depth fog is ms2_fog.gdshaderinc's, per vertex, and ApplyFog
-    // lerps to the fog colour by it in every blend mode (an additive effect adds the fog colour at a distance). The height
+    // lerps to the fog colour by it in every blend mode. But PrepareLoadedNif runs FUN_141567b60 on every effect nif as on a
+    // model (nifeffectparam.cpp:2338; unit_141567000.cpp:349-424): a "nofog" tag, flag 0x400 or an own blended dest-ONE
+    // alpha property attaches a fog-off property to that subtree, which draws with FOG_NONE (no_fog: ModelMesh.NoFog, a
+    // system's Material.Mesh.NoFog). The pillar capture (02000110, eff_com_recovery.nif) draws its two SRCALPHA / ONE
+    // systems FOGENABLE FALSE with no fog in the shaders. STILL-OPEN: its two SRCALPHA / INVSRCALPHA systems (PArray01, leaf:
+    // no tag, no flag 0x400, the alpha property its fogged meshes share) draw without the depth fog too; nothing in the walk
+    // or in NiStandardMaterialDescriptor::SetFogPropertyDescriptor explains it, so they keep the fog here. The height
     // fog comes first, but not on meshes whose dest blend is ONE (NiStandardMaterial::GenerateDescriptor,
     // NiStandardMaterial.cpp:687-697; the Godot height_fog flag). The glow and shimmer passes have no fog
     // (ms2glowmaterial.cpp:126, ms2shimmermaterial.cpp:52); the ribbon, swoosh, beam and lightning effects turn it off on
@@ -376,6 +382,7 @@ void fragment() {
 global uniform vec3 ms2_hfog_color;
 global uniform vec3 ms2_hfog;
 uniform bool height_fog = true;
+uniform bool no_fog = false;
 varying vec3 fog_world;
 vec3 ms2_fog_apply(vec3 c, uint layers) {
     if ((layers & FOG_LAYER) != 0u && height_fog) {
@@ -384,7 +391,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     }
     return c;
 }";
-    const string FogVert = "fog_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; fog_share = ms2_fog_share(VIEW_MATRIX, fog_world, CAMERA_VISIBLE_LAYERS);";
+    const string FogVert = "fog_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; fog_share = no_fog ? 0.0 : ms2_fog_share(VIEW_MATRIX, fog_world, CAMERA_VISIBLE_LAYERS);";
 
     // The field's lights on an effect block, per vertex (EffectMesh.LightForm): the ambient and diffuse accumulators the
     // material's ambient and diffuse terms (or the vertex colour in their place) multiply. ms2_ambient is the ambient
@@ -497,6 +504,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             if (em.Morph is { } mo && mo.Anim.Deltas.Length <= ModelBuilder.EffectMorphTargets) { ms.Morph = mo; ms.MorphTargets = mo.Anim.Deltas.Length; }
             ms.Ho = em.Ho;
             var mat = new ShaderMaterial { Shader = ShaderOf(em, add, false, ms.MorphTargets) };
+            if (m.NoFog) mat.SetShaderParameter(FxParam.NoFog, true);
             // SORTING_OFF meshes are drawn unsorted after the opaque buckets and before the depth-sorted alpha list
             // (MS2RenderListProcessor: RenderNoSortList then RenderAlphaList, ms2renderlistprocessor.cpp:264-266, :368-370): a
             // lower priority puts them ahead of the field's other transparent objects. STILL-OPEN: their order among
@@ -577,6 +585,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             var ho = d.Material.Ho;
             var mat = new ShaderMaterial { Shader = ho != null ? HoShader(ho, "cull_disabled, depth_draw_never", true, BlendOn(d.AlphaFlags), d.Additive)
                 : d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
+            if (d.Material.Mesh.NoFog) mat.SetShaderParameter(FxParam.NoFog, true);
             var tex = d.Texture != null ? mb.Texture(d.Texture) : null;
             if (ps.Tex.On) mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
