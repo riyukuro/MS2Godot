@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
 using Godot;
+using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.Text;
 using Ms2.Net.Packets;
@@ -21,7 +22,11 @@ namespace Ms2Godot.Tests;
 /// <item>the hair has meshes to pick;</item>
 /// <item>every root group either hit the hair or fell back to the hair's capTransform;</item>
 /// <item>the cap's centre is inside the hair's bounds grown by half the cap's size (positions in the skeleton's space, a
-/// frame after the change, so the cap's own idle animation has run).</item>
+/// frame after the change, so the cap's own idle animation has run);</item>
+/// <item>a kfm cap's skinned self mesh is drawn where the client's skinning puts it, worked out here from the file's data
+/// apart from the root math: the self node's world (attach node * Prefix * the placed local, CapPlacement.SkinnedSelf) *
+/// the skin's Skeleton Transform * each bone's pose relative to the scene root * the skin's bind
+/// (NiSkinningMeshModifier.cpp:891-908, NiCalculateBoneMatricesKernel.cpp:43-50), the bounds within 0.1 of the drawn ones.</item>
 /// </list>
 /// Left out, and printed: a cap item whose row redirects (tool itemPreset) to a model without capAttach, which FUN_1411e5c10
 /// never places; a hair or cap whose model file is not in the data (EquipApplier.MissingIds); and the caps in
@@ -81,7 +86,7 @@ public partial class CapCensusCheck : Node3D
 
         var byCap = new SortedDictionary<int, List<string>>();
         void Fail(int cap, string what) { if (!byCap.TryGetValue(cap, out var l)) byCap[cap] = l = new(); l.Add(what); }
-        int pairs = 0, hits = 0, fallbacks = 0;
+        int pairs = 0, hits = 0, fallbacks = 0, skinned = 0;
         var palettes = new Look.ColorPalettes(packs);
         foreach (int gender in new[] { 0, 1 })
         {
@@ -126,6 +131,15 @@ public partial class CapCensusCheck : Node3D
                     var centre = capBox.Value.GetCenter();
                     if (!hairBox.Value.Grow(capBox.Value.Size.Length() / 2).HasPoint(centre))
                         Fail(c, $"{at}: centre {centre} off the hair {hairBox.Value.Position}..{hairBox.Value.End}");
+                    foreach (var (selfWorld, mesh, drawn) in o.SkinnedSelf)
+                    {
+                        skinned++;
+                        var want = drawn == null ? null : ClientSkin(selfWorld, mesh, drawn.GetNodeOrNull<Skeleton3D>(drawn.Skeleton));
+                        var got = drawn == null ? null : Bounds(skel, new List<MeshInstance3D> { drawn });
+                        if (want == null || got == null) { Fail(c, $"{at}: self mesh {mesh.Name} not drawn or not skinned"); continue; }
+                        if (want.Value.Position.DistanceTo(got.Value.Position) > 0.1f || want.Value.End.DistanceTo(got.Value.End) > 0.1f)
+                            Fail(c, $"{at}: self mesh {mesh.Name} drawn at {got.Value.Position}..{got.Value.End}, the client's skin {want.Value.Position}..{want.Value.End}");
+                    }
                 }
                 equip.Reapply(v, worn);
             }
@@ -134,9 +148,37 @@ public partial class CapCensusCheck : Node3D
         }
         foreach (var (c, l) in byCap)
             fails.Add($"cap {c}: {l.Count} pairs, e.g. {string.Join("; ", l.Take(3))}");
-        GD.Print($"cap census: {pairs} pairs, {hits} root hits, {fallbacks} capTransform fallbacks, {byCap.Count} caps failing, {(DateTime.UtcNow - started).TotalSeconds:F0} s");
+        GD.Print($"cap census: {pairs} pairs, {hits} root hits, {fallbacks} capTransform fallbacks, {skinned} skinned self meshes against the client's skin, {byCap.Count} caps failing, {(DateTime.UtcNow - started).TotalSeconds:F0} s");
         GD.Print($"cap census: {missing.Count} items with no model file in the data: {string.Join(",", missing)}");
         if (pairs == 0) fails.Add("no cap x hair pair");
+    }
+
+    /// <summary>The client's skin of a self mesh, in the character skeleton's space: vertex = selfWorld * Skeleton Transform *
+    /// sum w_j pose_j * bind_j * p, pose_j the bone's pose relative to the model's scene root (the kfm skeleton's space, its
+    /// idle animation applied) and bind_j the skin's scene root to bone at bind (ModelMesh.SkinBinds; p is in scene root
+    /// space). A joint without a bind is left out; null when no vertex has one.</summary>
+    static Aabb? ClientSkin(Transform3D selfWorld, ModelMesh m, Skeleton3D bones)
+    {
+        if (bones == null || m.Joints == null || m.SkinBinds == null) return null;
+        var frame = selfWorld * ModelBuilder.ToGodot(m.SkinTransform);
+        var mats = new Transform3D?[bones.GetBoneCount()];
+        Aabb? box = null;
+        for (int v = 0; v * 3 + 2 < m.Positions.Length; v++)
+        {
+            var p = new Vector3(m.Positions[v * 3], m.Positions[v * 3 + 1], m.Positions[v * 3 + 2]);
+            var q = Vector3.Zero; float used = 0;
+            for (int k = 0; k < 4; k++)
+            {
+                float w = m.Weights[v * 4 + k]; int j = m.Joints[v * 4 + k];
+                if (w == 0 || j < 0 || j >= mats.Length || !m.SkinBinds.TryGetValue(j, out var bind)) continue;
+                mats[j] ??= bones.GetBoneGlobalPose(j) * ModelBuilder.ToGodot(bind);
+                q += mats[j].Value * p * w; used += w;
+            }
+            if (used == 0) continue;
+            var at = frame * (q / used);
+            box = box is { } b ? b.Expand(at) : new Aabb(at, Vector3.Zero);
+        }
+        return box;
     }
 
     static List<MeshInstance3D> Meshes(Skeleton3D skel, int id) =>

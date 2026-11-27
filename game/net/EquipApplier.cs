@@ -223,12 +223,14 @@ public sealed class EquipApplier
     /// there, AttachKfm): its "transform" is the bone's rest and pose, in the space of that skeleton, which stands at the
     /// attach node (CKfmModel::vfunc_12 hangs the self node under the attach node, kfmmodel.cpp:518-544, and GetRoots returns
     /// it, equipmodel.cpp:906). A kfm model's skinned self mesh moves the built model's root node, which holds its skeleton
-    /// (Rel = Skeleton Transform with the Model node's turn undone, AttachKfm).
+    /// (Rel = Skeleton Transform with the Model node's turn undone, AttachKfm); <see cref="Mesh"/> is then that mesh and
+    /// <see cref="Drawn"/> its built node.
     /// </summary>
     sealed class SelfRoot
     {
         public string Key; public Node3D Node; public Transform3D Prefix, Local, Rel;
         public Skeleton3D Bones; public int Bone = -1;
+        public ModelMesh Mesh; public MeshInstance3D Drawn;
     }
 
     /// <summary>A root's transform on its attach node: the node's local transform, or the self bone's pose.</summary>
@@ -248,11 +250,14 @@ public sealed class EquipApplier
     static Transform3D ParentInSkeleton(SelfRoot r, Skeleton3D skel) => InSkeleton(r.Bone >= 0 ? r.Bones : r.Node.GetParent(), skel);
 
     /// <summary>What the last cap placement of a look did, for the cap census: the cap's root groups, how many the pick moved
-    /// onto the hair and how many fell back to the capTransform, whether the hair had no mesh to pick and a capTransform.</summary>
+    /// onto the hair and how many fell back to the capTransform, whether the hair had no mesh to pick and a capTransform.
+    /// <see cref="SkinnedSelf"/>: each placed skinned self mesh of a kfm cap with the self node's world as the client sets it
+    /// (attach node * Prefix * the placed local, in the character skeleton's space), its mesh and its built node.</summary>
     public sealed class CapPlacement
     {
         public int Roots, Hits, Fallbacks;
         public bool HairEmpty, HairTransform;
+        public readonly List<(Transform3D SelfWorld, ModelMesh Mesh, MeshInstance3D Drawn)> SkinnedSelf = new();
     }
 
     /// <summary>The last cap placement of an applied character; null when its cap was not placed (no capAttach cap, no hair).</summary>
@@ -398,7 +403,12 @@ public sealed class EquipApplier
                 done.Fallbacks++;
             }
             done.HairEmpty |= empty;
-            if (local is { } l) foreach (var r in g) SetLocal(r, r.Prefix * l * r.Rel);
+            if (local is { } l)
+                foreach (var r in g)
+                {
+                    SetLocal(r, r.Prefix * l * r.Rel);
+                    if (r.Mesh != null) done.SkinnedSelf.Add((onAttach * l, r.Mesh, r.Drawn));
+                }
         }
     }
 
@@ -1226,13 +1236,18 @@ public sealed class EquipApplier
             var sr = new SelfRoot
             {
                 Key = "mesh:" + selfMesh.Name, Node = root, Prefix = targetLocal * dummy, Local = ModelBuilder.ToGodot(selfMesh.SkinMeshLocal),
-                Rel = ModelBuilder.ToGodot(selfMesh.SkinTransform) * model.Transform.AffineInverse(),
+                Rel = ModelBuilder.ToGodot(selfMesh.SkinTransform) * model.Transform.AffineInverse(), Mesh = selfMesh,
+                Drawn = root.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>()
+                    .FirstOrDefault(mi => mi.HasMeta(ModelBuilder.MeshIndexMeta) && (int)mi.GetMeta(ModelBuilder.MeshIndexMeta) == md.Meshes.IndexOf(selfMesh)),
             };
             SetLocal(sr, sr.Prefix * (xf ?? sr.Local) * sr.Rel);
             // one of the model's roots (GetRoots, equipmodel.cpp:906), as a self bone is; a pony part's takes the hair data's
             if (!pony) part.Roots.Add(sr);
         }
         // CKfmModel::vfunc_6 (kfmmodel.cpp:403-408) plays the model's Idle_A once it has loaded
+        // STILL-OPEN: the clip is built with no accum-root filter, so an Idle_A that keys a self bone would override the self
+        // bone pose placed above; the cap census does not test this (its one self-bone kfm cap, 11300709, wears its model by
+        // itemPreset, not capAttach).
         if (kfmSeqs.ByName("Idle_A") is { } idle)
         {
             string kfEntry = kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(idle.KfPath.Replace('\\', '/')).ToLowerInvariant();
