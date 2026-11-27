@@ -759,6 +759,19 @@ public partial class LiveSession : Node
         fishingFeature = on;
         return on;
     }
+    /// <summary>The own look's items: the gear, then the outfit layer while its period shows it (WornEquips.Look with
+    /// OutfitShown, the rule RemoteLayer's LookOf reads for the other players; the own PC is built by the same
+    /// CSceneStateGame::OnAddUser, scenestategame.cpp:11135-11248). Null before the own equips are in.</summary>
+    public IReadOnlyList<EquipItem> OwnLook() => Me?.Equips == null ? null
+        : WornEquips.Look(Me.Equips, Me.Outfit2, WornEquips.OutfitShown(CodiFeature(), Me.CodiStart, Me.CodiEnd, ServerTime)).ToList();
+
+    /// <summary>The own body follows a change of its worn items (<see cref="Look.PlayerLook.Redress"/>): MyPC::vfunc_127 /
+    /// vfunc_128 (mypc.cpp:4892-4915) for a put-on or put-off, the worn item's model update for an ItemUpdate read again.</summary>
+    void RedressOwn(EquipSlot? force = null)
+    {
+        if (player != null && GodotObject.IsInstanceValid(player)) Look.PlayerLook.Redress(player, OwnLook(), force);
+    }
+
     bool? codiFeature;
     /// <summary>Feature 0x8e (the outfit tab's period, FUN_1411df7d0), as UiModel.IsFeatureEnabled reads it.</summary>
     bool CodiFeature()
@@ -1170,12 +1183,15 @@ public partial class LiveSession : Node
 
     /// <summary>ItemUse mode 5, CSceneStateGame::OnActiveCodiTab (scenestategame.cpp:8662, 0x14173c2d0): the player's layer
     /// period (SetLayerPeriod); for the own player the completion box (<see cref="CodiTab.CompleteKey"/>).
-    /// STILL-OPEN: the own player's look rebuild and the NotifyActiveMyCodiTab post (scenestategame.cpp:8686), which the equipment
-    /// window's avatar follows (UIMyInfoDialog::OnActiveMyCodiTabNotify, uimyinfodialog.cpp:1030); only the stored period and the box here.</summary>
+    /// The own body follows the layer switch the new period gives (<see cref="RedressOwn"/>, as RemoteLayer.ActiveCodiTab for the others).
+    /// STILL-OPEN: the NotifyActiveMyCodiTab post (scenestategame.cpp:8686), which the equipment window's avatar follows
+    /// (UIMyInfoDialog::OnActiveMyCodiTabNotify, uimyinfodialog.cpp:1030); and the own layer's timer flip at the period's end
+    /// (CEquipment::FUN_1411ebde0, which RemoteLayer's CodiTick follows for the others).</summary>
     void ActiveCodiTab(CodiTab t)
     {
         if (t.ActorId != selfObject) { remote?.ActiveCodiTab(t); return; }
         Me.CodiStart = t.Start; Me.CodiEnd = t.End;
+        RedressOwn();
         string key = t.CompleteKey(out int days);
         if (key == null) return;
         string text = Ms2.Ui.Hud.MessageBoxData.CommonByKey(key) ?? "";
@@ -2340,6 +2356,7 @@ public partial class LiveSession : Node
                 });
                 if (u.Own && Me.EquipByUid(u.Uid) is { } worn) OwnItemUpdated?.Invoke(worn.Id);
                 if (u.Updated && u.ObjectId != selfObject) remote?.ItemUpdated(u.ObjectId, remote.EquipOf(u.ObjectId, u.Uid).Equip);
+                else if (u.Updated && Me.EquipByUid(u.Uid) is { } rebuilt) RedressOwn(rebuilt.Slot);
                 if (LiveCheck) GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
             }
             else if (game.Is(p, Inbound.UserSkinColor))
@@ -2613,14 +2630,16 @@ public partial class LiveSession : Node
             {
                 var o = ItemPutOn.Read(p.Reader(), game.Profile);        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
                 bool ownEquipment = Me.Apply(o, WornLayer, ItemExists);
-                if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOn(o, WornLayer, ItemExists);
+                if (ownEquipment) RedressOwn();
+                else if (o.ObjectId != selfObject) remote?.PutOn(o, WornLayer, ItemExists);
                 if (LiveCheck) GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.ItemPutOff))
             {
                 var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
                 bool ownEquipment = Me.Apply(o, WornLayer);
-                if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOff(o, WornLayer);
+                if (ownEquipment) RedressOwn();
+                else if (o.ObjectId != selfObject) remote?.PutOff(o, WornLayer);
                 if (LiveCheck) GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.Notice))

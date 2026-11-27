@@ -85,6 +85,17 @@ public partial class Player : CharacterBody3D
     /// SetEmotion(0) (stateidle.cpp:387).
     /// </summary>
     void UpdateWeaponStance() => Weapons?.SetState(InBattle, StateAllowsWeapons, stateForces: TriggerEmotionWeapons);
+
+    /// <summary>
+    /// The weapon rig of a rebuilt look (after a put-on or put-off, FUN_141656710's UpdateWeaponAction, pc.cpp:1454-1456). The
+    /// client's held flag (m_nD80) stays on the PC across the change; here the rig is a new object, so the stance is put on it
+    /// again (forced: its parts start in the sheath).
+    /// </summary>
+    public void SetWeapons(Net.EquipApplier.WeaponRig rig)
+    {
+        Weapons = rig;
+        rig?.SetState(InBattle, StateAllowsWeapons, force: true, stateForces: TriggerEmotionWeapons);
+    }
     public Climbables Climbs = new();
     public CubeGrid Cubes = new();
     /// <summary>fielddata checkClimb: wall climbing (skill 20000011) is allowed in this field.</summary>

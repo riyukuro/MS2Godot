@@ -65,6 +65,7 @@ public static class PlayerLook
                 var equip = new EquipApplier(packs, builder) { Palettes = palettes };
                 equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
                 visual.SetMeta(FaceTexture.FaceItemMeta, equip.FaceItem(visual));
+                dressers.AddOrUpdate(visual, new Dresser(equip, builder, packs));
                 if (Array.IndexOf(args, "--battle") >= 0) EquipApplier.RigOf(visual)?.SetState(true, true);
                 GD.Print($"player look: {dir}, job {job}{(LiveSession.Active ? " (live)" : "")}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
             }
@@ -84,9 +85,39 @@ public static class PlayerLook
         LiveLookOf = 0;
         if (!LiveSession.Active)    // offline: the chosen character's own items (stub list or a lobby-created one), else the starter look
             return Flow.Session.Chosen is { User: { } o } own && own.Equips.Count > 0 ? (own.Equips, o.Skin) : null;
-        if (LiveSession.Instance.Me is { User: { } u, Equips: { } worn }) { LiveLookOf = u.CharacterId; return (worn, u.Skin); }
+        if (LiveSession.Instance.Me is { User: { } u, Equips: { } } && LiveSession.Instance.OwnLook() is { } worn)
+        { LiveLookOf = u.CharacterId; return (worn, u.Skin); }
         if (Flow.Session.Chosen is { User: { } c } chosen) { LiveLookOf = c.CharacterId; return (chosen.Equips, c.Skin); }
         return null;
+    }
+
+    sealed record Dresser(EquipApplier Equip, ModelBuilder Builder, PackSet Packs);
+    // the applier each body was dressed by, which keeps the worn parts of that body for a later put-on or put-off
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, Dresser> dressers = new();
+
+    /// <summary>
+    /// The own player's look after a put-on, put-off, worn item update or outfit layer change: PC::vfunc_127 / vfunc_128
+    /// (@0x1416563c0 / @0x1416564a0, pc.cpp:1400-1426; MyPC's overrides call them first, mypc.cpp:4892-4915) equip or take
+    /// off the item in the PC's CEquipment and then run FUN_141656710 (pc.cpp:1454): UpdateWeaponAction on the new hands,
+    /// the alpha blending and the model refresh. Here the body <see cref="Build"/> dressed is rebuilt in the changed slots
+    /// (EquipApplier.Reapply, as RemoteLayer does for the other players; <paramref name="force"/> also rebuilds that slot),
+    /// the player takes the rebuilt weapon rig, and a changed face item gives the face its new emotion group (the face item
+    /// test of PC::vfunc_69, pc.cpp:3096-3101). False when this body was not built here.
+    /// </summary>
+    public static bool Redress(Player player, IEnumerable<EquipItem> items, EquipSlot? force = null)
+    {
+        var visual = player?.Visual;
+        if (visual == null || !GodotObject.IsInstanceValid(visual) || items == null || !dressers.TryGetValue(visual, out var d)) return false;
+        int faceBefore = d.Equip.FaceItem(visual);
+        if (!d.Equip.Reapply(visual, items, force)) return false;
+        player.SetWeapons(EquipApplier.RigOf(visual));
+        int face = d.Equip.FaceItem(visual);
+        if (face != faceBefore)
+        {
+            visual.SetMeta(FaceTexture.FaceItemMeta, face);
+            player.SetFace(FaceTexture.For(visual, d.Builder, d.Packs, player.Gender));
+        }
+        return true;
     }
 
     /// <summary>The character whose items and skin the last live look was built with (0 offline or with none).</summary>
