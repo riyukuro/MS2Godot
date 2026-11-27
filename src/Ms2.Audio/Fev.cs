@@ -967,6 +967,8 @@ public sealed class FevProject
 
     public MusicTheme GetMusicTheme(int themeId) => themesById.TryGetValue(themeId, out var t) ? t : null;
     public MusicSegment GetMusicSegment(int segmentId) => segmentsById.TryGetValue(segmentId, out var s) ? s : null;
+    /// <summary>Every music segment of the project, in no set order.</summary>
+    internal IEnumerable<MusicSegment> MusicSegments => segmentsById.Values;
 
     public MusicCue GetMusicCue(int cueId)
     {
