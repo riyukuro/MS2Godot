@@ -949,6 +949,10 @@ public sealed class GameTables
     /// <summary>FUN_1401aa6a0 (arcademaindata.cpp:62): "&lt;title&gt; &lt;name&gt;", or the name alone when the npc has no title.</summary>
     public string NpcNameWithTitle(int id) => NpcTitle(id) is { Length: > 0 } t ? t + " " + NpcName(id) : NpcName(id);
     Dictionary<string, string> npcNames, npcTitles;
+    /// <summary>CStringTable::FUN_141811980(0x47, id): the quest dispatch box text (string table 71 QuestDispatchScript,
+    /// questdispatchscript.xml), "" when unknown.</summary>
+    public string QuestDispatchScript(int id) => Lazy(ref questDispatchScripts, "questdispatchscript", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> questDispatchScripts;
     /// <summary>CStringTable::FUN_141811980(0x23 / 0x24 / 0x25, id): string tables 35 "recommendContentsName", 36
     /// "recommendContentsSearch" and 37 "recommendContentsTooltip", a level-up guide row's label, world map search text and
     /// tooltip; "" when unknown.</summary>

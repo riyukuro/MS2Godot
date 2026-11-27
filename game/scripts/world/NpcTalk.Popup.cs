@@ -161,6 +161,8 @@ public sealed partial class NpcTalk
         return null;
     }
 
+    /// <summary>CQuestManager::FUN_1416cf870 (questmanager_2.cpp:1478): the quest window's dispatch button opens the popup on the quest.</summary>
+    public void StartPopupQuestTalk(int q) => PopupDialog().StartQuestTalk(q);
     void OnLiveQuestStarted(int q) => PopupDialog().OnQuestStarted(q);
     void OnLiveQuestProgress(int q) => PopupDialog().OnQuestProgress(q);
 

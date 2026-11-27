@@ -350,6 +350,12 @@ public sealed class QuestGuideController : UiController
         return 0;
     }
 
+    /// <summary>
+    /// The guide's go-to buttons (uiquesteventlistener.cpp:509-553): onMoveField, onMoveDungeon, onMoveReEntry, onClickDispatch,
+    /// onClickPartyFind and onClickPartyFindCancel with the quest id. <see cref="QuestGotoRequests.Handle"/> sends them.
+    /// </summary>
+    public event Action<string, int> Goto;
+
     /// <summary>vfunc_28 (uiquesteventlistener.cpp:456): the movie's calls.</summary>
     public override bool OnCallback(string name, object[] args)
     {
@@ -358,9 +364,13 @@ public sealed class QuestGuideController : UiController
             case "onFieldMissionToggle":
                 if (args.Length > 0) missionToggle = args[0] is bool b && b;
                 return false;
-            case "onClose": case "onTrace": case "onEntityOverflow": case "onLinkQuestDialog": case "onMoveField": case "onMoveDungeon":
-            case "onLinkFieldMission": case "onMoveReEntry": case "onClickDispatch": case "onClickPartyFind": case "onClickPartyFindCancel":
-                return false;       // the server requests and the dialogs they open are not here
+            case "onMoveField": case "onMoveDungeon": case "onMoveReEntry": case "onClickDispatch": case "onClickPartyFind":
+            case "onClickPartyFindCancel":
+                // :509-553: SendQuestMode12 / 13 / 19, FUN_1416cf870, FUN_1416cf980(id, 0 / 1) with PopUInt of the first argument
+                if (args.Length > 0) Goto?.Invoke(name, (int)Ms2.Avm2.Rt.ToUint32(args[0]));
+                return false;
+            case "onClose": case "onTrace": case "onEntityOverflow": case "onLinkQuestDialog": case "onLinkFieldMission":
+                return false;       // the dialogs they open are not here
         }
         return false;
     }

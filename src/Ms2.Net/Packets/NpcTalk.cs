@@ -277,6 +277,12 @@ public sealed record QuestGotoDungeonRequest(int QuestId) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0xD); w.WriteInt(QuestId); }
 }
 
+/// <summary>CQuestManager::SendQuestMode19 @0x1416cf750 (questmanager_2.cpp:1459): Quest u8 0x13, i32 quest id (the re-entry button).</summary>
+public sealed record QuestGotoReEntryRequest(int QuestId) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(0x13); w.WriteInt(QuestId); }
+}
+
 /// <summary>Outbound 0x29 mode 0xE (CQuestManager::SendQuestMode14 @0x1416d0c10, questmanager_2.cpp:1749): u8 0xE, no body. Sent when the player may enter the sky fortress.</summary>
 public sealed record QuestSkyFortressRequest : IOutPacket {
     public Outbound Op => Outbound.Quest;

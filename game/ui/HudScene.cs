@@ -236,6 +236,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
         UnwatchQuestEvents();
+        UnwatchQuestDispatch();
         MassiveEventUnwatch();
         TriggerTimerUnwatch();
         RoomTimerUnwatch();
@@ -2180,11 +2181,7 @@ public partial class HudScene : Node, IUiStageHost
         catch (Exception e) { GD.PushWarning("field missions: " + e.Message); }
         var meta = fieldMeta;
         var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
-        var inputs = questGuideInputs = new QuestButtonInputs
-        {
-            FieldId = xblockFieldId, FieldExists = f => f == xblockFieldId, LocalPlayerAlive = true, HasFieldData = true,
-            DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
-        };
+        questGuideInputs = QuestInputs();
         questGuideSide = new Ms2.Ui.Hud.QuestGuideController
         {
             Table = questTable,
@@ -2192,12 +2189,14 @@ public partial class HudScene : Node, IUiStageHost
             Missions = fieldMissions,
             ParentField = f => meta.ParentFields.TryGetValue(f, out int p) ? p : null,
             FieldId = xblockFieldId,
-            GotoButtons = (d, q) => QuestCommon.Buttons(d, q, inputs, meta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
+            GotoButtons = (d, q) => QuestCommon.Buttons(d, q, QuestInputs(), meta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
             FeatureOn = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]),
             PageCount = (int)constants.Float("QuestGuidePageCount", 4),
             MaxCount = (int)constants.Float("QuestGuideMaxCount", 40),
         };
         questGuideSide.Notice = id => SystemNotice(Ms2.Formats.Text.CommonStringIds.Key(id) ?? "");
+        var guideGoto = QuestGoto(() => log.State);
+        questGuideSide.Goto += (name, id) => guideGoto.Handle(name, id);
         var model = NewModel();
         questGuide = new MovieDialog(assets, questGuideSide, model, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(questGuide);
@@ -2279,17 +2278,15 @@ public partial class HudScene : Node, IUiStageHost
                     FieldId = xblockFieldId,
                     LocalTm = Ms2.Net.MsTime.LocalTm,
                     Map = QuestMapGraph.Shared(assets.Packs).Graph,
-                    // offline: the player is alive in this field, no party search, the server time unknown (no end time line)
-                    Buttons = (d, q) => QuestCommon.Buttons(d, q, new QuestButtonInputs
-                    {
-                        FieldId = xblockFieldId, FieldExists = f => f == xblockFieldId, LocalPlayerAlive = true, HasFieldData = true,
-                        DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
-                    }, fieldMeta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
+                    // the player is alive in this field; live, the field entry and the party search (QuestInputs)
+                    Buttons = (d, q) => QuestCommon.Buttons(d, q, QuestInputs(), fieldMeta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
                 },
             };
             if (questShot != null) (questLogSide.OpenTab, questLogSide.OpenSubTab) = (questShot[0], questShot[1]);
             questLogSide.Unloaded += () => { questLog?.Host.Unload(); questLog?.QueueFree(); questLog = null; };
             questLogSide.SendGiveUp += id => Ms2Godot.Net.LiveSession.Instance?.SendTalk(new Ms2.Net.Packets.QuestAbandonRequest(id));
+            var logGoto = QuestGoto(() => log.State);
+            questLogSide.Goto += (name, id) => logGoto.Handle(name, id);
         }
         var t = System.Diagnostics.Stopwatch.StartNew();
         questLog = new MovieDialog(assets, questLogSide, questLogModel, ScreenMode.PixelSize(GetWindow()));
@@ -3374,6 +3371,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchChangeJob();
         WatchAttend();
         WatchQuestEvents();
+        WatchQuestDispatch();
         var slot = new Control { Name = "GameMenuSlot", MouseFilter = Control.MouseFilterEnum.Ignore };
         ui.AddChild(slot);
         HudOpen().Open(() =>

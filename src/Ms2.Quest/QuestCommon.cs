@@ -127,7 +127,7 @@ public sealed class QuestButtonInputs
 public static class QuestCommon
 {
     /// <summary>The quest types that are CStoryQuest (questmanager_2.cpp:807-815, questkinds.h): epic 0, world 1, event 2, guild 6, field 8, alliance 9.</summary>
-    static bool IsStory(int type) => type is 0 or 1 or 2 or 6 or 8 or 9;
+    public static bool IsStory(int type) => type is 0 or 1 or 2 or 6 or 8 or 9;
 
     /// <summary>Unk_ClubBuffTypeOf @0x1402178b0 (clubcommon.cpp:1632): 1 and 2 give 1, 8 gives 2, 11 gives 3, 5 gives 4, else 0.</summary>
     public static int ClubBuffTypeOf(int n) => n switch { 1 or 2 => 1, 8 => 2, 11 => 3, 5 => 4, _ => 0 };

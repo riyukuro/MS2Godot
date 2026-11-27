@@ -98,6 +98,12 @@ public sealed class QuestData
     /// requireDungeonClear (m_8).
     /// </summary>
     public int RemoteComplete, RemoteCompleteField, RemoteCompleteDungeonClear;
+    /// <summary>
+    /// &lt;dispatch&gt; (m_2f0, questdata.cpp:1470-1476): type (m_0, FUN_140751330 @0x140751330: directaccept 1, directcomplete
+    /// 2, monologueaccept 3, monologuecomplete 4, any other text 0, any case), field (m_4), portal (m_8) and script (m_c, an id
+    /// of string table 71 QuestDispatchScript).
+    /// </summary>
+    public int DispatchType, DispatchField, DispatchPortal, DispatchScript;
 
     /// <summary>basic useNavi (m_flag, questdata.cpp:1294): the quest navigator may trace it.</summary>
     public bool UseNavi;
@@ -372,6 +378,13 @@ public sealed partial class QuestTable
             QueryUInt(remoteComplete, "requireField", ref d.RemoteCompleteField);
             QueryInt(remoteComplete, "requireDungeonClear", ref d.RemoteCompleteDungeonClear);
         }
+        if (q.Element("dispatch") is { } dispatch)
+        {
+            d.DispatchType = ParseDispatch((string)dispatch.Attribute("type"), d.DispatchType);
+            QueryUInt(dispatch, "field", ref d.DispatchField);
+            QueryInt(dispatch, "portal", ref d.DispatchPortal);
+            QueryInt(dispatch, "script", ref d.DispatchScript);
+        }
         if (q.Element("summonPortal") is { } summonPortal)
         {
             QueryInt(summonPortal, "fieldID", ref d.SummonPortalField);
@@ -513,6 +526,12 @@ public sealed partial class QuestTable
     }
 
     /// <summary>FUN_1407513c0 (questdata.cpp:2772): cinematic 1, popup 2, system 3, other 0; an absent attribute keeps the value.</summary>
+    /// <summary>FUN_140751330 through FUN_140751f70 (questdata.cpp:2758, :2913): a missing attribute keeps the value.</summary>
+    static int ParseDispatch(string s, int keep) => s == null ? keep : s.ToLowerInvariant() switch
+    {
+        "directaccept" => 1, "directcomplete" => 2, "monologueaccept" => 3, "monologuecomplete" => 4, _ => 0,
+    };
+
     static int ParseRemote(string s, int keep) => s == null ? keep : s.ToLowerInvariant() switch
     {
         "cinematic" => 1, "popup" => 2, "system" => 3, _ => 0,
