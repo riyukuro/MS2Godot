@@ -116,9 +116,9 @@ public partial class FieldAudio
             if (gains3d.PanChanged(slot, out float pan)) v.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
             return;
         }
-        // no curve: a clip with no event. Every clip the game plays on a 3D voice is an event's (SoundLibrary.ResolveEvent,
-        // which takes the event's curve) and every 3D event has one (DistanceRolloffTests), so no 3D event of MS2's data
-        // comes here; Godot's own pan with no elevation scale is left for a clip made some other way
+        // no curve: a 2D event, or a clip with no event. Every clip the game plays on a 3D voice is an event's
+        // (SoundLibrary.ResolveEvent, which takes the event's curve) and every 3D event has one (DistanceRolloffTests), so of
+        // MS2's data only 2D events come here; Godot's own pan with no elevation scale below is left for a clip made some other way
         gains3d.Clear(slot);
         if (clip.Is2D)
         {
