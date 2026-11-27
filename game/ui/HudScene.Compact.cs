@@ -53,14 +53,14 @@ public partial class HudScene
 
     /// <summary>FUN_1417674a0(<paramref name="any"/>) (skillslot.cpp:2446-2508): the compact tab's skill to cast now, 0 for none.
     /// <paramref name="castAllowed"/> is m_nCastAllowed (1 inside the own skill state's poll and hold check, 0 outside).
-    /// The refusal notice (FUN_141769440) shows for the EP reasons (<see cref="CastNotice"/>); the other reasons are logged (STILL-OPEN: their text). 0 B.</summary>
+    /// The refusal notice (FUN_141769440) is <see cref="ShowCastRefusal"/>; a reason the client shows nothing for is logged. 0 B.</summary>
     uint CompactPick(bool any, bool castAllowed)
     {
         if (compact.Tab == null || hudModel == null) return 0;
         compactActionDown ??= CompactActionDown;
         compactNotice ??= why =>
         {
-            if (CastNotice.Of(why).StringId == 0) GD.Print($"compact: the held tab's skill refused, reason {why}");
+            if (!CastNotice.Of(why).Shows) GD.Print($"compact: the held tab's skill refused, reason {why}");
             ShowCastRefusal(why);
         };
         return compact.Pick(any, castAllowed, CompactOn, compactActionDown, CompactWorld(), (uint)Time.GetTicksMsec(), compactNotice);

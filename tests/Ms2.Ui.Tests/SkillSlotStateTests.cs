@@ -54,13 +54,46 @@ public class SkillSlotStateTests
         Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(0), "EP equal to the cost casts");
         w.Ep = 29;
         Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(7));
-        Assert.That(CastNotice.Of(7), Is.EqualTo((0x48, "system_notice_error_ep")), "skillslot.cpp:2918-2920");
+        Assert.That(CastNotice.Of(7), Is.EqualTo(new CastNotice.Notice(0x48, null, CastNotice.NoEpSound)), "skillslot.cpp:2918-2920");
         w.Ep = 100;
         w.Field = new SlotField { UseEPSkill = false };
         Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(3));
-        Assert.That(CastNotice.Of(3), Is.EqualTo((0x53, (string)null)), "skillslot.cpp:2907-2909");
-        Assert.That(CastNotice.Of(10), Is.EqualTo((0x52b, (string)null)), "skillslot.cpp:3002-3004; Why does not return 10 yet");
-        Assert.That(CastNotice.Of(4).StringId, Is.EqualTo(0), "no EP reason: not mapped here");
+        Assert.That(CastNotice.Of(3), Is.EqualTo(new CastNotice.Notice(0x53, null, null)), "skillslot.cpp:2907-2909");
+    }
+
+    /// <summary>CSkillSystem::FUN_141769440 (skillslot.cpp:2902-3004): every reason of the switch gives its stringcommon id
+    /// (or key) and system sound; the reasons outside it show nothing.</summary>
+    [Test]
+    public void EveryRefusalGivesTheClientNotice()
+    {
+        var want = new Dictionary<int, CastNotice.Notice>
+        {
+            [2] = new(0x55, null, null), [3] = new(0x53, null, null), [4] = new(0x34, null, null),
+            [6] = new(0x47, null, CastNotice.NoSpSound), [7] = new(0x48, null, CastNotice.NoEpSound),
+            [14] = new(0x59, null, null),
+            [15] = new(0x53, null, CastNotice.NotThisPlaceSound), [16] = new(0x53, null, CastNotice.NotThisPlaceSound),
+            [17] = new(0x5f, null, CastNotice.NotThisPlaceSound), [19] = new(0x61, null, CastNotice.NotThisPlaceSound),
+            [20] = new(0x57, null, null), [21] = new(0x56, null, null), [22] = new(0x53, null, null),
+            [23] = new(0x53, null, CastNotice.NotThisPlaceSound),
+            [24] = new(0x59, null, null), [25] = new(0x59, null, null), [26] = new(0x59, null, null),
+            [5] = new(0x30, null, null), [11] = new(0x30, null, null),
+            [27] = new(0x53, null, CastNotice.NotThisPlaceSound), [28] = new(0x45d, null, CastNotice.WeaponSound),
+            [29] = new(0, "s_err_cannot_use_here_pet_trap", CastNotice.NotThisPlaceSound),
+            [30] = new(0x59, null, CastNotice.NotThisTimeSound), [31] = new(0x59, null, CastNotice.NotThisTimeSound),
+            [32] = new(0, "s_err_not_allow_pvpField", CastNotice.NotThisPlaceSound),
+            [18] = new(0x528, null, null), [8] = new(0x529, null, null), [9] = new(0x52a, null, null), [10] = new(0x52b, null, null),
+        };
+        for (int why = 0; why <= 0x30; why++)
+        {
+            var n = CastNotice.Of(why);
+            if (want.TryGetValue(why, out var w))
+            {
+                Assert.That(n, Is.EqualTo(w), $"reason {why}");
+                if (w.StringId != 0) Assert.That(Ms2.Formats.Text.CommonStringIds.Key(w.StringId), Is.Not.Null, $"reason {why}: id {w.StringId:x} registered");
+            }
+            else Assert.That(n.Shows, Is.False, $"reason {why} is outside the switch");
+        }
+        Assert.That(CastNotice.Of(0x1c).Shows && CastNotice.Of(0x21).Shows == false, Is.True, "0x1c is 28; 0x21 has no case");
     }
 
     [Test]

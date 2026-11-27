@@ -149,16 +149,17 @@ public partial class HudScene
         }
     }
 
-    /// <summary>The center notice and system sound of a refused cast (FUN_141769440: FUN_141275260(id, 1, 0) and the sound),
-    /// the ids and sounds of <see cref="CastNotice.Of"/>; a reason without a notice shows nothing. Shared by the own cast, the
+    /// <summary>The center notice and system sound of a refused cast (FUN_141769440: FUN_141275260(id, 1, 0) or
+    /// ShowSystemNotice, and the sound), the texts and sounds of <see cref="CastNotice.Of"/>; a reason without a notice shows nothing. Shared by the own cast, the
     /// item cast and the compact pick.</summary>
     void ShowCastRefusal(int why)
     {
-        var (id, sound) = CastNotice.Of(why);
-        if (id == 0) return;
-        string text = Ms2.Ui.Hud.MessageBoxData.Common(id);
+        var n = CastNotice.Of(why);
+        if (!n.Shows) return;
+        // FUN_141275260 / BlockFormat: the stringcommon text of the id; 29 and 32: GetStringCommonByKey
+        string text = n.Key != null ? Ms2.Ui.Hud.MessageBoxData.CommonByKey(n.Key) : Ms2.Ui.Hud.MessageBoxData.Common(n.StringId);
         if (!string.IsNullOrEmpty(text)) ShowSystemText(text);
-        if (sound != null) FieldAudio.Instance?.PlayUi(sound);
+        if (n.Sound != null) FieldAudio.Instance?.PlayUi(n.Sound);
     }
 
     /// <summary>A request of the own pc (the Unk_InventorySkillRequest ctor: a new cast id, the server tick) at the body's
