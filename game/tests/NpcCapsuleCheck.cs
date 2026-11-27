@@ -20,10 +20,15 @@ namespace Ms2Godot.Tests;
 /// - Click to move passes a live npc: the click ray picks the floor under it (FUN_140ad3740 picks block models only) and
 ///   the forward probe (groups 0x201, FUN_140ad2830) does not hit it.
 /// - A blob shadow over a live npc lies on the floor under it: the shadow's ground ray takes groups 0x389 (PCBase::vfunc_93).
+/// - A standing npc, and a corpse eased onto its block, keep their root unwritten through NpcLayer's frame (CNpc::vfunc_53
+///   adds the velocity 0): a write moves the capsule body in the physics server and the npc's model nodes.
 /// Quits with 0 when all hold, else 1.
-/// MS2_NPC_CAPSULE_PERF=N (a measurement, not a check): after the checks, N live npcs walk a circle each physics frame
-/// with the runner stepping among them, 300 frames with their capsule bodies and 300 with the bodies freed; prints the
-/// median of the npc move loop, the runner's controller step and the physics frame, and the main-thread bytes per frame.
+/// MS2_NPC_CAPSULE_PERF=N (a measurement, not a check): after the checks, N live npcs run NpcLayer's frame with the
+/// runner stepping among them, 300 frames each standing and walking a circle, with their capsule bodies and then with the
+/// bodies freed. Prints the medians of the main thread's CPU time (other processes do not count) for the npc frame, the
+/// runner's controller step and the physics server's step, and the main-thread bytes per frame. Godot's TimePhysicsProcess
+/// monitor is not used: it is wall time, and for the same scene it read from 3.7 to 13.9 ms here, higher with the bodies
+/// freed than with them in 3 of 7 runs.
 /// </summary>
 public partial class NpcCapsuleCheck : Node3D
 {
@@ -35,7 +40,7 @@ public partial class NpcCapsuleCheck : Node3D
     int perfN, perfFrame, table0;
     List<Node3D> perfRoots;
     Vector3[] perfHome;
-    readonly List<double> moveUs = new(), stepUs = new(), physMs = new();
+    readonly List<double> moveUs = new(), stepUs = new();
     long perfBytes;
     System.Reflection.MethodInfo stepMethod;
     object[] stepArgs;
@@ -193,6 +198,29 @@ public partial class NpcCapsuleCheck : Node3D
         return y;
     }
 
+    /// <summary>Counts the transform changes that reach a node: each one under an npc root is a root write, which moves
+    /// the capsule body in the physics server and every model node of the npc.</summary>
+    sealed partial class TransformWatch : Node3D
+    {
+        public int Changes;
+        public override void _Ready() => SetNotifyTransform(true);
+        public override void _Notification(int what) { if (what == NotificationTransformChanged) Changes++; }
+    }
+
+    // npc 1 through NpcLayer's frame: settle frames, then 60 counted; its root must not be written while its point stays
+    void Standing(string what, int settle)
+    {
+        var watch = new TransformWatch();
+        GetNode<Node3D>("Npc1").AddChild(watch);
+        for (int f = 0; f < settle; f++) npcs.Process(1f / 60);
+        watch.ForceUpdateTransform();
+        watch.Changes = 0;
+        for (int f = 0; f < 60; f++) { npcs.Process(1f / 60); watch.ForceUpdateTransform(); }
+        Check(watch.Changes == 0, $"{what}: its root was written in {watch.Changes} of 60 frames");
+        GD.Print($"npc capsule check: {what}: root written in {watch.Changes} of 60 frames");
+        watch.Free();
+    }
+
     void Run()
     {
         Check(npcs != null, "the setup did not finish (no npc layer)");
@@ -201,8 +229,10 @@ public partial class NpcCapsuleCheck : Node3D
             float plain = Rush(0), ignored = Rush(20);
             Check(plain < 0, $"a plain move went through the live npc (x {plain:0})");
             Check(ignored > 250, $"a move leaving out groups 2 and 4 stopped at the npc (x {ignored:0})");
+            Standing("a standing npc", 0);
             npcs.Remove(1, true);
             Check(Layer(1, this) == 1u << 5, $"killed npc capsule layer {Layer(1, this):x}, not group 5");
+            Standing("a corpse eased onto its block", 300);
             float dead = Rush(0);
             Check(dead > 250, $"a plain move stopped at the dead npc (x {dead:0})");
             GD.Print($"npc capsule check: plain move ends at x {plain:0}, the ignore-20 move at {ignored:0}, past the dead npc at {dead:0}");
@@ -236,45 +266,71 @@ public partial class NpcCapsuleCheck : Node3D
         stepArgs = new object[] { new Vector3(10, 0, 0), 1f / 60, 0u };
         runner.GlobalPosition = new Vector3(-1200, 0.5f, 0);
         perfFrame = 0;
+        // the test's physics callback runs after every other, its idle callback before every other: the CPU time between
+        // them is the physics server's step of that frame
+        ProcessPhysicsPriority = int.MaxValue;
+        ProcessPriority = int.MinValue;
+        SetProcess(true);
         SetPhysicsProcess(true);
     }
 
     static double Median(List<double> v) { v.Sort(); return v.Count == 0 ? 0 : v[v.Count / 2]; }
 
-    // one perf frame: frames 0-29 settle, 30-329 measured with bodies, then the bodies freed, 330-359 settle, 360-659 measured
+    struct TimeSpec { public long Sec, Nsec; }
+    [System.Runtime.InteropServices.DllImport("libc")] static extern int clock_gettime(int clock, out TimeSpec t);
+    /// <summary>The main thread's CPU time (CLOCK_THREAD_CPUTIME_ID) in ns: other processes on the machine do not count.</summary>
+    static long CpuNs() { clock_gettime(3, out var t); return t.Sec * 1_000_000_000 + t.Nsec; }
+
+    static readonly string[] PerfPhases = { "standing, with bodies", "walking, with bodies", "standing, bodies freed", "walking, bodies freed" };
+
+    // one perf frame: 4 phases of 330 frames (30 settle, 300 measured); the bodies are freed after the second. Each frame
+    // runs NpcLayer's frame; in the walking phases every npc's root first steps along its circle.
     void PerfFrame()
     {
-        int f = perfFrame++;
-        bool measure = f is >= 30 and < 330 or >= 360 and < 660;
-        if (measure) physMs.Add(Performance.GetMonitor(Performance.Monitor.TimePhysicsProcess) * 1000);
+        int f = perfFrame++, phase = f / 330;
+        bool walk = phase % 2 == 1, measure = f % 330 >= 30;
         long b0 = System.GC.GetAllocatedBytesForCurrentThread();
-        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-        float a = f * 0.05f;
-        for (int i = 0; i < perfRoots.Count; i++)
-            perfRoots[i].Position = perfHome[i] + new Vector3(60 * Mathf.Cos(a + i), 0, 60 * Mathf.Sin(a + i));
-        long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        long t0 = CpuNs();
+        if (walk)
+        {
+            float a = f * 0.05f;
+            for (int i = 0; i < perfRoots.Count; i++)
+                perfRoots[i].Position = perfHome[i] + new Vector3(60 * Mathf.Cos(a + i), 0, 60 * Mathf.Sin(a + i));
+        }
+        npcs.Process(1f / 60);
+        long t1 = CpuNs();
         if (runner.GlobalPosition.X > 1200) runner.GlobalPosition = new Vector3(-1200, 0.5f, runner.GlobalPosition.Z);
         stepMethod.Invoke(runner, stepArgs);
-        long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
+        long t2 = CpuNs();
         long b1 = System.GC.GetAllocatedBytesForCurrentThread();
+        physEnd = measure ? t2 : 0;
         if (measure)
         {
-            moveUs.Add((t1 - t0) * 1e6 / System.Diagnostics.Stopwatch.Frequency);
-            stepUs.Add((t2 - t1) * 1e6 / System.Diagnostics.Stopwatch.Frequency);
+            moveUs.Add((t1 - t0) / 1000.0);
+            stepUs.Add((t2 - t1) / 1000.0);
             perfBytes += b1 - b0;
         }
-        if (f == 329 || f == 659)
+        if (f % 330 == 329)
         {
-            string tag = f == 329 ? "with bodies" : "bodies freed";
             int bodies = 0;
             foreach (var r in perfRoots) if (r.GetNodeOrNull("Capsule") != null) bodies++;
-            GD.Print($"npc capsule perf: {perfN} live npcs, {tag} ({bodies} bodies): npc move loop median {Median(moveUs):0.0} us, " +
-                     $"runner step median {Median(stepUs):0.0} us, physics frame median {Median(physMs):0.000} ms, " +
+            GD.Print($"npc capsule perf: {perfN} npcs {PerfPhases[phase]} ({bodies} bodies), CPU medians: npc frame {Median(moveUs):0.0} us, " +
+                     $"runner step {Median(stepUs):0.0} us, physics server step {Median(serverUs):0.0} us; " +
                      $"main-thread bytes/frame {perfBytes / 300} (incl. the step's reflection call)");
-            moveUs.Clear(); stepUs.Clear(); physMs.Clear(); perfBytes = 0;
-            if (f == 329) foreach (var r in perfRoots) r.GetNodeOrNull("Capsule")?.Free();
-            else { SetPhysicsProcess(false); GetTree().Quit(0); }
+            moveUs.Clear(); stepUs.Clear(); serverUs.Clear(); perfBytes = 0;
+            if (phase == 1) foreach (var r in perfRoots) r.GetNodeOrNull("Capsule")?.Free();
+            if (phase == 3) { SetProcess(false); SetPhysicsProcess(false); GetTree().Quit(0); }
         }
+    }
+
+    long physEnd;
+    readonly List<double> serverUs = new();
+
+    public override void _Process(double delta)
+    {
+        if (physEnd == 0) return;
+        serverUs.Add((CpuNs() - physEnd) / 1000.0);
+        physEnd = 0;
     }
 
     public override void _PhysicsProcess(double delta)

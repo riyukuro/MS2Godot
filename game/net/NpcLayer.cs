@@ -1359,19 +1359,23 @@ public sealed class NpcLayer
                 if (me is { } at)
                     audio.BossDistance((ulong)i.Talk.ObjectId, i.Root.GlobalPosition.DistanceTo(at), i.BossRow.BossSoundDistance, i.BossRow.BossSoundEndDistance);
             }
+            // the root is written only when the point changes: each write moves the capsule body in the physics server and
+            // every model node under it, and a standing npc's point (velocity 0, or a corpse eased onto its block) stays
+            var pos = i.Root.Position;
+            Godot.Vector3 next;
             if (i.Eases)
             {
-                var d = i.Target - i.Root.Position;
-                if (d.Length() > 600) i.Root.Position = i.Target;
-                else i.Root.Position += d * Mathf.Min(1f, dt * 10f);
+                var d = i.Target - pos;
+                next = d.Length() > 600 ? i.Target : pos + d * Mathf.Min(1f, dt * 10f);
             }
             else if (i.Arc.Moving)                            // CNpc::vfunc_53 (:2360-2366): the arc's point and yaw target
             {
                 float yaw = i.TargetYaw;
-                i.Root.Position = G(i.Arc.Advance(dt, ref yaw));
+                next = G(i.Arc.Advance(dt, ref yaw));
                 i.TargetYaw = yaw;
             }
-            else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
+            else next = pos + i.Velocity * dt;                // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
+            if (next != pos) i.Root.Position = next;
             if (!i.Placeholder) Turn(i, dt);
             if (i.EffectUi != null) PlaceEffectUi(i);
             if (i.State == 0x10) SkillEnd(i);
