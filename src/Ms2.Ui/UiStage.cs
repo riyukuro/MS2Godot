@@ -54,7 +54,7 @@ public sealed class UiStage : IDropStage
     }
 
     /// <summary>TextField::IsIMEEnabled for a focused object still on its stage.</summary>
-    static bool TakesIme(object focus) =>
+    internal static bool TakesIme(object focus) =>
         focus is AsTextField { type: "input", displayAsPassword: false, ImeDisabled: false } tf && tf.OnStage;
 
     public void Remove(Player player)

@@ -128,7 +128,8 @@ public partial class MovieDialog : Node2D
         Place(window);
         for (var n = GetParent(); n != null; n = n.GetParent())
             if (n is IUiStageHost h && h.UiStage != null) { stage = h.UiStage; break; }
-        stage?.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree);
+        if (stage != null) stage.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree);
+        else OffStageTextFocus.Add(Host.Player, view.IsVisibleInTree);   // a layer outside the scene's stage (the message box)
         if (Host?.Controller is { } c) Live.Add(c);        // CUIService's registry: in while the tree holds it
     }
 
@@ -137,6 +138,7 @@ public partial class MovieDialog : Node2D
         Player.CancelDrag();             // closed mid-drag: no capture left behind
         stage?.Remove(Host);
         stage = null;
+        OffStageTextFocus.Remove(Host.Player);
         if (Host?.Controller is { } c) Live.Remove(c);
     }
 
