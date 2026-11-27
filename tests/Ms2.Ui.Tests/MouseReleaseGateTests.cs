@@ -68,6 +68,15 @@ public class MouseReleaseGateTests
     }
 
     [Test]
+    public void AfterTheCursorLeftAReleaseOnTheGroundStillWalks()
+    {
+        var g = new MouseReleaseGate();
+        g.Press(false);
+        g.Reset();   // WM_MOUSELEAVE, then the cursor comes back in
+        Assert.That(g.Release(false), Is.True, "the flag clear: only m_nIgnoreRelease and IsCursorInWindow are read, not the mode");
+    }
+
+    [Test]
     public void AReleaseOutOfTheWindowDoesNotWalk()
     {
         var g = new MouseReleaseGate();

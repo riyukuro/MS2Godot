@@ -78,7 +78,9 @@ public partial class MouseMove : Node
 
     /// <summary>
     /// WM_MOUSELEAVE (0x2a3, OnMouseMessage mousecontroller.cpp:331-334): the cursor left the window, ResetToIdle (m_nMode 1) ends
-    /// the move that runs (FUN_140ad2070) and a press taken no longer walks on its release.
+    /// the move that runs (FUN_140ad2070). A press taken no longer walks on a release over a dialog (the flag set, mode 1
+    /// returns), but a release on the ground in the window still walks (the flag clear: m_nIgnoreRelease and IsCursorInWindow
+    /// only). The pick (m_spCurrent) and m_nIgnoreRelease are kept.
     /// </summary>
     public override void _Notification(int what)
     {
