@@ -71,4 +71,31 @@ public class BuddyPacketTests {
         Assert.That(answers.Answers.Single(), Is.EqualTo(("F", "approved", 3L)));
         Assert.That(BuddyMessage.Read(R(w => w.WriteByte(0x99))).Protocol, Is.EqualTo(0x99));
     }
+
+    /// <summary>The rest of OnBuddy's protocols (Unk_BuddyResponse): each reads its whole body; 15, 18 and 20 have none.</summary>
+    [Test]
+    public void TheOtherProtocolsReadTheirWholeBody() {
+        foreach (byte p in new byte[] { 4, 6, 0x11 }) {
+            var r = R(w => { w.WriteByte(p); w.WriteByte(3); w.WriteLong(7); });
+            var m = BuddyMessage.Read(r);
+            Assert.That((m.Protocol, m.Result, m.Id, r.Available), Is.EqualTo((p, 3, 7L, 0)), $"protocol {p}");
+        }
+        var accept = R(w => { w.WriteByte(3); w.WriteByte(0); w.WriteLong(7); w.WriteLong(8); w.WriteLong(9); w.WriteUnicodeString("Ann"); });
+        var a = BuddyMessage.Read(accept);
+        Assert.That((a.Result, a.Id, a.Value30, a.Value08, a.Name, accept.Available), Is.EqualTo((0, 7L, 8L, 9L, "Ann", 0)));
+        var memo = R(w => { w.WriteByte(10); w.WriteByte(1); w.WriteLong(7); w.WriteUnicodeString("Bo"); w.WriteUnicodeString("m"); });
+        var e = BuddyMessage.Read(memo);
+        Assert.That((e.Result, e.Id, e.Name, e.Memo, memo.Available), Is.EqualTo((1, 7L, "Bo", "m", 0)));
+        var accepted = R(w => { w.WriteByte(0xb); w.WriteLong(7); });
+        Assert.That((BuddyMessage.Read(accepted).Id, accepted.Available), Is.EqualTo((7L, 0)));
+        foreach (byte p in new byte[] { 8, 9 }) {
+            var r = R(w => { w.WriteByte(p); WriteEntry(w, 10, 100, "Ann", 1, 0, 0, 1); });
+            var m = BuddyMessage.Read(r);
+            Assert.That((m.Entries.Single().Id, m.Entries.Single().Name, m.Result, r.Available), Is.EqualTo((10L, "Ann", 0, 0)), $"protocol {p}: one entry, no result");
+        }
+        foreach (byte p in new byte[] { 15, 18, 20 })
+            Assert.That(BuddyMessage.Read(R(w => w.WriteByte(p))).Protocol, Is.EqualTo(p));
+        Assert.Throws(Is.InstanceOf<Exception>(), () => BuddyMessage.Read(R(w => { w.WriteByte(0xb); w.WriteLong(7); w.WriteByte(1); })),
+            "a decoded protocol with bytes left over fails");
+    }
 }

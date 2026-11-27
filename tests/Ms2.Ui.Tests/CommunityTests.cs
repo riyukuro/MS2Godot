@@ -63,6 +63,111 @@ public class CommunityTests
         Assert.That((b.Count, counts), Is.EqualTo((0, 0)));
     }
 
+    /// <summary>One packet into a fresh book (Ann a friend, Bo a received request, Cy our waiting request, Dee blocked, Eve a
+    /// friend at home field 100 plot 2): every UI call OnBuddy makes, in order.</summary>
+    static (BuddyBook, List<string>) Run(BuddyMessage m)
+    {
+        var calls = new List<string>();
+        var b = new BuddyBook { Common = id => $"#{id:x} {{0}}", Send = p => calls.Add($"sent:{p}") };
+        b.Apply(new BuddyMessage(1) { Entries = new[] { B(1, "Ann"), B(2, "Bo", received: true), B(3, "Cy", waiting: true), B(4, "Dee", blocked: true), Home(B(5, "Eve"), 100, 2) } });
+        b.Notice += (t, _, _) => calls.Add($"notice:{t}");
+        b.ChatLine += (t, kind) => calls.Add($"chat{kind}:{t}");
+        b.Sound += s => calls.Add($"sound:{s}");
+        b.Box += t => calls.Add($"box:{t}");
+        b.BuddyEvent += (k, id, arg) => calls.Add($"{k} {id} {arg}");
+        b.ListRebuild += () => calls.Add("rebuild");
+        b.MenuCount += () => calls.Add("count");
+        b.Apply(m);
+        return (b, calls);
+    }
+
+    static BuddyInfo Home(BuddyInfo b, int field, int plot) { b.HomeMapId = field; b.HomePlot = plot; return b; }
+
+    static IEnumerable<TestCaseData> EveryProtocol()
+    {
+        TestCaseData C(string name, BuddyMessage m, params string[] calls) => new TestCaseData(m, calls).SetName($"Protocol {name}");
+        yield return C("2 sent", new BuddyMessage(2) { Name = "Zed" }, "notice:#600 Zed", "count");
+        yield return C("2 failed", new BuddyMessage(2) { Result = 4, Name = "Zed" }, "count");
+        yield return C("3 accepted", new BuddyMessage(3) { Id = 2 }, "sound:buddy_agree", "chat12:#5fd Bo", "Accepted 2 0", "count");
+        yield return C("3 failed", new BuddyMessage(3) { Result = 1, Id = 2 }, "count");
+        yield return C("4 declined", new BuddyMessage(4) { Id = 3 }, "sound:buddy_deny", "chat12:#601 Cy", "Declined 3 0", "count");
+        yield return C("4 failed", new BuddyMessage(4) { Result = 1, Id = 3 }, "count");
+        yield return C("5 blocked", new BuddyMessage(5) { Id = 1 }, "chat12:#5fe Ann", "Blocked 1 1", "count");
+        yield return C("5 failed", new BuddyMessage(5) { Result = 1, Id = 1 }, "count");
+        yield return C("6 unblocked", new BuddyMessage(6) { Id = 4 }, "chat12:#606 Dee", "Unblocked 4 0", "UnblockedRemoved 104 0", "count");
+        yield return C("6 failed", new BuddyMessage(6) { Result = 1, Id = 4 }, "count");
+        yield return C("7 our request", new BuddyMessage(7) { Id = 3 }, "notice:#602 Cy", "Removed 3 0", "count");
+        yield return C("7 their request", new BuddyMessage(7) { Id = 2 }, "chat12:#603 Bo", "Removed 2 0", "count");
+        yield return C("7 a friend", new BuddyMessage(7) { Id = 1 }, "chat12:#605 Ann", "Removed 1 0", "count");
+        yield return C("7 unknown id", new BuddyMessage(7) { Id = 99 }, "count");
+        yield return C("7 failed", new BuddyMessage(7) { Result = 1, Id = 1 }, "count");
+        yield return C("8 moved", new BuddyMessage(8) { Entries = new[] { Home(B(5, "Eve"), 200, 2) } }, "Updated 5 0", "Moved 5 100", "count");
+        yield return C("8 other plot", new BuddyMessage(8) { Entries = new[] { Home(B(5, "Eve"), 100, 3) } }, "Updated 5 0", "Moved 5 100", "count");
+        yield return C("8 same home", new BuddyMessage(8) { Entries = new[] { Home(B(5, "Eve"), 100, 2) } }, "Updated 5 0", "count");
+        yield return C("8 not a friend", new BuddyMessage(8) { Entries = new[] { Home(B(3, "Cy", waiting: true), 200, 2) } }, "Updated 3 0", "count");
+        yield return C("8 new entry", new BuddyMessage(8) { Entries = new[] { B(6, "Fay") } }, "Updated 6 0", "count");
+        yield return C("9 request in", new BuddyMessage(9) { Entries = new[] { B(7, "Gus", received: true) } }, "sound:buddy_request", "chat12:#607 {0}", "RequestReceived 7 0", "count");
+        yield return C("9 our request", new BuddyMessage(9) { Entries = new[] { B(3, "Cy", waiting: true) } }, "Accepted 3 0", "count");
+        yield return C("9 blocked", new BuddyMessage(9) { Entries = new[] { B(8, "Hal", blocked: true) } }, "Blocked 8 0", "count");
+        yield return C("9 a friend", new BuddyMessage(9) { Entries = new[] { B(9, "Ivy") } }, "count");
+        yield return C("9 failed", new BuddyMessage(9) { Result = 1, Entries = new[] { B(7, "Gus", received: true) } }, "count");
+        yield return C("10 memo", new BuddyMessage(10) { Id = 4, Name = "Dee", Memo = "new" }, "notice:#5ff Dee", "MemoChanged 4 0", "count");
+        yield return C("10 unknown id", new BuddyMessage(10) { Id = 99, Name = "Zed", Memo = "new" }, "notice:#5ff Zed", "count");
+        yield return C("10 failed", new BuddyMessage(10) { Result = 1, Id = 4, Name = "Dee" }, "count");
+        yield return C("11 accepted", new BuddyMessage(11) { Id = 3 }, "chat12:#5fd Cy", "Accepted 3 0", "count");
+        yield return C("11 unknown id", new BuddyMessage(11) { Id = 99 }, "count");
+        yield return C("12 blocked", new BuddyMessage(12) { Name = "Zed" }, "chat12:#5fe Zed", "count");
+        yield return C("12 result 10", new BuddyMessage(12) { Result = 10, Name = "Zed" }, "notice:#61b Zed", "count");
+        yield return C("12 other result", new BuddyMessage(12) { Result = 3, Name = "Zed" }, "count");
+        yield return C("13 answers", new BuddyMessage(13) { Answers = new[] { ("Ann", "approved", 1L), ("Bo", "declined", 2L), ("Cy", "removed", 3L), ("Dee", "Approved", 4L) } },
+            "chat12:#5fd Ann", "chat12:#602 Bo", "chat12:#605 Cy", "chat12:", "count");
+        yield return C("14 online", new BuddyMessage(14) { Flag = 0, Name = "Ann" }, "chat12:#608 Ann", "count");
+        yield return C("14 offline", new BuddyMessage(14) { Flag = 1, Name = "Ann" }, "chat12:#609 Ann", "count");
+        yield return C("14 other flag", new BuddyMessage(14) { Flag = 2, Name = "Ann" }, "chat12:", "count");
+        yield return C("15 clear", new BuddyMessage(15), "count");
+        yield return C("17 cancelled", new BuddyMessage(17) { Id = 3 }, "chat12:#604 Cy", "Cancelled 3 0", "count");
+        yield return C("17 failed", new BuddyMessage(17) { Result = 1, Id = 3 }, "count");
+        yield return C("18 rebuild", new BuddyMessage(18), "rebuild", "box:#8ba {0}", "count");
+        yield return C("20 auto reject", new BuddyMessage(20), $"sent:{new BuddyAutoRejectRequest(false)}", "count");
+        yield return C("unknown", new BuddyMessage(0x99), "count");
+    }
+
+    /// <summary>CBuddyManager::OnBuddy (buddymanager.cpp:95-188): each protocol's messages, sounds, dispatcher calls and sends, and
+    /// the game menu's count after every packet; a failed result or an unknown id does nothing but the count.</summary>
+    [TestCaseSource(nameof(EveryProtocol))]
+    public void EveryProtocolMakesTheClientsUiCalls(BuddyMessage m, string[] calls) => Assert.That(Run(m).Item2, Is.EqualTo(calls));
+
+    [Test]
+    public void EachProtocolChangesTheBookAsTheClientDoes()
+    {
+        static BuddyBook After(BuddyMessage m) => Run(m).Item1;
+        var b3 = After(new BuddyMessage(3) { Id = 2 }).FindById(2);
+        Assert.That((b3.Received, b3.IsFriend, b3.IsNew), Is.EqualTo((false, true, true)), "3: the received request became a friend");
+        Assert.That(After(new BuddyMessage(4) { Id = 3 }).FindById(3), Is.Null, "4: our request is gone");
+        var b5 = After(new BuddyMessage(5) { Id = 1 }).FindById(1);
+        Assert.That((b5.Blocked, b5.IsNew), Is.EqualTo((true, true)), "5");
+        var b6 = After(new BuddyMessage(6) { Id = 4 });
+        Assert.That((b6.FindById(4), b6.FindByAccount(104)), Is.EqualTo(((BuddyInfo)null, (BuddyInfo)null)), "6: both maps drop it");
+        Assert.That(After(new BuddyMessage(7) { Id = 1 }).Count, Is.EqualTo(4), "7");
+        var b8 = After(new BuddyMessage(8) { Entries = new[] { Home(B(5, "Eve2", online: true), 200, 2) } });
+        var eve = b8.FindById(5);
+        Assert.That((b8.Count, eve.Name, eve.Online, eve.HomeMapId, eve.IsNew), Is.EqualTo((5, "Eve2", true, 200, false)), "8 reads into the known entry and keeps IsNew");
+        var b8n = After(new BuddyMessage(8) { Entries = new[] { B(6, "Fay") } });
+        Assert.That((b8n.Count, b8n.FindById(6).IsNew, b8n.Buddies[^1].Name), Is.EqualTo((6, true, "Fay")), "8 adds an unknown entry at the end, new");
+        var b9 = After(new BuddyMessage(9) { Entries = new[] { B(7, "Gus", received: true) } });
+        Assert.That((b9.ReceivedCount, b9.FindById(7).IsNew), Is.EqualTo((2, true)), "9");
+        Assert.That(After(new BuddyMessage(10) { Id = 4, Name = "Dee", Memo = "new" }).FindById(4).Memo, Is.EqualTo("new"), "10");
+        Assert.That(After(new BuddyMessage(10) { Result = 1, Id = 4, Name = "Dee", Memo = "new" }).FindById(4).Memo, Is.EqualTo("memo4"), "10 failed");
+        var b11 = After(new BuddyMessage(11) { Id = 3 }).FindById(3);
+        Assert.That((b11.Waiting, b11.IsFriend, b11.IsNew), Is.EqualTo((false, true, true)), "11: our request was accepted");
+        var b13 = After(new BuddyMessage(13) { Answers = new[] { ("ann", "approved", 1L), ("Bo", "Approved", 2L) } });
+        Assert.That((b13.FindById(1).IsNew, b13.FindById(2).IsNew), Is.EqualTo((true, false)), "13: the name is found without case, the action is compared with it");
+        Assert.That(After(new BuddyMessage(15)).Count, Is.Zero, "15");
+        Assert.That(After(new BuddyMessage(17) { Id = 3 }).FindById(3), Is.Null, "17");
+        var b1 = After(new BuddyMessage(1) { Entries = new[] { B(1, "Dup"), B(10, "Jo") } });
+        Assert.That((b1.Count, b1.FindById(1).Name), Is.EqualTo((6, "Ann")), "1: AddBuddy skips a known id");
+    }
+
     static readonly Ms2.Formats.Text.BanTextChecker NoBans = new(_ => null);
 
     static (CommunityQueryController, List<IOutPacket>, List<string>, List<MessageBoxData>) Query(BuddyBook book, string self = "Me")
