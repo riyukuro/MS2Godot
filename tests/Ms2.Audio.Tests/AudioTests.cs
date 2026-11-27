@@ -541,61 +541,81 @@ public class AudioTests
     {
         var xf = new MusicCrossfade();
 
-        // First track starts immediately on slot 0 without fading from silence.
+        // First track starts immediately on slot 0 without fading from silence (the client's fmod_event64.dll: the
+        // first promptCue's channel group is at 1.0 on the first update).
         var first = xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: false);
-        Assert.That(first, Is.EqualTo((0, -1, false)));
+        Assert.That(first, Is.EqualTo((0, 0, false)));
         Assert.That(xf.IsFading, Is.False);
         Assert.That(xf.Gain(0), Is.EqualTo(1f));
         Assert.That(xf.Gain(1), Is.EqualTo(0f));
 
-        // Transition to a second cue/segment with CrossfadeMs = 2000 flips to slot 1 and crossfades linearly.
+        // Transition to a second cue with CrossfadeMs = 2000 takes slot 1 and crossfades linearly in amplitude.
         var second = xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
-        Assert.That(second, Is.EqualTo((1, -1, true)));
+        Assert.That(second, Is.EqualTo((1, 0, true)));
         Assert.That(xf.IsFading, Is.True);
         Assert.That(xf.Gain(0), Is.EqualTo(1f));
         Assert.That(xf.Gain(1), Is.EqualTo(0f));
 
-        // Halfway through 2000 ms (1.0 s): outgoing 0.5, incoming 0.5.
-        Assert.That(xf.Step(1.0f), Is.EqualTo(-1));
+        // Halfway through 2000 ms (1.0 s): outgoing 0.5, incoming 0.5 (measured 0.517 / 0.508 at 981 ms).
+        Assert.That(xf.Step(1.0f), Is.EqualTo(0));
         Assert.That(xf.IsFading, Is.True);
         Assert.That(xf.Gain(0), Is.EqualTo(0.5f).Within(1e-5f));
         Assert.That(xf.Gain(1), Is.EqualTo(0.5f).Within(1e-5f));
 
-        // Interrupted mid-crossfade by another cue (1000 ms): stops old outgoing slot 0 immediately,
-        // fades interrupted slot 1 down from its current gain (0.5), ramps slot 0 from 0 -> 1.
+        // A third cue mid-fade (1000 ms) keeps both voices: each ramps from its gain now (0.5) to 0 over the new
+        // crossfade while the third one ramps 0 -> 1 on a free slot; nothing is cut.
         var third = xf.BeginTransition(crossfadeMs: 1000, hasActiveAudio: true);
-        Assert.That(third, Is.EqualTo((0, 0, true)));
-        Assert.That(xf.Gain(0), Is.EqualTo(0f));
-        Assert.That(xf.Gain(1), Is.EqualTo(0.5f).Within(1e-5f));
-        Assert.That(xf.Step(0.5f), Is.EqualTo(-1));
+        Assert.That(third, Is.EqualTo((2, 0, true)));
         Assert.That(xf.Gain(0), Is.EqualTo(0.5f).Within(1e-5f));
+        Assert.That(xf.Gain(1), Is.EqualTo(0.5f).Within(1e-5f));
+        Assert.That(xf.Gain(2), Is.EqualTo(0f));
+        Assert.That(xf.Step(0.5f), Is.EqualTo(0));
+        Assert.That(xf.Gain(0), Is.EqualTo(0.25f).Within(1e-5f));
         Assert.That(xf.Gain(1), Is.EqualTo(0.25f).Within(1e-5f));
+        Assert.That(xf.Gain(2), Is.EqualTo(0.5f).Within(1e-5f));
 
-        // Completing the crossfade returns the outgoing slot (1) to stop and settles gains to 1 / 0.
-        Assert.That(xf.Step(0.5f), Is.EqualTo(1));
+        // Completing the crossfade stops both outgoing slots (0 and 1) and settles the gains.
+        Assert.That(xf.Step(0.5f), Is.EqualTo(0b011));
         Assert.That(xf.IsFading, Is.False);
-        Assert.That(xf.Gain(0), Is.EqualTo(1f));
-        Assert.That(xf.Gain(1), Is.EqualTo(0f));
+        Assert.That(xf.Gain(2), Is.EqualTo(1f));
+        Assert.That(xf.Gain(0) + xf.Gain(1) + xf.Gain(3), Is.EqualTo(0f));
 
-        // Zero crossfade cuts immediately without fading.
+        // Zero crossfade with no fade running cuts immediately without fading.
         var cut = xf.BeginTransition(crossfadeMs: 0, hasActiveAudio: true);
         Assert.That(cut.Crossfading, Is.False);
         Assert.That(xf.IsFading, Is.False);
         Assert.That(xf.ActiveGain, Is.EqualTo(1f));
         Assert.That(xf.OutgoingGain, Is.EqualTo(0f));
 
-        // Mid-fade interrupt at t = 0 (incoming slot still silent at gain 0): reuses silent slot 1 and keeps audible
-        // slot 0 fading out smoothly from 1.0 instead of cutting slot 0 and jumping silent slot 1 to 1.0.
+        // A cue prompted at t = 0 of a fade: the incoming voice is still silent, so it stops, and the audible voice
+        // keeps fading out from 1.0.
         xf.StopAll();
         xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: false);
         xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);   // slot 0 = 1.0 (outgoing), slot 1 = 0.0 (incoming)
         var atZero = xf.BeginTransition(crossfadeMs: 1000, hasActiveAudio: true);
-        Assert.That(atZero, Is.EqualTo((1, 1, true)));
+        Assert.That(atZero, Is.EqualTo((1, 0b010, true)));
         Assert.That(xf.Gain(0), Is.EqualTo(1f).Within(1e-5f));
         Assert.That(xf.Gain(1), Is.EqualTo(0f).Within(1e-5f));
-        Assert.That(xf.Step(0.5f), Is.EqualTo(-1));
+        Assert.That(xf.Step(0.5f), Is.EqualTo(0));
         Assert.That(xf.Gain(0), Is.EqualTo(0.5f).Within(1e-5f));
         Assert.That(xf.Gain(1), Is.EqualTo(0.5f).Within(1e-5f));
+
+        // An EndOfSegment chain (0 ms) of the incoming cue during the fade keeps both ramps going.
+        var chain = xf.BeginTransition(crossfadeMs: 0, hasActiveAudio: true);
+        Assert.That(chain, Is.EqualTo((1, 0, true)));
+        Assert.That(xf.Step(0.25f), Is.EqualTo(0));
+        Assert.That(xf.Gain(0), Is.EqualTo(0.25f).Within(1e-5f));
+        Assert.That(xf.Gain(1), Is.EqualTo(0.75f).Within(1e-5f));
+
+        // Every slot still audible: the quietest one stops so the new cue has a voice.
+        xf.StopAll();
+        xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: false);
+        for (int i = 1; i < MusicCrossfade.SlotCount; i++) { xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true); xf.Step(0.5f); }
+        float quietest = float.MaxValue; int quietSlot = -1;
+        for (int i = 0; i < MusicCrossfade.SlotCount; i++) if (xf.Gain(i) < quietest) { quietest = xf.Gain(i); quietSlot = i; }
+        Assert.That(quietest, Is.GreaterThan(1e-4f));
+        var full = xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
+        Assert.That(full, Is.EqualTo((quietSlot, 1 << quietSlot, true)));
 
         // EndOfSegment links (TransitionType = 4, all 311 links in MS2Sound.fev) chain with 0 ms overlap.
         var endLink = new MusicLink { TransitionType = MusicLink.TransitionEndOfSegment };

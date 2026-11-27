@@ -379,114 +379,128 @@ public sealed class BossBgmTracker
 }
 
 /// <summary>
-/// Two-player crossfade state for FMOD Ex interactive music cue transitions:
-/// - Client calls FMOD::MusicSystem::promptCue (CSoundEventMgr::PlayMusic @0x14177c100, soundeventmgr.cpp:1165,1186).
-/// - MS2Sound.fev comp/thms/thm /thmd stores each theme's crossfadeMs (offset 11, parsed into MusicTheme.CrossfadeMs)
-///   for cue/theme changes; all 311 in-theme links in comp/lnks/lnk /lnkd have TransitionType = 4 (EndOfSegment), so
-///   segments inside a theme play back-to-back with 0 ms crossfade.
-/// - STILL-OPEN: the exact FMOD Ex crossfade curve (linear vs equal-power) lives inside fmod_event64.dll (not
-///   recovered in MapleStory2.exe); this models a two-voice linear ramp over CrossfadeMs on cue changes with zero
-///   per-frame allocations.
+/// The voice gains of FMOD Ex interactive music across cue changes:
+/// - The client calls FMOD::MusicSystem::promptCue (CSoundEventMgr::PlayMusic @0x14177c100, soundeventmgr.cpp:1165,1186).
+/// - MS2Sound.fev comp/thms/thm /thmd stores each theme's crossfadeMs (offset 11, parsed into MusicTheme.CrossfadeMs);
+///   all 311 in-theme links in comp/lnks/lnk /lnkd have TransitionType = 4 (EndOfSegment), so segments inside a theme
+///   play back-to-back with 0 ms crossfade.
+/// - Measured on the client's own fmod_event64.dll (4.44.64) through MusicSystem::promptCue, reading each music channel's
+///   segment-player group volume every 21 ms:
+///   - the incoming cue starts at once from 0 and both sides ramp linearly in amplitude over the incoming theme's
+///     crossfadeMs (2000 to 500 ms took 500 ms, 500 to 2000 ms took 2000 ms); in + out stayed 1.025 across the
+///     ramp, so it is not an equal-power curve;
+///   - the first cue with nothing playing starts at full gain;
+///   - a cue prompted mid-fade keeps every voice: each one still audible ramps from its gain at the prompt down to 0
+///     over the new cue's crossfadeMs while the new cue ramps 0 to 1 (three voices at 0.50 / 0.50 / 0 at the prompt,
+///     all reaching 0 / 0 / 1 together 2000 ms later).
+/// This keeps <see cref="SlotCount"/> voices; only when every slot is still audible does the quietest one stop at once.
+/// Zero per-frame allocations.
 /// </summary>
 public sealed class MusicCrossfade
 {
-    public const int SlotCount = 2;
+    public const int SlotCount = 4;
+    const float Silent = 1e-4f;
 
+    readonly float[] gains = new float[SlotCount];
+    readonly float[] startGains = new float[SlotCount];
+    readonly bool[] busy = new bool[SlotCount];
     int activeSlot;
-    bool activePlaying;
     bool fading;
     float fadeElapsed;
     float fadeDuration;
-    float outgoingStartGain;
-    float gain0;
-    float gain1;
 
     public int ActiveSlot => activeSlot;
-    public int OutgoingSlot => 1 - activeSlot;
     public bool IsFading => fading;
     public float FadeElapsed => fadeElapsed;
     public float FadeDuration => fadeDuration;
-    public float Gain(int slot) => slot == 0 ? gain0 : gain1;
-    public float ActiveGain => Gain(activeSlot);
-    public float OutgoingGain => Gain(OutgoingSlot);
+    public float Gain(int slot) => gains[slot];
+    public bool Busy(int slot) => busy[slot];
+    public float ActiveGain => gains[activeSlot];
 
-    /// <summary>
-    /// Begins a transition into a new cue using <paramref name="crossfadeMs"/> (MusicTheme.CrossfadeMs).
-    /// When <paramref name="hasActiveAudio"/> is true and <paramref name="crossfadeMs"/> &gt; 0, flips to the other
-    /// slot so the outgoing player fades out while the incoming player fades in from 0 to 1.
-    /// When a 3rd cue interrupts mid-fade:
-    /// - If the incoming slot is still silent (gain &lt;= 1e-4, e.g. interrupted at t = 0), reuse that silent slot for
-    ///   the 3rd cue and keep the audible outgoing slot fading out smoothly from its current gain (no cut or pop).
-    /// - Otherwise, with a fixed two-player pool (SlotCount == 2), there is no 3rd voice to keep fading the older
-    ///   outgoing slot; that older fading-out slot is stopped immediately so it can host the 3rd cue while the newer
-    ///   active slot fades out smoothly from its current gain.
-    /// </summary>
-    public (int IncomingSlot, int OutgoingSlotToStop, bool Crossfading) BeginTransition(int crossfadeMs, bool hasActiveAudio)
+    /// <summary>The loudest voice other than the active one (0 when none).</summary>
+    public float OutgoingGain
     {
-        if (hasActiveAudio && crossfadeMs > 0)
+        get
         {
-            if (fading && ActiveGain <= 1e-4f && OutgoingGain > 1e-4f)
-            {
-                // The 2nd cue has not faded in yet: stop and reuse its silent slot, keeping the audible 1st cue fading out.
-                int stopSilent = activeSlot;
-                float keepOutgoing = OutgoingGain;
-                activePlaying = true;
-                fading = true;
-                fadeElapsed = 0f;
-                fadeDuration = crossfadeMs * 0.001f;
-                outgoingStartGain = keepOutgoing;
-                SetGain(activeSlot, 0f);
-                SetGain(OutgoingSlot, outgoingStartGain);
-                return (activeSlot, stopSilent, true);
-            }
-
-            // Two-player pool (SlotCount == 2): reuse the older fading-out slot (stopNow) for the incoming 3rd cue,
-            // and fade out the previously-active slot from its current gain.
-            int stopNow = fading ? OutgoingSlot : -1;
-            float prevActiveGain = ActiveGain;
-            activeSlot = 1 - activeSlot;
-            activePlaying = true;
-            fading = true;
-            fadeElapsed = 0f;
-            fadeDuration = crossfadeMs * 0.001f;
-            outgoingStartGain = prevActiveGain > 0f ? prevActiveGain : 1f;
-            SetGain(activeSlot, 0f);
-            SetGain(OutgoingSlot, outgoingStartGain);
-            return (activeSlot, stopNow, true);
+            float g = 0f;
+            for (int i = 0; i < SlotCount; i++)
+                if (i != activeSlot && gains[i] > g) g = gains[i];
+            return g;
         }
-
-        int stopOther = activePlaying || fading ? OutgoingSlot : -1;
-        activePlaying = true;
-        fading = false;
-        fadeElapsed = 0f;
-        fadeDuration = 0f;
-        outgoingStartGain = 0f;
-        SetGain(activeSlot, 1f);
-        SetGain(OutgoingSlot, 0f);
-        return (activeSlot, stopOther, false);
     }
 
     /// <summary>
-    /// Advances the active crossfade by <paramref name="deltaSeconds"/>. Zero allocations.
-    /// Returns the outgoing slot index to stop when the crossfade completes on this tick, or -1 otherwise.
+    /// Begins a transition into a new cue or segment over <paramref name="crossfadeMs"/>; returns the slot that plays it
+    /// and a bit mask of the slots whose players stop now.
+    /// - crossfadeMs &gt; 0 with audio playing (a cue change): every voice still audible becomes an outgoing ramp from its
+    ///   gain now to 0, voices already silent stop, and the incoming one takes a free slot (the quietest busy one when
+    ///   all <see cref="SlotCount"/> are taken) and ramps 0 to 1.
+    /// - crossfadeMs &lt;= 0 during a fade (an EndOfSegment chain of the incoming cue): the active slot keeps its ramp and
+    ///   the outgoing ramps go on.
+    /// - Otherwise (the first cue, or a chain with no fade): the active slot plays at full gain and the others stop.
+    /// </summary>
+    public (int IncomingSlot, int StopMask, bool Crossfading) BeginTransition(int crossfadeMs, bool hasActiveAudio)
+    {
+        if (crossfadeMs <= 0 && fading) return (activeSlot, 0, true);
+        int stop = 0;
+        if (hasActiveAudio && crossfadeMs > 0)
+        {
+            int incoming = -1, quietest = -1;
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (busy[i] && gains[i] <= Silent) { busy[i] = false; gains[i] = 0f; stop |= 1 << i; }
+                if (!busy[i]) { if (incoming < 0) incoming = i; continue; }
+                startGains[i] = gains[i];
+                if (quietest < 0 || gains[i] < gains[quietest]) quietest = i;
+            }
+            if (incoming < 0) { incoming = quietest; stop |= 1 << incoming; }
+            activeSlot = incoming;
+            busy[incoming] = true;
+            gains[incoming] = 0f;
+            startGains[incoming] = 0f;
+            fading = true;
+            fadeElapsed = 0f;
+            fadeDuration = crossfadeMs * 0.001f;
+            return (incoming, stop, true);
+        }
+
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (i != activeSlot && busy[i]) stop |= 1 << i;
+            busy[i] = i == activeSlot;
+            gains[i] = i == activeSlot ? 1f : 0f;
+        }
+        fading = false;
+        fadeElapsed = 0f;
+        fadeDuration = 0f;
+        return (activeSlot, stop, false);
+    }
+
+    /// <summary>
+    /// Advances the fade by <paramref name="deltaSeconds"/>. Zero allocations. Returns the bit mask of the slots whose
+    /// players stop because the fade completed on this tick (0 otherwise).
     /// </summary>
     public int Step(float deltaSeconds)
     {
-        if (!fading) return -1;
+        if (!fading) return 0;
         if (deltaSeconds > 0f) fadeElapsed += deltaSeconds;
         if (fadeElapsed >= fadeDuration || fadeDuration <= 0f)
         {
             fading = false;
             fadeElapsed = fadeDuration;
-            SetGain(activeSlot, 1f);
-            SetGain(OutgoingSlot, 0f);
-            return OutgoingSlot;
+            int stop = 0;
+            for (int i = 0; i < SlotCount; i++)
+            {
+                if (i != activeSlot && busy[i]) stop |= 1 << i;
+                busy[i] = i == activeSlot;
+                gains[i] = i == activeSlot ? 1f : 0f;
+            }
+            return stop;
         }
-        // STILL-OPEN: exact FMOD Ex crossfade curve inside fmod_event64.dll is unknown; using linear ramp.
         float t = fadeElapsed / fadeDuration;
-        SetGain(activeSlot, t);
-        SetGain(OutgoingSlot, outgoingStartGain * (1f - t));
-        return -1;
+        for (int i = 0; i < SlotCount; i++)
+            if (busy[i]) gains[i] = i == activeSlot ? t : startGains[i] * (1f - t);
+        return 0;
     }
 
     /// <summary>
@@ -499,19 +513,11 @@ public sealed class MusicCrossfade
 
     public void StopAll()
     {
-        activePlaying = false;
+        activeSlot = 0;
         fading = false;
         fadeElapsed = 0f;
         fadeDuration = 0f;
-        outgoingStartGain = 0f;
-        gain0 = 0f;
-        gain1 = 0f;
-    }
-
-    void SetGain(int slot, float value)
-    {
-        if (slot == 0) gain0 = value;
-        else gain1 = value;
+        for (int i = 0; i < SlotCount; i++) { gains[i] = 0f; startGains[i] = 0f; busy[i] = false; }
     }
 }
 

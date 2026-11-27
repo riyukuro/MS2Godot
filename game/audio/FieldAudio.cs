@@ -68,7 +68,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     readonly object poolGate = new();
     bool poolClosed;
     readonly SoundMusicEffectState soundMusicFade = new();
-    readonly float[] slotSegmentVolume = { 1f, 1f };
+    readonly float[] slotSegmentVolume = { 1f, 1f, 1f, 1f };
     AudioStreamPlayer ui;
     MusicSegment activeSegment;
     double audioClock;
@@ -103,8 +103,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         categoryMusicVolume = Ms2.Formats.Options.SoundMix.Shared.MusicVolume;
         MusicVolume = categoryMusicVolume;
-        ApplyPlayerGain(0);
-        ApplyPlayerGain(1);
+        ApplyPlayerGains();
         if (log) GD.Print($"audio: music volume {MusicVolume:F2}");
     }
 
@@ -144,7 +143,15 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     public int BgmCue { get; private set; }
     public string BgmName => bgmName;
-    public bool MusicPlaying => (musicPlayers[0]?.Playing ?? false) || (musicPlayers[1]?.Playing ?? false);
+    public bool MusicPlaying
+    {
+        get
+        {
+            foreach (var p in musicPlayers)
+                if (p?.Playing ?? false) return true;
+            return false;
+        }
+    }
     public bool MusicCrossfading => crossfade.IsFading;
     public bool SoundMusicFading => soundMusicFade.IsFading;
     public double MusicPosition => musicPlayers[crossfade.ActiveSlot]?.GetPlaybackPosition() ?? 0;
@@ -184,11 +191,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine); }
             catch (Exception ex) { GD.PushWarning("audio: constants: " + ex.Message); }
         }
-        musicPlayers[0] = new AudioStreamPlayer { Name = "MusicA", Bus = SoundBuses.Music };
-        musicPlayers[1] = new AudioStreamPlayer { Name = "MusicB", Bus = SoundBuses.Music };
+        for (int i = 0; i < musicPlayers.Length; i++)
+        {
+            musicPlayers[i] = new AudioStreamPlayer { Name = "Music" + (char)('A' + i), Bus = SoundBuses.Music };
+            AddChild(musicPlayers[i]);
+        }
         ui = new AudioStreamPlayer { Name = "Ui" };
-        AddChild(musicPlayers[0]);
-        AddChild(musicPlayers[1]);
         AddChild(ui);
         return true;
     }
@@ -487,8 +495,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         cueSegments.Clear();
         crossfade.StopAll();
         MusicVolume = soundMusicFade.Stop(categoryMusicVolume);
-        if (musicPlayers[0] != null && IsInstanceValid(musicPlayers[0])) musicPlayers[0].Stop();
-        if (musicPlayers[1] != null && IsInstanceValid(musicPlayers[1])) musicPlayers[1].Stop();
+        StopMusicPlayers(-1);
     }
 
     public override void _Process(double delta)
@@ -524,20 +531,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
         if (crossfade.IsFading)
         {
-            int stopSlot = crossfade.Step((float)delta);
+            StopMusicPlayers(crossfade.Step((float)delta));
             gainDirty = true;
-            if (stopSlot >= 0)
-            {
-                var old = musicPlayers[stopSlot];
-                if (old != null && IsInstanceValid(old)) old.Stop();
-            }
         }
 
-        if (gainDirty)
-        {
-            ApplyPlayerGain(0);
-            ApplyPlayerGain(1);
-        }
+        if (gainDirty) ApplyPlayerGains();
 
         if (playbackGuard.IsSegmentActive)
         {
@@ -549,6 +547,18 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                 else if (playbackGuard.TryBeginPredecode(pos)) PredecodeNextSegment();
             }
         }
+    }
+
+    void ApplyPlayerGains()
+    {
+        for (int i = 0; i < musicPlayers.Length; i++) ApplyPlayerGain(i);
+    }
+
+    /// <summary>Stops the music players whose bits are set in <paramref name="mask"/> (MusicCrossfade's stop masks).</summary>
+    void StopMusicPlayers(int mask)
+    {
+        for (int i = 0; i < musicPlayers.Length; i++)
+            if ((mask & (1 << i)) != 0 && musicPlayers[i] is { } p && IsInstanceValid(p)) p.Stop();
     }
 
     void ApplyPlayerGain(int slot)
@@ -644,9 +654,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (seg == null || !cueSegments.TryGetValue(seg.Id, out var entry)) return;
         Unchain();
         bool hasActive = musicPlayers[crossfade.ActiveSlot] is { Playing: true };
-        var (inSlot, stopSlot, isCrossfading) = crossfade.BeginTransition(crossfadeMs, hasActive);
-        if (stopSlot >= 0 && musicPlayers[stopSlot] is { } oldPlayer && IsInstanceValid(oldPlayer))
-            oldPlayer.Stop();
+        var (inSlot, stopMask, isCrossfading) = crossfade.BeginTransition(crossfadeMs, hasActive);
+        StopMusicPlayers(stopMask);
 
         activeSegment = seg;
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
@@ -658,8 +667,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         MusicState.OnSegmentStarted();
         var player = musicPlayers[inSlot];
         player.Stream = entry.Wav;
-        ApplyPlayerGain(0);
-        ApplyPlayerGain(1);
+        ApplyPlayerGains();
         if (!selfLoop)
         {
             player.Finished += OnSegmentFinished;
