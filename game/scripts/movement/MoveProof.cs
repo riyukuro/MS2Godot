@@ -23,6 +23,7 @@ namespace Ms2Godot.Movement;
 ///   fx NIF DX DY DZ [YAW]     play an effect nif from Resource/Model/Effect (e.g. ch/common/eff_levelup.nif) at the player + (DX, DY, DZ) MS2 units,
 ///                             yaw degrees, seed 1, for its own duration (regression shots of the effect runtime)
 ///   fxclear                   remove the effects the fx steps started
+///   hideplayer                hide the own player's model (effect shots with nothing standing in the effect)
 /// Each state change is printed with the position. Lines starting with # are comments.
 /// </summary>
 public partial class MoveProof : Node
@@ -361,6 +362,10 @@ hold 0.8
                 GD.Print($"[move] fx {s[1]}: {scene.Meshes.Count} meshes, {scene.Systems.Count} particle systems, {scene.Duration:0.00} s");
                 break;
             }
+            case "hideplayer":
+                player.Visual.Visible = false;
+                Next();
+                break;
             case "fxclear":
                 foreach (var e in effects) if (IsInstanceValid(e)) e.QueueFree();
                 effects.Clear();

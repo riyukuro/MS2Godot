@@ -68,7 +68,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     public override void _EnterTree()
     {
-        if (LiveSession.Instance is not { } ls) return;
+        if (LiveSession.Instance is not { } ls) { PlayOfflineRegionSkill(); return; }
         ls.FieldEffects = this;
         foreach (var m in ls.RegionSkillLog) Apply(m);
         ls.RegionSkillReceived += Apply;
@@ -111,7 +111,29 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         }
     }
 
-    static uint ServerTick => (uint)(LiveSession.Instance?.ServerTick ?? 0);
+    /// <summary>`MS2_PROBE_REGIONSKILL=SKILL,LEVEL,X,Y,Z` (offline only): the field plays that region skill at the point (MS2
+    /// coordinates) from its first frame, as a server's RegionSkill Add would, so effect proofs (the move script's shots)
+    /// need no server. The offline clock is then the engine's millisecond tick, so the region skill's objects age.</summary>
+    static readonly string OfflineRegionSkill = System.Environment.GetEnvironmentVariable("MS2_PROBE_REGIONSKILL");
+
+    static uint ServerTick => (uint)(LiveSession.Instance?.ServerTick
+        ?? (string.IsNullOrEmpty(OfflineRegionSkill) ? 0 : (long)Time.GetTicksMsec()));
+
+    void PlayOfflineRegionSkill()
+    {
+        if (string.IsNullOrEmpty(OfflineRegionSkill)) return;
+        var f = OfflineRegionSkill.Split(',');
+        if (f.Length != 5 || !int.TryParse(f[0], out var skill) || !short.TryParse(f[1], out var level)
+            || !float.TryParse(f[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var x)
+            || !float.TryParse(f[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var y)
+            || !float.TryParse(f[4], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var z))
+        {
+            GD.PushWarning($"MS2_PROBE_REGIONSKILL: expected SKILL,LEVEL,X,Y,Z, got {OfflineRegionSkill}");
+            return;
+        }
+        GD.Print($"[region skill] offline: skill {skill} level {level} at ({x}, {y}, {z})");
+        Apply(new RegionSkillMessage.Add(int.MaxValue, 0, (int)ServerTick, new[] { new System.Numerics.Vector3(x, y, z) }, skill, level, 0, 0));
+    }
 
     /// <summary>CTriggerService's one-time effects of the field (OnOneTimeEffect 0xF1).</summary>
     public readonly OneTimeEffects OneTime = new();
