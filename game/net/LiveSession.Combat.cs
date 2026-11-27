@@ -442,6 +442,30 @@ public partial class LiveSession
                 Shot(step[5..] + ".png");
                 continue;
             }
+            if (step.StartsWith("avatarturn"))   // avatarturn[:dx]: the character window opened and its avatar right-dragged dx pixels (100) through Godot's input
+            {
+                int dx = step.Contains(':') ? int.Parse(step[(step.IndexOf(':') + 1)..]) : 100;
+                GD.Print($"live: combat avatar window: {(hud.OpenMyInfoScripted() ? "open" : "shut")}");
+                await until(() => hud.MyInfoAvatarScripted() != null, 60 * 10); await frames(60 * 2);
+                var a0 = hud.MyInfoAvatarScripted();
+                GD.Print($"live: combat avatar before: {a0}");
+                Shot("avatar_before.png");
+                if (hud.MyInfoAvatarPointScripted() is Vector2 at)
+                {
+                    hud.SendMouseScripted(at, null, true); await frames(2);
+                    hud.SendMouseScripted(at, true, true); await frames(2);
+                    for (int i = 1; i <= 10; i++) { hud.SendMouseScripted(at + new Vector2(dx * i / 10f, 0), null, true); await frames(2); }
+                    hud.SendMouseScripted(at + new Vector2(dx, 0), false, true); await frames(30);
+                }
+                else GD.Print("live: combat avatar: no point on the mouse area");
+                var a1 = hud.MyInfoAvatarScripted();
+                GD.Print($"live: combat avatar after a {dx} pixel right drag: {a1}");
+                float turned = a0 is { } b && a1 is { } c ? Mathf.Wrap(c.Yaw - b.Yaw, -180f, 180f) : float.NaN;
+                Check($"a {dx} pixel right drag turns the front {turned:F2} toward the screen's {(dx > 0 ? "right" : "left")} (0.35 a pixel)",
+                      Math.Sign(turned) == Math.Sign(dx));
+                Shot("avatar_after.png");
+                continue;
+            }
             if (step.StartsWith("openwin:"))      // openwin:inventory|quest|sysmenu|achieve|fame|famemenu: the window opens (the others shut), then settles for a shot
             {
                 Check($"the {step[8..]} window opens", hud.OpenWindowScripted(step[8..]));

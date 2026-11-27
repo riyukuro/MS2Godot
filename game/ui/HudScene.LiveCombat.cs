@@ -105,6 +105,29 @@ public partial class HudScene
         ? $"forced {c.ForceMinimize}, movie {c.MovieForceState()?.ToString() ?? "none"}, image {c.ImageName ?? "none"}, minimapInvisible {c.MinimapInvisible}"
         : null;
 
+    /// <summary>The character window's avatar: its angles (m_kAngleBase) and its drawn front's turn from the camera (+x)
+    /// toward the screen's right (-z), in degrees; null before the view is made.</summary>
+    public (float X, float Y, float Z, float Yaw)? MyInfoAvatarScripted()
+    {
+        if (myInfo?.Avatar is not { } a) return null;
+        for (int i = 0; i < GetChildCount(); i++)
+            if (GetChild(i) is AvatarView { CopyBasis: Basis b })
+            {
+                var f = b * Vector3.Back;
+                var (x, y, z) = a.Angle;
+                return (x, y, z, Mathf.RadToDeg(Mathf.Atan2(-f.Z, f.X)));
+            }
+        return null;
+    }
+
+    /// <summary>A window point on the character window's m_mouseArea its hit test reaches; null when shut.</summary>
+    public Vector2? MyInfoAvatarPointScripted() =>
+        myInfoMovie?.Host.Entity is Ms2.Avm2.Flash.AsDisplayObject root && Descendant(myInfoMovie.Host, root, "m_mouseArea") is { } area
+            ? WindowPoint(myInfoMovie, area) : null;
+
+    /// <summary><see cref="SendMouse"/> with the left or right button.</summary>
+    public void SendMouseScripted(Vector2 at, bool? press, bool right) => SendMouse(at, press, right ? MouseButton.Right : MouseButton.Left);
+
     /// <summary>Shuts every dialog, then opens one of the everyday windows the way its menu button does (inventory: the guide's
     /// InventoryDialog occurrence, quest: the quest log toggle, sysmenu: the system menu); whether it is open. A live shot of the
     /// same window in two builds compares how the whole swf UI draws.</summary>

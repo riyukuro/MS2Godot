@@ -5051,7 +5051,12 @@ public partial class HudScene : Node, IUiStageHost
         var mask = button == MouseButton.Right ? MouseButtonMask.Right : button == MouseButton.Middle ? MouseButtonMask.Middle : MouseButtonMask.Left;
         InputEvent e = press is bool down
             ? new InputEventMouseButton { ButtonIndex = button, Pressed = down, Position = at, GlobalPosition = at, ButtonMask = down ? mask : 0 }
-            : new InputEventMouseMotion { Position = at, GlobalPosition = at, ButtonMask = Input.IsMouseButtonPressed(MouseButton.Left) ? MouseButtonMask.Left : 0 };
+            : new InputEventMouseMotion
+            {
+                Position = at, GlobalPosition = at,
+                ButtonMask = (Input.IsMouseButtonPressed(MouseButton.Left) ? MouseButtonMask.Left : 0)
+                             | (Input.IsMouseButtonPressed(MouseButton.Right) ? MouseButtonMask.Right : 0),
+            };
         Input.ParseInputEvent(e);
     }
 
