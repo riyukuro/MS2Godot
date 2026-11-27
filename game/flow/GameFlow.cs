@@ -243,7 +243,11 @@ public partial class GameFlow : Node
     public void Go(State next)
     {
         GD.Print($"flow: {Current} -> {next}");
-        if (Current == State.Game && next != State.Game) ModelBuilder.DropUi();   // logout or character select: the kept look is of this character
+        if (Current == State.Game && next != State.Game)
+        {
+            ModelBuilder.DropUi();   // logout or character select: the kept look is of this character
+            Ms2.Ui.Hud.SceneChange.GameSceneLeft();   // CSceneStateGame::OnLeave (scenestategame.cpp:1318): CloseClosableDialogs closes the boxes
+        }
         if (next != State.Login) StopLoginAudio();
         Current = next;
         switch (next)
