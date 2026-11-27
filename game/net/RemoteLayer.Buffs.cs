@@ -83,15 +83,18 @@ public partial class RemoteLayer
     /// The buffs' invoke effects of a damage record's target: a cast's hit (mode 1, PC::vfunc_33 pc.cpp:891 and CNpc::vfunc_33)
     /// and a PC's splash hit (modes 5 and 6, PC::vfunc_35 pc.cpp:1016; CNpc::vfunc_35 plays none) play event 1 when the record's
     /// attack has invokeEffectDisable 0; a dot (mode 3, PC::vfunc_34 pc.cpp:990 and CNpc::vfunc_34) plays event 0.
+    /// The own PC's list is read in packet order (<see cref="QueuedBuffRemovals"/>): a remove read after the record does not hide
+    /// its entry, so a dot's last tick still plays its invoke effect.
     /// </summary>
     void PlayHitInvokeEffects(int targetId, int mode, SkillAttackDamage attack)
     {
         var list = BuffsOf(targetId);
         if (list == null) return;
-        if (mode == 3) { list.PlayInvokeEffectsByEvent(0); return; }
+        var removed = targetId == Tracker.SelfObjectId ? ownRemovals : null;
+        if (mode == 3) { list.PlayInvokeEffectsByEvent(0, removed); return; }
         bool npc = !users.ContainsKey(targetId) && targetId != Tracker.SelfObjectId;
         if (mode != 1 && (npc || (mode != 5 && mode != 6))) return;
-        if (attack != null && attack.InvokeEffectDisable == 0) list.PlayInvokeEffectsByEvent(1);
+        if (attack != null && attack.InvokeEffectDisable == 0) list.PlayInvokeEffectsByEvent(1, removed);
     }
 
     /// <summary>The effects of the buff lists (<see cref="IBuffMotionEffects"/>): FUN_1411a49c0 / InsertEffect on the owner's node

@@ -562,6 +562,23 @@ public sealed class AdditionalBuffList
         }
     }
 
+    /// <summary>
+    /// <see cref="PlayInvokeEffectsByEvent(int)"/> as a queued record sees the list, in packet order: the entries a remove read
+    /// after the record already took from it (<paramref name="removed"/>, the own PC's) play too, after the list's.
+    /// STILL-OPEN: the client plays such an entry's invoke effect before the remove's stop effect; here the remove ran first, so
+    /// the stop effect is already played.
+    /// </summary>
+    public void PlayInvokeEffectsByEvent(int invokeEvent, QueuedBuffRemovals removed)
+    {
+        PlayInvokeEffectsByEvent(invokeEvent);
+        if (Effects == null || removed == null || removed.Count == 0) return;
+        foreach (var b in removed.Held)
+        {
+            if (map.ContainsKey(b.Key) || b.Enabled == 0) continue;
+            if (b.LevelData.InvokeEvent == invokeEvent) PlayInvokeEffect(b);
+        }
+    }
+
     /// <summary>FUN_14096fc00 @0x14096fc00 (0x3d mode 4, scenestategame.cpp:5697): the invoke effect of the effect of the key.</summary>
     public void PlayInvokeEffect(int key)
     {
@@ -710,6 +727,9 @@ public sealed class QueuedBuffRemovals
 
     /// <summary>The entry of <paramref name="key"/> a queued record sees: the list's, else the one a later remove took.</summary>
     public AdditionalBuff Find(AdditionalBuffList list, int key) => list?.Find(key) ?? leaving.GetValueOrDefault(key);
+
+    /// <summary>The entries the removes took, not yet drained.</summary>
+    public Dictionary<int, AdditionalBuff>.ValueCollection Held => leaving.Values;
 
     public int Count => leaving.Count;
     public void Clear() => leaving.Clear();
