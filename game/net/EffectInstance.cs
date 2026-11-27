@@ -1406,7 +1406,11 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     /// 337-346, :388; in local space as they are, :427-458), and unitized with UNIT_X and UNIT_Z. Positions here are in the
     /// effect's space, the client's times the system's scale, so the scale is multiplied by it. A clone whose particle died is
     /// hidden (the client detaches it, RemoveParticle :326-340, and keeps it pooled).
-    /// STILL-OPEN: clones are drawn one node per mesh, not batched.
+    /// STILL-OPEN: clones are drawn one node per mesh, not batched. Three paths that occur in neither data set (0 cases in
+    /// MeshParticleDataTests' files): a culled master root stays hidden here (Place), where the client unculls each added clone
+    /// root (ResolveAddedParticles) and keeps only inner culled nodes hidden; a transform controller on a master root would
+    /// override the particle transform in the client's UpdateDownwardPass(age), where the particle transform always wins
+    /// here; and with an unported kernel (!ClonesOk) StartClone still builds the clones that are never placed.
     /// </summary>
     void DrawClones(PSys ps, in Transform3D sysWorld, float psScale, Vector3 camLocal)
     {
