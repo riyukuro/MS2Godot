@@ -125,7 +125,7 @@ public class NpcFaceEmotionTests
                     fe.Trigger(name, 0);
                     Assert.That((fe.Current, fe.TextKeys), Is.EqualTo((name, false)), at);
                     if (data.Texture == null) { Cause("emotion without a texture animation (body only)", at); continue; }
-                    // an npc waits a second for its textures, then shows the first frame
+                    // an npc waits for its textures (m_nTime adds the time since the start at each tick), then shows the first frame
                     fe.Tick(16);
                     Assert.That(face.Shows, Is.Empty, $"{at}: shown before its textures");
                     fe.Tick(1000);
@@ -143,6 +143,36 @@ public class NpcFaceEmotionTests
         Assert.That(plays, Is.GreaterThan(uses / 2));
         Assert.That(missingFrames, Is.Empty);
     }
+
+    /// <summary>
+    /// CTextureAnimation::FUN_1418484a0 (textureanimationdata.cpp:303-309): an actor that is no MyPC waits only while the frames
+    /// are not loaded (AreAllFramesLoaded); once it has waited for an emotion's frames, the next start shows frame 0 at once,
+    /// so a repeat of the emotion does not show the bare face first.
+    /// </summary>
+    static void RepeatShowsAtOnce(string variable)
+    {
+        using var packs = new PackSet(RcGap.Data(variable));
+        var npcs = new NpcTable(packs);
+        var row = npcs.Find(11003364);
+        Assume.That(row, Is.Not.Null, "npc 11003364 not in this data");
+        var group = new EmotionTable(packs, EmotionTable.Npc).Group((uint)row!.EmotionGroupId);
+        Assume.That(group?.Find("Angry")?.Texture, Is.Not.Null, "no Angry texture emotion here");
+        var face = new Face();
+        var fe = new FaceEmotion(face, own: false);
+        fe.UseGroup(group);
+        fe.Trigger("Angry", 0);
+        Assert.That(face.Shows, Is.Empty, "the first start waits for the frames");
+        fe.Tick(16);
+        fe.Tick(1000);
+        Assert.That(face.Shows, Is.Not.Empty, "no frame after the wait");
+        fe.Trigger("", 1100);
+        face.Shows.Clear();
+        fe.Trigger("Angry", 1200);
+        Assert.That(face.Shows, Is.Not.Empty, "the frames already waited for did not show at once");
+    }
+
+    [Test] public void KmsRepeatShowsAtOnce() => RepeatShowsAtOnce("MS2_DATA");
+    [Test] public void Gms2RepeatShowsAtOnce() => RepeatShowsAtOnce("MS2_GMS2_DATA");
 
     [Test] public void EveryKmsNpcFaceUse() => EveryNpcFaceUse("MS2_DATA");
     [Test] public void EveryGms2NpcFaceUse() => EveryNpcFaceUse("MS2_GMS2_DATA");

@@ -45,6 +45,7 @@ public sealed class FaceEmotion
     int waited;                 // m_nTime
     int frame = -1;             // m_nFrame
     bool layer;                 // m_spLayer
+    HashSet<(EmotionTextureAnimation, string)> loaded;   // the frames this actor has waited for (AreAllFramesLoaded), null until the first wait
 
     /// <param name="own">The own pc (a MyPC): its frames show at once; another pc waits for its textures first.</param>
     public FaceEmotion(IFaceTexture face, bool own = true) { this.face = face; this.own = own; }
@@ -155,8 +156,9 @@ public sealed class FaceEmotion
         dir = folder ?? "";
         frame = -1;
         if (!face.Has(t.Target)) { state = 0; return; }
-        // the own pc shows its first frame at once (its textures load as it asks for them); another pc waits for them
-        if (own) { ShowFrame(0); state = 2; }
+        // the own pc shows its first frame at once (its textures load as it asks for them); another actor shows it at once
+        // when the frames are loaded (AreAllFramesLoaded, :303-309), here those it waited for before, else it waits
+        if (own || loaded?.Contains((t, dir)) == true) { ShowFrame(0); state = 2; }
         else { waited = 0; state = 1; }
     }
 
@@ -164,8 +166,9 @@ public sealed class FaceEmotion
     bool UpdateTexture(int timeMs)
     {
         if (state == 0) return false;
-        // waiting: once a second it checks that every frame is loaded; the port reads them as it shows them, so they are
-        if (state == 1 && (waited += timeMs) >= 1000) { waited = 0; ShowFrame(0); state = 2; }
+        // waiting: m_nTime adds the time since the start at each update (so about ten updates at 60 fps, not a second) and
+        // then checks that every frame is loaded; the port reads them as it shows them, so they are
+        if (state == 1 && (waited += timeMs) >= 1000) { waited = 0; (loaded ??= new()).Add((anim, dir)); ShowFrame(0); state = 2; }
         int n = anim.FrameAt(timeMs);
         if (n >= anim.Frames.Count) { StopTexture(); return false; }
         if (!layer || n == frame) return true;
