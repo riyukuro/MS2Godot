@@ -19,13 +19,10 @@ public class PoolThreadEngineCallTests
 
     static readonly Site[] Reviewed =
     {
-        new("audio/FieldAudio.cs", "PlaySegment(cue, seg, crossfadeMs);", "poolGate",
-            "the music decode: the stream build and the warning run under poolGate while poolClosed is unset; _ExitTree sets it"),
-        new("audio/FieldAudio.cs", "cueSegments[next.Id] = (clip, pcm, wav);", "poolGate",
-            "the next segment's decode: as above"),
-        new("audio/FieldAudio.cs", "outgoingSegments[next.Id] = decoded;", "poolGate",
-            "an outgoing voice's next segment (ChainOutgoing): the decode and ToBytes are Ms2.Audio (no engine); the warning and " +
-            "the stream build run under poolGate while poolClosed is unset; the play is queued to the main thread"),
+        new("audio/FieldAudio.cs", "run.Rest(run.Rate, () => entry.Rest.KeepDecoding)", "poolGate",
+            "DecodeSegment, every music segment's decode (the cue's, the next one's, an outgoing voice's): MpegFrameRun, SafeDecode " +
+            "and ToBytes are Ms2.Audio (no engine); the warnings, the stream build and the rest's data, loop end and loop mode " +
+            "set on that stream run under poolGate while poolClosed is unset (_ExitTree sets it); the rest goes to the main thread"),
         new("audio/AmbientSounds.cs", "SafeDecode.Decode(clip, out var failure)", null,
             "MpegDecoder and the channel correlation and power share (Player3DOutput.Channels, Ms2.Audio: no engine); the warning goes through EngineCalls"),
         new("audio/AmbientSounds.cs", "started.Enqueue(() => Start(sound, pcm, stereo, data, begin, end))", null,
