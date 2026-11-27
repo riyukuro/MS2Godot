@@ -60,6 +60,15 @@ namespace Ms2.Avm2.Flash
         /// </summary>
         public IDropStage DropStage;
         public bool MouseDown;
+        /// <summary>
+        /// The keyboard state's Shift, Control and Alt keys (KeyboardState's key map, sfr_gfx_07b.cpp): a key down sets its bit
+        /// (SetKeyDown @0x14261b170), a key up clears it (SetKeyUp @0x14261b210), from MovieImpl's KeyDown/KeyUp handling
+        /// (sfr_gfx_01i.cpp:1417, :1455). GenerateMouseEvents (sfr_as3_17.cpp:7049-7264) gives every mouse event
+        /// GetKeyModifiers (@0x14261ae30: IsKeyDown(Alt / Control / Shift)), and CreateMouseEventObject (sfr_as3_09.cpp:2303)
+        /// writes them to altKey, ctrlKey and shiftKey. <see cref="Key"/> keeps them; the host sets them with
+        /// <see cref="ModifierKeys"/> where a key went elsewhere.
+        /// </summary>
+        public bool ShiftKeyDown, CtrlKeyDown, AltKeyDown;
         public object Focus;
         /// <summary>
         /// The clipboard every movie's text fields share (the one TextClipboard state the client's loader installs,
@@ -1511,6 +1520,7 @@ namespace Ms2.Avm2.Flash
                 var e = (AsMouseEvent)(mouseEventExClass ?? mouseEventClass).Construct(type);
                 e.bubbles = bubbles; e.cancelable = false;
                 e.localX = lx; e.localY = ly; e.StageX = MouseX; e.StageY = MouseY; e.buttonDown = MouseDown; e.relatedObject = related; e.delta = delta; e.ButtonIdx = button;
+                e.altKey = AltKeyDown; e.ctrlKey = CtrlKeyDown; e.shiftKey = ShiftKeyDown;       // the event's KeysState (GetKeyModifiers)
                 if (mouseEventExClass != null)
                 {
                     RT.SetProperty(e, Name.Public("mouseIdx"), Rt.Box(0));
@@ -1751,16 +1761,38 @@ namespace Ms2.Avm2.Flash
             MouseEv(t, "mouseWheel", null, delta);
         }
 
-        /// <summary>A key from the host: keyDown/keyUp to the focus (or the stage); Tab moves focus; typed characters go to an input field.</summary>
-        public void Key(uint keyCode, uint charCode, bool down, bool shift = false, bool ctrl = false)
+        /// <summary>
+        /// The Shift, Control and Alt keys held now, from the host. The client's dialogs are clips of one movie, whose keyboard
+        /// state sees every key the host passes on (GFxMovieEventHandler::ProcessKey @0x1422DAB20); here a key goes to one view
+        /// at most, so the host gives each mouse event's modifier keys before it (the state GetKeyState reads,
+        /// GFxMovieEventHandler::UpdateModifiers @0x1422DAD70).
+        /// </summary>
+        public void ModifierKeys(bool shift, bool ctrl, bool alt)
         {
+            ShiftKeyDown = shift; CtrlKeyDown = ctrl; AltKeyDown = alt;
+        }
+
+        /// <summary>
+        /// A key from the host: keyDown/keyUp to the focus (or the stage); Tab moves focus; typed characters go to an input field.
+        /// shift, ctrl and alt are the key event's modifiers (UpdateModifiers @0x1422DAD70), which CreateKeyboardEventObject
+        /// (@0x142467340) writes to the KeyboardEvent; Shift (16), Control (17) and Alt (18) themselves set or clear the
+        /// keyboard state's key (<see cref="ShiftKeyDown"/>) the mouse events read.
+        /// </summary>
+        public void Key(uint keyCode, uint charCode, bool down, bool shift = false, bool ctrl = false, bool alt = false)
+        {
+            switch (keyCode)
+            {
+                case 16: ShiftKeyDown = down; break;     // SetKeyDown / SetKeyUp (sfr_gfx_01i.cpp:1417, :1455)
+                case 17: CtrlKeyDown = down; break;
+                case 18: AltKeyDown = down; break;
+            }
             AsInteractiveObject target = Focus as AsInteractiveObject ?? Stage;
             if (Focus is AsDisplayObject fd && !fd.OnStage) target = Stage;
             bool proceed = true;
             RT.Guard(down ? "keyDown" : "keyUp", () =>
             {
                 var e = (AsKeyboardEvent)RT.GetClass("flash.events.KeyboardEvent").Construct(down ? "keyDown" : "keyUp", Rt.True, Rt.True);
-                e.keyCode = keyCode; e.charCode = charCode; e.shiftKey = shift; e.ctrlKey = ctrl;
+                e.keyCode = keyCode; e.charCode = charCode; e.shiftKey = shift; e.ctrlKey = ctrl; e.altKey = alt;
                 proceed = target.Dispatch(e);
             });
             // EditorKit's shift state (sfr_gfx_07.cpp): Shift down on the focused selectable field enters the selection mode

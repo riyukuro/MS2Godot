@@ -961,6 +961,7 @@ public partial class As3View : Node2D
         if (!(Player.Dragging && Player.DraggedSprite is { OnStage: true }) && !(Player.TextMouseCaptured && Player.TextCapture.OnStage)) return;
         // the dispatch can change the scene and take this view out of the tree: the viewport is taken before it
         var vp = GetViewport();
+        if (ev is InputEventMouse me) Player.ModifierKeys(me.ShiftPressed, me.CtrlPressed, me.AltPressed);
         switch (ev)
         {
             // the button came up where this window did not see it (focus lost: Godot releases the pressed buttons, or another
@@ -1010,6 +1011,8 @@ public partial class As3View : Node2D
         if (Ms2.Ui.FieldMoveCover.Up && GetTree().CurrentScene is { } scene && scene.IsAncestorOf(this)) return;
         // the dispatch (AS3 -> controller -> scene change) can take this view out of the tree: the viewport is taken before it
         var vp = GetViewport();
+        // the mouse event's Shift, Control and Alt keys, which the movie's own key events may not have seen
+        if (ev is InputEventMouse me) Player.ModifierKeys(me.ShiftPressed, me.CtrlPressed, me.AltPressed);
         switch (ev)
         {
             case InputEventMouseMotion mm:
@@ -1051,7 +1054,7 @@ public partial class As3View : Node2D
                 if (!Ms2.Ui.WindowIme.TakesText(Player.Focus) && InputFieldFocused) return;
                 uint code = FlashKeyCode(k.Keycode);
                 if (code == 0 && k.Unicode == 0) return;
-                Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
+                Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed, k.AltPressed);
                 break;
             }
             default: return;

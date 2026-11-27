@@ -196,6 +196,36 @@ public class DynamicActionDialogTests
     }
 
     [Test]
+    public void AShiftRightClickOnACellPreviewsItThroughTheMovie()
+    {
+        // the movie's OnRightClick sends onShiftRClick when the right click's shiftKey is set; the event carries the
+        // keyboard state's Shift (GenerateMouseEvents, KeyboardState::GetKeyModifiers @0x14261ae30) through main.gfx's
+        // right-button relay. The player used to leave shiftKey false, so no right click on a cell opened the preview.
+        var r = Load(r =>
+        {
+            r.Skill(1); r.Skill(2);
+            r.List.Apply(new EmoteMessage.List(new[] { E(1), E(2) }), 0);
+        });
+        var previewed = new List<uint>();
+        r.C.PreviewAction = previewed.Add;
+        var h = r.C.Host;
+        var p = h.Player;
+        var cell = h.Invoke(h.Child("m_list"), "getRendererAt", 0) as AsDisplayObject;
+        Assert.That(cell, Is.Not.Null, "the list's first renderer");
+        var (x, y) = cell.LocalToGlobal(10, 10);
+        p.MouseMove(x, y);
+        p.MouseButton(true, Player.RightButton);
+        p.MouseButton(false, Player.RightButton);
+        Assert.That(previewed, Is.Empty, "a right click without Shift");
+        p.Key(16, 0, true, shift: true);
+        p.MouseButton(true, Player.RightButton);
+        p.MouseButton(false, Player.RightButton);
+        p.Key(16, 0, false);
+        Assert.That(previewed, Has.Count.EqualTo(1), "shift + right click: " + string.Join("; ", p.RT.Errors));
+        Assert.That(previewed[0], Is.EqualTo(((Dictionary<string, object>)r.C.Actions[0])["id"]));
+    }
+
+    [Test]
     public void OnFavoriteSetsTheEntrySendsModeFourAndRefreshesOnlyWhenFavoriteOnly()
     {
         // vfunc_28 onFavorite (uidynamicactiondialog.cpp:356-374)

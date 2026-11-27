@@ -636,6 +636,71 @@ public class RuntimeTests
         Assert.That(seen, Is.EqualTo(new[] { "rightMouseDown", "mouseDown" }), "the right press only as rightMouseDown, the left as mouseDown");
     }
 
+    [Test]
+    public void MouseAndKeyboardEventsCarryTheHeldShiftControlAndAltKeys()
+    {
+        // GenerateMouseEvents gives every mouse event the keyboard state's modifiers (KeyboardState::GetKeyModifiers
+        // @0x14261ae30), which a Shift, Control or Alt key down sets (SetKeyDown) and its key up clears (SetKeyUp); Main's
+        // right-button listeners copy them to the right* event. The Emotes dialog opens the skill preview on a right click
+        // with shiftKey (uidynamicaction's OnRightClick); the player used to leave all three false on every mouse event.
+        var (rt, p) = Empty();
+        p.Start();
+        var s = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        s.graphics.beginFill(0xffffff); s.graphics.drawRect(0, 0, 40, 40);
+        p.Stage.addChild(s);
+        var seen = new List<string>();
+        foreach (var type in new[] { "mouseDown", "mouseMove", "click", "rightClick", "mouseWheel" })
+            p.Call(s, "addEventListener", new object[] { type, new AsPlainFunction(rt, new NativeMethod(type, (_, a) =>
+            {
+                var e = (AsMouseEvent)a[0];
+                seen.Add($"{type} {(e.shiftKey ? "S" : "-")}{(e.ctrlKey ? "C" : "-")}{(e.altKey ? "A" : "-")}");
+                return Rt.Undef;
+            })) });
+        foreach (var type in new[] { "keyDown", "keyUp" })
+            p.Call(p.Stage, "addEventListener", new object[] { type, new AsPlainFunction(rt, new NativeMethod(type, (_, a) =>
+            {
+                var e = (AsKeyboardEvent)a[0];
+                seen.Add($"{type} {e.keyCode} {(e.shiftKey ? "S" : "-")}{(e.ctrlKey ? "C" : "-")}{(e.altKey ? "A" : "-")}");
+                return Rt.Undef;
+            })) });
+
+        p.MouseMove(10, 10);
+        seen.Clear();
+        p.Key(16, 0, true, shift: true);                  // Shift down
+        p.MouseButton(true, Player.RightButton);
+        p.MouseButton(false, Player.RightButton);
+        p.Key(16, 0, false);                              // Shift up
+        p.MouseButton(true, Player.RightButton);
+        p.MouseButton(false, Player.RightButton);
+        Assert.That(seen, Is.EqualTo(new[] { "keyDown 16 S--", "rightClick S--", "keyUp 16 ---", "rightClick ---" }), "the right-button relay");
+
+        seen.Clear();
+        p.Key(17, 0, true, ctrl: true);                   // Control, then Alt, held
+        p.Key(18, 0, true, ctrl: true, alt: true);
+        p.MouseMove(11, 10);
+        p.MouseButton(true);
+        p.MouseButton(false);
+        p.Wheel(3);
+        p.Key(17, 0, false, alt: true);
+        p.Key(18, 0, false);
+        p.MouseMove(12, 10);
+        Assert.That(seen, Is.EqualTo(new[]
+        {
+            "keyDown 17 -C-", "keyDown 18 -CA", "mouseMove -CA", "mouseDown -CA", "click -CA", "mouseWheel -CA",
+            "keyUp 17 --A", "keyUp 18 ---", "mouseMove ---",
+        }), "left button, move and wheel; the key events' own modifiers");
+
+        // a Shift held while the key went to another movie: the host gives the mouse event's keys
+        seen.Clear();
+        p.ModifierKeys(shift: true, ctrl: false, alt: false);
+        p.MouseButton(true, Player.RightButton);
+        p.MouseButton(false, Player.RightButton);
+        p.ModifierKeys(false, false, false);
+        p.MouseMove(13, 10);
+        Assert.That(seen, Is.EqualTo(new[] { "rightClick S--", "mouseMove ---" }));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
     static void MouseSprite(Runtime rt, Player p, double x, string tag, List<string> seen)
     {
         var s = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();

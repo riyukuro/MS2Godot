@@ -2077,7 +2077,7 @@ public partial class HudScene : Node, IUiStageHost
         // command word "and the space after it" off the line. Its return 1 only stops the other key handlers (the jump).
         if (k.Pressed && !k.Echo && !UiFocus.IsTyping && k.Keycode == Key.Space && inputActive())
         {
-            m.Player.Key(As3View.FlashKeyCode(k.Keycode), (uint)k.Unicode, true, k.ShiftPressed, k.CtrlPressed);
+            m.Player.Key(As3View.FlashKeyCode(k.Keycode), (uint)k.Unicode, true, k.ShiftPressed, k.CtrlPressed, k.AltPressed);
             onKey(MessengerController.DikSpace, false);      // the command typed so far (FUN_141a14600)
             return true;
         }
@@ -2100,7 +2100,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         uint code = As3View.FlashKeyCode(k.Keycode);
         if (code == 0 && k.Unicode == 0) return true;
-        m.Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
+        m.Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed, k.AltPressed);
         return true;
     }
 
