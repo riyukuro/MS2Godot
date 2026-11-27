@@ -101,8 +101,24 @@ public partial class FieldFadeCheck : Node
         var f = b.Fade.FadePasses(far); var n = b.Fade.FadePasses(near);
         if (f.Count == 0 || n.Count == 0) { fails.Add("order: an entity of the pair is not held"); return; }
         int fMax = f.Max(x => x.Fade.RenderPriority), nMin = n.Min(x => x.Drawn.RenderPriority);
-        if (fMax >= nMin) fails.Add($"order: {far.Name} (far) draws its colour at {fMax}, not before {near.Name} (near) from {nMin}");
+        if (fMax >= nMin) fails.Add($"order: {far.Name} (deeper) draws its colour at {fMax}, not before {near.Name} (nearer) from {nMin}");
     }
+
+    /// <summary>The mean of the entity's drawn standard-material draws' box centres, as the fade's Apply holds them: the
+    /// centres Sort keys by.</summary>
+    static Vector3? DrawCentre(Built b, FieldEntity e)
+    {
+        Vector3 sum = Vector3.Zero; int n = 0;
+        foreach (var d in b.Fb.FadeDraws[e])
+        {
+            var xf = d.Mm.GetInstanceTransform(d.Index);
+            if (TriggerFade.Hidden(d.Mm, d.Index) || xf.Basis.Determinant() == 0 || !ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial)) continue;
+            sum += (d.Parent.GlobalTransform * xf * d.Mm.Mesh.GetAabb()).GetCenter(); n++;
+        }
+        return n == 0 ? null : sum / n;
+    }
+
+    void Look(Vector3 from, Vector3 dir) => cam.LookAtFromPosition(from, from + dir, Math.Abs(dir.Normalized().Y) > 0.99f ? Vector3.Forward : Vector3.Up);
 
     void Settle()
     {
@@ -122,12 +138,32 @@ public partial class FieldFadeCheck : Node
             TwoPass(b, e, $"settle: {e.Name}");
             if (++n == 40) break;
         }
-        // two held at once (the second's Apply sends the first back in): each in its own priorities, the farther first
-        var two = b.Fb.FadeDraws.Where(kv => kv.Value.Any(d => ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial))).Select(kv => kv.Key).Take(2).ToList();
+        // two held at once (the second's Apply sends the first back in): each in its own priorities, the deeper along the
+        // view first (AlphaShellComposite::Update's key, CompareAlpha's largest first)
+        var four = b.Fb.FadeDraws.Where(kv => !b.Fade.Holds(kv.Key) && DrawCentre(b, kv.Key) != null).Select(kv => kv.Key).Take(4).ToList();
+        var two = four.Take(2).ToList();
+        if (four.Count == 4)
+        {
+            // the pair where depth and distance disagree: the camera looks along D, at 0.29 s more depth for two[3], so
+            // two[3] draws first though two[2] is the farther from the eye (1.19 s against s)
+            Vector3 m2 = DrawCentre(b, four[2]).Value, m3 = DrawCentre(b, four[3]).Value;
+            float s = m2.DistanceTo(m3);
+            var u = (m3 - m2) / s;
+            var p = u.Cross(Math.Abs(u.Y) < 0.9f ? Vector3.Up : Vector3.Right).Normalized();
+            var dir = (p + 0.3f * u).Normalized();
+            var eye = m3 - dir * s;
+            Look(eye, dir);
+            b.Fade.FadeOutNow(four[2]);
+            b.Fade.FadeOutNow(four[3]);
+            if (b.Fade.FadingProps(four[2]).Count + b.Fade.FadingProps(four[3]).Count > 0) fails.Add("order: the depth pair holds prop parts");
+            else if (!(eye.DistanceTo(m2) > eye.DistanceTo(m3) && (m3 - eye).Dot(dir) > (m2 - eye).Dot(dir))) fails.Add("order: the depth pair's camera is not placed as meant");
+            Order(b, four[3], four[2]);
+        }
+        else fails.Add("order: fewer than four fade targets with a drawn standard material");
         if (two.Count == 2)
         {
-            var c0 = b.Fade.TargetBound(two[0]).Value.Centre; var c1 = b.Fade.TargetBound(two[1]).Value.Centre;
-            cam.Position = c1 + (c1 - c0).Normalized() * 500f;   // two[0] the farther
+            Vector3 c0 = DrawCentre(b, two[0]).Value, c1 = DrawCentre(b, two[1]).Value;
+            Look(c1 + (c1 - c0).Normalized() * 500f, c0 - c1);   // two[0] the deeper
             b.Fade.FadeOutNow(two[0]);
             b.Fade.FadeOutNow(two[1]);
             Order(b, two[0], two[1]);
@@ -147,7 +183,7 @@ public partial class FieldFadeCheck : Node
                 if (b.Fade.Holds(two[0])) fails.Add($"fade-in: {two[0].Name} still held after its timer ran out");
             }
             else fails.Add($"fade-in: {two[0].Name} is not held from the next fade's Apply");
-            cam.Position = Vector3.Zero;
+            cam.Transform = Transform3D.Identity;
         }
         // a fade stepped 100 ms, then a 400 ms frame: its timer runs out in that frame, which it skips, so it keeps the
         // 1 - 1/3 of the frame before (UpdateFadeOut, Timer::IsRunning)

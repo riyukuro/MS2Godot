@@ -120,6 +120,10 @@ public partial class FieldFade : Node
         public MeshInstance3D prop;
         public ModelMesh model;
         public int TestRef;
+        /// <summary>The draw's world bound centre (its box's, at its held transform), or the prop mesh's pick, whose bound
+        /// each test reads (Refresh).</summary>
+        public Vector3 centre; public PropPick pick;
+        public Vector3 Centre => pick != null ? pick.WC : centre;
         public void SetFade(float a) => ModelBuilder.SetFade(mat, shell, model, a, ref TestRef);
 
         /// <summary>The faded draw goes: the copy is freed, or the prop mesh's override is taken off.</summary>
@@ -454,23 +458,36 @@ public partial class FieldFade : Node
             if (RayHits(t, a, da) || RayHits(t, b, db)) Add(hit, t);
         }
         Apply(hit, now);
-        Sort(eye);
+        Sort(-cam.GlobalBasis.Z);
     }
 
-    readonly List<(float Dist, Element El)> sorted = new();
+    readonly List<(float Key, Element El)> sorted = new();
+
+    static float Depth(Element el, Vector3 dir)
+    {
+        float sum = 0;
+        foreach (var p in el.Parts) sum += p.Centre.Dot(dir);
+        return sum / el.Parts.Count;
+    }
 
     /// <summary>
-    /// Each held entity's draw order among the transparent draws: the farthest from the eye first, as CompareAlpha draws the
-    /// largest key first. Element k (from the farthest) draws its depth passes at render priority 1 + 2k and its colour
-    /// at 2 + 2k (Godot's limit 127 holds 63 apart; more share the last pair).
+    /// Each held entity's draw order among the transparent draws. Its key is AlphaShellComposite::Update's
+    /// (@0x14098f020, alphacomponent.cpp:229-273): the mean over its shells of FUN_140994320, the dot of the shell's world
+    /// bound centre with the camera's world direction (GetCameraData, ms2renderlistprocessor.cpp:665, 879). CompareAlpha
+    /// (@0x1414dee00) draws the largest key first, so the deepest along the view goes first. Element k (from the deepest)
+    /// draws its depth passes at render priority 1 + 2k and its colour at 2 + 2k (Godot's limit 127 holds 63 apart; more
+    /// share the last pair).
+    /// STILL-OPEN: Update moves the key by FUN_141b71c50's bias for a shell with either of two extra data tags
+    /// (DAT_143ae51d0, DAT_143ae5190); the tags are not read here, so no key is moved. A draw's centre is its box's, not
+    /// its NiBound's.
     /// </summary>
-    void Sort(Vector3 eye)
+    void Sort(Vector3 dir)
     {
         sorted.Clear();
-        foreach (var (t, el) in fadeOut) sorted.Add((t.Centre.DistanceSquaredTo(eye), el));
-        foreach (var (t, el) in fadeIn) sorted.Add((t.Centre.DistanceSquaredTo(eye), el));
+        foreach (var (t, el) in fadeOut) sorted.Add((Depth(el, dir), el));
+        foreach (var (t, el) in fadeIn) sorted.Add((Depth(el, dir), el));
         if (sorted.Count == 0) return;
-        sorted.Sort((x, y) => y.Dist.CompareTo(x.Dist));
+        sorted.Sort((x, y) => y.Key.CompareTo(x.Key));
         for (int k = 0; k < sorted.Count; k++)
         {
             var el = sorted[k].El;
@@ -566,7 +583,7 @@ public partial class FieldFade : Node
         if (e == null || !byEntity.TryGetValue(e, out var t)) return;
         if (t.PropEntities != null && props != null && PropsBuilt(t)) Refresh(t);
         Apply(new HashSet<Target> { t }, clock);
-        if (camera() is { } cam && cam.IsInsideTree()) Sort(cam.GlobalPosition);
+        if (camera() is { } cam && cam.IsInsideTree()) Sort(-cam.GlobalBasis.Z);
     }
 
     /// <summary>For the headless check: whether the pick of the entity's draws (RayHits) meets the ray.</summary>
@@ -695,7 +712,8 @@ public partial class FieldFade : Node
                 if (d.LightOff != 0) node.SetInstanceShaderParameter(LightOffParam, (float)d.LightOff);   // nor the lights its draw does not take
                 d.Parent.AddChild(node);
                 d.Mm.SetInstanceTransform(d.Index, new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), xf.Origin));
-                var part = new Part { draw = d, xf = xf, node = node, mat = mat, shell = shell, model = d.Mesh, TestRef = d.Mesh.AlphaThreshold };
+                var part = new Part { draw = d, xf = xf, node = node, mat = mat, shell = shell, model = d.Mesh, TestRef = d.Mesh.AlphaThreshold,
+                                      centre = (d.Parent.GlobalTransform * xf * mesh.GetAabb()).GetCenter() };
                 part.SetFade(1f);
                 el.Parts.Add(part);
             }
@@ -710,7 +728,7 @@ public partial class FieldFade : Node
                     var mat = ModelBuilder.FadeMaterial(colour, pk.M.Mesh);
                     var shell = ModelBuilder.FadeShell(mat, pk.M.Mesh);
                     node.MaterialOverride = shell;
-                    var part = new Part { prop = node, mat = mat, shell = shell, model = pk.M.Mesh, TestRef = pk.M.Mesh.AlphaThreshold };
+                    var part = new Part { prop = node, mat = mat, shell = shell, model = pk.M.Mesh, TestRef = pk.M.Mesh.AlphaThreshold, pick = pk };
                     part.SetFade(1f);
                     el.Parts.Add(part);
                 }
