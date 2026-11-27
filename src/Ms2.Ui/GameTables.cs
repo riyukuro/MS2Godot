@@ -94,6 +94,7 @@ public sealed class GameTables
         BeautyStyleMaxSlotCount = (int)k.Float("BeautyStyleMaxSlotCount", BeautyStyleMaxSlotCount);
         ItemBoxMultiOpenMaxCount = (int)k.Float("ItemBoxMultiOpenMaxCount", ItemBoxMultiOpenMaxCount);
         ItemBoxMultiOpenLimitCount = (int)k.Float("ItemBoxMultiOpenLimitCount", ItemBoxMultiOpenLimitCount);
+        IngredientFeeReduceLimit = k.Float("IngredientFeeReduceLimit", IngredientFeeReduceLimit);
         CharacterAbilityDefaultPoint = (uint)k.Float("CharacterAbilityDefaultPoint", CharacterAbilityDefaultPoint);
         CharacterAbilityResetCoolTimeMinute = (uint)k.Float("CharacterAbilityResetCoolTimeMinute", CharacterAbilityResetCoolTimeMinute);
         CharacterAbilityResetMeso = (long)k.Float("CharacterAbilityResetMeso", CharacterAbilityResetMeso);
@@ -463,6 +464,9 @@ public sealed class GameTables
     /// min(m_194, it)) and ItemBoxMultiOpenLimitCount (the clamp of the bag count in the use dispatch, +0xa340): the Define
     /// defaults 20 and 1000, unit_1402ab440_constantsblocks.cpp:1220, :1221.</summary>
     public int ItemBoxMultiOpenMaxCount = 20, ItemBoxMultiOpenLimitCount = 1000;
+    /// <summary>ClientConstants IngredientFeeReduceLimit (+0x90fc, default 0.5, constantsblocks.cpp:1146): the cap of a remake
+    /// ingredient discount (GetDiscountedIngredientCount @0x140616d40).</summary>
+    public float IngredientFeeReduceLimit = 0.5f;
     /// <summary>Client::Constants CharacterAbilityDefaultPoint, CharacterAbilityResetCoolTimeMinute, CharacterAbilityResetMeso,
     /// CharacterAbilityResetMerat, CharacterAbilityOpenQuestID (table/constants.xml; the Define defaults 10, 120, 2500, 100 and
     /// 90000060, unit_1402ab440_constantsblocks.cpp:1045-1049).</summary>

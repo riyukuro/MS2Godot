@@ -104,7 +104,7 @@ public sealed partial class ItemTooltip
     /// which returns 0x32); both need remakeDisable off and options in the slot's group (CItemOption::GetGroupOptionCount:
     /// its stat and special options). A made item's option is empty, so it never passes.
     /// </summary>
-    static bool CanRemakeOption(Item item, int slot)
+    internal static bool CanRemakeOption(Item item, int slot)
     {
         var d = item.Data;
         if (d.IsPetItem)

@@ -181,8 +181,9 @@ public sealed partial class ShopController : UiController, Hud.IMessageBoxListen
     public Func<int, int> FameGradeOf = _ => 0;
 
     /// <summary>Unk_Inventory::FUN_140a5f7b0 (inventory.cpp:835): sums item counts across <paramref name="items"/>
-    /// matching string tag <paramref name="tag"/> that the player can use.</summary>
-    public static long CountItemsByTag(IEnumerable<EquipItem> items, ItemDataTable table, int tag, Func<Item, int> itemUseError = null)
+    /// matching string tag <paramref name="tag"/> that the player can use; a nonzero <paramref name="rarity"/> counts only the items
+    /// of that rarity (:846).</summary>
+    public static long CountItemsByTag(IEnumerable<EquipItem> items, ItemDataTable table, int tag, Func<Item, int> itemUseError = null, int rarity = 0)
     {
         if (tag == 0 || items == null || table == null) return 0;
         long total = 0;
@@ -196,6 +197,7 @@ public sealed partial class ShopController : UiController, Hud.IMessageBoxListen
                 var it = Item.Create(table, e.Id, e.Rarity);
                 if (it != null) { it.Record = e; it.Count = (uint)e.Amount; if (itemUseError(it) != 0) continue; }
             }
+            if (rarity != 0 && e.Rarity != rarity) continue;
             total += e.Amount;
         }
         return total;
