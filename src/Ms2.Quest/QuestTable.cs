@@ -525,13 +525,13 @@ public sealed partial class QuestTable
         if (group != 0 && !d.Locking) r.GroupId = group;
     }
 
-    /// <summary>FUN_1407513c0 (questdata.cpp:2772): cinematic 1, popup 2, system 3, other 0; an absent attribute keeps the value.</summary>
     /// <summary>FUN_140751330 through FUN_140751f70 (questdata.cpp:2758, :2913): a missing attribute keeps the value.</summary>
     static int ParseDispatch(string s, int keep) => s == null ? keep : s.ToLowerInvariant() switch
     {
         "directaccept" => 1, "directcomplete" => 2, "monologueaccept" => 3, "monologuecomplete" => 4, _ => 0,
     };
 
+    /// <summary>FUN_1407513c0 (questdata.cpp:2772): cinematic 1, popup 2, system 3, other 0; an absent attribute keeps the value.</summary>
     static int ParseRemote(string s, int keep) => s == null ? keep : s.ToLowerInvariant() switch
     {
         "cinematic" => 1, "popup" => 2, "system" => 3, _ => 0,

@@ -31,7 +31,11 @@ public partial class HudScene
         i.ServiceType = entry?.FieldType ?? 0;
         i.FieldKind = entry?.InstanceType ?? 0;
         i.InstanceId = entry?.InstanceId ?? 0;
-        if (live != null) i.IsMatchSearching = questMatchSearching ??= bit => live.Party.IsMatchSearching(bit);
+        // DAT_1439f4a7c, the channel EnterGame / the server list set (uiserverlistdialog.cpp:618, :633), read by FUN_1409312f0
+        // (the re-entry button); 0 offline
+        i.Flag1439f4a7c = live != null && live.CurrentChannel != 0;
+        // read through Instance at each call, so a new session after a reconnect is asked, not the first one
+        i.IsMatchSearching = questMatchSearching ??= bit => Ms2Godot.Net.LiveSession.Instance?.Party.IsMatchSearching(bit) == true;
         return i;
     }
 
@@ -97,16 +101,20 @@ public partial class HudScene
         var d = questDispatch;
         Action<int> started = id => { d.OnStarted(id); ArmQuestDispatch(); }, rewarded = id => { d.OnRewarded(id); ArmQuestDispatch(); },
                     removed = d.OnRemoved;
+        // OnQuest mode 5 with result 0 is RemoveQuest too (questmanager_2.cpp:1047-1050): the quest's m_7c goes with it
+        Action<int, int> result = (id, code) => { if (code == 0) d.OnRemoved(id); };
         Action reloaded = d.Clear;
         live.Quests.Started += started;
         live.Quests.Rewarded += rewarded;
         live.Quests.Removed += removed;
+        live.Quests.ResultReceived += result;
         live.Quests.Reloaded += reloaded;
         unwatchQuestDispatch = () =>
         {
             live.Quests.Started -= started;
             live.Quests.Rewarded -= rewarded;
             live.Quests.Removed -= removed;
+            live.Quests.ResultReceived -= result;
             live.Quests.Reloaded -= reloaded;
         };
     }
@@ -128,8 +136,9 @@ public partial class HudScene
     {
         questDispatchArmed = false;
         if (!IsInstanceValid(this) || questDispatch == null) return;
-        // the sub-scene 0x620001d check: a field is shown, not its loading
-        int shown = questDispatch.Tick(fieldScene != null && IsInstanceValid(fieldScene));
+        // the sub-scene 0x620001d check: a field is shown, not its loading (fieldScene is never null after the HUD opens, so
+        // the move's load between SwapField and WorldLoadComplete is what keeps m_7c waiting)
+        int shown = questDispatch.Tick(fieldScene != null && IsInstanceValid(fieldScene) && !worldLoadPending);
         if (shown > 0) GD.Print($"quest dispatch: {shown} box(es) shown");
         ArmQuestDispatch();
     }
