@@ -75,6 +75,7 @@ public enum Inbound : ushort {
     FurnishingStorage = 0x23,     // RecvOp FurnishingStorage: CSceneStateGame::OnFurnishingStorage (scenestategame.cpp:2734)
     FurnishingInventory = 0x24,   // RecvOp FurnishingInventory: CSceneStateGame::OnFurnishingInventory (scenestategame.cpp:9373)
     ItemEnchant = 0x97,   // RecvOp::ItemEnchant: CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101, @0x141732B20) -> UIItemEnchantDialog
+    ChangeAttributes = 0xC8,   // RecvOp::ChangeAttributes (commonfiles/opcodes.h:207): UIItemRemakeOptionDialog::vfunc_79 (@0x14129daa0)
     ItemLock = 0xDB,   // RecvOp::ItemLock: CItemLockManager::OnItemLockPacket (scenestategame.cpp:3724)
     StorageInventory = 0x22,   // RecvOp::StorageInventory (commonfiles/opcodes.h:42): CStore::Dispatch (store.cpp, 0x140de3480)
     ItemPutOn = 0x25,
@@ -259,6 +260,7 @@ public enum Outbound : ushort {
     ItemMerge = 0x3F,       // SendOp::ItemMerge (commonfiles/opcodes.h:368): UIItemMergeOptionDialog::Request*
     ItemDismantle = 0x5A,   // SendOp::ItemDismantle (commonfiles/opcodes.h:395): CItemBreakManager::SendItemDismantleMode*
     SystemShop = 0x65,      // SendOp::SystemShop (commonfiles/opcodes.h:406): CNetworkService::SendSystemShop / coin shop open
+    ChangeAttributes = 0x75, // SendOp::ChangeAttributes (commonfiles/opcodes.h:422): UIItemRemakeOptionDialog (itemremakescrolldata.cpp:470)
     Quest = 0x29,
     FunctionCube = 0x2E,        // SendOp::FunctionCube (commonfiles/opcodes.h:351): CFunctionCubeObject::vfunc_8, the cube use
     InteractObject = 0x31,  // SendOp::InteractObject (commonfiles/opcodes.h:354): CInteractObject::vfunc_8/vfunc_10, StateInteraction
