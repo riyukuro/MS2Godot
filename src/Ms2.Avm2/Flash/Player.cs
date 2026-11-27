@@ -1766,6 +1766,15 @@ namespace Ms2.Avm2.Flash
         /// state sees every key the host passes on (GFxMovieEventHandler::ProcessKey @0x1422DAB20); here a key goes to one view
         /// at most, so the host gives each mouse event's modifier keys before it (the state GetKeyState reads,
         /// GFxMovieEventHandler::UpdateModifiers @0x1422DAD70).
+        /// The keys the OS holds and the client's movie keyboard state (set and cleared only by the movie's KeyDown/KeyUp,
+        /// MovieImpl::HandleEvent, sfr_gfx_01i.cpp:1411-1475) differ in these cases, which are not copied:
+        /// - Alt+Tab away: the client keeps Alt down (the WM_SYSKEYUP goes to the other window) until the next Alt press;
+        ///   here it reads up.
+        /// - A key pressed before the window had focus: the client reads it up; here it reads down.
+        /// - Both Shift keys held, then one let go: SetKeyUp clears Shift (sfr_gfx_01i.cpp:1455), so the client reads it up;
+        ///   here it reads down.
+        /// - Shift pressed in the same frame just after a click: the client applies it to the click, because ProcessInput
+        ///   reads the state at the Advance (sfr_gfx_01i.cpp:3110-3139); here the click keeps the state at its event.
         /// </summary>
         public void ModifierKeys(bool shift, bool ctrl, bool alt)
         {
