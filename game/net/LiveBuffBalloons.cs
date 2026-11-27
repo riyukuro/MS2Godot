@@ -139,15 +139,25 @@ public sealed partial class LiveBuffBalloons : CanvasLayer, IMovieLayer
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
         field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
-        var viewer = Viewer?.Invoke();
-        var eye = viewer != null && IsInstanceValid(viewer) ? viewer.GlobalPosition : camera.GlobalPosition;
+        // UIHudEntity::vfunc_15 skips an inactive entity (m_4c 0) before any actor read: only an active balloon's actor is
+        // measured, so actors whose balloon is stopped cost no Godot call per frame
+        bool any = false;
+        Vector3 eye = default;
         foreach (var (id, t) in actors)
         {
             if (!IsInstanceValid(t.Root)) { gone.Add(id); continue; }
+            if (!controller.Entities.TryGetValue(id, out var e) || !e.Active) continue;
+            if (!any)
+            {
+                any = true;
+                var viewer = Viewer?.Invoke();
+                eye = viewer != null && IsInstanceValid(viewer) ? viewer.GlobalPosition : camera.GlobalPosition;
+            }
             t.Actor.Distance = eye.DistanceTo(t.Root.GlobalPosition);
             t.Actor.Dead = t.Dead?.Invoke() ?? false;
         }
         if (gone.Count > 0) { foreach (var id in gone) Drop(id); gone.Clear(); }
+        if (!any) return;
         layer = MovieLayerHost.Layers.IsVisible(CommonDepth.HpBar);
         controller.Process(project);
     }
