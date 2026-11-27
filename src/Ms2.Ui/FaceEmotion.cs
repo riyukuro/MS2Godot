@@ -29,7 +29,7 @@ public interface IFaceTexture
 /// model is on (<see cref="SetGroup"/>).
 /// STILL-OPEN: the emotion's effects (the effect list played when nA is set, :3712-3720, and ClearEffects); the equip hide
 /// of PC::vfunc_71 / vfunc_72 (pc.cpp:1951-1962, FUN_141659770); FUN_141679fa0 (the FA_Skin floats the optimizer reads);
-/// npcs and other pcs.
+/// other pcs; the emo_ text keys of an npc's body.
 /// </summary>
 public sealed class FaceEmotion
 {
@@ -75,6 +75,11 @@ public sealed class FaceEmotion
         group = g;
         if (group?.Find(Current) is { Texture: { } t }) StartTexture(t, group.ItemCode);
     }
+
+    /// <summary>PCBase::vfunc_10 (@0x14166b550, pcbase.cpp:919), the actor's init: the group is vfunc_70's library's group of
+    /// vfunc_69 (an npc's, <see cref="NpcRow.EmotionGroupId"/>); unlike <see cref="SetGroup"/> the timer does not
+    /// start, so the face shows nothing until an emotion plays.</summary>
+    public void UseGroup(EmotionGroup g) => group = g;
 
     /// <summary>
     /// PCBase::FUN_14166ef10 (@0x14166ef10, pcbase.cpp:3688-3722): plays the group's emotion of that name. Nothing without

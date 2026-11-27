@@ -119,6 +119,12 @@ public sealed class NpcRow
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
     public bool HpBar;                           // environment hpBar (NpcDataCli, default false): the npc has a head hp bar
     public int Level = 1;                        // environment level (CNpcData m_nLevel, 1 when absent)
+    /// <summary>The environment's emotionID (CNpcData m_nEmotionId, CNpcData::LoadXml npcdata.cpp:1492, XmlGetAttr's int; 0 when
+    /// absent, the ctor's :653).</summary>
+    public int EmotionId;
+    /// <summary>CNpc::vfunc_69 (@0x141094640, unit_14108e1e0_npcactorandvibrate.cpp:1427-1436): the id of the npc's face emotion
+    /// group in the "Npc" library (CNpc::vfunc_70, :663), the row's emotionID when set, else the npc id.</summary>
+    public int EmotionGroupId => EmotionId != 0 ? EmotionId : Id;
     public long Hp;                              // environment stat hp (CNpcData m_stat.m_aBase, NpcData::Load FirstChild("stat"); 0 when absent)
     public int Race;                             // environment raceString as CNpcData reads it (ParseRace), 0 when absent or unknown
     // environment <interact> (CNpcData::LoadXml m_interact, npcdata.cpp:1595-1602; defaults npcdata.cpp:593)
@@ -328,6 +334,7 @@ public sealed class NpcTable
             row.InteractShowCastingBar = EffectDummy.Bool(ia, "interactIsShowCastingBar", true);
         }
         row.TalkAni = EffectDummy.Bool(env, "talkAni", true);
+        row.EmotionId = Int(env, "emotionID");
         row.NpcAttackGroup = Int(env, "npcAttackGroup");
         row.NpcDefenseGroup = Int(env, "npcDefenseGroup");
         row.HitImmune = Int(env, "hitImmune");

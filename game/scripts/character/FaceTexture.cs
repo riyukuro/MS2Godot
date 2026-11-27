@@ -34,11 +34,25 @@ public sealed class FaceTexture : IFaceTexture
         if (target != null && targetName == name && GodotObject.IsInstanceValid(target) && target.Visible) return target;
         targetName = name;
         target = null;
+        string nodeName = NodeName(name);
         foreach (var n in visual.FindChildren("*", "MeshInstance3D", true, false))
             if (n is MeshInstance3D mi && mi.Visible
-                && (mi.HasMeta("mesh") ? (string)mi.GetMeta("mesh") : mi.Name.ToString()) == name) { target = mi; break; }
+                && (mi.HasMeta("mesh") ? (string)mi.GetMeta("mesh") == name : mi.Name.ToString() == nodeName)) { target = mi; break; }
         return target;
     }
+
+    /// <summary>A NIF node name as a Godot node keeps it: Node.Name turns each character a node name may not hold
+    /// (". : @ / \" %") into '_' (a npc's "FA:0" is the node FA_0). The client finds the NIF name itself
+    /// (FindNodeByName, textureanimationdata.cpp:452).</summary>
+    static string NodeName(string nif)
+    {
+        if (nif.IndexOfAny(Invalid) < 0) return nif;
+        var c = nif.ToCharArray();
+        for (int k = 0; k < c.Length; k++) if (System.Array.IndexOf(Invalid, c[k]) >= 0) c[k] = '_';
+        return new string(c);
+    }
+
+    static readonly char[] Invalid = { '.', ':', '@', '/', '"', '%' };
 
     public bool Has(string name) => Find(name) != null;
 

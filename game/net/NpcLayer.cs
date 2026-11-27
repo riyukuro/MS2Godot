@@ -52,6 +52,7 @@ public sealed class NpcLayer
         public readonly Ms2.Ui.Skills.NpcVibrate Vibrate = new();   // m_vibrate (+0xe18)
         public Godot.Vector3 VisualBase;          // the body's place under the root, which the shake moves off and back to
         public readonly Ms2.Ui.Skills.ColorBoost Boost = new();   // PCBase m_colorBoost
+        public Ms2.Ui.FaceEmotion Face;           // PCBase's face emotion (m_spD10, m_sp638) on the body, null on a placeholder
         public List<ShaderMaterial> BoostMaterials;                // the body's character-shader materials, gathered on the first boost
         public int[] AnchorBones;                 // the skeleton's bone per <nodeCollisions> row (-1: none), found on the first hit
         public byte State;                        // GetCurStateId(): the sync blocks' state (ApplySyncBlock), 0x10 on a cast, 0xc dead
@@ -86,6 +87,7 @@ public sealed class NpcLayer
     public float Now;
 
     readonly PackSet packs; readonly ModelBuilder mb; readonly NpcTable table; readonly Node3D parent;
+    EmotionTable emotions;                  // CEmotionManager::GetNpcTable (CNpc::vfunc_70), read on the first body
     readonly Dictionary<int, Model> models = new();
     readonly Dictionary<(int, string), Model> changedModels = new();   // NpcNotice mode 2's kfm models, by row id and kfm
     readonly Dictionary<int, Inst> inst = new();
@@ -287,7 +289,31 @@ public sealed class NpcLayer
         player.AnimationChanged += (_, _) => player.SpeedScale = 1f;
         i.Root.AddChild(i.Visual);
         i.ModelNode = i.Visual.GetNodeOrNull<Node3D>(ModelPath);
+        // PCBase::vfunc_10 (pcbase.cpp:919) from CNpc::vfunc_10 (unit_14108e1e0_npcactorandvibrate.cpp:526): the face's group is
+        // the Npc library's group of the row's emotion id. An npc is no MyPC, so its frames wait for their textures
+        // (CTextureAnimation state 1). A rebuilt body (NpcNotice mode 2) gets a new face on the new body.
+        emotions ??= new EmotionTable(packs, EmotionTable.Npc);
+        i.Face = new Ms2.Ui.FaceEmotion(new Ms2Godot.Look.FaceTexture(i.Visual, mb), own: false);
+        i.Face.UseGroup(emotions.Group((uint)row.EmotionGroupId));
     }
+
+    /// <summary>
+    /// The trigger's Ui sub 9 on an npc (CTriggerService::FUN_1418641e0 @0x1418641e0, triggerservice.cpp:1052-1068): the object
+    /// of the id (WorldService::FUN_141bd1200) as a PCBase; a name turns its text keys off and plays it, an empty one rests the
+    /// face (<see cref="Ms2.Ui.FaceEmotion.Trigger"/>). False when there is no npc of the id; a placeholder body (no face)
+    /// takes it and shows nothing.
+    /// </summary>
+    public bool TriggerFace(int objectId, string name)
+    {
+        if (!inst.TryGetValue(objectId, out var i)) return false;
+        i.Face?.Trigger(name, NowMs);
+        return true;
+    }
+
+    /// <summary>The npc's face emotion, null when there is no npc of the id or it has no body (a check's view).</summary>
+    public Ms2.Ui.FaceEmotion Face(int objectId) => inst.TryGetValue(objectId, out var i) ? i.Face : null;
+
+    long NowMs => (long)(Now * 1000.0);
 
     /// <summary>
     /// NpcNotice mode 2 (CSceneStateGame::OnNpcNotice, scenestategame.cpp:9167-9172): FindNpcById, then CNpc::FUN_1410951d0
@@ -1187,8 +1213,10 @@ public sealed class NpcLayer
     public void Process(float dt)
     {
         Now += dt;
+        long nowMs = NowMs;
         foreach (var i in inst.Values)
         {
+            i.Face?.Tick(nowMs);                              // PCBase::vfunc_53 (pcbase.cpp:3729): the face first (FUN_14166f940)
             if (i.Eases)
             {
                 var d = i.Target - i.Root.Position;

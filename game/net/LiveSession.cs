@@ -1801,11 +1801,13 @@ public partial class LiveSession : Node
 
     readonly HashSet<int> triggersNotApplied = new();
 
-    /// <summary>The trigger's Ui sub 9 (FUN_1418641e0): the face emotion of the object of that id
-    /// (WorldService::FUN_141bd1200), the own pc's here. STILL-OPEN: npcs and other pcs; they are logged as not applied.</summary>
+    /// <summary>The trigger's Ui sub 9 (FUN_1418641e0, triggerservice.cpp:1052-1068): the face emotion of the object of that id
+    /// (WorldService::FUN_141bd1200), the own pc's or an npc's (<see cref="NpcLayer.TriggerFace"/>); no object of the id does
+    /// nothing. STILL-OPEN: other pcs (they have no face emotion yet); they are logged as not applied.</summary>
     void TriggerFace(int objectId, string name)
     {
         if (objectId == selfObject && player != null && IsInstanceValid(player)) player.TriggerFace(name);
+        else if (remote != null && remote.TriggerNpcFace(objectId, name)) { if (LiveCheck) GD.Print($"live: trigger face npc {objectId} '{name}'"); }
         else TriggerNotApplied(TriggerObjects.Ui, TriggerObjects.UiFaceEmotion);
     }
 

@@ -254,6 +254,8 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>WorldService::FindNpcById: whether an npc of the object id is here.</summary>
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
+    /// <summary>The trigger's face emotion on the npc of that object id (<see cref="NpcLayer.TriggerFace"/>); false when none.</summary>
+    public bool TriggerNpcFace(int objectId, string name) => npcs.TriggerFace(objectId, name);
     /// <summary>An npc's id and hp pair by object id (<see cref="NpcLayer.HpOf"/>); null when the field has none.</summary>
     public (int NpcId, long Hp, long MaxHp)? NpcHp(int objectId) => npcs.HpOf(objectId);
 
