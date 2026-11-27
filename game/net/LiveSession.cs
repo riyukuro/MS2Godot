@@ -1819,6 +1819,10 @@ public partial class LiveSession : Node
 
     readonly HashSet<(string, int)> packetsNotApplied = new();
 
+    /// <summary>The opcodes no branch of <see cref="Handle"/> took, when set (null in the game: the headless trigger sweep,
+    /// tests/TriggerSweepCheck.cs, sets it to see which server packets this port drops).</summary>
+    internal HashSet<ushort> UnhandledOpcodes;
+
     /// <summary>A packet read whole but not applied (its client state has no home here yet): logged once per packet name and mode.</summary>
     void ReadNotApplied(string name, int mode)
     {
@@ -3107,7 +3111,13 @@ public partial class LiveSession : Node
                 else if (m != null) GD.Print($"live: region {m.Id} {m.GetType().Name}");
             }
             else if (game.Is(p, Inbound.FieldProperty))
-                FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
+            {
+                var fp = Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile);
+                FieldProperties.Apply(fp);   // OnFieldProperty (scenestategame.cpp:3895)
+                if (fp is Ms2.Net.Packets.FieldPropertyMessage.Add { Property.Kind: var k } && !Ms2.Ui.Hud.FieldProperties.Applies(k)) ReadNotApplied("FieldProperty", k);
+                else if (fp is Ms2.Net.Packets.FieldPropertyMessage.List l)
+                    foreach (var x in l.Properties) if (!Ms2.Ui.Hud.FieldProperties.Applies(x.Kind)) ReadNotApplied("FieldProperty", x.Kind);
+            }
             else if (game.Is(p, Inbound.FieldEntrance))
                 OnFieldEntrance(Ms2.Net.Packets.FieldEntrance.Read(p.Reader()));   // OnFieldEntrance (scenestategame.cpp:2366)
             else if (game.Is(p, Inbound.DungeonMatch))
@@ -3324,7 +3334,11 @@ public partial class LiveSession : Node
                 bool first = Factors.Apply(p.Reader());   // CSceneStateGame::OnGlobalFactor (scenestategame.cpp:4851): taken once; the quest reward rescale (QuestRates) reads it
                 GD.Print($"live: global factor {(first ? "applied" : "ignored (already taken)")}");
             }
-            else if (LogPackets) GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
+            else
+            {
+                UnhandledOpcodes?.Add(p.Opcode);
+                if (LogPackets) GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
+            }
         }
         catch (Exception ex) { PacketFault(p, game?.Profile, ex); }
     }
