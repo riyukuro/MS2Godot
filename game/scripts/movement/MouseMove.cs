@@ -68,12 +68,21 @@ public partial class MouseMove : Node
     /// </summary>
     public override void _Input(InputEvent e)
     {
+        NoteMotion(e);
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
         var vp = GetViewport();
-        bool control = ControlTakesMouse(vp, mb.Position);
-        bool over = control || Ui.As3View.AnyMouseOverUi(vp);
+        var (over, control) = TakesMouse(vp, mb.Position);
         if (mb.Pressed) { gate.Press(over); return; }
         if (gate.Release(over, Moving && !control, InWindow(vp, mb.Position))) Release(mb);
+    }
+
+    /// <summary>What the press or release at <paramref name="at"/> reads: the UI movie's sampled flag or a Godot Control under the
+    /// point (<c>over</c>, the gate's flag), and whether it was a Control (<c>control</c>: the GUI takes both halves of such a click,
+    /// so a release over it never retargets a running move).</summary>
+    public static (bool over, bool control) TakesMouse(Viewport vp, Vector2 at)
+    {
+        bool control = ControlTakesMouse(vp, at);
+        return (control || Ui.As3View.AnyMouseOverUi(vp), control);
     }
 
     /// <summary>
@@ -97,22 +106,42 @@ public partial class MouseMove : Node
     static bool ControlTakesMouse(Viewport vp) => vp.GuiGetHoveredControl() is { MouseFilter: not Control.MouseFilterEnum.Ignore };
 
     /// <summary>The press/release version of <see cref="UiTakesMouse(Viewport)"/>: the sampled flag, or a Godot Control under the
-    /// event's own position. The viewport's hover follows mouse motion only, so a touch tap (no motion before it) or a control that
-    /// appeared under a still cursor would not be seen through it.</summary>
+    /// event's own position (<see cref="ControlTakesMouse(Viewport, Vector2)"/>).</summary>
     public static bool UiTakesMouse(Viewport vp, Vector2 at) => Ui.As3View.AnyMouseOverUi(vp) || ControlTakesMouse(vp, at);
 
-    /// <summary>A visible Control with a mouse filter other than Ignore holds the point (a hit test, not the hover). A hidden or
-    /// clipping control hides its children as the GUI does. Windows (sub-viewports) are other viewports' own.</summary>
+    /// <summary>The position of the last mouse motion seen (NaN before one). The GUI handles a motion after the nodes' _Input, so the
+    /// viewport's hover is that position's by the next event.</summary>
+    static Vector2 lastMotion = new(float.NaN, float.NaN);
+
+    /// <summary>Records a mouse motion's position (call with every input event; others are ignored).</summary>
+    public static void NoteMotion(InputEvent e) { if (e is InputEventMouseMotion m) lastMotion = m.Position; }
+
+    /// <summary>Nodes the last <see cref="ControlTakesMouse(Viewport, Vector2)"/> hit test visited (0: the hover answered).</summary>
+    public static int LastWalkNodes;
+
+    /// <summary>
+    /// A Godot Control with a mouse filter other than Ignore holds the point. A press where the last mouse motion ended (the GUI
+    /// updated the hover with that motion) asks the viewport's hover, which Godot keeps current for the GUI
+    /// itself, also for a control that appears under a still cursor: no walk of the scene. Only a press elsewhere, a touch tap with no
+    /// motion before it, hit-tests the controls at the point. A loaded field holds about 26,000 nodes and that walk took 5 to 25 ms.
+    /// </summary>
     public static bool ControlTakesMouse(Viewport vp, Vector2 at)
     {
+        LastWalkNodes = 0;
+        if ((lastMotion - at).LengthSquared() < 0.25f) return ControlTakesMouse(vp);
         for (int i = vp.GetChildCount() - 1; i >= 0; i--)
             if (HitControl(vp.GetChild(i), at)) return true;
         return false;
     }
 
+    /// <summary>The tap's hit test: a visible Control with a mouse filter other than Ignore holds the point. A hidden or clipping
+    /// control hides its children as the GUI does. Windows and sub-viewports (an avatar preview's SubViewport) are other viewports,
+    /// with their own coordinates, and are not searched. A view of the UI movie is not searched either: the sampled flag
+    /// (<see cref="Ui.As3View.AnyMouseOverUi"/>) covers it, and the Controls it builds (text fields, masks) are MouseFilter Ignore.</summary>
     static bool HitControl(Node n, Vector2 at)
     {
-        if (n is Window) return false;
+        if (n is Viewport or Ui.As3View) return false;
+        LastWalkNodes++;
         if (n is CanvasItem { Visible: false }) return false;
         if (n is CanvasLayer { Visible: false }) return false;
         if (n is Control c)

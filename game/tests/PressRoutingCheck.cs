@@ -26,13 +26,16 @@ public partial class PressRoutingCheck : Node
     sealed partial class Game : Node
     {
         public int Presses;                                // releases that run the click to move (MouseMove._Input's)
+        public bool Moving;                                // the move of an earlier release still runs (MouseMove.Moving, mode 2)
         readonly Ms2.Ui.MouseReleaseGate gate = new();
         public override void _Input(InputEvent ev)
         {
+            Ms2Godot.Movement.MouseMove.NoteMotion(ev);
             if (ev is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
-            bool over = Ms2Godot.Movement.MouseMove.UiTakesMouse(GetViewport(), mb.Position);
+            // MouseMove._Input's reads: the flag and the control, the release's retarget of a running move not over a control
+            var (over, control) = Ms2Godot.Movement.MouseMove.TakesMouse(GetViewport(), mb.Position);
             if (mb.Pressed) gate.Press(over);
-            else if (gate.Release(over)) Presses++;
+            else if (gate.Release(over, Moving && !control, true)) Presses++;
         }
     }
 
@@ -154,6 +157,36 @@ public partial class PressRoutingCheck : Node
             g0 = game.Presses;
             PressNoMotion(650, 450);
             Is(game.Presses == g0 + 1, $"a tap on a hidden control did not walk (game +{game.Presses - g0})");
+            Is(Ms2Godot.Movement.MouseMove.LastWalkNodes > 0, "a tap with no motion before it did not hit-test the controls");
+            controlNode.Visible = true;
+            // 9. a press with motion before it asks the viewport's hover: no walk of the scene (a loaded field holds ~26,000 nodes)
+            g0 = game.Presses;
+            Press(750, 550);
+            Is(game.Presses == g0 + 1 && Ms2Godot.Movement.MouseMove.LastWalkNodes == 0,
+                $"a press with motion walked the scene ({Ms2Godot.Movement.MouseMove.LastWalkNodes} nodes) or did not walk (game +{game.Presses - g0})");
+            Press(650, 450);
+            Is(Ms2Godot.Movement.MouseMove.LastWalkNodes == 0, "a press on a control with motion before it walked the scene");
+            // the upper dialog goes under the cursor (the real one rests at the viewport's 0, 0): its sample turns "over"
+            upperBox.x = 0;
+        }
+        if (controlAdded && frames == 60)
+        {
+            Is(upper.MouseOverUi, "setup: the upper dialog did not sample the cursor over it");
+            // 10. mode 2 (the move of an earlier release still runs): a release over a dialog retargets it, as the client's
+            //     m_nMode != 1 branch; without a move the press taken over the dialog does not walk
+            int g0 = game.Presses;
+            game.Moving = false;
+            Press(50, 50);
+            Is(game.Presses == g0, $"a click on a dialog walked with no move running (game +{game.Presses - g0})");
+            game.Moving = true;
+            g0 = game.Presses;
+            Press(50, 50);
+            Is(game.Presses == g0 + 1, $"a release over a dialog did not retarget the running move (game +{game.Presses - g0})");
+            // 11. over a Godot control the GUI takes both halves of the click: a running move is not retargeted
+            g0 = game.Presses;
+            Press(650, 450);
+            Is(game.Presses == g0, $"a release over a Godot control retargeted the running move (game +{game.Presses - g0})");
+            game.Moving = false;
             foreach (var f in fails) GD.PrintErr("press routing: " + f);
             GD.Print(fails.Count == 0 ? "press routing: ok" : $"press routing: {fails.Count} failed");
             GetTree().Quit(fails.Count == 0 ? 0 : 1);
