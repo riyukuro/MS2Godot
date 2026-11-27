@@ -179,8 +179,9 @@ public partial class AlphaRenderCheck : Node
         // BLOCKER 3: AMB_DIFF + E_A_D (vcf 40), SRCALPHA / INVSRCALPHA: the vertex alpha 0.25 is the opacity
         var ad = Quad("q", 0, vertexAlpha: 0.25f);
         ad.AlphaFlags = 0xED; ad.VertexColorFlags = 0x28;
-        // a type 1 name keeps it on the character light, whose final clamp caps the lit colour at 1; a mesh with no name
-        // draws with NiStandardMaterial (ModelData.LightForm), unsaturated, so its lit vertex colour sums above 1
+        // a type 1 name keeps it on the character light, which saturates its output before the blend as the client's
+        // 8-bit scene target does, so the lit colour over 1 blends as 1; a mesh with no name draws with
+        // NiStandardMaterial (ModelData.LightForm), unsaturated, so its lit vertex colour sums above 1
         ad.Material = "MS2CharacterMaterial";
         Model("vc_ambdiff_ead", main, Grey(0.25f, "AMB_DIFF + E_A_D vertex alpha 0.25"), ad);
 

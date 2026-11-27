@@ -16,7 +16,8 @@ namespace Ms2Godot.Tests;
 /// <item>type 0 (MS2StandardMaterial): HandleMS2Light's MS2Light, N.L with the light's ambient by 1 - N.L, not clamped;</item>
 /// <item>no material: the renderer's default NiStandardMaterial, the light's ambient into the ambient accumulator times the
 /// material ambient, not clamped;</item>
-/// <item>types 1-3 (MS2CharacterMaterial): the character light from the camera, clamped;</item>
+/// <item>types 1-3 (MS2CharacterMaterial): the character light from the camera (SetSunDirection's light and rim directions,
+/// also from a camera looking down), ColorBoost on the whole composite, not clamped;</item>
 /// <item>MS2AlphaBoostMaterial (the swap of a blended mesh at an opacity above 1): MS2Light, the colour times the opacity;</item>
 /// <item>an own light pair (PortraitView.OwnLights): type 0 takes the pair's direction, not the field's.</item>
 /// </list>
@@ -26,6 +27,7 @@ namespace Ms2Godot.Tests;
 public partial class LightFormRenderCheck : Node
 {
     const int Size = 32;
+    const float Fov = 40;
     readonly List<(string Name, SubViewport Vp, Func<Color, string> Check)> cases = new();
     readonly List<string> fails = new();
     ModelBuilder mb;
@@ -52,20 +54,41 @@ public partial class LightFormRenderCheck : Node
     }
 
     /// <summary>Builds the mesh as one model in a new viewport over black, the camera 10 in front of the quad.</summary>
-    Node3D Model(string name, Func<Color, string> check, ModelMesh mesh)
+    Node3D Model(string name, Func<Color, string> check, ModelMesh mesh, Vector3? camPos = null)
     {
         var md = new ModelData { RootLocal = Xform.Identity };
         md.Meshes.Add(mesh);
         var vp = new SubViewport { Size = new Vector2I(Size, Size), OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
         vp.AddChild(new WorldEnvironment { Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
         AddChild(vp);
-        var cam = new Camera3D { Name = "Cam", Current = true, Fov = 40, Compositor = Ms2Bloom.GammaOut() };   // the game's gamma conversion for views without bloom
+        var cam = new Camera3D { Name = "Cam", Current = true, Fov = Fov, Compositor = Ms2Bloom.GammaOut() };   // the game's gamma conversion for views without bloom
         vp.AddChild(cam);
         var root = mb.Build(md, name);
         vp.AddChild(root);
-        cam.LookAtFromPosition(new Vector3(0, 0, 10), Vector3.Zero, Vector3.Up);
+        cam.LookAtFromPosition(camPos ?? new Vector3(0, 0, 10), Vector3.Zero, Vector3.Up);
         cases.Add((name, vp, check));
         return root;
+    }
+
+    /// <summary>
+    /// SetSunDirection @0x14107b050 (unit_14107ac30_tcreatecharinfo.cpp:262-281) step by step, for a camera direction
+    /// <paramref name="dir"/> in Godot's frame: in Gamebryo's (x, y, z) = Godot's (x, -z, y), the flat direction and the
+    /// direction both turned by Matrix3::MakeRotation(-30 degrees, (0, 0, 1) x dir) (Foundation/efd/Win32/Matrix3_Win32.cpp:127-152,
+    /// the axis not unitised), times the point as rows; yaw 0. Returns the character light and the rim direction in Godot's frame.
+    /// </summary>
+    static (Vector3 Light, Vector3 Rim) SunDirection(Vector3 dir)
+    {
+        var d = new Vector3(dir.X, -dir.Z, dir.Y);
+        var flat = new Vector3(d.X, d.Y, 0).Normalized();
+        var axis = new Vector3(0, 0, 1).Cross(d);
+        float angle = -Mathf.DegToRad(30), sn = Mathf.Sin(angle), cs = Mathf.Cos(angle), omcs = 1 - cs;
+        float x = axis.X, y = axis.Y, z = axis.Z;
+        var r0 = new Vector3(x * x * omcs + cs, x * y * omcs + z * sn, x * z * omcs - y * sn);
+        var r1 = new Vector3(x * y * omcs - z * sn, y * y * omcs + cs, y * z * omcs + x * sn);
+        var r2 = new Vector3(x * z * omcs + y * sn, y * z * omcs - x * sn, z * z * omcs + cs);
+        Vector3 Rot(Vector3 p) => new(r0.Dot(p), r1.Dot(p), r2.Dot(p));
+        Vector3 G(Vector3 p) => new(p.X, p.Z, -p.Y);
+        return (G(Rot(flat)), G(Rot(d)));
     }
 
     // the read-back value in the space the shader writes (calibrated: an emissive 0.5 quad with no light)
@@ -113,11 +136,17 @@ public partial class LightFormRenderCheck : Node
         float chr = SunColor * HalfLambert + SunAmbient * (1 - HalfLambert);
         Model("type1_character", Grey(chr, "type 1 under the character light"), Quad("MS2CharacterMaterial"));
 
-        // not clamped: emissive 1 over a 0.5 base map; type 0 keeps (1 + 0.5) * 0.5, NiStandardMaterial (1 + 0.7) * 0.5,
-        // the character light clamps to 1 * 0.5
+        // not clamped: emissive 1 over a 0.5 base map; type 0 keeps (1 + 0.5) * 0.5, NiStandardMaterial (1 + 0.7) * 0.5, the
+        // character light (1 + its light) * 0.5: nothing is saturated before the 8-bit write (captures/02000110_450_1650_4350_char)
         Model("type0_unclamped", Grey((1 + ms2) * tex, "type 0 lit above 1 is not clamped"), Quad("MS2StandardMaterial", emissive: 1, tex: "half.dds"));
         Model("none_unclamped", Grey((1 + nis) * tex, "NiStandardMaterial lit above 1 is not clamped"), Quad(null, emissive: 1, tex: "half.dds"));
-        Model("type1_clamped", Grey(tex, "the character light clamps at 1"), Quad("MS2CharacterMaterial", emissive: 1, tex: "half.dds"));
+        Model("type1_unclamped", Grey((1 + chr) * tex, "the character light lit above 1 is not clamped"), Quad("MS2CharacterMaterial", emissive: 1, tex: "half.dds"));
+        // ColorBoost scales the emissive and ambient too, not only the diffuse (PS 0x42a9d9d0: c18.x * col * albedo): emissive
+        // 0.25 with no material diffuse or ambient at ColorBoost 2
+        var boosted = Quad("MS2CharacterMaterial", ambient: 0, emissive: 0.25f);
+        boosted.Diffuse = new float[] { 0, 0, 0 };
+        boosted.ExtraFloats["ColorBoost"] = 2;
+        Model("type1_color_boost", Grey(0.5f, "ColorBoost scales the whole composite"), boosted);
 
         // MS2AlphaBoostMaterial: a blended MS2CharacterMaterial mesh at material alpha 1.5 draws as type 0 times 1.5, saturated
         // into the 8-bit target with its opacity (CreateRenderTargetSurface @0x1416a3cd0), so over black it reads type 0 * 1.5
@@ -137,6 +166,33 @@ public partial class LightFormRenderCheck : Node
         PortraitView.OwnLights(Model("own_none", Grey(0.9f, "NiStandardMaterial under an own pair follows its direction"), Quad(null, ambient: 0)), ownDir);
         PortraitView.OwnLights(Model("own_type1", Grey(0.9f * HalfLambert, "type 1 under an own pair keeps the camera's light"), Quad("MS2CharacterMaterial", ambient: 0)), ownDir);
 
+        // a camera looking 60 degrees down (h = 0.5): SetSunDirection's light is not unit length and its down part is
+        // sin 30 * h, and the rim direction is the camera direction turned down (not the flat direction turned by pitch + 30).
+        // Under an own pair (diffuse 0.9, no material ambient) the quad reads 0.9 * (half-lambert + rim).
+        var camPos = new Vector3(0, Mathf.Sin(Mathf.DegToRad(60)), Mathf.Cos(Mathf.DegToRad(60))) * 10;
+        var (charL, rimL) = SunDirection(-camPos.Normalized());
+        float Hl(Vector3 nn) => Mathf.Pow(0.5f * (-charL).Dot(nn) + 0.5f, 2f);
+        // the quad (facing Godot +z) turned 60 degrees about x to face the camera: N.V = 1 at the centre, so no rim
+        var nFace = camPos.Normalized();
+        var faced = Model("type1_pitched", Grey(0.9f * Hl(nFace), "the character light from a camera looking down"),
+            Quad("MS2CharacterMaterial", ambient: 0), camPos);
+        faced.RotationDegrees = new Vector3(-60, 0, 0);
+        PortraitView.OwnLights(faced, ownDir);
+        // the quad turned 90 degrees to face up: N.V about cos 30, the rim at FresnelBoost 5, FresnelExponent 1. V is taken
+        // through the sampled pixel's centre (Size / 2 + 0.5, half a pixel off the axis), where N.V is sin 60.65, not sin 60.
+        var rimQuad = Quad("MS2CharacterMaterial", ambient: 0);
+        rimQuad.ExtraFloats["FresnelBoost"] = 5;
+        rimQuad.ExtraFloats["FresnelExponent"] = 1;
+        var fwd = -camPos.Normalized();
+        var right = fwd.Cross(Vector3.Up).Normalized();
+        var camUp = right.Cross(fwd);
+        float t = Mathf.Tan(Mathf.DegToRad(Fov / 2)) / Size;
+        var view = -(fwd + right * t - camUp * t).Normalized();
+        float rim = Mathf.Max(0, -rimL.Dot(Vector3.Up)) * 5 * (1 - view.Dot(Vector3.Up));
+        var up = Model("type1_pitched_rim", Grey(0.9f * (Hl(Vector3.Up) + rim), "the rim from a camera looking down"), rimQuad, camPos);
+        up.RotationDegrees = new Vector3(-90, 0, 0);
+        PortraitView.OwnLights(up, ownDir);
+
         for (int i = 0; i < 4; i++) await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         var px = new Dictionary<string, Color>();
         foreach (var (name, vp, _) in cases) px[name] = vp.GetTexture().GetImage().GetPixel(Size / 2, Size / 2);
@@ -152,7 +208,7 @@ public partial class LightFormRenderCheck : Node
             if (err != null) fails.Add($"{name}: {err}");
         }
         float off = G(px["boost_off"]), on = G(px["boost_on"]);
-        // without the swap the mesh is type 1 (the character light, clamped); with it MS2Light times the opacity, at an
+        // without the swap the mesh is type 1 (the character light); with it MS2Light times the opacity, at an
         // opacity saturated to 1 (an unsaturated 1.5 would weigh it by 1.5 again)
         float want = Mathf.Min(ms2 * tex * 1.5f, 1f);
         GD.Print($"light_form_render: boost off {off:F3} on {on:F3} (want {want:F3})");

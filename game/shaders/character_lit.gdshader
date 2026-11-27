@@ -9,15 +9,16 @@
 //   glow scaled by how much the normal faces away from the rim direction). The sun's own ambient colour fills
 //   the part the sun leaves out.
 // - Skin adds a reddish scatter band around the light's terminator (the "lambSkin" term).
-// - Characters take the sun direction from the camera, not from the field's light: the camera's flat direction
-//   tilted 30 degrees down; the rim direction is the camera direction tilted another 30 degrees down.
+// - Characters take the sun direction from the camera, not from the field's light (SetSunDirection, in fragment()):
+//   the camera's flat direction and the camera direction both turned 30 degrees down about an axis that is not
+//   unitised, so the light is not unit length and its down part shrinks as the camera looks down.
 // - Normal map: a tangent-space normal (texture * 2 - 1) through the mesh's own tangent, binormal and normal.
 // - Specular, for meshes with an enabled specular property: Blinn-Phong with the material glossiness as the power,
 //   times the light's specular colour, the material specular colour and the gloss map. The cut-off tests the
 //   half-lambert term, so it never drops to zero on the dark side. Hair averages that with an anisotropic term: its
 //   tangent map gives a direction T in the surface plane and the highlight follows 1 - (T.H)^2.
-// - Final: emissive + scene ambient * material ambient + diffuse * colour boost * material diffuse, clamped, times
-//   the dyed texture, plus the glow map (MS2StandardMaterial meshes, times GlowModifier), plus the specular; gamma
+// - Final: (emissive + scene ambient * material ambient + diffuse * material diffuse) * colour boost, not clamped,
+//   times the dyed texture, plus the glow map (MS2StandardMaterial meshes, times GlowModifier), plus the specular; gamma
 //   space, written as the gamma value, as field_lit.gdshader.
 //
 // light_form (ModelData.LightForm of the mesh's active material) picks one of three light forms:
@@ -37,7 +38,8 @@
 //   emissive + material ambient * ambient accumulator (the ambient lights' too) + material diffuse * diffuse
 //   accumulator, the specular as material specular * specular accumulator, not saturated. No dye, colour boost or rim.
 //   The glow map is added unscaled (NiStandardMaterial::HandleGlowMap, NiStandardMaterial.cpp:4816-4824).
-// Forms 1 and 2 are not clamped (the MS2 and Gamebryo composites saturate nothing, as field_lit); form 0 keeps its clamp.
+// No form is clamped: the MS2 and Gamebryo composites saturate nothing (as field_lit), the character PS neither, only the
+// 8-bit write (captures/02000110_450_1650_4350_char).
 // Under an own light pair (own_lights) forms 1 and 2 take that pair's direction (own_sun_dir) and no field light.
 // alpha_boost: MS2AlphaBoostMaterial (ModelMesh.AlphaBoost, the swap @0x141569280, unit_141567000.cpp:853-865) multiplies
 // the fogged colour by an opacity above 1 (its final node, ms2materialnodelibrary.cpp:839-846, after the fog,
@@ -190,14 +192,18 @@ void fragment() {
 	vec3 cam_pos = INV_VIEW_MATRIX[3].xyz;
 	vec3 v = normalize(cam_pos - world_pos);
 
-	// light and rim directions from the camera direction (Y up here)
+	// gakCharacterLightDirection and gakRimLightDirection from the camera direction (SetSunDirection @0x14107b050,
+	// unit_14107ac30_tcreatecharinfo.cpp:262-281): the flat direction and the camera direction, both turned down by
+	// s_fPitch about up x dir, an axis of length h that is not unitised, so neither result is unit length. In closed
+	// form, with h the camera direction's horizontal length and dz its up part: light = cos * flat - sin * h * up, rim =
+	// cos * dir + sin * (h * dz * flat - h * h * up). s_fYaw is 0 (only the rim light dialog sets it). Y up here.
 	vec3 up = vec3(0.0, 1.0, 0.0);
 	vec3 fwd = -INV_VIEW_MATRIX[2].xyz;
+	float h = length(fwd.xz);
 	vec3 flat_dir = normalize(vec3(fwd.x, 0.0, fwd.z) + vec3(1e-5, 0.0, 0.0));
 	float tilt = radians(light_pitch_deg);
-	float pitch = asin(clamp(-fwd.y, -1.0, 1.0));
-	vec3 light_dir = flat_dir * cos(tilt) - up * sin(tilt);
-	vec3 rim_dir = flat_dir * cos(pitch + tilt) - up * sin(pitch + tilt);
+	vec3 light_dir = flat_dir * cos(tilt) - up * (sin(tilt) * h);
+	vec3 rim_dir = fwd * cos(tilt) + (flat_dir * (h * fwd.y) - up * (h * h)) * sin(tilt);
 	bool own = own_lights > 0.5;
 	bool chr = light_form == 0;
 	bool nis = light_form == 2;
@@ -252,7 +258,6 @@ void fragment() {
 				}
 			}
 		}
-		diffuse *= color_boost;
 	} else {
 		// MS2Light and NiStandardMaterial: the light's own world direction, intensity max(0, N.L)
 		vec3 l = -(own ? own_sun_dir : ms2_sun_dir);
@@ -300,8 +305,10 @@ void fragment() {
 	vec3 amb_m = vc_ambient ? COLOR.rgb : mat_ambient;
 	vec3 dif_m = vc_diffuse ? COLOR.rgb : mat_diffuse;
 	vec3 lit = lighting_e ? emi : emi + ambient * amb_m + diffuse * dif_m;
+	// ColorBoost scales the whole composite, emissive and ambient too, before the albedo and with nothing saturated
+	// (captures/02000110_450_1650_4350_char, PS 0x42a9d9d0: mad r0, c18.x, col * albedo, spec)
 	if (chr) {
-		lit = clamp(lit, 0.0, 1.0);
+		lit *= color_boost;
 	}
 	vec3 c = lit * t.rgb;
 	bool chaos = chaos_on > 0.5;
@@ -323,19 +330,16 @@ void fragment() {
 		float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
 		c = mix(c, ms2_hfog_color, hf);
 	}
-	// MS2AlphaBoostMaterial multiplies the fogged colour by an opacity above 1 (header), the depth fog's colour with it
-	ALBEDO = c;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
-	FOG = vec4(ms2_fog_color, fog_share);
-	if (alpha_boost) {
-		float k = a > 1.0 ? a : 1.0;
-		// the client's scene target is A8R8G8B8 (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0,
-		// postprocessingservice.cpp:1518-1528), so the boosted output is saturated before the blend: an opacity of 1.5
-		// blends as 1 and replaces what is under it (captures/02000299_-450_0_1800_f299, the dome glass's AlphaBoost pass).
-		// Godot's float target saturates neither, so the fog is applied here and the sum clamped.
-		ALBEDO = clamp(mix(c, ms2_fog_color, fog_share) * k, 0.0, 1.0);
-		FOG = vec4(0.0);
-		a = min(a, 1.0);
-	}
+	// MS2AlphaBoostMaterial multiplies the fogged colour by an opacity above 1 (header), the depth fog's colour with it.
+	// The client's scene target is A8R8G8B8 (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0,
+	// postprocessingservice.cpp:1518-1528), so every output is saturated after the fog and before the blend and the bloom:
+	// a boosted opacity of 1.5 blends as 1 and replaces what is under it (captures/02000299_-450_0_1800_f299, the dome
+	// glass's AlphaBoost pass), and a lit colour over 1 (ColorBoost, the rim) blends as 1. Godot's float target saturates
+	// neither, so the depth fog is applied here and the sum clamped.
+	float k = alpha_boost && a > 1.0 ? a : 1.0;
+	ALBEDO = clamp(mix(c, ms2_fog_color, fog_share) * k, 0.0, 1.0);   // gamma values, as field_lit.gdshader
+	FOG = vec4(0.0);
+	a = min(a, 1.0);
 #ifdef BLEND
 #ifdef ONE
 	// ONE / ONE adds the colour unweighted: blend_premul_alpha is src + dst * (1 - ALPHA)
