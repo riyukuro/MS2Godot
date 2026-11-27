@@ -183,6 +183,7 @@ public enum Inbound : ushort {
     HomeCommand = 0xB7,
     ChatStamp = 0x126,      // RecvOp ChatStamp (commonfiles/opcodes.h:293): CSceneStateGame::OnChatStamp -> CChatEmoticonCli::DispatchPacket
     MessengerBrowserStamp = 0x12C, // RecvOp MessengerBrowserStamp (commonfiles/opcodes.h:297): CSceneStateGame::OnMessengerBrowserStamp (scenestategame.cpp:6842)
+    GmCommand = 0x106,          // RecvOp GmCommand (commonfiles/opcodes.h:263): CSceneStateGame::OnGmCommand (@0x14173c090, scenestategame.cpp:5159)
     Ugc = 0x6B,
     MeretMarket = 0x6C,         // RecvOp MeretMarket (commonfiles/opcodes.h:116): CMeratMarketMan::OnBuySucceeded / OnBuyFailed (sub-modes 0x1e, 0x1f)
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)

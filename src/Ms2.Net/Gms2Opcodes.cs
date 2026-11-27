@@ -189,6 +189,7 @@ static class Gms2Opcodes {
         [Inbound.DynamicChannel] = 0xA9,
         [Inbound.ChatStamp] = 0x128,
         [Inbound.MessengerBrowserStamp] = 0x12E,
+        [Inbound.GmCommand] = 0x108,
         [Inbound.ItemBox] = 0xAE,
         [Inbound.ItemScript] = 0xF7,     // upstream SendOp.ItemScript
         [Inbound.RelocateWorld] = 0x74,

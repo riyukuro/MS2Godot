@@ -2716,6 +2716,12 @@ public partial class LiveSession : Node
                 MessengerBrowserStamped?.Invoke(stamp);
                 if (LiveCheck) GD.Print($"live: messenger browser hides [{string.Join(",", stamp.HiddenTypes)}]");
             }
+            else if (game.Is(p, Inbound.GmCommand))
+            {
+                var g = GmCommand.Read(p.Reader(), PopupTextFeature());   // CSceneStateGame::OnGmCommand (scenestategame.cpp:5159); no ExpectEnd: the client ignores trailing bytes
+                if (LiveCheck) GD.Print($"live: gm command {g}");
+                if (g.IsPopupText) GmPopupText?.Invoke(g);
+            }
             else if (game.Is(p, Inbound.BadgeEquip))
             {
                 var b = BadgeEquipMessage.Read(p.Reader(), game.Profile);     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes

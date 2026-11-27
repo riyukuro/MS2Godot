@@ -291,6 +291,8 @@ public partial class HudScene : Node, IUiStageHost
         if (liveHome != null) { liveHome.HomeInfoApplied -= OnHomeInfoApplied; liveHome.SaveSlotsUpdated -= OnSaveSlotsUpdated; UnbindCubeBill(liveHome); liveHome = null; }
         unwatchChat?.Invoke();
         unwatchChat = null;
+        unwatchCommunityPopup?.Invoke();
+        unwatchCommunityPopup = null;
         unwatchNewItems?.Invoke();
         unwatchNewItems = null;
         unwatchLearningQuest?.Invoke();
@@ -1130,6 +1132,7 @@ public partial class HudScene : Node, IUiStageHost
         ui.AddChild(systemTextSlot = new Control { Name = "uisystemtext", MouseFilter = Control.MouseFilterEnum.Ignore });
         ui.AddChild(topLayerSlot = new Control { Name = "uitoplayernotify", MouseFilter = Control.MouseFilterEnum.Ignore });
         TopLayer ??= new Ms2.Ui.Hud.TopLayerNotifyController { LoadMovie = LoadTopLayer, UnloadMovie = UnloadTopLayer };
+        CommunityPopupSlot(ui);
         if (SystemText != null) return;     // unloaded by a field move: loaded again at the new field's load complete
         SystemText = new Ms2.Ui.Hud.SystemTextController { UpperHpBar = TargetBar, TickMs = () => (uint)Time.GetTicksMsec() };
         // STILL-OPEN: PlaySystemSound (the emergency line's "emergency_notice"): this HUD has no system sound player
@@ -1166,6 +1169,7 @@ public partial class HudScene : Node, IUiStageHost
             live.UserChatItemLink += onLinks;
             Action<Ms2.Net.Packets.MessengerBrowserStamp> onStamp = ChatLog.OnStamp;
             live.MessengerBrowserStamped += onStamp;
+            WatchCommunityPopup(live);
             unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; live.MessengerBrowserStamped -= onStamp; ChatLog.SendPacket = null; ChatLog.SendSticker = null; ChatLog.ChatBalloon = null; };
         }
     }
@@ -1253,6 +1257,7 @@ public partial class HudScene : Node, IUiStageHost
         live.TalkDialogOpen += OnTalkDialogOpen;
         ChatLog.CommandHooks.ChatLine = ChatLog.AddSystemLine;
         ChatLog.CommandHooks.GmLevel = ChatLog.GmLevel;
+        ChatLog.CommandHooks.ShowPopupText = (text, url) => CommunityPopup?.Show(text, url);   // ShowPopupText (usercommandcli.cpp:2100)
         ChatLog.CommandHooks.Unported = (name, args) =>
         {
             GD.Print($"chat: the user command {name} is not ported");
@@ -4632,6 +4637,7 @@ public partial class HudScene : Node, IUiStageHost
         TickCompact();                                        // CSkillSystem::Update's compact lists, State::vfunc_8's pick
         TickAutoEquip();                                      // MyPC::vfunc_53: Unk_Inventory::ProcessAutoEquipQueue
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
+        if (CommunityPopup is { IsOpen: true }) CommunityPopup.Tick(delta);   // UICommunityPopup::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
         if (ChatEmoticonOpen) chatEmoticon.Process();          // UIChatEmoticonDialog::vfunc_15

@@ -55,6 +55,9 @@ public sealed class UserCommands
         /// <summary>g_143ab2a90.SetAutoEquipEnabled (<see cref="AutoEquip.SetAutoEquipEnabled"/>), the internal command
         /// AutoInstallEquipMent's; null without the inventory.</summary>
         public Action<bool> SetAutoEquipEnabled;
+        /// <summary>UICommunityPopup (0x4f5c) FUN_140bea390(text, url), PopupText's (ShowPopupText @0x14136d300,
+        /// usercommandcli.cpp:2099); null without the popup.</summary>
+        public Action<string, string> ShowPopupText;
     }
 
     static readonly Hooks NoHooks = new();
@@ -138,12 +141,28 @@ public sealed class UserCommands
         Load(GameStrings.Parse(packs.Read("Xml", "table/chatcommand.xml")), e => FeatureElements.IsAvailable(packs, e), names);
     }
 
+    /// <summary>The registered name of ShowPopupText (Register(L"PopupText"), usercommandcli.cpp:862).</summary>
+    public const string PopupText = "PopupText";
+
+    /// <summary>
+    /// ShowPopupText (@0x14136d300, usercommandcli.cpp:2099): the community popup shows argument 0 (FUN_1408d21c0, "" when
+    /// missing) with argument 1 as its address; the arguments split at " " (ItemFunctionArgs, :678; empty parts dropped).
+    /// 1 with or without the popup.
+    /// </summary>
+    static int ShowPopupText(string arguments, Hooks hooks)
+    {
+        var words = (arguments ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        hooks.ShowPopupText?.Invoke(words.Length > 0 ? words[0] : "", words.Length > 1 ? words[1] : "");
+        return 1;
+    }
+
     void Register()
     {
         foreach (var name in Registered)
         {
             string n = name;
             commands[n] = n == "Help" ? (_, h) => ShowHelp(h)
+                : n == PopupText ? (args, h) => ShowPopupText(args, h)
                 : GmGated.Contains(n) ? (args, h) => h.GmLevel() < 50 ? 0 : h.Unported(n, args)
                 : (args, h) => h.Unported(n, args);
         }
