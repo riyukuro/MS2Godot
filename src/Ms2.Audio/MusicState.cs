@@ -235,10 +235,20 @@ public sealed class MusicController
     /// Evaluates the current segment's outgoing transition links (FEV comp/lnks/lfsd + cprm) against the live music
     /// parameters without mutating state. Zero allocations.
     /// </summary>
-    public MusicSegment PeekNextSegment()
+    public MusicSegment PeekNextSegment() => NextSegmentOf(CurrentSegment);
+
+    /// <summary>
+    /// The segment <paramref name="seg"/> goes to at its end under the live music parameters (its first matching outgoing
+    /// link), or null when none matches. Any segment, not only the current cue's: FMOD's segment player follows an
+    /// outgoing cue's links too while it fades out. Measured with the client's fmod_event64 4.44.64 and the client's
+    /// segment-start callback: cue 196's 3.0 s intro (segment 329, link to 330 when parameter 5 is 10) prompted out by
+    /// cue 43 or 197 at 2.0 s with a 2.0 s crossfade goes on into 330 at 3.0 s, on a new channel at the fading gain
+    /// (0.74 -> 0.49 -> 0 with the ramp); with parameter 5 at 0 it stops at 3.0 s. Zero allocations.
+    /// </summary>
+    public MusicSegment NextSegmentOf(MusicSegment seg)
     {
-        if (CurrentSegment == null) return null;
-        var links = CurrentSegment.OutgoingLinks;
+        if (seg == null) return null;
+        var links = seg.OutgoingLinks;
         for (int i = 0; i < links.Count; i++)
         {
             if (LinkMatches(links[i]))

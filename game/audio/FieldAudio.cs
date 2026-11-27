@@ -30,7 +30,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         // close the pool side first: a decode that finishes after this point makes no engine call (see poolGate)
         lock (poolGate) poolClosed = true;
-        Unchain();
+        UnchainAll();
         if (Instance == this) Instance = null;
         // the field's voices free with it, looping ones too: none outlives its field
         int made = made3d;
@@ -77,9 +77,20 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// mainsystem.cpp:218), so a loop's event position is counted on it (<see cref="EventFadeIn.LoopPosition"/>).</summary>
     double loopClock;
     float categoryMusicVolume = 1f;
-    int chainedSlot = -1;
     string bgmName;
-    readonly Dictionary<int, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav)> cueSegments = new();
+    Dictionary<int, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav)> cueSegments = new();
+    /// <summary>The previous cue's decoded segments while its voices fade out: an outgoing voice whose segment ends in
+    /// the fade goes on into its next segment (<see cref="ChainOutgoing"/>), as FMOD's segment player does.</summary>
+    Dictionary<int, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav)> outgoingSegments = new();
+    int outgoingGeneration = -1;
+    /// <summary>Per music slot: the segment it plays, whether that is the current cue's, whether its Finished goes to
+    /// <see cref="OnSlotFinished"/> (a segment that does not loop on itself), its handler (made once in Open), and a
+    /// count that drops an outgoing chain's decode once the slot has moved on.</summary>
+    readonly MusicSegment[] slotSegment = new MusicSegment[MusicCrossfade.SlotCount];
+    readonly bool[] slotCurrentCue = new bool[MusicCrossfade.SlotCount];
+    readonly bool[] slotChained = new bool[MusicCrossfade.SlotCount];
+    readonly Action[] slotFinished = new Action[MusicCrossfade.SlotCount];
+    readonly int[] slotGeneration = new int[MusicCrossfade.SlotCount];
 
     /// <summary>Music category volume, the client's CSoundEventMgr::m_fNowMusicVolume, multiplied onto the FEV-authored cue
     /// volume. The client sets it from the sound options (FUN_14125fe20, gameoptionstruct.cpp:2727: SetCategoryVolume(2,
@@ -195,6 +206,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         {
             musicPlayers[i] = new AudioStreamPlayer { Name = "Music" + (char)('A' + i), Bus = SoundBuses.Music };
             AddChild(musicPlayers[i]);
+            int slot = i;
+            slotFinished[i] = () => OnSlotFinished(slot);
         }
         ui = new AudioStreamPlayer { Name = "Ui" };
         AddChild(ui);
@@ -490,9 +503,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public void StopMusic()
     {
         playbackGuard.Stop();
-        Unchain();
+        UnchainAll();
         activeSegment = null;
         cueSegments.Clear();
+        outgoingSegments.Clear();
         crossfade.StopAll();
         MusicVolume = soundMusicFade.Stop(categoryMusicVolume);
         StopMusicPlayers(-1);
@@ -532,6 +546,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (crossfade.IsFading)
         {
             StopMusicPlayers(crossfade.Step((float)delta));
+            if (!crossfade.IsFading) { outgoingSegments.Clear(); outgoingGeneration = -1; }
             gainDirty = true;
         }
 
@@ -558,7 +573,14 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     void StopMusicPlayers(int mask)
     {
         for (int i = 0; i < musicPlayers.Length; i++)
-            if ((mask & (1 << i)) != 0 && musicPlayers[i] is { } p && IsInstanceValid(p)) p.Stop();
+        {
+            if ((mask & (1 << i)) == 0) continue;
+            Unchain(i);
+            slotSegment[i] = null;
+            slotCurrentCue[i] = false;
+            slotGeneration[i]++;
+            if (musicPlayers[i] is { } p && IsInstanceValid(p)) p.Stop();
+        }
     }
 
     void ApplyPlayerGain(int slot)
@@ -587,11 +609,14 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         BgmCue = cue.Id;
         bgmName = startClip.Name;
 
-        // Unchain and disarm the outgoing segment immediately before async decode so neither its Finished signal
-        // nor the per-frame predecode window can advance or populate against the new cue's MusicState.
-        Unchain();
+        // Disarm the outgoing cue before the async decode so neither its Finished signal nor the per-frame predecode
+        // window can advance or populate against the new cue's MusicState: its voices become outgoing ones, which follow
+        // their own segment's links (ChainOutgoing), and its decoded segments move to the outgoing cache.
+        for (int i = 0; i < slotCurrentCue.Length; i++) slotCurrentCue[i] = false;
         activeSegment = null;
+        outgoingGeneration = playbackGuard.Generation;
         int gen = playbackGuard.BeginCueChange();
+        (outgoingSegments, cueSegments) = (cueSegments, outgoingSegments);
         cueSegments.Clear();
 
         DecodeAndPlaySegment(gen, cue, startSeg, startClip, cue.CrossfadeMs);
@@ -642,8 +667,9 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                 var wav = Stream(pcm, data, selfLoop);
                 decodedSegments.Enqueue(() =>
                 {
-                    if (!playbackGuard.AcceptDecode(gen)) return;
-                    cueSegments[next.Id] = (clip, pcm, wav);
+                    // a predecode that lands after the cue changed is the outgoing voice's next segment
+                    if (playbackGuard.AcceptDecode(gen)) cueSegments[next.Id] = (clip, pcm, wav);
+                    else if (gen == outgoingGeneration) outgoingSegments[next.Id] = (clip, pcm, wav);
                 });
             }
         });
@@ -652,10 +678,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     void PlaySegment(MusicCue cue, MusicSegment seg, int crossfadeMs)
     {
         if (seg == null || !cueSegments.TryGetValue(seg.Id, out var entry)) return;
-        Unchain();
         bool hasActive = musicPlayers[crossfade.ActiveSlot] is { Playing: true };
         var (inSlot, stopMask, isCrossfading) = crossfade.BeginTransition(crossfadeMs, hasActive);
         StopMusicPlayers(stopMask);
+        if (!isCrossfading) { outgoingSegments.Clear(); outgoingGeneration = -1; }
 
         activeSegment = seg;
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
@@ -666,31 +692,103 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         // CSoundEventMgr OnMusicCallback (@0x14177caf0, soundeventmgr.cpp:1369): fires on segment start, toggling param 5 (0 <-> 10).
         MusicState.OnSegmentStarted();
         var player = musicPlayers[inSlot];
+        Unchain(inSlot);
+        slotGeneration[inSlot]++;
+        slotSegment[inSlot] = seg;
+        slotCurrentCue[inSlot] = true;
         player.Stream = entry.Wav;
         ApplyPlayerGains();
-        if (!selfLoop)
-        {
-            player.Finished += OnSegmentFinished;
-            chainedSlot = inSlot;
-        }
+        if (!selfLoop) Chain(inSlot);
         player.Play();
         GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id} -> {entry.Clip.Name} ({entry.Pcm.Seconds:F1} s, {entry.Pcm.Rate} Hz, {entry.Pcm.Channels} ch, loop={selfLoop}, xfade={crossfadeMs} ms, fading={isCrossfading}), playing={player.Playing}");
     }
 
-    void Unchain()
+    void Chain(int slot)
     {
-        if (chainedSlot < 0) return;
-        var p = musicPlayers[chainedSlot];
-        if (p != null && IsInstanceValid(p))
-            p.Finished -= OnSegmentFinished;
-        chainedSlot = -1;
+        if (slotChained[slot] || musicPlayers[slot] is not { } p || !IsInstanceValid(p)) return;
+        p.Finished += slotFinished[slot];
+        slotChained[slot] = true;
     }
 
-    void OnSegmentFinished()
+    void Unchain(int slot)
     {
-        Unchain();
+        if (!slotChained[slot]) return;
+        slotChained[slot] = false;
+        if (musicPlayers[slot] is { } p && IsInstanceValid(p)) p.Finished -= slotFinished[slot];
+    }
+
+    void UnchainAll()
+    {
+        for (int i = 0; i < slotChained.Length; i++) Unchain(i);
+    }
+
+    void OnSlotFinished(int slot)
+    {
+        Unchain(slot);
+        if (!slotCurrentCue[slot])
+        {
+            ChainOutgoing(slot);
+            return;
+        }
         if (!playbackGuard.TryAdvanceOnFinished()) return;
         AdvanceToNextSegment(0);
+    }
+
+    /// <summary>
+    /// An outgoing voice's segment ended while it fades out: it goes on into the segment its own links pick under the
+    /// live parameters, at the fading gain of its slot, and stops when none matches (MusicController.NextSegmentOf).
+    /// The start fires the segment-start callback like any other (OnMusicCallback toggles parameter 5), which the
+    /// incoming cue's links then see: in the client a cue whose intro links on parameter 5 that comes in over a chained
+    /// outgoing voice stops after its intro (cue 196 -> 197 in the FMOD probe: silent from 8.9 s).
+    /// </summary>
+    void ChainOutgoing(int slot)
+    {
+        if (MusicState == null || library == null || !crossfade.Busy(slot)) return;
+        var next = MusicState.NextSegmentOf(slotSegment[slot]);
+        if (next == null) return;
+        if (outgoingSegments.TryGetValue(next.Id, out var entry) || cueSegments.TryGetValue(next.Id, out entry))
+        {
+            PlayOutgoing(slot, next, entry);
+            return;
+        }
+        var clip = library.ResolveSegment(next);
+        if (clip == null) return;
+        int sg = ++slotGeneration[slot];
+        bool selfLoop = MusicController.IsUnconditionalSelfLoop(next);
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var pcm = SafeDecode.Decode(clip, out var failure);
+            var data = pcm?.ToBytes();
+            lock (poolGate)
+            {
+                if (poolClosed) return;
+                if (failure != null) GD.PushWarning(failure);
+                if (pcm == null) return;
+                var wav = Stream(pcm, data, selfLoop);
+                decodedSegments.Enqueue(() =>
+                {
+                    if (slotGeneration[slot] != sg || slotCurrentCue[slot] || !crossfade.Busy(slot)) return;
+                    var decoded = (clip, pcm, wav);
+                    outgoingSegments[next.Id] = decoded;
+                    PlayOutgoing(slot, next, decoded);
+                });
+            }
+        });
+    }
+
+    void PlayOutgoing(int slot, MusicSegment seg, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav) entry)
+    {
+        var player = musicPlayers[slot];
+        if (player == null || !IsInstanceValid(player)) return;
+        slotGeneration[slot]++;
+        slotSegment[slot] = seg;
+        slotSegmentVolume[slot] = entry.Clip.Volume;
+        player.Stream = entry.Wav;
+        ApplyPlayerGain(slot);
+        MusicState.OnSegmentStarted();
+        if (!MusicController.IsUnconditionalSelfLoop(seg)) Chain(slot);
+        player.Play();
+        GD.Print($"audio: bgm outgoing slot {slot} seg {seg.Id} -> {entry.Clip.Name} at gain {crossfade.Gain(slot):F3}");
     }
 
     void AdvanceToNextSegment(int crossfadeMs)

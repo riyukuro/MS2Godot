@@ -695,6 +695,34 @@ public class AudioTests
     }
 
     [Test]
+    public void OutgoingCueFollowsItsOwnLinksAndItsChainStartTogglesTheIntermissionParameter()
+    {
+        // FMOD probe with the client's fmod_event64 4.44.64 and its segment-start callback (parameter 5 toggles 0 <-> 10):
+        // cue 196 (3.0 s intro 329, link to 330 on parameter 5), cue 197 prompted at 2.0 s with a 2.0 s crossfade.
+        // 197's intro start sets parameter 5 to 10, so 329 goes on into 330 at 3.0 s under the fade; that start sets it
+        // back to 0, so 197's intro (331, link to 332 on parameter 5) ends into nothing at 8.9 s.
+        var lib = SoundLibrary.Shared(SoundDir());
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.PlayFieldBgm(new FieldBgmSpec(BgmId: 196, BgmParam: 5, BgmValue: 0f)), Is.True);
+        mc.OnSegmentStarted();
+        var seg329 = mc.CurrentSegment;
+        Assert.That(seg329.Id, Is.EqualTo(329));
+
+        Assert.That(mc.PlayFieldBgm(new FieldBgmSpec(BgmId: 197, BgmParam: 5, BgmValue: 0f)), Is.True);
+        Assert.That(mc.NextSegmentOf(seg329), Is.Null, "parameter 5 is 0 until the incoming cue's first segment starts");
+        mc.OnSegmentStarted();
+        Assert.That(mc.CurrentSegment.Id, Is.EqualTo(331));
+        Assert.That(mc.PeekNextSegment()?.Id, Is.EqualTo(332), "without an outgoing chain 197's intro goes on into its loop");
+
+        var outgoingNext = mc.NextSegmentOf(seg329);
+        Assert.That(outgoingNext?.Id, Is.EqualTo(330));
+        Assert.That(mc.CurrentSegment.Id, Is.EqualTo(331), "NextSegmentOf must not move the current cue");
+        mc.OnSegmentStarted();   // the outgoing voice's segment 330 starts
+        Assert.That(mc.TryGetMusicParameter(MusicController.IntermissionParamId, out float p5) ? p5 : -1f, Is.EqualTo(0f));
+        Assert.That(mc.PeekNextSegment(), Is.Null, "the client's incoming intro then ends into nothing");
+    }
+
+    [Test]
     public void CueChangeDuringDecodeAndPredecodeWindowCannotAdvanceNewCue()
     {
         var lib = SoundLibrary.Shared(SoundDir());
