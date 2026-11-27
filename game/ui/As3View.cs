@@ -804,6 +804,9 @@ public partial class As3View : Node2D
         retestMarks = marks; retestMoves = moves; retestCovered = covered;
         Retests++;
         long r0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        // the retest's mouseOut / rollOut and mouseOver / rollOver carry the keyboard state as it is now (GenerateMouseEvents
+        // reads GetKeyModifiers when it runs, sfr_as3_17.cpp:7049), not the modifiers of this view's last mouse event
+        Player.ModifierKeys(Input.IsKeyPressed(Key.Shift), Input.IsKeyPressed(Key.Ctrl), Input.IsKeyPressed(Key.Alt));
         Player.MouseRetest(covered);
         RetestMs += System.Diagnostics.Stopwatch.GetElapsedTime(r0).TotalMilliseconds;
     }
@@ -915,14 +918,16 @@ public partial class As3View : Node2D
     }
 
     /// <summary>A mouse move this view takes (its shapes are under the mouse): the views it is drawn over do not see the
-    /// event, so they get it covered.</summary>
-    void CoverBelow(Vector2 viewport)
+    /// event, so they get it covered, with its Shift, Control and Alt keys (the client's movie has one keyboard state, which every
+    /// mouse event reads, sfr_as3_17.cpp:7049).</summary>
+    void CoverBelow(InputEventMouseMotion mm)
     {
         var vp = GetViewport();
         foreach (var v in inTree)
             if (v != this && v.TakesMouse && v.GetViewport() == vp && DrawnOver(v) && !v.Player.Dragging && !v.Player.TextMouseCaptured)
             {
-                var p = v.StagePoint(viewport);
+                var p = v.StagePoint(mm.Position);
+                v.Player.ModifierKeys(mm.ShiftPressed, mm.CtrlPressed, mm.AltPressed);
                 v.Player.MouseMove(p.X, p.Y, covered: true);
             }
     }
@@ -1020,7 +1025,7 @@ public partial class As3View : Node2D
                 long m0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 var p = StagePoint(mm.Position);
                 Player.MouseMove(p.X, p.Y);
-                if (MouseOverUi) CoverBelow(mm.Position);
+                if (MouseOverUi) CoverBelow(mm);
                 MouseMs += System.Diagnostics.Stopwatch.GetElapsedTime(m0).TotalMilliseconds;
                 if (!MouseOverUi) return;
                 break;

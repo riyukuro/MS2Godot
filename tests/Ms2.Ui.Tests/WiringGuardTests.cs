@@ -33,6 +33,18 @@ public class WiringGuardTests
     }
 
     [Test]
+    public void CoveredMovesAndRetestsCarryTheHeldModifierKeys()
+    {
+        // the client's mouse events all read its one keyboard state (GetKeyModifiers, sfr_as3_17.cpp:7049); a view that did not
+        // get the InputEventMouse must not keep the Shift, Control and Alt keys of its own last event
+        var s = Source("game/ui/As3View.cs");
+        Assert.That(s, Does.Contain("v.Player.ModifierKeys(mm.ShiftPressed, mm.CtrlPressed, mm.AltPressed); v.Player.MouseMove(p.X, p.Y, covered: true);"),
+            "a covered view gets the move's modifier keys before the move");
+        Assert.That(s, Does.Contain("Player.ModifierKeys(Input.IsKeyPressed(Key.Shift), Input.IsKeyPressed(Key.Ctrl), Input.IsKeyPressed(Key.Alt)); Player.MouseRetest(covered);"),
+            "the frame retest reads the keys held now");
+    }
+
+    [Test]
     public void As3ViewHolderNameTableStopsGrowingAtItsCap()
     {
         var s = Source("game/ui/As3View.cs");
