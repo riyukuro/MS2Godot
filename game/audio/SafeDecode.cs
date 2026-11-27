@@ -28,10 +28,28 @@ public static class SafeDecode
         try { return MpegDecoder.Decode(clip); }
         catch (Exception ex)
         {
-            bool first;
-            lock (warned) first = warned.Add(clip.Name ?? "");
-            if (first) failure = $"audio: {clip.Name}: decode failed ({ex.GetType().Name}: {ex.Message}), playing silent";
+            failure = Failure(clip, ex);
             return null;
         }
+    }
+
+    /// <summary>Any decode step of a clip on a pool thread (MpegFrameRun's open, head and rest), as <see cref="Decode(SoundClip, out string)"/>:
+    /// null and the clip's first warning on a throw.</summary>
+    public static T Try<T>(SoundClip clip, Func<T> decode, out string failure) where T : class
+    {
+        failure = null;
+        try { return decode(); }
+        catch (Exception ex)
+        {
+            failure = Failure(clip, ex);
+            return null;
+        }
+    }
+
+    static string Failure(SoundClip clip, Exception ex)
+    {
+        bool first;
+        lock (warned) first = warned.Add(clip.Name ?? "");
+        return first ? $"audio: {clip.Name}: decode failed ({ex.GetType().Name}: {ex.Message}), playing silent" : null;
     }
 }

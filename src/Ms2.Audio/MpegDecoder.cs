@@ -44,28 +44,15 @@ public static class MpegDecoder
     /// </summary>
     static Pcm16 DecodeFrames(byte[] mpeg, int frames)
     {
-        var frame = new FrameReader(mpeg);
-        if (frame.Layer == MpegLayer.LayerIII) return null;
-        int channels = frame.ChannelMode == MpegChannelMode.Mono ? 1 : 2, samples = frame.SampleCount;
-        var first = (frame.Version, frame.Layer, frame.SampleRate, channels);
-        var output = new short[frames * samples * channels];
-        var buffer = new float[samples * channels];
-        var decoder = new MpegFrameDecoder();
-        int at = 0, written = 0;
-        for (int i = 0; i < frames; i++)
-        {
-            frame.At(at);
-            if ((frame.Version, frame.Layer, frame.SampleRate, frame.ChannelMode == MpegChannelMode.Mono ? 1 : 2) != first) return null;
-            int n = decoder.DecodeFrame(frame, buffer, 0);
-            for (int k = 0; k < n; k++)
-                output[written++] = (short)Math.Clamp((int)MathF.Round(buffer[k] * 32767f), short.MinValue, short.MaxValue);
-            at += frame.FrameLength;
-        }
-        return new Pcm16 { Rate = frame.SampleRate, Channels = channels, Samples = written == output.Length ? output : output[..written] };
+        var run = MpegFrameRun.Open(mpeg, frames);
+        if (run == null) return null;
+        var output = new short[run.SampleCount];
+        run.DecodeTo(output, int.MaxValue);
+        return new Pcm16 { Rate = run.Rate, Channels = run.Channels, Samples = run.Written == output.Length ? output : output[..run.Written] };
     }
 
     /// <summary>One frame of a payload, read the way NLayer's own frame reads it: bits from after the header (and its CRC).</summary>
-    sealed class FrameReader : IMpegFrame
+    internal sealed class FrameReader : IMpegFrame
     {
         readonly byte[] b;
         int start, end, read;

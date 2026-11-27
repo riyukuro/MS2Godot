@@ -79,10 +79,28 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     double loopClock;
     float categoryMusicVolume = 1f;
     string bgmName;
-    Dictionary<int, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav)> cueSegments = new();
+    /// <summary>A decoded music segment. Its stream starts as the segment's head (its first <see cref="SegmentHeadSeconds"/>)
+    /// and takes the whole PCM when the rest is decoded (<see cref="Complete"/>); Seconds, Rate and Channels are the whole
+    /// segment's, from its frame headers.</summary>
+    sealed class SegmentAudio
+    {
+        public SoundClip Clip;
+        public AudioStreamWav Wav;
+        public double Seconds;
+        public int Rate, Channels;
+        /// <summary>The seconds of PCM the stream was made with: the head, or all of it.</summary>
+        public double HeadSeconds;
+        public bool Complete;
+    }
+    /// <summary>The head a music segment plays from while its rest decodes. A cue's voice starts once the head is decoded,
+    /// ~10-15 ms for the 140 s segments, where the whole segment took ~0.3-0.6 s (MpegFrameRunTests); the client streams the
+    /// segment and starts the voice at the prompt. 4 s is longer than the rest's decode (~0.4 s) by far, and than the 2 s
+    /// end lead the gate hold reads from the stream's length.</summary>
+    const double SegmentHeadSeconds = 4.0;
+    Dictionary<int, SegmentAudio> cueSegments = new();
     /// <summary>The previous cue's decoded segments while its voices fade out: an outgoing voice whose segment ends in
     /// the fade goes on into its next segment (<see cref="ChainOutgoing"/>), as FMOD's segment player does.</summary>
-    Dictionary<int, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav)> outgoingSegments = new();
+    Dictionary<int, SegmentAudio> outgoingSegments = new();
     int outgoingGeneration = -1;
     /// <summary>Per music slot: the segment it plays, whether that is the current cue's, whether its Finished goes to
     /// <see cref="OnSlotFinished"/> (a segment that does not loop on itself), its handler (made once in Open), and a
@@ -92,6 +110,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     readonly bool[] slotChained = new bool[MusicCrossfade.SlotCount];
     readonly Action[] slotFinished = new Action[MusicCrossfade.SlotCount];
     readonly int[] slotGeneration = new int[MusicCrossfade.SlotCount];
+    /// <summary>Per music slot: the decoded segment its player plays (null once the slot is stopped).</summary>
+    readonly SegmentAudio[] slotAudio = new SegmentAudio[MusicCrossfade.SlotCount];
 
     /// <summary>Music category volume, the client's CSoundEventMgr::m_fNowMusicVolume, multiplied onto the FEV-authored cue
     /// volume. The client sets it from the sound options (FUN_14125fe20, gameoptionstruct.cpp:2727: SetCategoryVolume(2,
@@ -626,6 +646,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             Unchain(i);
             slotSegment[i] = null;
             slotCurrentCue[i] = false;
+            slotAudio[i] = null;
             slotGeneration[i]++;
             if (musicPlayers[i] is { } p && IsInstanceValid(p)) p.Stop();
         }
@@ -677,33 +698,16 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// voice started.</param>
     void DecodeAndPlaySegment(int gen, MusicCue cue, MusicSegment seg, SoundClip clip, int crossfadeMs, bool advance = false, ulong promptUsec = 0)
     {
-        bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
-        System.Threading.Tasks.Task.Run(() =>
+        DecodeSegment(clip, MusicController.IsUnconditionalSelfLoop(seg), entry =>
         {
-            var pcm = SafeDecode.Decode(clip, out var failure);
-            var data = pcm?.ToBytes();
-            lock (poolGate)
+            if (!playbackGuard.AcceptDecode(gen))
             {
-                if (poolClosed) return;
-                if (failure != null) GD.PushWarning(failure);
-                if (pcm == null)   // undecodable segment stays silent
-                {
-                    if (advance) decodedSegments.Enqueue(() => { if (playbackGuard.AcceptDecode(gen)) EndActiveVoice(); });
-                    return;
-                }
-                var wav = Stream(pcm, data, selfLoop);
-                decodedSegments.Enqueue(() =>
-                {
-                    if (!playbackGuard.AcceptDecode(gen))
-                    {
-                        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id}: decoded after a newer cue, dropped");
-                        return;
-                    }
-                    cueSegments[seg.Id] = (clip, pcm, wav);
-                    PlaySegment(cue, seg, crossfadeMs, promptUsec);
-                });
+                GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id}: decoded after a newer cue, dropped");
+                return;
             }
-        });
+            cueSegments[seg.Id] = entry;
+            PlaySegment(cue, seg, crossfadeMs, promptUsec);
+        }, advance ? () => { if (playbackGuard.AcceptDecode(gen)) EndActiveVoice(); } : null);
     }
 
     void PredecodeNextSegment()
@@ -714,25 +718,133 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         var clip = library.ResolveSegment(next);
         if (clip == null) return;
         int gen = playbackGuard.Generation;
-        bool selfLoop = MusicController.IsUnconditionalSelfLoop(next);
+        DecodeSegment(clip, MusicController.IsUnconditionalSelfLoop(next), entry =>
+        {
+            // a predecode that lands after the cue changed is the outgoing voice's next segment
+            if (playbackGuard.AcceptDecode(gen)) cueSegments[next.Id] = entry;
+            else if (gen == outgoingGeneration) outgoingSegments[next.Id] = entry;
+        }, null);
+    }
+
+    /// <summary>
+    /// Decodes a music segment on a pool thread. A bank payload (MpegFrameRun) longer than <see cref="SegmentHeadSeconds"/>
+    /// is decoded in two steps into one buffer: its head becomes the stream and <paramref name="onReady"/> runs with it on
+    /// the main thread at once; then the rest is decoded and the stream takes the whole PCM, which a voice playing the head
+    /// goes on into at its own position (AudioStreamWAV::set_data swaps the data under the audio server's lock, and the
+    /// playback reads the data, its length and the loop points afresh at every mix), and <see cref="CompleteSegment"/>
+    /// runs. Anything else is decoded whole first, as before. <paramref name="onFail"/> (if any) runs on the main thread when
+    /// nothing could be decoded.
+    /// </summary>
+    void DecodeSegment(SoundClip clip, bool selfLoop, Action<SegmentAudio> onReady, Action onFail)
+    {
         System.Threading.Tasks.Task.Run(() =>
         {
-            var pcm = SafeDecode.Decode(clip, out var failure);
-            var data = pcm?.ToBytes();
+            var run = SafeDecode.Try(clip, () => MpegFrameRun.Open(clip.Mp3), out var failure);
+            if (failure == null && (run == null || run.Seconds <= SegmentHeadSeconds))
+            {
+                // the whole PCM at once: not a bank payload (NLayer's stream reader), or no longer than the head
+                byte[] data;
+                int rate, channels;
+                if (run != null) { data = SafeDecode.Try(clip, run.Whole, out failure); rate = run.Rate; channels = run.Channels; }
+                else
+                {
+                    var pcm = SafeDecode.Decode(clip, out failure);
+                    data = pcm?.ToBytes();
+                    rate = pcm?.Rate ?? 0;
+                    channels = pcm?.Channels ?? 0;
+                }
+                lock (poolGate)
+                {
+                    if (poolClosed) return;
+                    if (failure != null) GD.PushWarning(failure);
+                    if (data == null || data.Length == 0)   // undecodable segment stays silent
+                    {
+                        if (onFail != null) decodedSegments.Enqueue(onFail);
+                        return;
+                    }
+                    double seconds = (double)data.Length / (2 * channels * rate);
+                    var whole = new SegmentAudio
+                    {
+                        Clip = clip, Wav = Stream(rate, channels, data, selfLoop), Seconds = seconds, Rate = rate, Channels = channels,
+                        HeadSeconds = seconds, Complete = true,
+                    };
+                    decodedSegments.Enqueue(() => onReady(whole));
+                }
+                return;
+            }
+            var head = failure == null ? SafeDecode.Try(clip, () => run.Head((int)Math.Ceiling(SegmentHeadSeconds * run.Rate)), out failure) : null;
+            SegmentAudio entry;
             lock (poolGate)
             {
                 if (poolClosed) return;
                 if (failure != null) GD.PushWarning(failure);
-                if (pcm == null) return;
-                var wav = Stream(pcm, data, selfLoop);
-                decodedSegments.Enqueue(() =>
+                if (head == null)
                 {
-                    // a predecode that lands after the cue changed is the outgoing voice's next segment
-                    if (playbackGuard.AcceptDecode(gen)) cueSegments[next.Id] = (clip, pcm, wav);
-                    else if (gen == outgoingGeneration) outgoingSegments[next.Id] = (clip, pcm, wav);
-                });
+                    if (onFail != null) decodedSegments.Enqueue(onFail);
+                    return;
+                }
+                entry = new SegmentAudio
+                {
+                    Clip = clip, Wav = Stream(run.Rate, run.Channels, head, loop: false), Seconds = run.Seconds, Rate = run.Rate,
+                    Channels = run.Channels, HeadSeconds = (double)head.Length / (2 * run.Channels * run.Rate),
+                };
+                decodedSegments.Enqueue(() => onReady(entry));
+            }
+            var all = SafeDecode.Try(clip, run.Whole, out failure);
+            lock (poolGate)
+            {
+                if (poolClosed) return;
+                if (failure != null) GD.PushWarning(failure);
+                bool decoded = all != null;
+                if (decoded)
+                {
+                    // the data first, then the loop end, then the mode: a mix between the sets never loops past the data
+                    entry.Wav.Data = all;
+                    entry.Wav.LoopEnd = all.Length / (2 * run.Channels);
+                    if (selfLoop) entry.Wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward;
+                }
+                double seconds = decoded ? (double)all.Length / (2 * run.Channels * run.Rate) : entry.HeadSeconds;
+                decodedSegments.Enqueue(() => CompleteSegment(entry, decoded, seconds));
             }
         });
+    }
+
+    /// <summary>
+    /// A segment's stream has its whole PCM, or the rest's decode failed. A voice on it whose head ran out before the rest
+    /// came (its player stopped; <see cref="OnSlotFinished"/> waited for this) goes on from where the head ended. On a
+    /// failure the segment is dropped from the caches and its voices end, as an undecodable segment's do.
+    /// </summary>
+    void CompleteSegment(SegmentAudio entry, bool decoded, double seconds)
+    {
+        entry.Complete = true;
+        entry.Seconds = seconds;
+        if (!decoded)
+        {
+            DropSegment(cueSegments, entry);
+            DropSegment(outgoingSegments, entry);
+        }
+        for (int i = 0; i < slotAudio.Length; i++)
+        {
+            if (slotAudio[i] != entry) continue;
+            var p = musicPlayers[i];
+            if (p == null || !IsInstanceValid(p)) continue;
+            if (!decoded)
+            {
+                if (slotCurrentCue[i] && i == crossfade.ActiveSlot) EndActiveVoice();
+                else ReleaseSlot(i);
+            }
+            else if (!p.Playing)
+            {
+                p.Play((float)entry.HeadSeconds);
+                GD.Print($"audio: bgm slot {i} {entry.Clip.Name}: the head ran out before the rest decoded, on from {entry.HeadSeconds:F2} s");
+            }
+        }
+    }
+
+    static void DropSegment(Dictionary<int, SegmentAudio> segments, SegmentAudio entry)
+    {
+        foreach (var (id, e) in segments)
+            if (e == entry) { segments.Remove(id); return; }
     }
 
     void PlaySegment(MusicCue cue, MusicSegment seg, int crossfadeMs, ulong promptUsec = 0)
@@ -754,7 +866,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
         activeSegment = seg;
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
-        playbackGuard.OnSegmentPlaying(entry.Pcm.Seconds, selfLoop);
+        playbackGuard.OnSegmentPlaying(entry.Seconds, selfLoop);
         slotSegmentVolume[inSlot] = entry.Clip.Volume;
         bgmName = entry.Clip.Name;
 
@@ -765,12 +877,15 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         slotGeneration[inSlot]++;
         slotSegment[inSlot] = seg;
         slotCurrentCue[inSlot] = true;
+        slotAudio[inSlot] = entry;
         player.Stream = entry.Wav;
         ApplyPlayerGains();
         if (!selfLoop) Chain(inSlot);
         player.Play();
-        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id} -> {entry.Clip.Name} ({entry.Pcm.Seconds:F1} s, {entry.Pcm.Rate} Hz, {entry.Pcm.Channels} ch, loop={selfLoop}, xfade={crossfadeMs} ms, fading={isCrossfading}), playing={player.Playing}{StartDelay(promptUsec)}");
+        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id} -> {entry.Clip.Name} ({entry.Seconds:F1} s, {entry.Rate} Hz, {entry.Channels} ch, loop={selfLoop}, xfade={crossfadeMs} ms, fading={isCrossfading}), playing={player.Playing}{StartDelay(promptUsec)}{HeadNote(entry)}");
     }
+
+    static string HeadNote(SegmentAudio entry) => entry.Complete ? "" : $", from a {entry.HeadSeconds:F1} s head";
 
     /// <summary>", started N ms after the prompt" for a cue's first segment, else empty.</summary>
     static string StartDelay(ulong promptUsec) =>
@@ -797,6 +912,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     void OnSlotFinished(int slot)
     {
+        // the head ran out before the rest decoded: CompleteSegment goes on from there, and the end stays chained
+        if (slotAudio[slot] is { Complete: false }) return;
         Unchain(slot);
         if (!slotCurrentCue[slot])
         {
@@ -828,46 +945,33 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         var clip = library.ResolveSegment(next);
         if (clip == null) return false;
         int sg = ++slotGeneration[slot];
-        bool selfLoop = MusicController.IsUnconditionalSelfLoop(next);
-        System.Threading.Tasks.Task.Run(() =>
+        DecodeSegment(clip, MusicController.IsUnconditionalSelfLoop(next), decoded =>
         {
-            var pcm = SafeDecode.Decode(clip, out var failure);
-            var data = pcm?.ToBytes();
-            lock (poolGate)
-            {
-                if (poolClosed) return;
-                if (failure != null) GD.PushWarning(failure);
-                if (pcm == null)   // the voice ends where its segment did, as one with nothing to follow
-                {
-                    decodedSegments.Enqueue(() => { if (slotGeneration[slot] == sg && !slotCurrentCue[slot]) ReleaseSlot(slot); });
-                    return;
-                }
-                var wav = Stream(pcm, data, selfLoop);
-                decodedSegments.Enqueue(() =>
-                {
-                    if (slotGeneration[slot] != sg || slotCurrentCue[slot] || !crossfade.Busy(slot)) return;
-                    var decoded = (clip, pcm, wav);
-                    outgoingSegments[next.Id] = decoded;
-                    PlayOutgoing(slot, next, decoded);
-                });
-            }
+            if (slotGeneration[slot] != sg || slotCurrentCue[slot] || !crossfade.Busy(slot)) return;
+            outgoingSegments[next.Id] = decoded;
+            PlayOutgoing(slot, next, decoded);
+        }, () =>
+        {
+            // the voice ends where its segment did, as one with nothing to follow
+            if (slotGeneration[slot] == sg && !slotCurrentCue[slot]) ReleaseSlot(slot);
         });
         return true;
     }
 
-    void PlayOutgoing(int slot, MusicSegment seg, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav) entry)
+    void PlayOutgoing(int slot, MusicSegment seg, SegmentAudio entry)
     {
         var player = musicPlayers[slot];
         if (player == null || !IsInstanceValid(player)) return;
         slotGeneration[slot]++;
         slotSegment[slot] = seg;
         slotSegmentVolume[slot] = entry.Clip.Volume;
+        slotAudio[slot] = entry;
         player.Stream = entry.Wav;
         ApplyPlayerGain(slot);
         MusicState.OnSegmentStarted();
         if (!MusicController.IsUnconditionalSelfLoop(seg)) Chain(slot);
         player.Play();
-        GD.Print($"audio: bgm outgoing slot {slot} seg {seg.Id} -> {entry.Clip.Name} at gain {crossfade.Gain(slot):F3}");
+        GD.Print($"audio: bgm outgoing slot {slot} seg {seg.Id} -> {entry.Clip.Name} at gain {crossfade.Gain(slot):F3}{HeadNote(entry)}");
     }
 
     void AdvanceToNextSegment(int crossfadeMs)
@@ -1215,6 +1319,17 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     }
 
     // The banks hold MPEG layer II, which Godot's mp3 decoder rejects: play the decoded PCM.
+    static AudioStreamWav Stream(int rate, int channels, byte[] data, bool loop) => new()
+    {
+        Format = AudioStreamWav.FormatEnum.Format16Bits,
+        Stereo = channels == 2,
+        MixRate = rate,
+        Data = data,
+        LoopMode = loop ? AudioStreamWav.LoopModeEnum.Forward : AudioStreamWav.LoopModeEnum.Disabled,
+        LoopBegin = 0,
+        LoopEnd = data.Length / (2 * channels),
+    };
+
     static AudioStreamWav Stream(Pcm16 pcm, byte[] data, bool loop) => new()
     {
         Format = AudioStreamWav.FormatEnum.Format16Bits,
