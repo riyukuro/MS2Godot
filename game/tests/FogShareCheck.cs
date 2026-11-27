@@ -7,9 +7,10 @@ namespace Ms2Godot.Tests;
 /// <summary>
 /// Depth fog check (res://tests/fog_share.tscn, needs a display): the field shaders' fogged share (ms2_fog.gdshaderinc
 /// ms2_fog_share) against the client's vertex fog, 1 - saturate((far + bias - z) / (far - near)) (CalculateBiasedFog,
-/// ms2materialnodelibrary.cpp:957-1075), for the mapxblock ranges the data has: far above near (02000110_bf), near equal to
-/// far (52000104_qd and three more: a step at far + bias), near above far (63000041_cs: full fog up to far + bias, clear by
-/// near + bias), and the fog off (SetFogRange(false)). Each case sets ms2_fog and draws quads at set view depths through a
+/// ms2materialnodelibrary.cpp:957-1075), for the mapxblock ranges the data has, as the shaders get them under the field
+/// camera (CameraFrustum.ShaderFogRange): far above near (02000110_bf), near equal to far (52000104_qd and three more: fog
+/// from near to the camera's far), near above far (63000041_cs: a far end past 1e9, next to no fog), a near past the
+/// camera's far (equal ends: a step at far + bias), and the fog off (SetFogRange(false)). Each case sets ms2_fog and draws quads at set view depths through a
 /// fog-layer camera; a quad's lower half draws the expected share as a constant, so both halves pass through the same
 /// output and are compared as drawn. Quits with 0 when every quad's halves agree within 2/255, else 1.
 /// </summary>
@@ -23,16 +24,21 @@ public partial class FogShareCheck : Node
     static readonly Case[] Cases =
     {
         new("02000110_bf", 3190, 10000, 1100, false, new[] { 2000f, 4290, 7000, 11000, 12000 }),
-        new("near == far", 3590, 3590, 1100, false, new[] { 4000f, 4689, 4691, 6000 }),
-        new("63000041_cs", 11000, 10000, 1100, false, new[] { 5000f, 11000, 11350, 11600, 11900, 13000 }),
+        new("near == far", 3590, 3590, 1100, false, new[] { 4000f, 6000, 30000, 60000, 90000, 110000 }),
+        new("63000041_cs", 11000, 10000, 1100, false, new[] { 5000f, 11000, 11600, 13000, 60000, 110000 }),
+        new("near past the camera's far", 150000, 200000, 1100, false, new[] { 4000f, 100000, 101099, 101101, 110000 }),
         new("off", 3190, 10000, 1100, true, new[] { 2000f, 7000, 12000 }),
     };
+
+    /// <summary>The range the shaders get for a case's block range under the field camera.</summary>
+    static (float Near, float Far) Shader(Case c) => Ms2.Formats.World.CameraFrustum.GameplayDefault.ShaderFogRange(c.Near, c.Far);
 
     /// <summary>The client's fogged share at view depth z (D3D9 float division; 0/0 at the step taken as no fog).</summary>
     static float Expected(Case c, float z)
     {
         if (c.Off) return 0f;
-        float f = (c.Far + c.Bias - z) / (c.Far - c.Near);
+        var (near, far) = Shader(c);
+        float f = (far + c.Bias - z) / (far - near);
         if (float.IsNaN(f)) f = 1f;
         return 1f - Math.Clamp(f, 0f, 1f);
     }
@@ -52,7 +58,7 @@ public partial class FogShareCheck : Node
         vp.AddChild(new Camera3D
         {
             Projection = Camera3D.ProjectionType.Orthogonal, Size = Cell, KeepAspect = Camera3D.KeepAspectEnum.Height,
-            Near = 1, Far = 50000, CullMask = 0xFFFFF | FogLayer, Position = new Vector3(cols * Cell / 2f, 0, 0), Current = true,
+            Near = 1, Far = 120000, CullMask = 0xFFFFF | FogLayer, Position = new Vector3(cols * Cell / 2f, 0, 0), Current = true,
             Compositor = Ms2Bloom.GammaOut(),   // the game's gamma conversion for views without bloom
         });
         var shader = new Shader
@@ -85,7 +91,8 @@ void fragment() {
             return;
         }
         var c = Cases[index];
-        RenderingServer.GlobalShaderParameterSet("ms2_fog", new Vector4(c.Near, c.Far, c.Bias, c.Off ? 1f : 0f));
+        var (sn, sf) = Shader(c);
+        RenderingServer.GlobalShaderParameterSet("ms2_fog", new Vector4(sn, sf, c.Bias, c.Off ? 1f : 0f));
         for (int i = 0; i < c.Depths.Length; i++)
         {
             var m = (ShaderMaterial)probe.Duplicate();

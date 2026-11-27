@@ -366,8 +366,10 @@ public class FieldFogDataTests
 
     /// <summary>Every mapxblock on both data sets, by the depth fog the field load gives it: off when the block has no fog
     /// element (FieldFog.Fog false, so GraphicGates.IsFogEnabled false and ApplyFieldFog's SetFogRange(false)), else on with
-    /// the block's range, counted by its form (far above near; near equal to far, a step at far + bias; near above far, fog
-    /// that clears by near + bias), which ms2_fog.gdshaderinc draws as the client's vertex fog (res://tests/fog_share.tscn).</summary>
+    /// the block's range, counted by its form and the range the shaders get for it (CameraFrustum.ShaderFogRange under the
+    /// field camera: the block's when far is above near; near to the camera's far when near equals far; a far end past 1e9,
+    /// next to no fog, when near is above far), which ms2_fog.gdshaderinc draws as the client's vertex fog
+    /// (res://tests/fog_share.tscn).</summary>
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
     public void EveryMapxblockDepthFogSwitch(string env)
@@ -384,7 +386,16 @@ public class FieldFogDataTests
             var ff = FieldFog.Parse(x);
             bool on = Ms2.Formats.Options.GraphicGates.IsFogEnabled(ff.Fog);
             if (on != (x.Root?.Element("fog") != null)) bad.Add($"{entry}: on {on}");
-            string k = !on ? "off (no fog element)" : ff.FogFar > ff.FogNear ? "on, far above near" : ff.FogFar == ff.FogNear ? "on, near equal to far" : "on, near above far";
+            // the range the shaders get (CameraFrustum.ShaderFogRange): the block's when far is above near, else rebuilt
+            var (sn, sf) = Ms2.Formats.World.CameraFrustum.GameplayDefault.ShaderFogRange(ff.FogNear, ff.FogFar);
+            string k = !on ? "off (no fog element)"
+                : ff.FogFar > ff.FogNear ? "on, far above near (shaders get the block's range)"
+                : ff.FogFar == ff.FogNear ? "on, near equal to far (shaders fog from near to the camera's far)"
+                : "on, near above far (shaders' far end past 1e9: next to no fog)";
+            if (on && ff.FogFar > ff.FogNear && ff.FogNear < 100000 && (MathF.Abs(sn - ff.FogNear) > 1 || MathF.Abs(sf - ff.FogFar) > 1))
+                bad.Add($"{entry}: {ff.FogNear} / {ff.FogFar} becomes {sn} / {sf}");
+            if (on && ff.FogFar == ff.FogNear && (sn != ff.FogNear || sf != 100000)) bad.Add($"{entry}: {ff.FogNear} / {ff.FogFar} becomes {sn} / {sf}");
+            if (on && ff.FogFar < ff.FogNear && sf < 1e9f) bad.Add($"{entry}: {ff.FogNear} / {ff.FogFar} becomes {sn} / {sf}");
             count[k] = count.GetValueOrDefault(k) + 1;
             if (example.TryGetValue(k, out var e)) { if (k.Contains("near equal") || k.Contains("near above")) example[k] = e + " " + entry; }
             else example[k] = entry;
@@ -393,6 +404,6 @@ public class FieldFogDataTests
         foreach (var (k, c) in count) TestContext.Out.WriteLine($"  {k}: {c} (e.g. {example[k]})");
         Assert.That(bad, Is.Empty);
         Assert.That(count.GetValueOrDefault("off (no fog element)"), Is.GreaterThan(100));
-        Assert.That(count.GetValueOrDefault("on, far above near"), Is.GreaterThan(100));
+        Assert.That(count.GetValueOrDefault("on, far above near (shaders get the block's range)"), Is.GreaterThan(100));
     }
 }

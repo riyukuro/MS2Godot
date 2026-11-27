@@ -21,6 +21,23 @@ public class CameraFrustumTests
         Assert.That(f.Far, Is.EqualTo(far));
     }
 
+    /// <summary>The fog range the shaders get under the field camera (10 / 100000), as SetFogRange, SetMaxFogValue and
+    /// SCM_DEF_FOG_NEARFAR rebuild it: a range with far above near comes back as it was (02000110_bf's 3190 / 10000); near
+    /// equal to far fogs from near to the camera's far (52000104_qd's 3590); near above far has its far end pushed far past
+    /// the camera's (63000041_cs's 11000 / 10000: 1e-5 max fog value, factor 99999); a near past the camera's far puts
+    /// both ends there.</summary>
+    [TestCase(3190f, 10000f, 3190f, 10000f)]
+    [TestCase(1000f, 10000f, 1000f, 10000f)]
+    [TestCase(3590f, 3590f, 3590f, 100000f)]
+    [TestCase(11000f, 10000f, 11000f, 8.9e9f)]
+    [TestCase(150000f, 200000f, 100000f, 100000f)]
+    public void TheShaderFogRange(float near, float far, float shaderNear, float shaderFar)
+    {
+        var (n, f) = CameraFrustum.GameplayDefault.ShaderFogRange(near, far);
+        Assert.That(n, Is.EqualTo(shaderNear).Within(shaderNear * 1e-5f), "near");
+        Assert.That(f, Is.EqualTo(shaderFar).Within(shaderFar * 1e-3f), "far");
+    }
+
     [Test]
     public void NoFlatIsTheDefault()
     {

@@ -254,6 +254,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
+        cameraPlanes = CameraFrustum.Gameplay(flats);
         BuildEnvironment(map, fieldName, hdrOn);
         await Budget();
         GD.Print($"MS2Godot lights: {FieldLights.Add(fb.Lights, Ms2.Formats.Options.GraphicGates.LightDimmerScale(hdrOn))}, {fb.LightMaskedDraws} draws masked");
@@ -307,7 +308,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         catch (Exception ex) { GD.PushWarning("constants: " + ex.Message); }
         // Gamebryo's camera FOV is vertical, as Godot's (keep height). The planes are the field camera entity's
         // (MS2GameplayCamera.flat: 10 / 100000, CameraFrustum); the camera modes' 250 / 18000 are its depth of field
-        var planes = CameraFrustum.Gameplay(flats);
+        var planes = cameraPlanes;
         camera = new Camera3D { Fov = cam.FovDeg, Near = planes.Near, Far = planes.Far, Current = true, CullMask = MainCullMask };
         RasterOrigin();
         rasterSource = GetViewport();
@@ -584,7 +585,9 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         // are the field's, the constructor's 1000, 10000 and 0 when the block has none (fielddatacli.cpp:73).
         var ff = Ms2.Ui.FieldFog.Parse(x);
         bool fogOn = Ms2.Formats.Options.GraphicGates.IsFogEnabled(ff.Fog);
-        float fogNear = ff.FogNear, fogFar = ff.FogFar;
+        // The range the shaders get: SetFogRange's depth and max fog value under the field camera, turned back into a near
+        // and far by SCM_DEF_FOG_NEARFAR (CameraFrustum.ShaderFogRange): the block's own range when its far is above its near.
+        var (fogNear, fogFar) = cameraPlanes.ShaderFogRange(ff.FogNear, ff.FogFar);
         Color fog = Unpacked(ff.FogColor);
         // The clear colour the background shows where nothing is drawn: the fog colour, or this sky blue for a block
         // without fog. STILL-OPEN: the client's game scene clears to black (CSceneStateGame::OnEnter,
@@ -816,10 +819,11 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         fogParams.Z = bias;
         RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
     }
-    Vector4 fogParams;   // ms2_fog: near, far, bias, off (1: ApplyEffect::SetFogRange(false, ...))
+    Vector4 fogParams;   // ms2_fog: the shaders' near and far (CameraFrustum.ShaderFogRange), bias, off (1: SetFogRange(false, ...))
+    CameraFrustum cameraPlanes = CameraFrustum.GameplayDefault;   // the field camera's planes, which the fog range is rebuilt under
     Vector3 fogColorShown, hfogShown, hfogColorShown;   // the other fog globals as last set (the game cannot read them back)
 
-    /// <summary>The fog globals as last set, for the live checks: near, far and off of ms2_fog (its bias follows the camera), its
+    /// <summary>The fog globals as last set, for the live checks: the shaders' near, far and off of ms2_fog (its bias follows the camera), its
     /// colour, ms2_hfog and its colour.</summary>
     public string FogShown => $"{fogParams.X},{fogParams.Y},{fogParams.W} {fogColorShown} {hfogShown} {hfogColorShown}";
 
@@ -833,10 +837,12 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
 
     /// <summary>ApplyEffect::SetFogRange (@0x1409a4450, applyeffect.cpp:586-622): the depth fog on or off (NiFogProperty
     /// SetFog), its near and far, and its colour (0xAARRGGBB; the rgb is the gamma value, as the mapxblock's). The field_lit
-    /// family's fog (ms2_fog, its w the off switch) and the environment fog of the other materials both follow.</summary>
+    /// family's fog (ms2_fog, its w the off switch) and the environment fog of the other materials both follow, with the
+    /// range the shaders get under the field camera (CameraFrustum.ShaderFogRange).</summary>
     public void SetFogRange(bool on, float near, float far, uint color)
     {
         var c = Unpacked(color);
+        (near, far) = cameraPlanes.ShaderFogRange(near, far);
         RenderingServer.GlobalShaderParameterSet("ms2_fog_color", fogColorShown = new Vector3(c.R, c.G, c.B));
         fogParams = new Vector4(near, far, fogParams.Z, on ? 0f : 1f);
         RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
