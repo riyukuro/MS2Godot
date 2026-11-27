@@ -51,7 +51,7 @@ public class AdditionalCacheTests
                     && n.IndexOf('/', AdditionalTable.Gms2Folder.Length) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
                     if (uint.TryParse(Path.GetFileNameWithoutExtension(n), out var id)) ids.Add(id);
             Assert.That(ids.Count, Is.GreaterThan(1000));
-            int levels = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0, keeps = 0, overlapKeeps = 0, dotSounds = 0;
+            int levels = 0, balloons = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0, keeps = 0, overlapKeeps = 0, dotSounds = 0;
             foreach (var id in ids.Append(0u).Append(99999999u))
             {
                 var a = xml.Additional.GetAdditional(id);
@@ -70,6 +70,8 @@ public class AdditionalCacheTests
                         Is.EqualTo((la.Level, la.StringParam, la.DurationTick, la.KeepCondition, la.IconOnOff, la.Icon, la.Priority, la.IsHideCooltime, la.EventBuffType, la.PvpOnOff, la.DisableRevivalHere, la.ForceApplyTarget, la.Hide, la.Invincible, true)), $"effect {id} level {lv}");
                     Assert.That((lb.SuperArmor, lb.SuperArmorApplyFieldType), Is.EqualTo((la.SuperArmor, la.SuperArmorApplyFieldType)), $"effect {id} level {lv} super armor");
                     if (la.SuperArmor != 0) armors++;
+                    Assert.That(lb.IconBalloonOnOff, Is.EqualTo(la.IconBalloonOnOff), $"effect {id} level {lv} icon balloon");
+                    if (la.IconBalloonOnOff) balloons++;
                     Assert.That((lb.MaxBuffCount, lb.Stun, lb.StunAnimation), Is.EqualTo((la.MaxBuffCount, la.Stun, la.StunAnimation)), $"effect {id} level {lv} overlap and stun");
                     if (la.Stun != 0) stuns++;
                     if (la.MaxBuffCount != 1) overlaps++;
@@ -96,6 +98,7 @@ public class AdditionalCacheTests
             TestContext.Progress.WriteLine($"additional cache: {ids.Count} ids, {levels} levels compared");
             Assert.That(specials, Is.GreaterThan(1000), "levels with special abilities");
             Assert.That(armors, Is.GreaterThan(0), "levels with super armor");
+            Assert.That(balloons, Is.GreaterThan(50), "levels with an icon balloon");
             TestContext.Progress.WriteLine($"additional cache: {stuns} stun levels, {overlaps} levels with a max buff count other than 1");
             Assert.That(stuns, Is.GreaterThan(300), "levels with a stun");
             Assert.That(overlaps, Is.GreaterThan(0), "levels with a max buff count");

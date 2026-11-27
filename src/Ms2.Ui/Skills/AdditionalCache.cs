@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 15;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities; 13: MaxBuffCount, Stun, StunAnimation; 14: the motion effects, InvokeEvent, OverlapKeep; 15: DotSoundMaterial
+    public const int Version = 16;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities; 13: MaxBuffCount, Stun, StunAnimation; 14: the motion effects, InvokeEvent, OverlapKeep; 15: DotSoundMaterial; 16: IconBalloonOnOff
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -131,6 +131,7 @@ public sealed class AdditionalCache
             w.Write(l.Icon);
             w.Write(l.Priority);
             w.Write(l.IsHideCooltime);
+            w.Write(l.IconBalloonOnOff);
             w.Write(l.EventBuffType);
             w.Write(l.PvpOnOff);
             w.Write(l.DisableRevivalHere);
@@ -292,7 +293,7 @@ public sealed class AdditionalCache
             var l = new AdditionalLevelData
             {
                 Level = r.ReadUInt16(), StringParam = r.ReadString(), DurationTick = r.ReadUInt32(), KeepCondition = r.ReadInt32(),
-                IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
+                IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(), IconBalloonOnOff = r.ReadBoolean(),
                 EventBuffType = r.ReadUInt32(), PvpOnOff = r.ReadBoolean(), DisableRevivalHere = r.ReadBoolean(),
                 ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(), Invincible = r.ReadInt32(),
                 SuperArmor = r.ReadUInt32(), SuperArmorApplyFieldType = r.ReadInt32(),

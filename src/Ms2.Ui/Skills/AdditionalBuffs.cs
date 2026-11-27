@@ -89,6 +89,14 @@ public interface IBuffStrip
     void QueueSlotRefresh(int flags);
 }
 
+/// <summary>The owner's buff balloon (PCBase vfunc_84, UIBuffBalloon::Entity): FUN_14128ecf0 shows an effect's icon over the
+/// owner's head, FUN_14128edb0 hides it when the key is the shown one.</summary>
+public interface IBuffBalloon
+{
+    void Show(int key, string image, uint time);
+    void Hide(int key);
+}
+
 /// <summary>
 /// What an AdditionalCli's effects go through: CEffectService with a query whose actor is the owner (SetActor), whose object
 /// kind is the caster's (WorldService::FUN_141bd19d0) and whose lookup id is the caster's (SetLookupId).
@@ -133,6 +141,8 @@ public sealed class AdditionalBuffList
     public IBuffStrip Strip;
     /// <summary>The effect service the effects play through; null = none are played.</summary>
     public IBuffMotionEffects Effects;
+    /// <summary>m_pOwner->vfunc_84(): the owner's buff balloon, null for none (no balloon movie, or a PC not yet added).</summary>
+    public Func<IBuffBalloon> Balloon;
 
     /// <param name="levelOf">SkillDataTableCli::FUN_140aafef0: the effect level, null when unknown.</param>
     public AdditionalBuffList(Func<uint, ushort, AdditionalLevelData> levelOf) => this.levelOf = levelOf;
@@ -688,14 +698,23 @@ public sealed class AdditionalBuffList
     }
 
     /// <summary>AddBuffUI @0x140973950: the UI property shows the icon for the caster (FUN_1401927c0) and the owner is the
-    /// local player: UIMainPlayerInfo::AddBuffEffect.</summary>
+    /// local player: UIMainPlayerInfo::AddBuffEffect. Then, whatever the icon state, a level with iconBalloonOnOff gives the
+    /// owner's balloon its key, icon and remaining ticks (additionalcli_2.cpp:1243-1251; the portrait PC's test always passes,
+    /// as no portrait list is made here). STILL-OPEN: the other owners' UIUpperHpBar / UINpcDuelHPBarDialog strips and the
+    /// shield bar.</summary>
     void AddBuffUI(AdditionalBuff b)
     {
         if (b.LevelData.ShowIcon(IsUpperTargetId(b.CasterId))) Strip?.AddBuffEffect(b);
+        if (b.LevelData?.IconBalloonOnOff == true && Balloon?.Invoke() is { } balloon) balloon.Show(b.Key, b.LevelData.Icon, b.RemainTicks);
     }
 
-    /// <summary>RemoveBuffUI @0x140973cc0: UIMainPlayerInfo::RemoveBuffEffect(key), whatever the icon state.</summary>
-    void RemoveBuffUI(AdditionalBuff b) => Strip?.RemoveBuffEffect(b.Key);
+    /// <summary>RemoveBuffUI @0x140973cc0: UIMainPlayerInfo::RemoveBuffEffect(key), whatever the icon state; then a level
+    /// with iconBalloonOnOff hides the owner's balloon by the key (additionalcli_2.cpp:1275-1280).</summary>
+    void RemoveBuffUI(AdditionalBuff b)
+    {
+        Strip?.RemoveBuffEffect(b.Key);
+        if (b.LevelData?.IconBalloonOnOff == true && Balloon?.Invoke() is { } balloon) balloon.Hide(b.Key);
+    }
 
     /// <summary>AdditionalCli::UpdateBuffUI @0x14096d430: UpdateBuffEffect when the icon shows for the caster.</summary>
     void UpdateBuffUI(AdditionalBuff b)

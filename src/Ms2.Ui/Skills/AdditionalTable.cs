@@ -96,6 +96,9 @@ public sealed class AdditionalLevelData
     /// isHideCooltime.</summary>
     public int IconOnOff = 1;
     public string Icon = "";
+    /// <summary>&lt;UI iconBalloonOnOff&gt; (m_bIconBalloonOnOff, additionalactionadditional.cpp:1320): the icon shows over the
+    /// owner's head too (AddBuffUI's UIBuffBalloon).</summary>
+    public bool IconBalloonOnOff;
     public int Priority;
     public bool IsHideCooltime;
     /// <summary>The effect the level belongs to (AdditionalLevelData(AdditionalData*)).</summary>
@@ -176,6 +179,7 @@ public sealed class AdditionalLevelData
         if (e.Element("UI") is { } ui)
         {
             if (ui.Attribute("iconOnOff") != null) lv.IconOnOff = Xml.Int(ui, "iconOnOff");
+            lv.IconBalloonOnOff = Xml.Bool(ui, "iconBalloonOnOff");
             lv.IsHideCooltime = Xml.Bool(ui, "isHideCooltime");
             lv.Priority = Xml.Int(ui, "priority");
             lv.Icon = (string)ui.Attribute("icon") ?? "";
