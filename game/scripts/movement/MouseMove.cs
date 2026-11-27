@@ -62,20 +62,32 @@ public partial class MouseMove : Node
     /// a press taken in the field walks on its release even when it ends over a dialog (<see cref="Ms2.Ui.MouseReleaseGate"/>).
     /// Godot's own controls (the creative menu, text inputs, widgets) are no part of the client's UI movie, but they took the
     /// click before this node saw it while it ran in _UnhandledInput; here a control under the cursor counts as the UI too
-    /// (<see cref="UiTakesMouse"/>).
+    /// (<see cref="UiTakesMouse"/>). A release under the flag also walks while the move of an earlier click runs (m_nMode 2), but
+    /// not for a click a Godot control took: the GUI took both its press and release before. A release out of the window does
+    /// not walk (IsCursorInWindow).
     /// </summary>
     public override void _Input(InputEvent e)
     {
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
-        bool over = UiTakesMouse(GetViewport());
+        var vp = GetViewport();
+        bool control = ControlTakesMouse(vp);
+        bool over = control || Ui.As3View.AnyMouseOverUi(vp);
         if (mb.Pressed) { gate.Press(over); return; }
-        if (gate.Release(over)) Release(mb);
+        if (gate.Release(over, Moving && !control, InWindow(vp, mb.Position))) Release(mb);
     }
 
     /// <summary>The sampled flag of the UI movie (<see cref="Ui.As3View.AnyMouseOverUi"/>), or a Godot Control with a mouse filter
     /// other than Ignore under the cursor (the hovered control: what the GUI would give the click to).</summary>
-    public static bool UiTakesMouse(Viewport vp) =>
-        Ui.As3View.AnyMouseOverUi(vp) || vp.GuiGetHoveredControl() is { MouseFilter: not Control.MouseFilterEnum.Ignore };
+    public static bool UiTakesMouse(Viewport vp) => Ui.As3View.AnyMouseOverUi(vp) || ControlTakesMouse(vp);
+
+    static bool ControlTakesMouse(Viewport vp) => vp.GuiGetHoveredControl() is { MouseFilter: not Control.MouseFilterEnum.Ignore };
+
+    /// <summary>CMouseController::IsCursorInWindow (@0x140ad3dd0, mousecontroller.cpp:929-943): 0 to the width and height, both ends in.</summary>
+    static bool InWindow(Viewport vp, Vector2 p)
+    {
+        var r = vp.GetVisibleRect();
+        return p.X >= r.Position.X && p.Y >= r.Position.Y && p.X <= r.End.X && p.Y <= r.End.Y;
+    }
 
     void Release(InputEventMouseButton mb)
     {
@@ -91,10 +103,11 @@ public partial class MouseMove : Node
         }
         var to = from + normal * 20000f;
         using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));
-        if (hit.Count == 0) return;
+        // FUN_140ad23f0 (mousecontroller.cpp:496-511): no point under the click is ResetToIdle, which ends a running move
+        if (hit.Count == 0) { Stop(); return; }
         var p = (Vector3)hit[PhysicsKeys.Position];
         var n = (Vector3)hit[PhysicsKeys.Normal];
-        if (player.Cubes.CubeAt(p - n) == null) return;     // only cube blocks are picked
+        if (player.Cubes.CubeAt(p - n) == null) { Stop(); return; }     // only cube blocks are picked
         Go(p);
     }
 
@@ -277,7 +290,7 @@ public partial class MouseMove : Node
         if (!vp.GetVisibleRect().HasPoint(mouse)) return;
         string hint = "";
         int kind = 0;
-        if (!Ui.As3View.AnyMouseOverUi(vp) && IsInstanceValid(player)) kind = CursorKind(mouse, out hint);
+        if (!UiTakesMouse(vp) && IsInstanceValid(player)) kind = CursorKind(mouse, out hint);
         ApplyCursor(kind, hint);
     }
 

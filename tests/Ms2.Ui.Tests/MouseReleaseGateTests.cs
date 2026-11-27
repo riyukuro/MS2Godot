@@ -31,12 +31,30 @@ public class MouseReleaseGateTests
     }
 
     [Test]
-    public void AReleaseAfterAReleaseAndWithNoPressUnderTheFlagDoesNotWalk()
+    public void AReleaseUnderTheFlagAfterTheMoveEndedDoesNotWalk()
     {
         var g = new MouseReleaseGate();
         g.Press(false);
         Assert.That(g.Release(false), Is.True);
-        Assert.That(g.Release(true), Is.False, "mode back to 1 with the flag set: returns");
+        Assert.That(g.Release(true, moving: false), Is.False, "the move ended (ResetToIdle, mode 1) with the flag set: returns");
+    }
+
+    [Test]
+    public void AClickOnADialogWhileTheMoveRunsWalksOnItsRelease()
+    {
+        var g = new MouseReleaseGate();
+        g.Press(true);
+        Assert.That(g.Release(true, moving: true), Is.True, "FUN_140ad23f0 left mode 2; the flag set, mode != 1: FUN_140ad23f0 runs");
+        g.Press(true);
+        Assert.That(g.Release(false, moving: true), Is.False, "the flag clear: m_nIgnoreRelease returns, whatever the mode");
+    }
+
+    [Test]
+    public void AReleaseOutOfTheWindowDoesNotWalk()
+    {
+        var g = new MouseReleaseGate();
+        g.Press(false);
+        Assert.That(g.Release(false, inWindow: false), Is.False, "IsCursorInWindow == 0: returns");
     }
 
     [Test]
