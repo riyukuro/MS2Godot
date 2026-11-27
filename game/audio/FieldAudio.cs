@@ -72,6 +72,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     AudioStreamPlayer ui;
     MusicSegment activeSegment;
     double audioClock;
+    /// <summary>The real seconds this node has processed (<see cref="GameClock.Real"/>): FMOD's channel runs on the mixer's
+    /// time, which the game's time scale does not reach (CMainSystem::SetTimeScale scales the game clock alone,
+    /// mainsystem.cpp:218), so a loop's event position is counted on it (<see cref="EventFadeIn.LoopPosition"/>).</summary>
+    double loopClock;
     float categoryMusicVolume = 1f;
     int chainedSlot = -1;
     string bgmName;
@@ -494,6 +498,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         RollOff();
         if (Ms2Godot.Net.LiveSession.LiveCheck) lastPlaying3d = Playing3d;   // the leave's count: the voices stop as they leave first
         audioClock += delta;
+        loopClock += GameClock.Real(delta);
         if (voiceSlots.Pending > 0)
             for (int due; (due = voiceSlots.NextDue(audioClock)) >= 0;) StopVoice(due);
         if (Fades.Running)

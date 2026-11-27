@@ -25,7 +25,7 @@ public partial class FieldAudio
     /// <summary>Whether the voice's sound has started (its start delay is over), so a loop stopped past its silent distance
     /// plays again on the way back.</summary>
     readonly bool[] started3d = new bool[EffectVoiceSlots.ClientChannels];
-    /// <summary>A voice's loop range in frames and its rate, and when its sound started (<see cref="audioClock"/>): a loop
+    /// <summary>A voice's loop range in frames and its rate, and when its sound started (<see cref="loopClock"/>): a loop
     /// stopped past its silent distance plays again from where FMOD's event would be by then, with no new fade-in
     /// (<see cref="EventFadeIn.LoopPosition"/>).</summary>
     readonly int[] loopBegin3d = new int[EffectVoiceSlots.ClientChannels], loopEnd3d = new int[EffectVoiceSlots.ClientChannels],
@@ -81,7 +81,7 @@ public partial class FieldAudio
             if (gains3d.PastSilentChanged(i, out bool past))
             {
                 if (past) voices3d[i].Stop();
-                else if (started3d[i]) voices3d[i].Play((float)EventFadeIn.LoopPosition(audioClock - startedAt3d[i], loopBegin3d[i], loopEnd3d[i], rate3d[i]));
+                else if (started3d[i]) voices3d[i].Play((float)EventFadeIn.LoopPosition(loopClock - startedAt3d[i], loopBegin3d[i], loopEnd3d[i], rate3d[i]));
             }
         }
         Ambient?.RollOff(l, r);
@@ -122,7 +122,7 @@ public partial class FieldAudio
     void Start3d(AudioStreamPlayer3D v, int slot)
     {
         started3d[slot] = true;
-        startedAt3d[slot] = audioClock;
+        startedAt3d[slot] = loopClock;
         if (!gains3d.IsPast(slot)) v.Play();
     }
 

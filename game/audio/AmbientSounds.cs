@@ -186,12 +186,13 @@ public partial class AmbientSounds : Node3D
         Count = 0;
     }
 
-    /// <summary>The seconds this node has processed, for where a loop's event is (<see cref="Sound.StartedAt"/>).</summary>
+    /// <summary>The real seconds this node has processed, for where a loop's event is (<see cref="Sound.StartedAt"/>): FMOD's
+    /// channel runs on the mixer's time, which the game's time scale does not reach (<see cref="GameClock.Real"/>).</summary>
     double clock;
 
     public override void _Process(double delta)
     {
-        clock += delta;
+        clock += GameClock.Real(delta);
         while (started.TryDequeue(out var start)) start();
     }
 
