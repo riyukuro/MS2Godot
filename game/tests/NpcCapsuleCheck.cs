@@ -19,6 +19,7 @@ namespace Ms2Godot.Tests;
 ///   npc there (SweepCapsuleBox d == 0, CharacterController.cpp:366-374), and allocate nothing.
 /// - Click to move passes a live npc: the click ray picks the floor under it (FUN_140ad3740 picks block models only) and
 ///   the forward probe (groups 0x201, FUN_140ad2830) does not hit it.
+/// - A blob shadow over a live npc lies on the floor under it: the shadow's ground ray takes groups 0x389 (PCBase::vfunc_93).
 /// Quits with 0 when all hold, else 1.
 /// MS2_NPC_CAPSULE_PERF=N (a measurement, not a check): after the checks, N live npcs walk a circle each physics frame
 /// with the runner stepping among them, 300 frames with their capsule bodies and 300 with the bodies freed; prints the
@@ -156,6 +157,8 @@ public partial class NpcCapsuleCheck : Node3D
         var click = Movement.MouseMove.ClickPoint(space, new RayQuery(), top, top + Vector3.Down * 2000, runner.GetRid());
         Check(click is { } c && Mathf.Abs(c.Position.Y) < 0.5f, $"a click onto the live npc picks {click?.Position}, not the floor under it");
         Check(allDown < 990, $"the all-layers click ray passes the npc too ({allDown:0.0}): the setup does not test it");
+        float shadowY = ShadowOver(new Vector3(600, 1000 - allDown + 5, 500));
+        Check(Mathf.Abs(shadowY - 13) < 0.5f, $"a shadow over the live npc lies at y {shadowY:0.0}, not on the floor (13)");
         runner.GlobalPosition = new Vector3(560, 0.5f, 500);
         var probe = RayQuery.CastRay(Movement.MouseMove.ProbeGroups);
         var atNpc = Movement.MouseMove.ProbeAhead(space, probe, runner.GlobalPosition, Vector3.Right, runner.GetRid());
@@ -172,7 +175,22 @@ public partial class NpcCapsuleCheck : Node3D
         wall.Free();
         GD.Print($"npc capsule check: a click onto the live npc picks y {click?.Position.Y:0.00} (all layers: the capsule, " +
                  $"{allDown:0.0} down), the probe at it {(atNpc == null ? "no hit" : "a hit")} (all layers: {allAhead:0.0} ahead), " +
-                 $"at a group 0 wall {(atWall == null ? "no hit" : "a hit")});
+                 $"at a group 0 wall {(atWall == null ? "no hit" : "a hit")}, a shadow over the npc at y {shadowY:0.0}");
+    }
+
+    /// <summary>The y of a blob shadow whose owner stands at <paramref name="at"/> (NaN with no ground hit).</summary>
+    float ShadowOver(Vector3 at)
+    {
+        BlobShadow.Load(PackSet.Shared(Settings.DataDir));
+        var owner = new Node3D();
+        AddChild(owner);
+        owner.GlobalPosition = at;
+        var s = BlobShadow.Add(owner, 30);
+        if (s == null) { owner.Free(); return float.NaN; }
+        s._Process(0);
+        float y = s.Visible ? s.GlobalPosition.Y : float.NaN;
+        owner.Free();
+        return y;
     }
 
     void Run()

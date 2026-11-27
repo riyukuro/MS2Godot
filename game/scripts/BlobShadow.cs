@@ -118,7 +118,9 @@ public partial class BlobShadow : MeshInstance3D
         var from = pos + Vector3.Up * 60;
         if (query == null)
         {
-            query = PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 4000);
+            // PCBase::vfunc_93 (pcbase.cpp:2458-2475) finds the shadow's ground with RayCastFixedDirection and mask 0,
+            // which takes the default groups 0x389 (physxhelper.cpp @0x14168a310): no pc (2) or npc (4, 5) capsule is ground
+            query = PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 4000, Movement.MoveConfig.DownRayGroups);
             if (self != null) query.Exclude = new Godot.Collections.Array<Rid> { self.GetRid() };
         }
         query.From = from;
