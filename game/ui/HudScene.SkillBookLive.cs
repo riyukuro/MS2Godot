@@ -18,9 +18,9 @@ public partial class HudScene
     /// <summary>The preview of the open window (null before its tab packet).</summary>
     Ms2.Ui.Skills.SkillPointSimulator SkillBookPreview => skillBook != null && !skillBook.IsClosed ? skillBook.Simulator : null;
 
-    /// <summary>Whether the open window's tree is built (the tab packet came).</summary>
     /// <summary>Harness: the skill window is open.</summary>
     public bool SkillBookShown => skillBook is { IsClosed: false };
+    /// <summary>Whether the open window's tree is built (the tab packet came).</summary>
     public bool SkillBookTreeShown => SkillBookPreview != null && SkillBookSlotCount > 0;
 
     int SkillBookSlotCount => skillBook?.Host?.Child("m_treeSkills") is { } tree ? (int)Rt.ToNumber(skillBook.Host.Get(tree, "numChildren")) : 0;

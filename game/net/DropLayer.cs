@@ -112,11 +112,12 @@ public sealed partial class DropLayer : Node3D
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
 
-    /// <summary>The downward ray cast of the drop's throw (CPhysXHelper::CastRay): the ground height (client z) under a client-space point, or null.</summary>
+    /// <summary>The downward ray cast of the drop's throw (CPhysXHelper::CastRay): the ground height (client z) under a client-space point, or null.
+    /// The ray's groups are 0x389 (dropitem.cpp:540-564, FUN_14147a500 m_groups), so npc controllers (4, 5) and PCs (2) are not ground.</summary>
     float? GroundAt(System.Numerics.Vector3 p)
     {
         var from = G(p);
-        ray ??= PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 4000f);
+        ray ??= PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 4000f, Movement.MoveConfig.DownRayGroups);
         ray.From = from; ray.To = from + Vector3.Down * 4000f;
         using var hit = GetWorld3D().DirectSpaceState.IntersectRay(ray);
         return hit.Count == 0 ? null : ((Vector3)hit[PhysicsKeys.Position]).Y;
