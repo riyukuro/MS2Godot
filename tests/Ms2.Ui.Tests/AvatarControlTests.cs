@@ -30,6 +30,42 @@ public class AvatarControlTests
         Assert.That(a.Angle.Z, Is.EqualTo(20f).Within(1e-3));
     }
 
+    /// <summary>
+    /// GitHub issue #14: vfunc_13 turns the avatar by FromEulerAnglesXYZ (Gamebryo's clockwise rotations) of angles that
+    /// start at the copy's facing read back (270), and vfunc_14 takes 0.35 a pixel off z for a right drag. With the camera
+    /// on Godot +x (the screen's right is Godot -z), the front (the client's -y, Godot +z) starts at the camera and turns
+    /// toward the screen's right, with the mouse.
+    /// </summary>
+    [Test]
+    public void RightDragTurnsTheFrontWithTheMouse()
+    {
+        var a = new AvatarControl(None, 0, 0, AvatarControl.PlayerStartZ);
+        Assert.That(Yaw(a), Is.EqualTo(0).Within(1e-3), "facing the camera");
+        a.MouseDown(1);
+        a.MouseMove(100, 0, 1);                                              // z: 270 - 35
+        Assert.That(a.Angle.Z, Is.EqualTo(235f).Within(1e-3));
+        Assert.That(Yaw(a), Is.EqualTo(35).Within(1e-3), "turned 35 toward the screen's right");
+        a.MouseMove(-100, 0, 1);                                             // z: 270 + 35
+        Assert.That(Yaw(a), Is.EqualTo(-35).Within(1e-3), "turned 35 toward the screen's left");
+    }
+
+    [Test]
+    public void RotationIsGamebryosClockwiseEulerXyz()
+    {
+        var a = new AvatarControl(None, 0, 0, 30);
+        var m = a.Rotation();                                                // MakeZRotation(30): +sin at [0][1]
+        Assert.That(m[1], Is.EqualTo(Math.Sin(30 * Math.PI / 180)).Within(1e-6));
+        Assert.That(m[3], Is.EqualTo(-Math.Sin(30 * Math.PI / 180)).Within(1e-6));
+    }
+
+    /// <summary>The front (Godot +z through <see cref="AvatarControl.GodotRotation"/>) in degrees from the camera (+x)
+    /// toward the screen's right (-z).</summary>
+    static double Yaw(AvatarControl a)
+    {
+        var g = a.GodotRotation();
+        return Math.Atan2(-g[8], g[2]) * 180 / Math.PI;
+    }
+
     [Test]
     public void LeftPressDoesNotTurn()
     {

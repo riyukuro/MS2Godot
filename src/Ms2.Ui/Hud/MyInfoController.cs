@@ -170,7 +170,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
 
     /// <summary>
     /// The avatar the window shows (m_spAvatar: vfunc_65 makes a UIAvatarPC of the local player, its vfunc_1 sets the y
-    /// turn limit), facing the camera (0, 0, 90). Null while closed or without a record.
+    /// turn limit), facing the camera (0, 0, <see cref="AvatarControl.PlayerStartZ"/>). Null while closed or without a record.
     /// </summary>
     public AvatarControl Avatar { get; private set; }
     /// <summary>UIAvatarPC::vfunc_1's CLimitCharRotate; null: no limit.</summary>
@@ -185,7 +185,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
     void LoadRenderTarget()
     {
         if (Host.Entity == null || info == null) return;
-        Avatar = new AvatarControl(RotateLimit ?? new AvatarRotateLimit(0, 360), 0, 0, 90);
+        Avatar = new AvatarControl(RotateLimit ?? new AvatarRotateLimit(0, 360), 0, 0, AvatarControl.PlayerStartZ);
         Host.Invoke("loadRenderTarget");
     }
 

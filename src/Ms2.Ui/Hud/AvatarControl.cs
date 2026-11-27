@@ -1,3 +1,4 @@
+using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 
 namespace Ms2.Ui.Hud;
@@ -122,6 +123,38 @@ public sealed class AvatarControl
 
     /// <summary>m_kAngleBase, the avatar's current angles.</summary>
     public (float X, float Y, float Z) Angle => (bx, by, bz);
+
+    /// <summary>
+    /// The start angle of a copy of the player: FUN_1418b9e40 (uiavatarbase.cpp:728-758) reads m_kAngle back from the
+    /// copy's node with ToEulerAnglesXYZ (radians times 180 / 3.1415927f). The copy faces 90 as the field turns it,
+    /// MakeZRotation(z * -EE_DEGREES_TO_RADIANS) (scenegraphservice.cpp:795), so the angle read back is -90, normalized 270.
+    /// </summary>
+    public const float PlayerStartZ = 270f;
+
+    /// <summary>
+    /// vfunc_13 (@0x1418b8750): efd::Matrix3::FromEulerAnglesXYZ of m_kAngleBase (degrees * 3.1415927f / 180), the
+    /// rotation about the pivot, row-major about the client's axes. Gamebryo's rotations turn clockwise
+    /// (Foundation/efd/Win32/Matrix3_Win32.cpp:76-90) and FromEulerAnglesXYZ is X(Y Z) (:1146-1154), as
+    /// <see cref="DummyWorld.EulerXyz"/> builds it.
+    /// </summary>
+    public double[] Rotation() => DummyWorld.EulerXyz(bx, by, bz);
+
+    /// <summary>
+    /// <see cref="Rotation"/> in Godot's axes, row-major: the client's (x, y, z) is Godot's (x, z, -y), so the rotation
+    /// is C R C^T with C taking the client's x, z, -y to Godot's x, y, z.
+    /// </summary>
+    public double[] GodotRotation()
+    {
+        var m = Rotation();
+        var g = new double[9];
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                g[i * 3 + j] = AxisSign[i] * AxisSign[j] * m[ClientAxis[i] * 3 + ClientAxis[j]];
+        return g;
+    }
+
+    static readonly int[] ClientAxis = { 0, 2, 1 };
+    static readonly double[] AxisSign = { 1, 1, -1 };
 
     /// <summary>Raised with true for vfunc_5 (zoom in: a wheel turned forward), false for vfunc_6.</summary>
     public event Action<bool> Zoom;

@@ -45,7 +45,7 @@ public sealed partial class ShopController
         if (Preview != null || info.ShopType != 4 || shop == null || !Model.HasLocalPlayer) return;
         Preview = new ShopAvatarPreview(Model.Tables.ItemModels) { Gender = () => Pc.Gender, Now = ServerTime };
         Preview.Changed += OnPreviewChanged;
-        Avatar = new AvatarControl(RotateLimit ?? new AvatarRotateLimit(0, 360), 0, 0, 90);
+        Avatar = new AvatarControl(RotateLimit ?? new AvatarRotateLimit(0, 360), 0, 0, AvatarControl.PlayerStartZ);
         Preview.CameraReset += Avatar.ResetCamera;
         Host.Invoke(shop, "loadRenderTarget");
         InitAvatarData(null);

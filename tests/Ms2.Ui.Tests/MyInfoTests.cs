@@ -1880,7 +1880,8 @@ public class MyInfoTests
         TestContext.WriteLine($"urls: {string.Join(", ", urls)}; area {b.X},{b.Y} {b.W}x{b.H}");
         Assert.That(urls.Count(u => System.Text.RegularExpressions.Regex.IsMatch(u, $@"^img://{h.Id}:avatar/[1-9]\d*/[1-9]\d*$")), Is.EqualTo(1));
         Assert.That(c.Avatar, Is.Not.Null);
-        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 90f)));
+        // FUN_1418b9e40 reads the copy's facing 90 back as -90: 270 (GitHub issue #14)
+        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 270f)));
 
         // a right press: main.gfx's stage listener stops the mouseDown (buttonIdx 1) and redispatches rightMouseDown, a plain
         // MouseEvent; the movie's onAvatarMouseDown takes RIGHT_BUTTON for it, OnAvatarMouseDown(1) -> mode 1; a 100 pixel drag
@@ -1890,7 +1891,7 @@ public class MyInfoTests
         p.MouseButton(true, Ms2.Avm2.Flash.Player.RightButton);
         Assert.That(c.Avatar.Mode, Is.EqualTo(1));
         p.MouseMove(x + 100, y);
-        Assert.That(c.Avatar.Angle.Z, Is.EqualTo(55f).Within(1e-3));
+        Assert.That(c.Avatar.Angle.Z, Is.EqualTo(235f).Within(1e-3));
         p.MouseButton(false, Ms2.Avm2.Flash.Player.RightButton);
         // a left press does not turn (mode 2 clears on an unlocked view)
         p.MouseMove(x, y);
@@ -1898,7 +1899,7 @@ public class MyInfoTests
         p.MouseMove(x - 50, y);
         p.MouseButton(false);
         Assert.That(c.Avatar.Mode, Is.EqualTo(0));
-        Assert.That(c.Avatar.Angle.Z, Is.EqualTo(55f).Within(1e-3));
+        Assert.That(c.Avatar.Angle.Z, Is.EqualTo(235f).Within(1e-3));
         c.Close();
         Assert.That(c.Avatar, Is.Null);
     }

@@ -62,6 +62,9 @@ public sealed partial class AvatarView : Node
     /// <summary>The render target the movie shows.</summary>
     public Texture2D Image => view?.GetTexture();
 
+    /// <summary>The drawn copy's turn (its basis); null before the model is made.</summary>
+    public Basis? CopyBasis => copy?.Basis;
+
     /// <summary>The "avatar/&lt;w&gt;/&lt;h&gt;" size of a render target url, or null.</summary>
     public static Vector2I? SizeOf(string url)
     {
@@ -216,10 +219,9 @@ public sealed partial class AvatarView : Node
     /// <summary>vfunc_13: R = FromEulerAnglesXYZ(angles), translate = pivot - R pivot.</summary>
     void Turn()
     {
-        var (x, y, z) = control.Angle;
-        // MS2 (x, y, z) is Godot (x, z, -y): rotations about the client's x, y, z are about Godot X, -Z, Y
-        var r = new Basis(Vector3.Right, Mathf.DegToRad(x)) * new Basis(Vector3.Forward, Mathf.DegToRad(y))
-                * new Basis(Vector3.Up, Mathf.DegToRad(z));
+        var g = control.GodotRotation();
+        var r = new Basis(new Vector3((float)g[0], (float)g[3], (float)g[6]), new Vector3((float)g[1], (float)g[4], (float)g[7]),
+                          new Vector3((float)g[2], (float)g[5], (float)g[8]));
         var p = new Vector3(0, pivot, 0);
         copy.Transform = new Transform3D(r, p - r * p);
     }
