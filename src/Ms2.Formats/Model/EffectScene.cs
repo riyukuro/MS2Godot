@@ -88,6 +88,9 @@ public sealed class EffectMesh
     public List<UvOp> Uv = new();
     public FlipAnim Flip;
     public EffectMorph Morph;
+    /// <summary>The mesh is in a mesh-particle system's master particle (ParticleSystemDef.MasterMeshes): drawn only as the
+    /// particles' clones.</summary>
+    public bool Master;
 
     /// <summary>The material alpha at effect time t: an NiAlphaController's value replaces the NiMaterialProperty alpha (its
     /// m_fAlpha, the controller's target), else the static alpha read from the file (1 without a material: NiMaterialProperty's
@@ -561,6 +564,9 @@ public sealed class ParticleSystemDef
     /// keeps rotation angles (without them the kernels take no rotation).</summary>
     public int NormalMethod = AlignedQuad.Camera, UpMethod = AlignedQuad.Camera; public Vec3 NormalDirection, UpDirection;
     public bool HasRotations = true;
+    /// <summary>"Has Rotation Axes": the system keeps a rotation axis per particle (the emitter's, or a random one:
+    /// NiPSEmitter.cpp:248-260), which the mesh-align kernel turns the particle about (MeshAlign).</summary>
+    public bool HasRotationAxes;
     /// <summary>The aligned quads' texture animation (AlignedQuad.TexAnim): the generator's flipbook fields, used only when the
     /// system has "Has Animated Textures" (NiPSAlignedQuadGenerator.cpp:325-337); without it every quad shows the whole texture.</summary>
     public bool AnimatedTextures, UVScrolling, PingPong;
@@ -586,6 +592,16 @@ public sealed class ParticleSystemDef
     /// <summary>The detail map's alpha multiplies the opacity: the system's active material is a standard one, as a mesh's
     /// (EffectMesh.DetailOpacity on Material: the boost swap counts, an _HO technique reads the detail as a mask).</summary>
     public bool DetailOpacity => Material?.DetailOpacity == true;
+    /// <summary>An NiPSMeshParticleSystem: each particle draws a clone of one of its master particles (MeshAlign), the
+    /// system itself nothing (NiPSMeshParticleSystem::RenderImmediate, NiPSMeshParticleSystem.cpp:482).</summary>
+    public bool MeshParticles;
+    /// <summary>The master particles ("Master Particles"), one per generation: each one's subtree as node indices with the
+    /// root first and every node after its parent, and the effect meshes in it (EffectScene.Meshes indices). An empty array
+    /// for a null master.</summary>
+    public int[][] MasterNodes = Array.Empty<int[]>(), MasterMeshes = Array.Empty<int[]>();
+    /// <summary>NiPSSimulatorMeshAlignStep's "Num Rotation Keys" (NiPSSimulatorMeshAlignStep::LoadBinary, :732-745), -1 when the
+    /// system has no such step. MeshAlign keeps the keyed rotation at the identity (0 keys in both data sets).</summary>
+    public int MeshAlignKeys = -1;
 }
 
 /// <summary>
@@ -761,7 +777,7 @@ public sealed class EffectScene
         }
         foreach (var nd in sc.Nodes) nd.Parent = parent.TryGetValue(nd.Block, out var p) && sc.NodeOfBlock.TryGetValue(p, out var pn) ? pn : -1;
 
-        var model = ModelData.Load(n, keepCulledSubtrees: true);   // the nodes carry their own culling (EffectNode.Culled)
+        var model = ModelData.Load(n, keepCulledSubtrees: true, keepMasterParticles: true);   // the nodes carry their own culling (EffectNode.Culled); ReadMasters marks the masters
         var meshOf = new Dictionary<int, EffectMesh>();
         foreach (var m in model.Meshes)
         {
@@ -791,6 +807,7 @@ public sealed class EffectScene
             }
         }
         foreach (var s in systems.Values) sc.Systems.Add(s);
+        foreach (var (blk, s) in systems) if (B[blk].Type == "NiPSMeshParticleSystem") sc.ReadMasters(n, blk, s, meshOf);
         sc.LendMissingMaps();
         foreach (var t in B.Select(b => b.Type).Distinct())
             if (t.StartsWith("NiPS", StringComparison.Ordinal) && !KnownPs.Contains(t) && !EmitterFloatCtlrs.ContainsKey(t)) sc.Unsupported.Add(t);
@@ -947,11 +964,40 @@ public sealed class EffectScene
         }
     }
 
+    /// <summary>A mesh-particle system's master particles (ParticleSystemDef.MasterNodes / MasterMeshes). The masters are not
+    /// in the scene graph (both data sets), so their meshes are not drawn where they are (EffectMesh.Master); each particle
+    /// draws a clone (NiPSMeshParticleSystem::InitializeParticle, NiPSMeshParticleSystem.cpp:230-300). A clone takes the
+    /// system's property state under its own (UpdatePropertiesDownward, :270), and the system is fog-off
+    /// (NifModel.ParticleSystemFlag), so the master meshes draw without the depth fog (EffectFogOffTests).</summary>
+    void ReadMasters(NifFile n, int blk, ParticleSystemDef d, IReadOnlyDictionary<int, EffectMesh> meshOf)
+    {
+        var B = n.Blocks;
+        d.MeshParticles = true;
+        var masters = B[blk].Ints("Master Particles").ToArray();
+        d.MasterNodes = new int[masters.Length][]; d.MasterMeshes = new int[masters.Length][];
+        for (int g = 0; g < masters.Length; g++)
+        {
+            var nodes = new List<int>(); var meshes = new List<int>();
+            var seen = new HashSet<int>();
+            void Walk(int b)
+            {
+                if (!seen.Add(b) || !NodeOfBlock.TryGetValue(b, out int nd)) return;
+                nodes.Add(nd);
+                if (meshOf.TryGetValue(b, out var em)) { meshes.Add(Meshes.IndexOf(em)); em.Master = true; em.Mesh.NoFog = true; }
+                if (B[b].Has("Children"))   // a mesh (an NiAVObject leaf) has none
+                    foreach (var k in B[b].Ints("Children")) if (k >= 0) Walk((int)k);
+            }
+            if (masters[g] >= 0) Walk((int)masters[g]);
+            d.MasterNodes[g] = nodes.ToArray(); d.MasterMeshes[g] = meshes.ToArray();
+        }
+    }
+
     ParticleSystemDef ReadSystem(NifFile n, int blk, int node, IReadOnlyDictionary<int, int> parent)
     {
         var B = n.Blocks; var b = B[blk];
         var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
         d.HasRotations = b.IntOr("Has Rotations", 1) != 0;
+        d.HasRotationAxes = b.IntOr("Has Rotation Axes", 0) != 0;
         d.AnimatedTextures = b.IntOr("Has Animated Textures", 0) != 0;
         d.NormalMethod = (int)b.IntOr("Normal Method", AlignedQuad.Camera); d.UpMethod = (int)b.IntOr("Up Method", AlignedQuad.Camera);
         if (b.Has("Normal Direction")) d.NormalDirection = V3(b.Struct("Normal Direction"));
@@ -1040,6 +1086,9 @@ public sealed class EffectScene
                             }
                             d.Forces.Add(fd);
                         }
+                        break;
+                    case "NiPSSimulatorMeshAlignStep":
+                        d.MeshAlignKeys = (int)st.IntOr("Num Rotation Keys", 0);
                         break;
                     case "NiPSSimulatorCollidersStep":
                         d.Colliders += (int)st.IntOr("Num Colliders", 0);

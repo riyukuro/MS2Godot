@@ -1233,9 +1233,12 @@ public sealed class ModelData
     /// itself (EffectScene: its visibility controllers can show such a node). An effect nif read through this path instead
     /// (EffectNif.Build, the CombatLayer, reactor, drop, ride and field NPC model loaders) loses them, since KfAnimation
     /// plays no visibility.
+    /// The meshes of NiPSMeshParticleSystem master particles (MasterParticleBlocks) are left out too, since they are drawn
+    /// only as the particles' clones; <paramref name="keepMasterParticles"/> keeps them, for EffectScene, which marks them
+    /// EffectMesh.Master and draws them only as clones.
     /// STILL-OPEN: a KF sequence's visibility track (KfAnimation reads none) that shows such a node in a model.
     /// </summary>
-    public static ModelData Load(NifFile nif, bool keepCulledSubtrees = false)
+    public static ModelData Load(NifFile nif, bool keepCulledSubtrees = false, bool keepMasterParticles = false)
     {
         var B = nif.Blocks;
         var md = new ModelData();
@@ -1264,11 +1267,13 @@ public sealed class ModelData
         }
         Add(root, -1, Xform.Identity);
 
+        var masters = keepMasterParticles ? new HashSet<int>() : MasterParticleBlocks(nif);
         for (int i = 0; i < B.Count; i++)
         {
             var b = B[i];
             if (b.Type != "NiMesh") continue;
             if ((b.IntOr("Flags", 0) & 1) != 0) continue;           // APP_CULLED helper geometry
+            if (masters.Contains(i)) continue;                       // drawn only as mesh particles (MasterParticleBlocks)
             if (!keepCulledSubtrees && UnderCulledNode(B, parent, i)) continue;
             long primitive = b.Int("Primitive Type");                  // 0 triangles, 1 triangle strips
             if (primitive != 0 && primitive != 1) throw new NotSupportedException("only triangle lists and strips");
@@ -1465,6 +1470,26 @@ public sealed class ModelData
             md.Meshes.Add(mesh);
         }
         return md;
+    }
+
+    /// <summary>The blocks of the file's NiPSMeshParticleSystem master particles: each master and everything under it. The
+    /// masters are not in the scene graph (no node holds one as a child, in both data sets); the system only clones them,
+    /// one clone per particle under its particle container (NiPSMeshParticleSystem::InitializeParticle,
+    /// NiPSMeshParticleSystem.cpp:229-300), so their meshes are drawn only as the particles (EffectInstance.DrawClones)
+    /// and never where they stand in the file.</summary>
+    public static HashSet<int> MasterParticleBlocks(NifFile nif)
+    {
+        var B = nif.Blocks;
+        var set = new HashSet<int>();
+        void Walk(int b)
+        {
+            if (b < 0 || b >= B.Count || !set.Add(b)) return;
+            if (B[b].Has("Children")) foreach (var k in B[b].Ints("Children")) Walk((int)k);
+        }
+        for (int i = 0; i < B.Count; i++)
+            if (B[i].Type == "NiPSMeshParticleSystem" && B[i].Has("Master Particles"))
+                foreach (var m in B[i].Ints("Master Particles")) Walk((int)m);
+        return set;
     }
 
     /// <summary>Whether a node above block <paramref name="i"/> is flagged APP_CULLED (NiAVObject flag 0x1) in the file.</summary>
