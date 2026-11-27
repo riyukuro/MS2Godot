@@ -27,7 +27,9 @@ public class DamageFontTests
         Assert.That(nor.Glyph(DamageLook.BlockKey), Is.EqualTo("Block_7"));
         Assert.That(nor.Glyph(DamageLook.PlusKey), Is.Null, "loadDamageFont sets no Plus");
         var cri = DamageLook.For("120", "Monster", "Critical", "", "7", myDamage: true, gemLoaded: true);
-        Assert.That((cri.Glyphs, cri.CritText, cri.Glyph(0)), Is.EqualTo(("Cri", "dmg_mc_monstercri_7", "Cri0_7")));
+        Assert.That((cri.Glyphs, cri.FontCritText, cri.Glyph(0)), Is.EqualTo(("Cri", "dmg_mc_monstercri_7", "Cri0_7")));
+        Assert.That(cri.CritText, Is.EqualTo("dmg_mc_monstercri"),
+            "getCriticalTxt falls back to MonsterCriticalTxt when the font's MonsterCriticalTxt<id> is null");
         var user = DamageLook.For("120", "User", "Normal", "", "7", myDamage: true, gemLoaded: true);
         Assert.That((user.Glyphs, user.Font, user.Glyph(1)), Is.EqualTo(("User", (string)null, "User1")), "no UserNormal<id> array");
         var notLoaded = DamageLook.For("120", "Monster", "Normal", "", "7", myDamage: true);

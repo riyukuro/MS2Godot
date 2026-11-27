@@ -37,7 +37,8 @@ public sealed class DamageTarget(Node3D root, Func<Vector3> point, bool pc, Func
 /// <item>Gem fonts (bGem, uidamagetext.cpp:354, :399-407): a PC caster's usable type 2 gem names its font for a damage
 /// grade on another target; once GFxMovieDamage::LoadDamageFont (gfxmoviedamage.cpp:210, <see cref="DamageFonts"/>) has
 /// loaded uidamagefont_&lt;gem id&gt;, the monster numbers take its Nor / Cri / Miss / Block glyphs and dmg_mc_monstercri
-/// text (loadDamageFont). The loads come from <see cref="NpcEmoticons.DamageFontAsked"/>; a field move (ClearAll) unloads
+/// text (loadDamageFont); the data's font movies hold only the digits, so a gem Miss or Block is empty and a gem critical
+/// takes the plain critical text (getCriticalTxt's fallback, <see cref="DamageLook.FontCritText"/>). The loads come from <see cref="NpcEmoticons.DamageFontAsked"/>; a field move (ClearAll) unloads
 /// the fonts not asked for in the last 60 s (UnloadExpiredFonts, :249).</item>
 /// <item>Pooling: the ani sets, glyph nodes, numbers, clips and entries are reused (no per-hit allocation); a clip's
 /// generation keeps a stale entry from touching its next use. The client has no pool (Scaleform makes the AS objects per
@@ -521,14 +522,20 @@ public sealed partial class DamageText : CanvasLayer
         }
         if (set.Cridmy != null)
         {
-            if (look.CritText == null || Take(glyphs, look.CritText) is not { } crit) { Release(clip); return null; }
+            // getCriticalTxt: the font's MonsterCriticalTxt<id> when its movie has the class (none of the data's do), else
+            // the damage text movie's MonsterCriticalTxt; duplicateMovieClip makes the second of the same class
+            UiMovie cm = glyphs;
+            string ct = look.FontCritText;
+            MovieClipNode crit = ct != null ? Take(cm, ct) : null;
+            if (crit == null) { cm = movie; ct = look.CritText; crit = ct != null ? Take(cm, ct) : null; }
+            if (crit == null) { Release(clip); return null; }
             set.Cridmy.AddChild(crit);
-            clip.Parts.Add(new Part(glyphs, look.CritText, crit));
+            clip.Parts.Add(new Part(cm, ct, crit));
             clip.Loop1 = crit;
-            if (set.Cridmy1 != null && Take(glyphs, look.CritText) is { } crit2)
+            if (set.Cridmy1 != null && Take(cm, ct) is { } crit2)
             {
                 set.Cridmy1.AddChild(crit2);
-                clip.Parts.Add(new Part(glyphs, look.CritText, crit2));
+                clip.Parts.Add(new Part(cm, ct, crit2));
                 clip.Loop2 = crit2;
             }
         }

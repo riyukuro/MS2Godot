@@ -151,6 +151,14 @@ public sealed record DamageLook(string Glyphs, int SignSpacing, int NumberSpacin
     public string Font { get; init; }
 
     /// <summary>
+    /// loadDamageFont's MonsterCriticalTxt&lt;id&gt;: getnerateMovieClipFromString("dmg_mc_monstercri_" + id), set with the
+    /// font's glyphs; null for no font. No font movie of the data has that class, and Scaleform's getDefinitionByName gives
+    /// undefined for an unknown class, so the entry is null and getCriticalTxt falls back to MonsterCriticalTxt
+    /// (<see cref="CritText"/>, the damage text movie's own): the font's class when its movie has it, else the plain one.
+    /// </summary>
+    public string FontCritText { get; init; }
+
+    /// <summary>
     /// DamageTextFactory.damageText: <paramref name="caster"/> is dropped when the number is not <paramref name="myDamage"/>.
     /// getDamageNumberArray: DamageTextCommon[caster + target + grade + gem], else without the gem. getDamageMovie:
     /// grade + "Movie", else NormalMovie. getDamageAni / getCriticalTxt / getExEff by their keys; getContainer(grade, myDamage).
@@ -173,16 +181,17 @@ public sealed record DamageLook(string Glyphs, int SignSpacing, int NumberSpacin
         glyphs ??= Array(caster + target + grade);
         var (sign, number) = Spacing(grade);
         var ani = DamageAni.For(value, target, grade);
-        string crit = null;
+        string crit = null, fontCrit = null;
         if (ani.HasCritText)
         {
-            // MonsterCriticalTxt<id> is set with MonsterCritical<id>: a font's glyphs and its critical text go together
-            crit = font != null && caster + target + grade + "Txt" == "MonsterCriticalTxt" ? "dmg_mc_monstercri_" + font : CritTxt(caster + target + grade + "Txt");
+            // getCriticalTxt: MonsterCriticalTxt<id> (set with MonsterCritical<id>) when not null, else MonsterCriticalTxt
+            crit = CritTxt(caster + target + grade + "Txt");
+            if (font != null && caster + target + grade + "Txt" == "MonsterCriticalTxt") fontCrit = "dmg_mc_monstercri_" + font;
             if (crit == null) glyphs = null;      // getCriticalTxt news a null constructor: the call fails
         }
         string ex = ani.HasExEffect ? ExEff(IsNumber(value) ? target + grade + "Eff" : value + target + "Eff") : null;
         int container = (myDamage ? MyNormal : ListNormal) + (grade == DamageTextNames.Critical ? 1 : 0);
-        return new DamageLook(glyphs, sign, number, ani, crit, ex, container) { Font = font };
+        return new DamageLook(glyphs, sign, number, ani, crit, ex, container) { Font = font, FontCritText = fontCrit };
     }
 
     /// <summary>The itemIcon call: the same picks, always in the own player's containers, no scale or alpha.</summary>
