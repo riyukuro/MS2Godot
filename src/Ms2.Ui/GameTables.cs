@@ -355,6 +355,16 @@ public sealed class GameTables
         ? new DungeonRoomTable(_ => null, null, null, null)
         : new DungeonRoomTable(packs, FeatureElements.Constants(packs));
 
+    DungeonMissionTable dungeonMissions;
+    /// <summary>The dungeon mission table (DungeonMissionDataTable, Table/DungeonMission.xml), read on the first use; empty without data.</summary>
+    public DungeonMissionTable DungeonMissions => dungeonMissions ??= packs == null
+        ? new DungeonMissionTable(null, null)
+        : new DungeonMissionTable(packs);
+
+    Dictionary<string, string> dungeonMissionNames;
+    /// <summary>The name of a dungeon mission (string table 0x3c, dungeonMissionName.xml, by the mission id), "" when unknown.</summary>
+    public string DungeonMissionName(uint id) => Lazy(ref dungeonMissionNames, "dungeonmissionname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+
     /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown; names
     /// holding "$" get the object words (e.g. "$map:02000302$ Treasure Key"), as CStringTable::Load @0x141810f70 does for
     /// every table at load (stringtable.cpp:640).</summary>
