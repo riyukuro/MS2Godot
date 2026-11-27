@@ -629,11 +629,14 @@ public partial class FieldFade : Node
 
     /// <summary>
     /// UpdateFadeOut (0x140a0ebf0): each running element's materials go to clamp(1 - ratio, alpha, 1); an element whose timer
-    /// has run out is skipped (Timer::IsRunning, timer.cpp:159-164). The client's frames come well inside the 300 ms, so the
-    /// last running frame has a ratio past 1 - alpha and has already set the floor. A frame here can come later than that
-    /// (the first draw of a fade material builds its pipeline), and the element would stay at the value of the frame
-    /// before, 1 when that was the Apply's own: an element seen out of time for the first time is set once to its end
-    /// value, clamp(1 - 1, alpha, 1), the value the client's last running frame sets.
+    /// has run out is skipped (Timer::IsRunning, timer.cpp:159-164). The timer reads the game clock (service 0xE001001B,
+    /// GameTimeClock), which moves at most m_maxDelta = 0.25 s per frame (GameTimeClock.cpp:34, 108): the client's first
+    /// frame after the Apply is always running, at a ratio of 250 / 300 or less, and with a frame rate above about 11 fps
+    /// its last running frame has a ratio past 1 - alpha and has already set the floor. Our tick clock has no such cap,
+    /// so a frame here can come later than the 300 ms (the first draw of a fade material builds its pipeline), and the
+    /// element would stay at the value of the frame before, 1 when that was the Apply's own: an element seen out of time
+    /// for the first time is set once to its end value, clamp(1 - 1, alpha, 1), what the client's capped frame sets for
+    /// any floor of 1/6 or more.
     /// </summary>
     void UpdateFadeOut(ulong now)
     {
