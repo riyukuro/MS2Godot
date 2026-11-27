@@ -2761,6 +2761,33 @@ public partial class HudTests
     }
 
     [Test]
+    public void MessengerListingLinkIsKindSixByItsNumberIntoTheLogInputOnly()
+    {
+        // FUN_140d2cf00 / FUN_140d2e090: a black market listing's item, not held, linked by the listing's number (kind 6,
+        // CHATLINK_ITEM_REF; no id or grade), into the chat log's input but not the group messenger's
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        var listed = Item.Create(m.Tables.Items, 15000001, 3);
+        listed.Uid = 99;
+        long sn = unchecked((long)0x8000000000000005UL);
+        string n = "9223372036854775813";                              // formatted unsigned
+        var groups = new List<string>();
+        c.Browser.GroupLink = groups.Add;
+        string name = new ItemTooltip(m, 0).Name(listed), color = $"#{m.Tables.Items.TextColor(listed.Rarity):x}";
+        string link = c.Browser.ItemRefLink(sn, listed);
+        Assert.That(link, Is.EqualTo($"<a href='event:itemTooltip,{n},6,{n},0,0'><FONT color='{color}'>[{name}]</FONT></a>"));
+        Assert.That(c.Browser.ItemRefLink(sn, null), Is.EqualTo(""), "no item: no link");
+        h.Set(h.Get(input, "textField"), "text", "buy");
+        c.Browser.LinkItemRef(sn, listed);
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo($"buy[{name}] "));
+        Assert.That(c.InputLinks, Is.EqualTo(new[] { link }));
+        Assert.That(groups, Is.Empty, "the group messenger's input is not given the link");
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(sent.Select(x => x.Message), Is.EqualTo(new[] { $"buy<A HREF=\"event:itemTooltip,{n},6,{n},0,0\">[{name}]</A> " }));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ChatInputHistoryUpAndDown()
     {
         // FUN_141a11e30 -> FUN_141a0f1d0(bHistory 1) -> FUN_141a25f70: a sent line joins the browser's history (ten at most,

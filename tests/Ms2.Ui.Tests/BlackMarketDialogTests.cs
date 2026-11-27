@@ -105,6 +105,113 @@ public class BlackMarketDialogTests
     }
 
     [Test]
+    public void AShiftClickLinksTheCurrentPagesProductOrTheBagItem()
+    {
+        // vfunc_45 OnSlotShiftClick (uiblackmarketdialog.cpp:352): "MarketSN" links the current page's product (vfunc_6) by
+        // its number, "ItemGUID" the bag item of the uid; nothing for an unknown number or uid, on a meso page or without a
+        // current page; nothing is sent
+        var r = new Rig();
+        var refs = new List<(long Sn, Item Item)>();
+        var linked = new List<Item>();
+        r.C.LinkItemRef = (sn, it) => refs.Add((sn, it));
+        r.C.LinkItem = linked.Add;
+        var bag = Item.Create(items, r.Data.Id, 1);
+        bag.Uid = 500;
+        r.Book.FindItem = uid => uid == 500 ? bag : null;
+        r.Book.OnBlackMarket(new BlackMarketMessage.SearchResult(new[] { r.Product(1) }));
+        r.Book.OnBlackMarket(new BlackMarketMessage.OwnList(new[] { r.Product(4, seller: 77) }));
+        object[] Sn(string sn) => new object[] { "MarketSN", sn };
+        r.C.OnCallback("onChangeTab", new object[] { 0 });
+        Assert.That(r.C.GetUserData("OnSlotShiftClick", Sn("1")), Is.Null, "no answer");
+        r.C.GetUserData("OnSlotShiftClick", Sn("4"));                // an own product, not on the search page
+        r.C.GetUserData("OnSlotShiftClick", Sn("9"));
+        Assert.That(refs.Select(x => x.Sn), Is.EqualTo(new[] { 1L }));
+        Assert.That(refs[0].Item, Is.SameAs(r.Book.FindSearchProduct(1).Item));
+
+        r.C.OnCallback("onChangeTab", new object[] { 1 });
+        r.C.GetUserData("OnSlotShiftClick", Sn("1"));                // a search product, not on the register page
+        r.C.GetUserData("OnSlotShiftClick", Sn("4"));
+        Assert.That(refs.Select(x => x.Sn), Is.EqualTo(new[] { 1L, 4L }));
+        r.C.GetUserData("OnSlotShiftClick", new object[] { "ItemGUID", "500" });
+        r.C.GetUserData("OnSlotShiftClick", new object[] { "ItemGUID", "501" });
+        Assert.That(linked, Is.EqualTo(new[] { bag }));
+
+        r.C.OnCallback("onChangeTab", new object[] { 2 });            // a meso page: BlackMarketPage::vfunc_6 has none
+        r.C.GetUserData("OnSlotShiftClick", Sn("1"));
+        r.C.GetUserData("OnSlotShiftClick", new object[] { "ItemGUID", "500" });
+        Assert.That(refs, Has.Count.EqualTo(2));
+        Assert.That(linked, Has.Count.EqualTo(2), "the bag arm needs no page product");
+        Assert.That(r.Sent, Is.Empty);
+
+        r.C.Close();                                                    // no current page: vfunc_45 returns at once
+        Assert.That(r.C.CurrentPage, Is.EqualTo(-1));
+        r.C.GetUserData("OnSlotShiftClick", Sn("1"));
+        r.C.GetUserData("OnSlotShiftClick", new object[] { "ItemGUID", "500" });
+        Assert.That(refs, Has.Count.EqualTo(2));
+        Assert.That(linked, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void ARightClickWithThePreviewHudOffClearsTheRegisterSlot()
+    {
+        // vfunc_45 OnRightClick (uiblackmarketdialog.cpp:326): the preview HUD off → clearRegisterPageSlot (the register
+        // page's clearSlot, which ends with OnClearSlot); on → OpenPreview (STILL-OPEN here), no clear; no current page →
+        // nothing
+        var r = new Rig();
+        bool hud = false;
+        r.C.PreviewHudOn = () => hud;
+        r.C.OnCallback("onChangeTab", new object[] { 1 });
+        int Clears() => r.H.Calls.Count(c => c == "OnClearSlot");
+        int before = Clears();
+        Assert.That(r.C.GetUserData("OnRightClick", new object[] { "MarketSN", "4" }), Is.Null, "no answer");
+        Assert.That(Clears(), Is.EqualTo(before + 1));
+        hud = true;
+        r.C.GetUserData("OnRightClick", new object[] { "ItemGUID", "500" });
+        Assert.That(Clears(), Is.EqualTo(before + 1), "the preview HUD on: no clear");
+        hud = false;
+        r.C.Close();
+        r.C.GetUserData("OnRightClick", new object[] { "MarketSN", "4" });
+        Assert.That(Clears(), Is.EqualTo(before + 1), "no current page");
+        Assert.That(r.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void AShiftClickOnASearchRowGoesThroughTheMovie()
+    {
+        // BlackMarketItemRenderer.onClick: with the click's shiftKey, getUserData("OnSlotShiftClick", "MarketSN", marketSN)
+        var r = new Rig();
+        var refs = new List<long>();
+        r.C.LinkItemRef = (sn, _) => refs.Add(sn);
+        long ms = 10_000;
+        r.C.Milliseconds = () => ms;
+        r.C.Model.HasLocalPlayer = true;                               // FUN_140f14ce0 fills a row only with a player
+        r.Search(r.Product(1));
+        ms += 1000;                                                    // past the search page's one-second gate
+        r.C.OnCallback("onChangePage", new object[] { 0, 7, new AsObject() });   // the search page asks for its rows
+        var h = r.H; var p = h.Player;
+        for (int i = 0; i < 4; i++) p.Tick();
+        var list = h.Child("m_itemList", h.Child("m_searchPage"));
+        var row = h.Invoke(list, "getRendererAt", 0) as AsDisplayObject;
+        Assert.That(row, Is.Not.Null, "the search list's first row");
+        var data = h.Get(row, "data");
+        Assert.That(Rt.ToString(h.Get(data, "marketSN")), Is.EqualTo("1"), "the row's data");
+        double now = 1000;
+        p.Clock = () => now;
+        var (x, y) = row.LocalToGlobal(4, 4);
+        p.MouseMove(x, y);
+        p.MouseButton(true, Player.LeftButton);
+        p.MouseButton(false, Player.LeftButton);
+        Assert.That(refs, Is.Empty, "a click without Shift");
+        now += Player.DoubleClickMs + 1;
+        p.Key(16, 0, true, shift: true);
+        p.MouseButton(true, Player.LeftButton);
+        p.MouseButton(false, Player.LeftButton);
+        p.Key(16, 0, false);
+        Assert.That(refs, Is.EqualTo(new[] { 1L }), "shift + click: " + string.Join("; ", h.Calls.Where(c => c.StartsWith("getUserData"))) + " | " + string.Join("; ", p.RT.Errors));
+        Assert.That(r.Sent.OfType<BlackMarketBuyRequest>(), Is.Empty);
+    }
+
+    [Test]
     public void ABuyIsSentOnceAndTheDialogStaysLockedUntilTheAnswer()
     {
         var r = new Rig();

@@ -12,8 +12,8 @@ namespace Ms2.Ui.Hud;
 /// (BlackMarketPageItemSearch), 1 the item register (BlackMarketPageItemRegister), 2..4 the meso pages.
 /// Every send goes through <see cref="BlackMarketBook"/>; nothing local changes before the server answers.
 /// STILL-OPEN: the meso pages (2..4: SendMesoMarket, the meso detail button of feature 0xf4) and mode 6 are not ported, so
-/// those tabs show no page; the tooltips of vfunc_45 (getRegisterItemTooltip, getEquipmentItemTooltip, OnSlotShiftClick)
-/// and the name candidates of vfunc_74; the trade-limited buy text (s_msg_blackmarket_ask_buy_limit_tradecount) has no
+/// those tabs show no page; vfunc_45's tooltips (getRegisterItemTooltip, getEquipmentItemTooltip) and its OnRightClick
+/// with the preview HUD on (OpenPreview), and the name candidates of vfunc_74; the trade-limited buy text (s_msg_blackmarket_ask_buy_limit_tradecount) has no
 /// trade-count source (<see cref="TradeCount"/>); the register page's total price text (FUN_141275860, feature 0xc5) and
 /// its changeTotalPrice listener; the fee event dates of box 0x949 and the meso limits of the terms text 0x9d9.
 /// </summary>
@@ -179,6 +179,47 @@ public sealed class BlackMarketDialogController : UiController, IBlackMarketDial
         if (index == 0) search.Show();
         else if (index == 1) register.Show();
     }
+
+    /// <summary>FUN_140d2cfc0: an item's link into the chat input (<see cref="MessengerBrowser.LinkItem(Item)"/>).</summary>
+    public Action<Item> LinkItem;
+    /// <summary>FUN_140d2cf00: a listing's item link by its number into the chat log's input
+    /// (<see cref="MessengerBrowser.LinkItemRef"/>).</summary>
+    public Action<long, Item> LinkItemRef;
+
+    /// <summary>
+    /// vfunc_45 (@0x1418d0270, uiblackmarketdialog.cpp:295): nothing without a current page. "OnSlotShiftClick" (:352), a
+    /// row's Shift+click: "ItemGUID" (the register page's slot) links the bag item of that uid (FindItemByUid), "MarketSN" (a
+    /// listed row) links the current page's product of that number (vfunc_6: the search page's FindSearchProduct, the
+    /// register page's FindOwnProduct, none on the meso pages) by its number. "OnRightClick" (:326) with the preview HUD off
+    /// is <see cref="RightClick"/>. No answer either way.
+    /// </summary>
+    public override IDictionary<string, object> GetUserData(string name, object[] args)
+    {
+        if (curPage < 0) return null;
+        if (name.Equals("OnSlotShiftClick", StringComparison.OrdinalIgnoreCase))
+        {
+            string kind = Str(args, 0);
+            if (kind == "ItemGUID")
+            {
+                if (Book.FindItem(ParseInt64(Str(args, 1))) is { } item) LinkItem?.Invoke(item);
+            }
+            else if (kind == "MarketSN")
+            {
+                long sn = ParseInt64(Str(args, 1));
+                if (PageProduct(sn) is { } e) LinkItemRef?.Invoke(sn, e.Item);
+            }
+        }
+        else if (name.Equals("OnRightClick", StringComparison.OrdinalIgnoreCase)) RightClick();
+        return null;
+    }
+
+    /// <summary>The current page's vfunc_6: its product of the number, or null.</summary>
+    BlackMarketEntry PageProduct(long sn) => curPage switch
+    {
+        0 => Book.FindSearchProduct(sn),
+        1 => Book.FindOwnProduct(sn),
+        _ => null,
+    };
 
     /// <summary>vfunc_15: the current page's vfunc_5 each frame.</summary>
     public void Process()

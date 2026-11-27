@@ -97,6 +97,8 @@ public partial class HudScene
                 SellEndDay = () => t.BlackMarketSellEndDay,
                 Sound = key => FieldAudio.Instance?.PlayUi(key),
                 ItemMessage = (item, text) => SystemNoticeText(text),
+                LinkItem = ChatLog.LinkItem,              // a row's Shift+click links its item into the chat input
+                LinkItemRef = ChatLog.LinkItemRef,
             };
             c.Unloaded += () => { blackMarketMovie?.Host.Unload(); blackMarketMovie?.QueueFree(); blackMarketMovie = null; };
             blackMarket = c;

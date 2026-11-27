@@ -475,6 +475,26 @@ public sealed class MessengerBrowser
         return LinkMarkup(href, color, name);
     }
 
+    /// <summary>FUN_140d2cf00 (:568): <see cref="ItemRefLink"/> put in the chat log's input only (m_pLog, FUN_141a24fb0;
+    /// unlike <see cref="LinkItem(int, int, long)"/> not in the group messenger's).</summary>
+    public void LinkItemRef(long sn, Item item) => AppendToInput(ItemRefLink(sn, item));
+
+    /// <summary>
+    /// FUN_140d2e090 (:700): the link of an item that is not held, by its listing's number (the black market's): the href
+    /// 'event:itemTooltip,{sn},6,{sn},0,0' (CHATLINK_ITEM_REF; the number formatted unsigned, no item id or grade), the
+    /// item's rarity colour (GetTextColorString) and its name (CItem::FUN_140527b10, <see cref="ItemTooltip.Name"/>);
+    /// "" for no item.
+    /// </summary>
+    public string ItemRefLink(long sn, Item item)
+    {
+        if (item == null) return "";
+        string n = ((ulong)sn).ToString(CultureInfo.InvariantCulture);
+        string href = "'event:itemTooltip," + n + ",6," + n + ",0,0'";
+        string color = "#" + Tables.Items.TextColor(item.Rarity).ToString("x", CultureInfo.InvariantCulture);
+        string name = Model != null ? new ItemTooltip(Model, 0).Name(item) : Tables.ItemName(item.ItemId);
+        return LinkMarkup(href, color, name);
+    }
+
     /// <summary>FUN_140d2ef00 (:802): "&amp;" in the text escaped (EscapeAmpersand, :460), then
     /// &lt;a href={href}&gt;&lt;FONT color='{color}'&gt;[{text}]&lt;/FONT&gt;&lt;/a&gt;.</summary>
     public static string LinkMarkup(string href, string color, string text) =>
