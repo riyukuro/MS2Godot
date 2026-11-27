@@ -190,7 +190,8 @@ public partial class LightFormRenderCheck : Node
         // (NiStandardMaterial::GenerateDescriptor, NiStandardMaterial.cpp:687-697: bAdditive reads the dest factor only, not
         // the blend bit). Emissive 0.5 quads in the full height fog through a field camera (the depth fog half to black):
         // the opaque one is white, then 0.5; SRCALPHA / ONE (flags 0xD) and an unblended alpha property with dest ONE (0xC)
-        // keep their 0.5, then 0.25
+        // keep their 0.5, then 0.25; a SRCALPHA / INVSRCALPHA one (0x10ED, dest 7) at alpha 1 keeps the height fog as the
+        // opaque one does, so a rule on the alpha property alone fails it
         var below = new Vector3(0, -200, 0);
         ModelMesh HfogQuad(int alphaFlags)
         {
@@ -202,6 +203,7 @@ public partial class LightFormRenderCheck : Node
         Model("hfog_opaque", Grey(0.5f, "the height fog on an opaque character mesh"), HfogQuad(-1), fog: true, at: below);
         Model("hfog_add", Grey(0.25f, "no height fog on a SRCALPHA / ONE character mesh"), HfogQuad(0xD), fog: true, at: below);
         Model("hfog_dest_one_unblended", Grey(0.25f, "no height fog on an unblended dest-ONE alpha property"), HfogQuad(0xC), fog: true, at: below);
+        Model("hfog_blend", Grey(0.5f, "the height fog on a SRCALPHA / INVSRCALPHA character mesh"), HfogQuad(0x10ED), fog: true, at: below);
 
         // MS2AlphaBoostMaterial: a blended MS2CharacterMaterial mesh at material alpha 1.5 draws as type 0 times 1.5, saturated
         // into the 8-bit target with its opacity (CreateRenderTargetSurface @0x1416a3cd0), so over black it reads type 0 * 1.5

@@ -652,7 +652,9 @@ public sealed class ModelBuilder
     /// DRAW_CCW_OR_BOTH the back faces (field_lit's default). The same mapping as the effect meshes (EffectInstance.RenderModes).</summary>
     internal static string CullDefine(ModelMesh m) => m.Cull switch { FaceCull.None => "CULL_NONE", FaceCull.Front => "CULL_FRONT", _ => null };
 
-    /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE), with the mesh's culling.</summary>
+    /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE), with the mesh's culling.
+    /// An unblended alpha property with dest ONE draws opaque here, height fog included, where the client's bAdditive reads
+    /// the dest alone (NiStandardMaterial.cpp:692); no Map or Item mesh has one, so no variant.</summary>
     static Shader FieldShader(ModelMesh m)
     {
         var cull = CullDefine(m);
