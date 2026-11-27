@@ -12,7 +12,7 @@ namespace Ms2.Formats.Tests;
 /// </summary>
 public class FogOffTests
 {
-    static readonly string[] Names = { "", "UserPropBuffer", "OtherData", "NoFog", "NoShadow", "x nofog y" };
+    static readonly string[] Names = { "", "UserPropBuffer", "OtherData", "NoFog", "NoShadow", "x nofog y", "NoFog NoShadow" };
 
     // block 0: the object; block 1: its extra data (when named); block 2: its alpha property (when given)
     static bool FogOff(long flags = 0, string extraName = null, string extraValue = null, long? alpha = null)
@@ -65,5 +65,43 @@ public class FogOffTests
         Assert.That(FogOff(alpha: 1 | 6 << 1 | 7 << 5), Is.False, "blend on, dest INVSRCALPHA");
         Assert.That(FogOff(alpha: 6 << 1), Is.False, "blend off, dest ONE");
         Assert.That(FogOff(alpha: 0x200 | 6 << 1), Is.False, "alpha test only, dest ONE");
+    }
+
+    // the ancestor half of the walk: root NiNode 0 -> NiNode 1 -> NiMesh 2, beside it NiNode 3; block 4 a UserPropBuffer,
+    // block 5 an additive NiAlphaProperty. The tag sits on block `on`.
+    static (bool NoShadow, bool NoFog) Under(int on, long flags = 0, string extra = null, bool additive = false)
+    {
+        var nif = new NifFile();
+        nif.Strings.AddRange(Names);
+        NifStruct Block(string type) => new NifStruct { Type = type, ["Flags"] = 0L, ["Extra Data List"] = new long[0], ["Properties"] = new long[0] };
+        var b = new[] { Block("NiNode"), Block("NiNode"), Block("NiMesh"), Block("NiNode") };
+        b[0]["Children"] = new long[] { 1, 3 };
+        b[1]["Children"] = new long[] { 2 };
+        b[on]["Flags"] = flags;
+        if (extra != null) b[on]["Extra Data List"] = new long[] { 4 };
+        if (additive) b[on]["Properties"] = new long[] { 5 };
+        nif.Blocks.AddRange(b);
+        nif.Blocks.Add(new NifStruct { Type = "NiStringExtraData", ["Name"] = (long)Array.IndexOf(Names, "UserPropBuffer"), ["String Data"] = (long)Array.IndexOf(Names, extra ?? "") });
+        nif.Blocks.Add(new NifStruct { Type = "NiAlphaProperty", ["Flags"] = 1L | 6 << 1 });
+        nif.Roots.Add(0);
+        var parent = new Dictionary<int, int> { [1] = 0, [3] = 0, [2] = 1 };
+        return ModelData.SubtreeTags(nif, parent, 0, 2);
+    }
+
+    [Test]
+    public void AMatchingNodeAboveTheMeshTurnsItOff()
+    {
+        Assert.That(Under(1, extra: "NoFog"), Is.EqualTo((false, true)), "a nofog parent");
+        Assert.That(Under(0, flags: 0x400), Is.EqualTo((false, true)), "a 0x400 root two levels up");
+        Assert.That(Under(1, additive: true), Is.EqualTo((false, true)), "an additive parent");
+        Assert.That(Under(0, extra: "NoShadow"), Is.EqualTo((true, false)), "a NoShadow root");
+        Assert.That(Under(1, extra: "NoFog NoShadow"), Is.EqualTo((true, true)), "both on the parent");
+    }
+
+    [Test]
+    public void ANodeBesideTheMeshLeavesIt()
+    {
+        Assert.That(Under(3, flags: 0x400, extra: "NoFog NoShadow", additive: true), Is.EqualTo((false, false)));
+        Assert.That(Under(2), Is.EqualTo((false, false)), "nothing tagged");
     }
 }

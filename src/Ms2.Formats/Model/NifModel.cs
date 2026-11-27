@@ -1104,6 +1104,24 @@ public sealed class ModelData
         return false;
     }
 
+    /// <summary>
+    /// A mesh's <see cref="ModelMesh.NoShadow"/> and <see cref="ModelMesh.NoFog"/>: the block or any node above it up to
+    /// <paramref name="root"/> (<paramref name="parent"/>: child block to its NiNode) is tagged NoShadow
+    /// (<see cref="TaggedNoShadow"/>) or fog-off (<see cref="FogOff"/>). Both client walks act on the matching node's whole
+    /// subtree: the shadow walk does not enter it, and FUN_141569620 attaches the fog-off property at its root.
+    /// </summary>
+    internal static (bool NoShadow, bool NoFog) SubtreeTags(NifFile nif, IReadOnlyDictionary<int, int> parent, int root, int block)
+    {
+        bool noShadow = false, noFog = false;
+        for (int at = block; ; )
+        {
+            if (!noShadow && TaggedNoShadow(nif, at)) noShadow = true;
+            if (!noFog && FogOff(nif, at)) noFog = true;
+            if (noShadow && noFog || at == root || !parent.TryGetValue(at, out at)) break;
+        }
+        return (noShadow, noFog);
+    }
+
     static bool IsIdentity(Xform x)
     {
         if (Math.Abs(x.T.X) + Math.Abs(x.T.Y) + Math.Abs(x.T.Z) > 1e-3 || Math.Abs(x.S - 1) > 1e-4) return false;
@@ -1262,12 +1280,7 @@ public sealed class ModelData
                 Maps = MapsOf(nif, i),
                 Bound = BoundOf(B[i]),
             };
-            for (int at = i; ; )
-            {
-                if (!mesh.NoShadow && TaggedNoShadow(nif, at)) mesh.NoShadow = true;
-                if (!mesh.NoFog && FogOff(nif, at)) mesh.NoFog = true;
-                if (mesh.NoShadow && mesh.NoFog || at == root || !parent.TryGetValue(at, out at)) break;
-            }
+            (mesh.NoShadow, mesh.NoFog) = SubtreeTags(nif, parent, root, i);
             mesh.Normals = Unit(nrm.v, nv);
             mesh.Tangents = Unit((skinned ? Pick("TANGENT_BP", "TANGENT") : Pick("TANGENT", "TANGENT_BP")).v, nv);
             mesh.Binormals = Unit((skinned ? Pick("BINORMAL_BP", "BINORMAL") : Pick("BINORMAL", "BINORMAL_BP")).v, nv);
