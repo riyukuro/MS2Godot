@@ -71,6 +71,8 @@ public class MessageBoxTests
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 10; i++) p.Tick();
         MessageBoxQueue.Clear(0);
+        // the key layers are process-wide: a modal another fixture left shown must not decide these tests
+        KeyInput.ReleaseAll();
         MessageBoxQueue.Layer = c;
         foreach (var e in rt.Errors) TestContext.WriteLine("  error: " + e);
         return (h, c);
