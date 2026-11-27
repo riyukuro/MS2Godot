@@ -1068,4 +1068,21 @@ public class AudioTests
         Assert.That(popRes.CueChanged, Is.True);
         Assert.That(mc.CurrentCueId, Is.EqualTo(35));
     }
+
+    /// <summary>The perf gate's music hold: in the last 2 s of a live non-looping segment, and nowhere else.</summary>
+    [Test]
+    public void EndLeadIsTheLastTwoSecondsOfALiveNonLoopingSegment()
+    {
+        var guard = new MusicPlaybackGuard();
+        Assert.That(guard.InEndLead(99.0), Is.False, "no segment playing");
+        guard.BeginCueChange();
+        Assert.That(guard.InEndLead(99.0), Is.False, "a cue change decoding");
+        guard.OnSegmentPlaying(100.0, isSelfLoop: false);
+        Assert.That(guard.InEndLead(97.5), Is.False);
+        Assert.That(guard.InEndLead(98.5), Is.True);
+        Assert.That(guard.InEndLead(99.5), Is.True, "it changes no state");
+        Assert.That(guard.TryBeginPredecode(98.5), Is.True, "nor does it take the predecode");
+        guard.OnSegmentPlaying(100.0, isSelfLoop: true);
+        Assert.That(guard.InEndLead(99.5), Is.False, "a looping segment never ends");
+    }
 }

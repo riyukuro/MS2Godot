@@ -122,6 +122,22 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     double fadeLogClock;
 
+    bool gateHold;
+
+    /// <summary>
+    /// The perf gate's music hold (HudScene.PerfGate.cs, a gate session only): from here on the playing segment never
+    /// reaches its end. Where its last <see cref="MusicPlaybackGuard.PredecodeLeadSeconds"/> seconds start (the point the
+    /// next segment's decode would start), it goes back to its start, so no segment switch (the next segment's decode on
+    /// the pool threads, its first play on the main thread) lands in a measured window. The switch follows the music's
+    /// own clock, the audio driver's wall time, not the gate's frames. The per-frame music work runs as before. The seek
+    /// to the current position here compiles the seek before any window.
+    /// </summary>
+    public void GateHoldMusic()
+    {
+        gateHold = true;
+        if (musicPlayers[crossfade.ActiveSlot] is { } p && IsInstanceValid(p) && p.Playing) p.Seek((float)p.GetPlaybackPosition());
+    }
+
     public int BgmCue { get; private set; }
     public string BgmName => bgmName;
     public bool MusicPlaying => (musicPlayers[0]?.Playing ?? false) || (musicPlayers[1]?.Playing ?? false);
@@ -521,8 +537,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (playbackGuard.IsSegmentActive)
         {
             var activePlayer = musicPlayers[crossfade.ActiveSlot];
-            if (activePlayer != null && activePlayer.Playing && playbackGuard.TryBeginPredecode(activePlayer.GetPlaybackPosition()))
-                PredecodeNextSegment();
+            if (activePlayer != null && activePlayer.Playing)
+            {
+                double pos = activePlayer.GetPlaybackPosition();
+                if (gateHold) { if (playbackGuard.InEndLead(pos)) activePlayer.Seek(0); }
+                else if (playbackGuard.TryBeginPredecode(pos)) PredecodeNextSegment();
+            }
         }
     }
 

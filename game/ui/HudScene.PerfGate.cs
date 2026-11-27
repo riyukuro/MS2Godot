@@ -149,6 +149,9 @@ public partial class HudScene
             // after the field's numbers: they stay the player's. Without it the tracker's growth lands in a window, so the
             // session fails rather than measure that (no result file: run.sh exits 2)
             if (!GatePregrowTrackers()) { GD.PushError("perf gate: the DisposablesTracker pre-grow failed"); GetTree().Quit(2); }
+            // the field music's segment switches follow the audio clock (wall time), so they would land in whichever
+            // window is running then: the gate holds the playing segment (FieldAudio.GateHoldMusic)
+            FieldAudio.Instance?.GateHoldMusic();
             return;
         }
         // the NIF cache's sweep (its minute timer is off in a gate session): once, here in the settle, so its one-time

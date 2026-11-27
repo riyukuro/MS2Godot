@@ -580,6 +580,15 @@ public sealed class MusicPlaybackGuard
     }
 
     /// <summary>
+    /// The perf gate's music hold (FieldAudio.GateHoldMusic): true while a live non-looping segment is in its last
+    /// <see cref="PredecodeLeadSeconds"/> seconds, where <see cref="TryBeginPredecode"/> would start the next segment's
+    /// decode. Zero allocations; it changes no state.
+    /// </summary>
+    public bool InEndLead(double playbackPositionSeconds) =>
+        segmentActive && !selfLoop && !transitionRequested && segmentSeconds > 0.0
+        && playbackPositionSeconds >= segmentSeconds - PredecodeLeadSeconds;
+
+    /// <summary>
     /// Guards the chained player's Finished callback: true only while that segment is still active and chained for
     /// the current cue (never while a cue change is decoding).
     /// </summary>
