@@ -94,7 +94,8 @@ public partial class FieldAudio
 
     /// <summary>A voice's attenuation for <paramref name="clip"/> at <paramref name="own"/> gain: its curve's gain from the
     /// listener with Godot's attenuation, max distance fade and filter off, or without a curve Godot's inverse distance and
-    /// filter from the event's range (3000 / 300 when it has none). The curve also gives the panning strength (its pan level).
+    /// filter from the event's range (3000 / 300 when it has none); a 2D event none of them, unpanned. The curve also gives the
+    /// panning strength (its pan level).
     /// The voice is reused, so each branch sets all of them.</summary>
     void SetAttenuation(AudioStreamPlayer3D v, int slot, SoundClip clip, float own, Vector3 position, StereoChannels stereo)
     {
@@ -114,6 +115,18 @@ public partial class FieldAudio
             return;
         }
         gains3d.Clear(slot);
+        if (clip.Is2D)
+        {
+            // a 2D event (a skill's cast voice, a quest aura's sound): CSoundEventEffect sets its position and starts it with
+            // no range check (CSoundEventEffect::vfunc_4 @0x141777370, soundeventmgr.cpp:597-610), and FMOD neither
+            // attenuates nor pans it, so it plays at its own volume wherever it is, as the 2D ambient players do (AmbientSounds)
+            v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
+            v.MaxDistance = 0;
+            v.AttenuationFilterDb = 0;   // Godot shelves the highs by the volume too (Player3DOutput)
+            v.PanningStrength = 0;
+            v.VolumeDb = Mathf.LinearToDb(own);
+            return;
+        }
         v.AttenuationFilterDb = Player3DOutput.DefaultFilterDb;
         v.AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance;
         v.PanningStrength = 1;

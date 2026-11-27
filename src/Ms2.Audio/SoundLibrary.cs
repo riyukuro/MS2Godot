@@ -24,6 +24,18 @@ public sealed class SoundClip
     public FevEvent Event;
     /// <summary>The clip's event is 2D (its mode has FMOD_2D): FMOD neither attenuates nor pans it.</summary>
     public bool Is2D => Event is { Is3D: false };
+
+    /// <summary>The volume of the clip's new sound at <paramref name="distance"/> from the listener at <paramref name="gain"/>, for
+    /// the quietest voice choice: its gain times its curve's audibility there (<see cref="DistanceRolloff.AudibilityAt"/>); a 2D
+    /// event's gain alone at any distance, since FMOD leaves it unattenuated; without either, the inverse distance from the
+    /// event's range (3000 / 300 when it has none), silent past its max.</summary>
+    public float AudibilityAt(float gain, float distance)
+    {
+        if (Rolloff is { } curve) return gain * curve.AudibilityAt(distance);
+        if (Is2D) return gain;
+        float max = MaxDistance > 0 ? MaxDistance : 3000, unit = MinDistance > 0 ? MinDistance : 300;
+        return distance >= max ? 0 : distance <= unit ? gain : gain * unit / distance;
+    }
 }
 
 /// <summary>

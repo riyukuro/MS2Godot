@@ -972,16 +972,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// <summary>The new sound's volume at the listener for the quietest choices, measured from the camera's actor where the
     /// listener stands (Field's listener, soundservice.cpp:975-999). That is its gain times its curve's audibility at that
     /// distance (FMOD_EVENT_INFO.audibility: the occlusion blended by the pan level and no pan level gain,
-    /// <see cref="DistanceRolloff.AudibilityAt"/>; the curve starts at FMOD's 3D min of 0), or without a curve times the
-    /// inverse distance from the event's range. Without a viewer it is the gain alone.</summary>
-    float Audibility(SoundClip clip, float gain, Vector3 position)
-    {
-        if (Viewer?.Invoke() is not { } at) return gain;
-        float d = at.DistanceTo(position);
-        if (clip.Rolloff is { } curve) return gain * curve.AudibilityAt(d);
-        float max = clip.MaxDistance > 0 ? clip.MaxDistance : 3000, unit = clip.MinDistance > 0 ? clip.MinDistance : 300;
-        return d >= max ? 0 : d <= unit ? gain : gain * unit / d;
-    }
+    /// <see cref="DistanceRolloff.AudibilityAt"/>; the curve starts at FMOD's 3D min of 0), a 2D event's gain alone, or
+    /// without either times the inverse distance from the event's range (<see cref="SoundClip.AudibilityAt"/>). Without a
+    /// viewer it is the gain alone.</summary>
+    float Audibility(SoundClip clip, float gain, Vector3 position) =>
+        Viewer?.Invoke() is { } at ? clip.AudibilityAt(gain, at.DistanceTo(position)) : gain;
 
     static void LogGain(string player, SoundClip clip, float own, StringName bus)
     {
