@@ -97,6 +97,8 @@ public enum Inbound : ushort {
     RevivalCount = 0x35,     // OnRevivalCount
     AutoRevive = 0xA2,       // OnAutoRevive
     DungeonReviveCount = 0xFB,   // OnDungeonReviveCount
+    RoomStageDungeon = 0xFF,     // RecvOp RoomStageDungeon: CNetworkService::OnRoomStageDungeon @0x14153e180 (networkservice.cpp:1082)
+    DungeonMission = 0x100,      // RecvOp DungeonMission: RoomStageDungeonCli::OnPacket @0x140c9d0c0 (roomstagedungeoncli.cpp), registered by its ctor
     UserState = 0x36,
     DeadUser = 0xA6,
     ExpUp = 0x37,

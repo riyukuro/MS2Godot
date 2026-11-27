@@ -98,6 +98,8 @@ static class Gms2Opcodes {
         [Inbound.RevivalCount] = 0x36,
         [Inbound.AutoRevive] = 0xA4,
         [Inbound.DungeonReviveCount] = 0xFD,
+        [Inbound.RoomStageDungeon] = 0x101,
+        [Inbound.DungeonMission] = 0x102,
         [Inbound.UserState] = 0x37,
         [Inbound.DeadUser] = 0xA8,
         [Inbound.ExpUp] = 0x38,
