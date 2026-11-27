@@ -133,6 +133,12 @@ public class EffectCasterKindSiteTests
         new("net/RemoteLayer.Magics.cs", "combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), ClientBasis(", "fx.CasterKind",
             "a hit effect's m_nObject (DamageHitEffects.KindOf)"),
         new("net/ReplayField.cs", "combat.PlayEffect(id, at, yaw, casterKind)", "casterKind", "ReplayField.CasterKindOf: the recorded PC 1, another 3"),
+        // the buddy badge
+        new("scripts/world/NpcEmoticons.cs", "e => s.SpawnKeptEffect(e, root, Ms2.Audio.SoundMusicEffectState.CasterSystem)", "Ms2.Audio.SoundMusicEffectState.CasterSystem",
+            "0: CGemCharEffect::vfunc_6's wearer effect, the query's m_nObject 0 with the PC its actor (itemgem.cpp:801-805)"),
+        new("net/RemoteLayer.Magics.cs", "RegionFx?.Spawn(effect, new Ms2.Formats.Model.Xform(new Ms2.Formats.Model.Vec3(at.X, at.Y, at.Z)",
+            "RegionSkills.Spawn: CasterSystem",
+            "0: CoupleEffectSystem::SpawnEffect's effect at the pair's middle, the request's +8 0 (unit_140b0e5f0_coupleeffectsystem.cpp:214-218)"),
     };
 
     static readonly Regex Entry = new(

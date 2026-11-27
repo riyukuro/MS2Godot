@@ -96,8 +96,10 @@ public class CoupleEffectTests
         }
         // both data sets ship the wearer's effects of 70800001-70800004 and 70800006 only
         Assert.That(wearerFiles.OrderBy(i => i).ToArray(), Is.EqualTo(new[] { 70800001, 70800002, 70800003, 70800004, 70800006 }));
-        // the wedding wreath row carries feature="Wedding": present exactly when the data's feature table has it on
-        Assert.That(gems.Find(70800015) != null, Is.EqualTo(data == "MS2_DATA"), "70800015 (feature Wedding)");
+        // the wedding wreath row carries feature="Wedding": on in the KMS data, off in the GMS2 data (told apart by the data's
+        // own Korean string folder, not by the variable that named it)
+        bool kms = packs.Exists("Xml", "string/kr/stringcommon.xml");
+        Assert.That(gems.Find(70800015) != null, Is.EqualTo(kms), "70800015 (feature Wedding)");
         Assert.That(gems.Find(0), Is.Null);
     }
 

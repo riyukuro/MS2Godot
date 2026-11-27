@@ -415,8 +415,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
                     Position = () => IsInstanceValid(root) ? ClientSpace(root.GlobalPosition) : System.Numerics.Vector3.Zero,
                 };
                 coupleWorld ??= new CoupleWorld(this);
-                int casterKind = s.ObjectKind(id);
-                x.Gems.CharEffect = new CharEffectGem(coupleWorld, x.Couple, e => s.SpawnKeptEffect(e, root, casterKind), s.StopKeptEffect);
+                // CGemCharEffect::vfunc_6 sets the query's m_nObject to 0 (itemgem.cpp:803): the system kind, not the PC's
+                x.Gems.CharEffect = new CharEffectGem(coupleWorld, x.Couple,
+                    e => s.SpawnKeptEffect(e, root, Ms2.Audio.SoundMusicEffectState.CasterSystem), s.StopKeptEffect);
                 byPcBalloon[b] = x;
                 // PC::CanUseItem of this player (pc.cpp:4683, PcItemUse) on each gem's packet record
                 var use = new PcItemUse.Pc
