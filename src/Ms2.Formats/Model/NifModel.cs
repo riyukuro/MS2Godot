@@ -1236,9 +1236,11 @@ public sealed class ModelData
     /// The meshes of NiPSMeshParticleSystem master particles (MasterParticleBlocks) are left out too, since they are drawn
     /// only as the particles' clones; <paramref name="keepMasterParticles"/> keeps them, for EffectScene, which marks them
     /// EffectMesh.Master and draws them only as clones.
+    /// <paramref name="onlyBlock"/> reads that one NiMesh block and no other, culled or a master or not, for a reader that takes
+    /// a mesh's properties without drawing it (EffectScene.WalkedMesh, the swoosh).
     /// STILL-OPEN: a KF sequence's visibility track (KfAnimation reads none) that shows such a node in a model.
     /// </summary>
-    public static ModelData Load(NifFile nif, bool keepCulledSubtrees = false, bool keepMasterParticles = false)
+    public static ModelData Load(NifFile nif, bool keepCulledSubtrees = false, bool keepMasterParticles = false, int onlyBlock = -1)
     {
         var B = nif.Blocks;
         var md = new ModelData();
@@ -1267,14 +1269,17 @@ public sealed class ModelData
         }
         Add(root, -1, Xform.Identity);
 
-        var masters = keepMasterParticles ? new HashSet<int>() : MasterParticleBlocks(nif);
-        for (int i = 0; i < B.Count; i++)
+        var masters = keepMasterParticles || onlyBlock >= 0 ? new HashSet<int>() : MasterParticleBlocks(nif);
+        for (int i = onlyBlock >= 0 ? onlyBlock : 0; i < (onlyBlock >= 0 ? Math.Min(onlyBlock + 1, B.Count) : B.Count); i++)
         {
             var b = B[i];
             if (b.Type != "NiMesh") continue;
-            if ((b.IntOr("Flags", 0) & 1) != 0) continue;           // APP_CULLED helper geometry
-            if (masters.Contains(i)) continue;                       // drawn only as mesh particles (MasterParticleBlocks)
-            if (!keepCulledSubtrees && UnderCulledNode(B, parent, i)) continue;
+            if (onlyBlock < 0)
+            {
+                if ((b.IntOr("Flags", 0) & 1) != 0) continue;           // APP_CULLED helper geometry
+                if (masters.Contains(i)) continue;                       // drawn only as mesh particles (MasterParticleBlocks)
+                if (!keepCulledSubtrees && UnderCulledNode(B, parent, i)) continue;
+            }
             long primitive = b.Int("Primitive Type");                  // 0 triangles, 1 triangle strips
             if (primitive != 0 && primitive != 1) throw new NotSupportedException("only triangle lists and strips");
             var s = MeshStreams(nif, i);

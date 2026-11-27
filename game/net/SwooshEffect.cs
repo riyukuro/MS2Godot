@@ -61,10 +61,10 @@ public sealed partial class SwooshEffect : MeshInstance3D
         Material mat;
         if (p.NifPath.Length > 0)
         {
-            // the first NiMesh of the nif (Unk_SceneWalker, :366-375); none: no swoosh
+            // the first NiMesh the client's node walk meets (Unk_SceneWalker, swoosheffectparam.cpp:353-366, EffectScene.WalkedMesh);
+            // none: no swoosh
             var sc = scene(p.NifPath);
-            if (sc == null || sc.Meshes.Count == 0) return null;
-            var m = sc.Meshes[0].Mesh;
+            if (sc?.WalkedMesh is not { } m) return null;
             string tex = m.Textures.TryGetValue("base", out var b) ? b : null;
             mat = MaterialFor(tex != null ? mb.Texture(tex) : null, m.Blend switch
             {

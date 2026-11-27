@@ -11,7 +11,9 @@ namespace Ms2.Formats.Tests;
 /// Every swoosh, ribbon, lightning, beam, afterImage and status part of every effect xml, read again from the raw attributes
 /// with the client's readers (TinyXML's sscanf "%d" / "%lf" prefixes, CompareNoCase, CString::Tokenize) and held against
 /// <see cref="EffectTable"/>'s parse; plus what the data asks of the runtime: the textures and nifs the parts name, the
-/// trail shapes at each effect step, and the values only a prefix read takes.
+/// trail shapes at each effect step, and the values only a prefix read takes. Each swoosh nif's mesh is the one the client's
+/// walk meets (EffectScene.WalkedMesh, swoosheffectparam.cpp:353-366): an exact NiMesh, never a mesh-particle master, and a
+/// nif with an NiMesh outside the masters has one.
 /// </summary>
 public class EffectStripSweepTests
 {
@@ -33,6 +35,7 @@ public class EffectStripSweepTests
         int notMade = 0, nested = 0, step3 = 0, step2None = 0, maxCurve = 0, lightTex = 0, lightTexMissing = 0, beamNoTex = 0;
         var alpha = new int[3]; var beamCurves = new int[3];
         var missing = new SortedSet<string>();
+        var swooshNifs = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("effect/", StringComparison.Ordinal) && e.EndsWith(".xml", StringComparison.Ordinal)).OrderBy(e => e, StringComparer.Ordinal))
         {
             XDocument x;
@@ -78,7 +81,9 @@ public class EffectStripSweepTests
                         if (s.NifPath.Length > 0)
                         {
                             swooshNif++;
-                            if (!packs.Exists(effectArchive, s.NifPath.Replace('\\', '/').ToLowerInvariant())) { nifMissing++; missing.Add("nif " + s.NifPath); }
+                            string nif = s.NifPath.Replace('\\', '/').ToLowerInvariant();
+                            if (!packs.Exists(effectArchive, nif)) { nifMissing++; missing.Add("nif " + s.NifPath); }
+                            else swooshNifs.Add(nif);
                         }
                         else if (s.TexturePath.Length > 0)
                         {
@@ -175,6 +180,28 @@ public class EffectStripSweepTests
                 }
             }
         }
+        int withSystems = 0, notFirst = 0;
+        var spec = new Ms2.Formats.Nif.NifSpec(NifEnv.NifXml());
+        foreach (var nif in swooshNifs)
+        {
+            var n = Ms2.Formats.Nif.NifFile.Load(spec, packs.Read(effectArchive, nif));
+            var sc = Ms2.Formats.Model.EffectScene.Load(n);
+            if (sc.Systems.Count > 0) withSystems++;
+            var w = sc.WalkedMesh;
+            if (w == null)
+            {
+                if (sc.Meshes.Any(m => !m.Master)) bad.Add($"swoosh nif {nif}: no walked mesh of {sc.Meshes.Count(m => !m.Master)} drawn meshes");
+                continue;
+            }
+            if (n.Blocks[w.Block].Type != "NiMesh" || sc.Meshes.Any(m => m.Master && m.Mesh.Block == w.Block)) bad.Add($"swoosh nif {nif}: walked mesh {w.Name} is {n.Blocks[w.Block].Type} or a master");
+            if (sc.Meshes.Count == 0 || w.Block != sc.Meshes[0].Mesh.Block)
+            {
+                notFirst++;
+                var f = sc.Meshes.FirstOrDefault()?.Mesh;
+                TestContext.Out.WriteLine($"  swoosh nif {nif}: walked mesh {w.Name} (block {w.Block}{(sc.Meshes.Any(m => m.Mesh.Block == w.Block) ? "" : ", culled")}: base {w.Textures.GetValueOrDefault("base")}, blend {w.Blend}, alpha {w.MaterialAlpha}), not {f?.Name} (base {f?.Textures.GetValueOrDefault("base")}, blend {f?.Blend}, alpha {f?.MaterialAlpha})");
+            }
+        }
+        TestContext.Out.WriteLine($"{env}: {swooshNifs.Count} swoosh nifs, {withSystems} with a particle system, {notFirst} whose walked mesh is not the scene's first");
         string Of(string k) => $"{count.GetValueOrDefault(k)} parts / {xmlsOf.GetValueOrDefault(k)?.Count ?? 0} xmls";
         TestContext.Out.WriteLine($"{env}: {xmls} xmls ({unreadable} unreadable); swoosh {Of("swoosh")}, ribbon {Of("ribbon")}, lightning {Of("lightning")}, beam {Of("beam")}, afterImage {Of("afterImage")}, status {Of("status")}; {nested} nested, {notMade} not made (no loop, duration 0)");
         TestContext.Out.WriteLine($"{env}: swoosh: {swooshTex} texture, {swooshNif} nif, {swooshNeither} neither; quality cut to 4 on {qualityCut}, sampling cut to 60 on {samplingCut}; alpha swoosh/standard/add {alpha[0]}/{alpha[1]}/{alpha[2]}; step 3 makes {step3}, step 2 makes none of {step2None}; most curve samples {maxCurve}");

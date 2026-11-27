@@ -617,6 +617,13 @@ public sealed class EffectScene
     public Dictionary<int, int> NodeOfBlock = new();
     public HashSet<string> Unsupported = new();          // controller / block types met but not read
     public double Duration;                              // longest controller window
+    /// <summary>The first NiMesh a walk from the root meets, null for none; it may be a culled one, which Meshes leaves out
+    /// (an emitter's shape: the ride effect eff_item_ride_50600337_r_ringer_sprun), so it is read on its own then. The walk is
+    /// the client's node stack (Unk_NodeQueue::Next @0x14098e0d0, alphaanimation.cpp:375-388: it pops the tail and queues a
+    /// node's children at the tail, so a node's last child is met first), and the test is an exact NiMesh, so a particle
+    /// system (an NiMesh kind) is passed over; the masters of a mesh-particle system hang under no node, so it never meets
+    /// them. The swoosh takes this mesh's properties (swoosheffectparam.cpp:353-366).</summary>
+    public ModelMesh WalkedMesh;
 
     static Xform XformOf(NifStruct b)
     {
@@ -784,6 +791,23 @@ public sealed class EffectScene
             if (m.Block < 0 || !sc.NodeOfBlock.TryGetValue(m.Block, out int node)) continue;
             var em = new EffectMesh { Mesh = m, Node = node, AlphaBoost = ModelData.AlphaBoost(n, m.Block) };
             sc.Meshes.Add(em); meshOf[m.Block] = em;
+        }
+        if (n.Roots.Count > 0)
+        {
+            var stack = new List<long> { n.Roots[0] };
+            var seen = new HashSet<long>();
+            while (stack.Count > 0)
+            {
+                long b = stack[^1]; stack.RemoveAt(stack.Count - 1);
+                if (b < 0 || b >= B.Count || !seen.Add(b)) continue;
+                if (B[(int)b].Type == "NiMesh")
+                {
+                    sc.WalkedMesh = meshOf.TryGetValue((int)b, out var wm) ? wm.Mesh : ModelData.Load(n, onlyBlock: (int)b).Meshes.FirstOrDefault();
+                    break;
+                }
+                // only an NiNode kind has Children (NiDynamicCast(NiNode) in Next)
+                if (B[(int)b].TryGetValue("Children", out var wc) && wc is long[] wk) foreach (var k in wk) if (k >= 0) stack.Add(k);
+            }
         }
         var systems = new Dictionary<int, ParticleSystemDef>();
         foreach (var (blk, node) in sc.NodeOfBlock)
