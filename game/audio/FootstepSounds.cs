@@ -116,7 +116,9 @@ public partial class FootstepSounds : Node
                 v.MaxDistance = Player3DOutput.CurveMaxDistance(curve);
                 v.AttenuationFilterDb = Player3DOutput.CurveFilterDb;
                 float level = curve.PanLevelAt(d);
-                v.PanningStrength = Player3DOutput.PanningStrength(level, sound.Stereo.Correlation);   // FMOD's pan level, its gain on the volume
+                // FMOD's pan level, its gain on the volume; above or below the listener, scaled to FMOD's side component
+                v.PanningStrength = Player3DOutput.PanningStrength(level, sound.Stereo.Correlation)
+                    * Player3DOutput.ElevationScale(Num(body.GlobalPosition), Num(fa.ListenerAt), Num(fa.ListenerUp));
                 v.VolumeDb = RolloffGains.ToDb(clip.Volume * curve.GainAt(d) * Player3DOutput.PanLevelGain(level, sound.Stereo,
                     Player3DOutput.Side(Num(body.GlobalPosition), Num(fa.ListenerAt), Num(fa.ListenerRight))));
             }
