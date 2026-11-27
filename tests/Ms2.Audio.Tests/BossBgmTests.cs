@@ -34,6 +34,16 @@ public class BossBgmTests
     }
 
     [Test]
+    public void TheBossDistanceIsMeasuredFromTheCameraPoint()
+    {
+        var player = new System.Numerics.Vector3(100, 200, 0);
+        var eye = new System.Numerics.Vector3(100, -1300, 900);
+        Assert.That(BossBgmTracker.MusicPoint(player, eye), Is.EqualTo(player), "the camera target (the own PC)");
+        Assert.That(BossBgmTracker.MusicPoint(null, eye), Is.EqualTo(eye), "no camera target: the camera's eye");
+        Assert.That(BossBgmTracker.MusicPoint(player, null), Is.EqualTo(System.Numerics.Vector3.Zero), "no camera: the origin");
+    }
+
+    [Test]
     public void ABossWithinItsSoundDistanceStartsTheBossMusic()
     {
         var (mc, t) = Playing();

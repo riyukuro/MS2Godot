@@ -435,6 +435,7 @@ public sealed partial class RemoteLayer : Node3D
         npcs = new NpcLayer(packs, mb, table, this)
         {
             SpawnAnimation = id => field.SpawnPoints?.Find(id),
+            CameraEye = () => IsInsideTree() && GetViewport().GetCamera3D() is { } cam ? cam.GlobalPosition : null,
             // CNpc::AttachOwnerEffect: FindPCById (the own pc's visual or another player's), kept in the region skill node
             FindPc = id => id == 0 ? null : id == Tracker.SelfObjectId ? LiveSession.Instance?.OwnPlayer?.Visual
                 : users.TryGetValue(id, out var r) ? r.Visual : null,

@@ -756,6 +756,16 @@ public sealed class NpcLayer
     /// <summary>The own player's place, FUN_1411a5110's view distance origin for the hit sound; none when null.</summary>
     public Func<Vector3?> Viewer;
 
+    /// <summary>The field camera's eye, null with no camera (for the boss music's camera point).</summary>
+    public Func<Vector3?> CameraEye;
+
+    Vector3 MusicPoint()
+    {
+        static System.Numerics.Vector3? N(Vector3? v) => v is { } x ? new(x.X, x.Y, x.Z) : null;
+        var p = Ms2.Audio.BossBgmTracker.MusicPoint(N(Viewer?.Invoke()), N(CameraEye?.Invoke()));
+        return new Vector3(p.X, p.Y, p.Z);
+    }
+
     /// <summary>The npc id, attack material, defence material, relation and volume of each hit sound asked for (for the checks).</summary>
     public Action<int, int, int, int, float> HitSoundPlayed;
 
@@ -1261,11 +1271,12 @@ public sealed class NpcLayer
         foreach (var i in inst.Values)
         {
             i.Face?.Tick(nowMs);                              // PCBase::vfunc_53 (pcbase.cpp:3729): the face first (FUN_14166f940)
-            // CNpc::vfunc_53 (:2354-2359): a live boss's distance from the player (GameObject m_unk_c4, the world update's focus
-            // distance, worldservice_1.cpp:9670-9700) against its bossSoundDistance / bossSoundEndDistance
+            // CNpc::vfunc_53 (:2354-2359): a live boss's distance from the camera point (GameObject m_unk_c4,
+            // Ms2.Audio.BossBgmTracker.MusicPoint) against its bossSoundDistance / bossSoundEndDistance. The port's camera
+            // target is the own player (no entity camera on an npc, no observer); without one, the camera's eye.
             if (i.BossRow != null && !i.Dead && audio != null)
             {
-                if (!viewerRead) { me = Viewer?.Invoke(); viewerRead = true; }
+                if (!viewerRead) { me = MusicPoint(); viewerRead = true; }
                 if (me is { } at)
                     audio.BossDistance((ulong)i.Talk.ObjectId, i.Root.GlobalPosition.DistanceTo(at), i.BossRow.BossSoundDistance, i.BossRow.BossSoundEndDistance);
             }

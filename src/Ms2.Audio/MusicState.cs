@@ -361,6 +361,16 @@ public sealed class BossBgmTracker
 
     public bool IsBossBgmActive => playingBoss;
 
+    /// <summary>
+    /// The point a boss npc's music distance (GameObject m_unk_c4, read by CNpc::vfunc_53 :2355) is measured from. WorldService's
+    /// update (worldservice_1.cpp:9672-9700) sets m_unk_c4 from its camera point: the camera target's place (CameraMgr m_1c0,
+    /// FUN_140a38d60: the own PC, an entity camera's npc or the observed PC) when there is a camera (FUN_140a18070), else the
+    /// camera's eye (FUN_140a17e10); the origin with no camera. The player's own focus (it, or its mount) is the other
+    /// distance, m_unk_bc. <paramref name="cameraEye"/> is null for no camera.
+    /// </summary>
+    public static System.Numerics.Vector3 MusicPoint(System.Numerics.Vector3? cameraTarget, System.Numerics.Vector3? cameraEye) =>
+        cameraEye is not { } eye ? System.Numerics.Vector3.Zero : cameraTarget ?? eye;
+
     public BossBgmTracker(MusicController music, FieldBgmSpec fieldBgm)
     {
         this.music = music;
