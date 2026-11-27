@@ -68,6 +68,16 @@ public sealed class ItemColoringDialogController : UiController
     /// <summary>UIItemColoringDialog's ctor (@0x1419abdd0, uiitemcoloringdialog.cpp:250) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
     /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
     protected override bool TweenEnabled => false;
+    /// <summary>The ctor's SetFlag(0, 1) (uiitemcoloringdialog.cpp:257): always on, so the field Esc's open-dialog test and
+    /// CloseAllDialogs pass it by.</summary>
+    public override bool AlwaysOn => true;
+    /// <summary>vfunc_13 (uiitemcoloringdialog.cpp:336): UIDialog's passes an always-on dialog, then Esc asks RequestClose.</summary>
+    public override bool EscapeKey()
+    {
+        if (IsClosed) return false;
+        RequestClose();
+        return true;
+    }
 
     public const int UiId = 0x4e23, BillId = 0x4e7b, ShopCategory = 5, ShopKindColoring = 3;
 

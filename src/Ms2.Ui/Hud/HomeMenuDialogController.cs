@@ -73,6 +73,9 @@ public class HomeMenuDialogController : UiController, IMessageBoxListener
     /// <summary>UIHomeMenuDialog's ctor (@0x140c29160, uihomemenudialog.cpp:220) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
     /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
     protected override bool TweenEnabled => false;
+    /// <summary>The ctor's SetFlag(0, 1) (uihomemenudialog.cpp:225): always on. It has no vfunc_13 of its own, so UIDialog's
+    /// passes Esc on, and the field Esc's open-dialog test and CloseAllDialogs pass it by.</summary>
+    public override bool AlwaysOn => true;
 
     readonly IHomeMenuHost host;
     /// <summary>m_bFreeCamera (the constructor sets 0, vfunc_67 resets it).</summary>

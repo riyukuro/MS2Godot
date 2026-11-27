@@ -273,4 +273,22 @@ public class ItemColoringDialogTests
         r.C.OnItemDyed(11100000);
         Assert.That((r.C.Pending, r.C.InputLocked, r.C.Basket.Count), Is.EqualTo((0, false, 0)));
     }
+
+    /// <summary>The ctor's SetFlag(0, 1) (uiitemcoloringdialog.cpp:257) and vfunc_13 (:336): always on, so the field Esc's
+    /// open-dialog test and close-all pass it; Esc asks RequestClose and is taken.</summary>
+    [Test] public void EscAsksTheCloseAndTheFieldWalksPassTheDialog()
+    {
+        var r = new Rig();
+        int left = 0;
+        r.C.Left += () => left++;
+        r.C.OnPacket(Rig.Open());
+        UiController[] registry = { r.C };
+        Assert.That(r.C.AlwaysOn, Is.True);
+        Assert.That(DialogGates.AnyClosable(registry), Is.False);
+        DialogGates.CloseAll(registry);
+        Assert.That(r.C.IsClosed, Is.False, "CloseAllDialogs passes an always-on dialog");
+        Assert.That(DialogGates.EscapeKey(registry), Is.True, "the dialog takes Esc");
+        Assert.That(left, Is.EqualTo(1), "RequestClose with the save button off leaves");
+        Assert.That(r.Closed, Is.EqualTo(0), "through Left, not a direct close");
+    }
 }

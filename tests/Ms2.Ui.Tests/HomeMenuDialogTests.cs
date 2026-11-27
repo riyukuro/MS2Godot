@@ -282,4 +282,12 @@ public class HomeMenuDialogTests
         c.OnCallback("OnBlueprintImport", null);
         Assert.That(h.Log, Is.EqualTo(new[] { "bp True", "slots load" }));
     }
+
+    /// <summary>The ctor's SetFlag(0, 1) (uihomemenudialog.cpp:225) with no vfunc_13 of its own: UIDialog's passes Esc on.</summary>
+    [Test] public void TheHomeMenuIsAlwaysOnAndPassesEsc()
+    {
+        var (c, _, _, _, _, _) = Make();
+        Assert.That(c.AlwaysOn, Is.True);
+        Assert.That(c.EscapeKey(), Is.False, "Esc goes on to the field");
+    }
 }

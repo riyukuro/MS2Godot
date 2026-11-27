@@ -27,6 +27,18 @@ public sealed class BeautyStyleDialogController : UiController
     /// <summary>UIBeautyShopStyleDialog's ctor (@0x140f03090, uibeautyshopstyledialog.cpp:778) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
     /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
     protected override bool TweenEnabled => false;
+    /// <summary>The ctor's SetFlag(0, 1) (uibeautyshopstyledialog.cpp:786): always on, so the field Esc's open-dialog test and
+    /// CloseAllDialogs pass it by.</summary>
+    public override bool AlwaysOn => true;
+    /// <summary>vfunc_13 (uibeautyshopstyledialog.cpp:848): UIDialog's passes an always-on dialog, then Esc runs FUN_140f082d0
+    /// (:1605), which closes in shop mode 2 or with nothing changed and else asks (common string 0x271). STILL-OPEN: its
+    /// changed test (FUN_140cd2c20, not the shop's HasChanges) is not ported, so Esc closes as the walk did.</summary>
+    public override bool EscapeKey()
+    {
+        if (IsClosed) return false;
+        Close();
+        return true;
+    }
 
     // ---- host-set parts -----------------------------------------------------------------------------------------------
     public IBeautyCustomize Customize;

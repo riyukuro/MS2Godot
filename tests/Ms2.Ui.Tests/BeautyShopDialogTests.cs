@@ -771,4 +771,33 @@ public class BeautyShopDialogTests
         Assert.That(hud, Does.Contain("unwatchBeauty?.Invoke()"), "the scene's teardown runs it");
         Assert.That(beauty, Does.Not.Contain("beautyWatched"), "no once-forever flag that survives a rebuilt scene");
     }
+
+    /// <summary>The ctor's SetFlag(0, 1) (uibeautyshopdialog.cpp:512) and vfunc_13 (:588): the shop is always on, so the field
+    /// Esc's open-dialog test and close-all pass it; Esc asks RequestClose (the ask when changed, the sub-scene exit through
+    /// Left) and is taken, also while the style select is open, which keeps the shop.</summary>
+    [Test]
+    public void EscAsksTheCloseAndTheFieldWalksPassTheShop()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open(1));
+        UiController[] registry = { r.C };
+        Assert.That(r.C.AlwaysOn, Is.True);
+        Assert.That(DialogGates.AnyClosable(registry), Is.False, "always on: no closable dialog for the field Esc");
+        DialogGates.CloseAll(registry);
+        Assert.That(r.C.IsClosed, Is.False, "CloseAllDialogs passes an always-on dialog");
+
+        r.Cu.HasChanges = true;
+        Assert.That(DialogGates.EscapeKey(registry), Is.True, "the shop takes Esc");
+        Assert.That(r.Boxes, Has.Count.EqualTo(1), "changed: the close ask (common 0x271)");
+        Assert.That(r.Left, Is.EqualTo(0));
+        Assert.That(r.C.IsClosed, Is.False, "asked, not closed");
+
+        r.C.StyleSelectOpen = true;
+        Assert.That(DialogGates.EscapeKey(registry), Is.True, "taken while the style select is open (m_2b5)");
+        Assert.That(r.Boxes, Has.Count.EqualTo(1), "no second ask");
+
+        r.C.StyleSelectOpen = false; r.Cu.HasChanges = false;
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Assert.That(r.Left, Is.EqualTo(1), "unchanged: it leaves (RequestClose -> Left)");
+    }
 }
