@@ -121,6 +121,22 @@ public sealed partial class TriggerFade : Node
         return true;
     }
 
+    /// <summary>
+    /// The target's transforms in <see cref="Target.All"/> changed (a moving breakable, world/FieldBreakables): each instance is
+    /// written again as it stands, and a running fade's copy of it goes to the new place while the instance stays hidden.
+    /// </summary>
+    public void Moved(int id, Target t)
+    {
+        Run run = showers.TryGetValue(id, out var a) ? a : hiders.TryGetValue(id, out var b) ? b : null;
+        foreach (var (mm, i, xf) in t.All)
+        {
+            Part copy = null;
+            if (run != null) foreach (var p in run.Parts) if (p.Draw.Mm == mm && p.Draw.Index == i) { copy = p; break; }
+            if (copy != null) copy.Node.Multimesh.SetInstanceTransform(0, xf);
+            mm.SetInstanceTransform(i, t.Shown && copy == null ? xf : new Transform3D(Zero, xf.Origin));
+        }
+    }
+
     /// <summary>Drops any fade of the object and shows or hides it at once (a breakable's state change, world/FieldBreakables).</summary>
     public void Stop(int id, Target t, bool show)
     {

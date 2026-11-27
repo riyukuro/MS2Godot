@@ -1199,6 +1199,12 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
     public override void _Process(double delta)
     {
         Ui.PerfLog.Frame("field");                 // MS2_PERF: frame time and draw calls also without the HUD
+        if (devBreakables != null)
+        {
+            // offline (MS2_BREAKABLE_STATE) the markers run on the local clock, as the session's do on the server tick (RemoteLayer)
+            uint now = (uint)Time.GetTicksMsec();
+            devBreakables.Update(now, unchecked((int)now));
+        }
         if (player != null)
         {
             // CTargetCameraMode::vfunc_9 (@0x14183b270, targetcameramode.cpp:310) reads Ctrl and the arrows with
