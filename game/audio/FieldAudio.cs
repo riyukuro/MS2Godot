@@ -817,6 +817,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// stops there: it never ends by itself, and the client's owners stop their kept looping effects as they go (the mount's
     /// loop and run effects in ~Ridee @0x141704240, ridee.cpp:390-407; a skill state's on its end, StateSkill::vfunc_5,
     /// stateskill.cpp:515-567; a buff's keep effect with the buff).
+    /// STILL-OPEN: a looping part that is not attached to a node and is played without a kept ticket (CombatLayer's
+    /// effect sounds) is not stopped when its actor leaves; it plays until the field ends. The client keys an effect
+    /// group by its play id, not by its owner (CEffectService::m_mapGroups), and stops one by that id from whoever kept it
+    /// (CEffectService::FUN_1411a6060: keep effects, breakable objects, the avatar's timers); otherwise the group goes with
+    /// a finished effect (FUN_1411a6160) or the field (OnShutdown). Whether the skill path keeps its ids and stops them as
+    /// its actor leaves is not traced. MS2's looping unattached parts are mostly trigger effects and buff keeps, which are kept.
     /// </summary>
     void FollowVoices()
     {
