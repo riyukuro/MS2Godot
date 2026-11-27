@@ -14,8 +14,10 @@ namespace Ms2Godot.Tests;
 /// for the box's focused field and CInputKeyHandler::FUN_14116d7a0(0xf) holds the action keys and the own player's keys. It
 /// opens the HUD offline, shows a name box (type 5, SetInput(0, "", 16, 0, 0), the guild create and search prompts), clicks into its field and types i, m, k, p, l and
 /// 1 (inventory, world map, skill book, my info, quest log, the first quick slot): the field holds them, none opened. Then Escape
-/// closes the box (onEscapeKey) and an i opens the inventory again, as soon as the focus is gone. Quits with 0 when all of that
-/// holds, else 1.
+/// closes the box (onEscapeKey) and an i opens the inventory again, as soon as the focus is gone. The own player's move keys are
+/// held the whole time (Left, Up and the jump key C, Unk_PCMove's key reads, MoveInput.Read): while the field has the focus the read
+/// gives no move and no jump and OwnKeysBlocked holds (it is the gate of the quick slot keys too), and once the box has closed the
+/// same held keys read as a move again. Quits with 0 when all of that holds, else 1.
 /// </summary>
 public partial class HudMessageBoxTypingCheck : Node
 {
@@ -39,6 +41,8 @@ public partial class HudMessageBoxTypingDriver : Node
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     const string Typed = "imkpl1";
     static readonly Key[] Keys = { Key.I, Key.M, Key.K, Key.P, Key.L, Key.Key1 };
+    /// <summary>The own player's move keys held down while the field is typed into: left, up and the jump (MoveInput.ReadKeys).</summary>
+    static readonly Key[] Held = { Key.Left, Key.Up, Key.C };
     HudScene hud;
     AsTextField field;
     int stage, wait;
@@ -110,6 +114,7 @@ public partial class HudMessageBoxTypingDriver : Node
                 var fo = MessageBoxLayer.LayerMovie.Player.Focus as AsDisplayObject;
                 if (!ReferenceEquals(fo, field)) { Finish(false, $"the field took no focus ({fo?.GetType().Name} {fo?.InstanceName})"); return; }
                 if (!Ms2.Ui.InputBlock.TextFieldFocused()) { Finish(false, "the field has the focus but InputBlock.TextFieldFocused is false"); return; }
+                foreach (var k in Held) Input.ParseInputEvent(new InputEventKey { Keycode = k, PhysicalKeycode = k, Pressed = true });
                 for (int i = 0; i < Keys.Length; i++) Press(Keys[i], Typed[i]);
                 wait = 0; stage = 3;
                 return;
@@ -120,6 +125,9 @@ public partial class HudMessageBoxTypingDriver : Node
                 var opened = Opened();
                 note = $"field \"{field.Text}\", opened: {(opened.Count == 0 ? "none" : string.Join(", ", opened))}";
                 if (field.Text != Typed || opened.Count != 0) { Finish(false, note); return; }
+                var read = Ms2Godot.Movement.MoveInput.Read();
+                note += $", move keys held: move ({read.Move.X}, {read.Move.Y}) jump {read.Jump}, own keys blocked {Ms2.Ui.InputBlock.OwnKeysBlocked}";
+                if (read.Move != Vector2.Zero || read.Jump || !Ms2.Ui.InputBlock.OwnKeysBlocked) { Finish(false, note + "; the held move keys reached the player"); return; }
                 Press(Key.Escape);          // onEscapeKey: the box closes
                 wait = 0; stage = 4;
                 return;
@@ -129,6 +137,10 @@ public partial class HudMessageBoxTypingDriver : Node
                 if (++wait < 20) return;
                 if (layer?.Shown == true) { Finish(false, note + "; Escape left the box open"); return; }
                 if (Ms2.Ui.InputBlock.TextFieldFocused()) { Finish(false, note + "; the focus stayed after the box closed"); return; }
+                var after = Ms2Godot.Movement.MoveInput.Read();     // the same keys, still held, now move
+                note += $"; after the close: move ({after.Move.X}, {after.Move.Y}) jump {after.Jump}";
+                if (after.Move != new Vector2(-1, 1) || !after.Jump) { Finish(false, note + "; the held keys read nothing once the box is gone"); return; }
+                foreach (var k in Held) Input.ParseInputEvent(new InputEventKey { Keycode = k, PhysicalKeycode = k, Pressed = false });
                 Press(Key.I, 'i');          // no field has the focus: the window key acts again
                 wait = 0; stage = 5;
                 return;
