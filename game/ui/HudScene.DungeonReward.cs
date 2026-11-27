@@ -84,7 +84,7 @@ public partial class HudScene
     /// The game scene's leave (<see cref="SceneChange.SceneLeft"/>: a scene state change such as the GameToGame move, and CSceneStateGame::OnLeave):
     /// UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218) runs FUN_141ada610(0x620001d), which calls CloseClosableDialogs
     /// (@0x141adc050, uiservice.cpp:1496) and closes every open dialog without flag 2: the dungeon lobby (flag 0, uidungeonlobby.cpp:50), the boss
-    /// bar (flag 1, uishadowexpeditionbossbar.cpp:244) and the result window (no flag, uidungeonrewarddialog.cpp:293; <see cref="DungeonRewardWindow.OnSceneLeft"/>).
+    /// bar (flag 1, uishadowexpeditionbossbar.cpp:244) and the result window (no flag, uidungeonrewarddialog.cpp:293; <see cref="DungeonRewardWindow.OnSceneLeft"/>) and the home menu (flag 0, uihomemenudialog.cpp:225).
     /// A same-server field change (CSceneStateGame::OnRequestFieldEnter, scenestategame.cpp:~2340) does not reach it, so SwapField leaves them up.
     /// </summary>
     void OnSceneLeft()

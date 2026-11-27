@@ -5,7 +5,7 @@ namespace Ms2.Ui.Hud;
 /// micro-game query FUN_1412755a0 and the local player check (:759-763) it queues the dialogs, 0x4f7c among them when the WorldService
 /// map type is 3 (FUN_141bcb1a0, :766-767). STILL-OPEN: the micro-game query FUN_1412755a0 (its early return at :759 is not ported);
 /// the 0x4f7f dialog that follows 0x4f7c when FUN_1410c3600(2) == 1 (bTab2, :768-769).
-/// The leave side is <see cref="HomeMenuDialogController"/>'s close: UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:209-219) calls
+/// The leave side is <see cref="HomeMenuDialogController"/>'s close at the scene leave (<see cref="SceneChange.SceneLeft"/>; a same-server field change keeps it): UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:209-219) calls
 /// FUN_141ada610(0x620001d) (@0x141ada610, uiservice.cpp:1142-1153), which runs CloseClosableDialogs (@0x141adc050, :1496): every dialog
 /// without flag 2 is closed by vfunc_68 (0x4f7c sets only flag 0, uihomemenudialog.cpp:225); FUN_141adad20's list (:860) does not hold 0x4f7c.
 /// </summary>
@@ -17,4 +17,8 @@ public static class HomeMenuEntry
     /// GetLocalPlayer() != 0 (:760-763); <paramref name="menuOpen"/> = the dialog is already open (a second queued open does nothing).</summary>
     public static bool Decide(int? mapType, bool hasLocalPlayer, bool menuOpen)
         => hasLocalPlayer && mapType == HomeMapType && !menuOpen;
+
+    /// <summary>The menu's turn in CloseClosableDialogs (@0x141adc050, uiservice.cpp:1496), for <see cref="SceneChange.SceneLeft"/>: closes the open menu
+    /// (flag 0 only, uihomemenudialog.cpp:225). <paramref name="current"/> gives the open menu or null. A same-server field change never raises the event.</summary>
+    public static Action SceneLeaveHandler(Func<HomeMenuDialogController> current) => () => current()?.CloseAtSceneLeave();
 }

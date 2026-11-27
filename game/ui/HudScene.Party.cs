@@ -112,6 +112,7 @@ public partial class HudScene
         if (live != null) live.DungeonWaitingReceived += OnDungeonWaiting;                  // UIDungeonLobby::OnRoomPacket (uidungeonlobby.cpp:68)
         if (live != null) live.DungeonRewardReceived += OnDungeonReward;                    // UIDungeonRewardDialog::OnPacket (uidungeonrewarddialog.cpp:386)
         if (live != null) live.DungeonRewardOpenRequested += OnDungeonRewardOpenRequested;    // DungeonRecordManagerCli::OnOpenDialog (dungeonrecordcli.cpp:306)
+        Ms2.Ui.Hud.SceneChange.SceneLeft += CloseHomeMenuOnLeave;
         Ms2.Ui.Hud.SceneChange.SceneLeft += OnSceneLeft;                                    // UISceneGame::vfunc_49 -> CloseClosableDialogs (uiservice.cpp:1496)
         // UIMessenger::HandlePartyLink (:2302): the chat lines' party links
         ChatLog.PartyLinks = new PartyLinks
@@ -155,6 +156,7 @@ public partial class HudScene
         unwatchParty = () =>
         {
             Ms2.Ui.Hud.SceneChange.SceneLeft -= OnSceneLeft;
+            Ms2.Ui.Hud.SceneChange.SceneLeft -= CloseHomeMenuOnLeave;
             book.Opened -= opened; book.Closed -= closed; book.MemberAdded -= added; book.MemberRemoved -= removed;
             book.MemberUpdated -= updated; book.MembersRefreshed -= refreshed; book.ChiefChanged -= chief; book.Applied -= applied;
             book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded; book.Noted -= noted;

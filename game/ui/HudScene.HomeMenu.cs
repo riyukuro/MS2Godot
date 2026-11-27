@@ -7,7 +7,7 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// UIHomeMenuDialog (0x4f7c, movie uihomemenudialog, uihomemenudialog.cpp) over <see cref="HomeMenuHost"/>. Its menu entries reach the home
 /// option dialog (<see cref="ToggleHomeOption"/>, OnHomePriority @0x140c2a370). OnHomeAttribute reaches the home inside option dialog (<see cref="ToggleHomeInsideOption"/>). The other dialog the menu toggles (0x4f7b) is not ported
-/// and does nothing. The field entry opens it in a home field (<see cref="OpenHomeMenuOnEntry"/>) and the field leave closes it (<see cref="CloseHomeMenuOnLeave"/>). STILL-OPEN: the other openers are not ported:
+/// and does nothing. The field entry opens it in a home field (<see cref="OpenHomeMenuOnEntry"/>) and the game scene's leave closes it (<see cref="CloseHomeMenuOnLeave"/>, from <see cref="OnSceneLeft"/>); a same-server field change keeps it. STILL-OPEN: the other openers are not ported:
 /// the game menu's home button (UIGameMenuDialog @0x14193b750, whose FUN_14193e9c0 toggles the design and blueprint modes,
 /// uigamemenudialog.cpp:2475-2480) and the craft scene's Refresh(true) (uiservice.cpp:784-788).
 /// </summary>
@@ -28,11 +28,10 @@ public partial class HudScene
     }
 
     /// <summary>UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218): FUN_141ada610(0x620001d) runs CloseClosableDialogs (uiservice.cpp:1496),
-    /// which closes 0x4f7c (flag 2 unset) with vfunc_68; the entry then opens a fresh menu in a home field.</summary>
-    void CloseHomeMenuOnLeave()
-    {
-        if (HomeMenuOpen) homeMenu.Close();
-    }
+    /// which closes 0x4f7c (flag 2 unset) with vfunc_68. That runs at a scene-state change (<see cref="SceneChange.SceneLeft"/>), not at a same-server field
+    /// change (CSceneStateGame::OnRequestFieldEnter, scenestategame.cpp:~2340), which keeps the dialogs.</summary>
+    Action CloseHomeMenuOnLeave => homeMenuLeave ??= HomeMenuEntry.SceneLeaveHandler(() => HomeMenuOpen ? homeMenu : null);
+    Action homeMenuLeave;
 
     void ToggleHomeMenu()
     {
