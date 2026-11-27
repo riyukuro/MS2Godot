@@ -142,6 +142,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchDungeonRoom();
         WatchPcInfo();
         WatchItemMerge();
+        WatchItemRemake();
         // the portal and interact actions' notices & casting bar, the channel notices
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
@@ -296,6 +297,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchLearningQuest = null;
         unwatchItemMerge?.Invoke();
         unwatchItemMerge = null;
+        unwatchItemRemake?.Invoke();
+        unwatchItemRemake = null;
         unwatchPrestige?.Invoke();
         unwatchPrestige = null;
         unwatchCouple?.Invoke();
@@ -2140,6 +2143,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemBreakKeys(k)) return true;
         if (ItemMergeKeys(k)) return true;
         if (ItemEnchantKeys(k)) return true;
+        if (ItemRemakeKeys(k)) return true;
         if (EnchantScrollKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
@@ -3914,6 +3918,7 @@ public partial class HudScene : Node, IUiStageHost
             else if (id == ItemBreakDialogController.UiId) ToggleItemBreak(false);
             else if (id == ItemMergeOptionDialogController.UiId) ToggleItemMerge();
             else if (id == ItemEnchantDialogController.UiId) OpenItemEnchant();
+            else if (id == ItemRemakeOptionDialogController.UiId) OpenItemRemake();    // MyPC::FUN_141528970
             else GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         };
         c.OpenDialogMode += (id, mode) =>
@@ -3929,7 +3934,7 @@ public partial class HudScene : Node, IUiStageHost
         c.Shop = () => ShopOpen ? shop : null;
         // the client's head is the latest opened dialog (DAT_143af2258.GetHead(), invenslot.cpp:1961), no fixed order; the dialogs
         // here are not told apart by open time, so the check order below is ours
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : ItemEnchantOpen ? Ms2.Ui.Hud.ItemEnchantDialogController.UiId : ItemRevertOpen ? Ms2.Ui.Hud.ItemMergeRevertDialogController.UiId : 0;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : ItemEnchantOpen ? Ms2.Ui.Hud.ItemEnchantDialogController.UiId : ItemRevertOpen ? Ms2.Ui.Hud.ItemMergeRevertDialogController.UiId : ItemRemakeOpen ? Ms2.Ui.Hud.ItemRemakeOptionDialogController.UiId : 0;
         c.BankAllowed = item => store?.Storable(item) ?? true;       // the open bank heads the right-click dialogs (0x4e47)
         c.BankDeposit = item => store?.DepositFromInventory(item);
         c.LockSelect = item => itemLock?.SelectFromInventory(item);

@@ -1103,6 +1103,11 @@ public partial class LiveSession : Node
     public event Action<ItemMergePacket, Maple2.PacketLib.Tools.ByteReader> ItemMergeReceived;
     /// <summary>An item dismantle packet (0x96, CItemBreakManager::OnItemDismantlePacket).</summary>
     public event Action<ItemDismantlePacket> ItemDismantleReceived;
+    /// <summary>A Change Attributes packet (UIItemRemakeOptionDialog::vfunc_79); the item body of kinds 1, 2 and 6 is left in the
+    /// reader.</summary>
+    public event Action<ChangeAttributesPacket, Maple2.PacketLib.Tools.ByteReader> ChangeAttributesReceived;
+    /// <summary>The Change Attributes window's sends (SendOp ChangeAttributes); live only.</summary>
+    public void SendChangeAttributes(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>The merge dialogs' sends (ItemMerge 0x3F, UIItemMergeOptionDialog / UIItemMergeRevertDialog); live only.</summary>
     public void SendItemMerge(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>RequestItemBox (0x1A, UIItemMultiOpenBoxDialog::vfunc_15 @0x140c3f8a0).</summary>
@@ -2501,6 +2506,13 @@ public partial class LiveSession : Node
                 var im = ItemMergePacket.Read(mr);   // CSceneStateGame::OnItemFusion (scenestategame.cpp:5906)
                 GD.Print($"live: item merge mode {im.Mode}");
                 ItemMergeReceived?.Invoke(im, mr);
+            }
+            else if (game.Is(p, Inbound.ChangeAttributes))
+            {
+                var cr = p.Reader();
+                var ca = ChangeAttributesPacket.Read(cr);   // UIItemRemakeOptionDialog::vfunc_79 (@0x14129daa0)
+                GD.Print($"live: change attributes kind {ca.Kind}");
+                ChangeAttributesReceived?.Invoke(ca, cr);
             }
             else if (game.Is(p, Inbound.ItemDismantle))
             {

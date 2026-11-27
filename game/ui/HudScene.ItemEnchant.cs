@@ -22,6 +22,7 @@ public partial class HudScene
     {
         if (beautyTalk != null && beautyTalk.Run(dialog, argument)) return;   // BeautyShopDialog / BeautyStyleDialog (uitalkcinematic.cpp:1190)
         if (TreasureMapTalk(dialog, argument)) return;                          // ItemTreasureMapDialog (uitalkcinematic.cpp:1221)
+        if (ItemRemakeTalk(dialog)) return;                                     // ItemRemakeOptionDialog
         if (!string.Equals(dialog, ItemEnchantDialogController.Bag, StringComparison.OrdinalIgnoreCase)) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         if (ItemEnchantOpen) return;

@@ -57,14 +57,14 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// <summary>DAT_143af62d0, initData's second argument (the dev mode: the auto pick-up option button enabled).</summary>
     public bool DevMode;
 
-    /// <summary>CUIService::ToggleDialog(id) of a button: item break 0x4e8d, item lock 0x4f08, socket and gem 0x4f0a, enchant 0x4e91.</summary>
+    /// <summary>CUIService::ToggleDialog(id) of a button: item break 0x4e8d, item lock 0x4f08, socket and gem 0x4f0a, enchant 0x4e91, Change Attributes 0x4eeb.</summary>
     public event Action<int> ToggleDialog;
     /// <summary>CUIService::OpenDialog of a UI id after the dialog's SetMode (the second argument), as onClickItemOption does
     /// with UIItemGetOptionDialog (uiinventorydialog.cpp:858-866).</summary>
     public event Action<int, int> OpenDialogMode;
     /// <summary>A button whose client path sends a request or opens a part not here (by its callback name): OnClickSort,
     /// onClickSlotExpand, onClickOpenBank, onClickItemMerge, onClickItemEnchantTransform,
-    /// onClickUnlimitedEnchant, onClickItemRemakeOption, notifySlotUse (the double click, the preview and the
+    /// onClickUnlimitedEnchant, notifySlotUse (the double click, the preview and the
     /// right-click modes other than put-on), notifySlotDragEnd (a drop off the bag, a drop from a kind of slot not ported).</summary>
     public event Action<string> Button;
 
@@ -353,6 +353,15 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         ToggleDialog?.Invoke(0x4e68);
     }
 
+    /// <summary>MyPC::FUN_141528970 (@0x141528970, mypc.cpp:2699): in a forced battle talk the talk error notice; else the window
+    /// (FUN_141b1eb90("ItemRemakeOptionDialog")). STILL-OPEN: the talk the client begins first (BeginTalkWithoutNpc with the
+    /// talk script of NPC 0xa7dabc, kind 0x1e; no window without it), as the merge button's route leaves it out too.</summary>
+    void OnClickItemRemakeOption()
+    {
+        if (TalkRefused()) { NoticeText?.Invoke(Model.Tables.Common("s_error_talk_battle_state_force_talk") ?? ""); return; }
+        ToggleDialog?.Invoke(0x4eeb);
+    }
+
     /// <summary>
     /// vfunc_28 @0x141998680 after UIDialog's. The sort is the client's; the buttons that open a dialog toggle it; the rest
     /// send a request (the slot expansion's box and request, the bank call) or open a part not here, and are only raised.
@@ -378,7 +387,9 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
                 return true;
             case "onclickslotexpand": OnClickSlotExpand(args); return true;
             // these two fall through to "return 0" in the client (:945-951, :979-981)
-            case "onclickitemremakeoption": case "onclickopenbank":
+            // :945: MyPC::FUN_141528970 (mypc.cpp:2699) opens the Change Attributes window, then the client falls through to 0
+            case "onclickitemremakeoption": OnClickItemRemakeOption(); return false;
+            case "onclickopenbank":
                 Button?.Invoke(name); return false;
             // the movie raises these too; UIInventoryDialog::vfunc_28 (@0x141998680, :832-981) has no branch for them and UIDialog's
             // does not either, so the client answers 0 and nothing happens: onClickMesoDrop (the meso drop button; the drop is the

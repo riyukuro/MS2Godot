@@ -2898,6 +2898,96 @@ public partial class LiveSession
                 finally { book.Notice -= Noticed; }
                 continue;
             }
+            if (step.StartsWith("remake"))      // the Change Attributes steps: remakeopen, remakeput:<gear id>[:<rarity>[:give]], remakepress[:<row to lock>] (none: -1, no lock), remakeapply:new|keep, remakeclose
+            {
+                string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
+                long Count(int id) { long n = 0; foreach (var e in live.Items.All) if (e.Id == id) n += e.Amount; return n; }
+                long UidOf(int id) { foreach (var e in live.Items.All) if (e.Id == id) return e.Uid; return 0; }
+                string State() { var s = hud.ItemRemakeStateScripted(); return $"open={s.Open} state={s.State} cur={s.Cur} new={s.New} options={s.Options} locked={s.Locked}"; }
+                switch (step[..(step.Contains(':') ? step.IndexOf(':') : step.Length)])
+                {
+                    case "remakeopen":      // the inventory's button; the open answer (kind 6) unlocks the input
+                        GD.Print($"live: combat remake button: {(hud.ItemRemakeButtonScripted() ? "clicked" : "no bag")}");
+                        await until(() => hud.ItemRemakeOpenScripted(), 60 * 5); await frames(60 * 3);
+                        GD.Print($"live: combat remake window: {State()}");
+                        Check("the remake window is open", hud.ItemRemakeOpenScripted());
+                        Shot("remake_open.png");
+                        break;
+                    case "remakeput":       // the gear given when missing (at the rarity given) and picked as the movie's onSelectItem picks it
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]);
+                        string rarity = parts.Length > 1 ? " --rarity " + int.Parse(parts[1]) : "";
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}{rarity}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        long uid = UidOf(id);
+                        Check($"gear {id} is in the bag ({uid})", uid != 0);
+                        if (uid == 0) break;
+                        var costs = new System.Collections.Generic.List<Ms2.Net.Packets.EnchantIngredient>();
+                        void Ingredients(Ms2.Net.Packets.ChangeAttributesPacket p, Maple2.PacketLib.Tools.ByteReader _)
+                        {
+                            if (p.Kind != 4) return;
+                            costs.Clear(); costs.AddRange(p.Ingredients);
+                            GD.Print($"live: combat remake ingredients: {string.Join(", ", p.Ingredients.Select(g => $"id {g.ItemId} tag 0x{g.Tag:x} x{g.Count}"))}");
+                        }
+                        live.ChangeAttributesReceived += Ingredients;
+                        GD.Print($"live: combat remake pick {id} ({uid}): {(hud.ItemRemakeCallScripted("onSelectItem", uid.ToString(System.Globalization.CultureInfo.InvariantCulture)) ? "raised" : "no window")}");
+                        await until(() => hud.ItemRemakeStateScripted().Cur == uid, 60 * 5); await frames(60 * 2);
+                        GD.Print($"live: combat remake window: {State()}");
+                        Shot($"remake_put_{id}.png");
+                        if (parts.Length > 2 && parts[2] == "give")     // the costs into the bag (the server's GM commands), then the pick again for the new counts
+                        {
+                            foreach (var g in costs)
+                            {
+                                int give = g.ItemId != 0 ? g.ItemId : hud.TagItemIdScripted(g.Tag);
+                                if (give == 0 || Count(give) >= g.Count) continue;
+                                long g0 = Count(give);
+                                GD.Print($"live: combat remake give {give} x{g.Count - g0}: {(hud.SubmitChatLine($"/item {give} --amount {g.Count - g0}") ? "sent" : "no chat window")}");
+                                await until(() => Count(give) >= g.Count, 60 * 5); await frames(30);
+                            }
+                            await frames(60);
+                            costs.Clear();
+                            GD.Print($"live: combat remake pick again: {(hud.ItemRemakeCallScripted("onSelectItem", uid.ToString(System.Globalization.CultureInfo.InvariantCulture)) ? "raised" : "no window")}");
+                            await until(() => costs.Count > 0, 60 * 5); await frames(60 * 2);
+                            GD.Print($"live: combat remake window: {State()}");
+                            Shot($"remake_given_{id}.png");
+                        }
+                        live.ChangeAttributesReceived -= Ingredients;
+                        break;
+                    }
+                    case "remakepress":     // the remake button with the row to lock given (-1, the default: none); the boxes it asks are answered yes
+                    {
+                        var s0 = hud.ItemRemakeStateScripted();
+                        int option = arg.Length > 0 ? int.Parse(arg) : -1;
+                        GD.Print($"live: combat remake press on {s0.Cur}: {(hud.ItemRemakeCallScripted("onClickRemake", s0.Cur.ToString(System.Globalization.CultureInfo.InvariantCulture), option) ? "raised" : "no window")}");
+                        await frames(60);
+                        for (int i = 0; i < 3 && hud.ShownBoxScripted() is { } box; i++)
+                        {
+                            GD.Print($"live: combat remake box \"{box.Msg}\": {(hud.BagBoxAnswerScripted(box, 0, box.Extra ?? "") ? "answered yes" : "no box")}");
+                            await frames(60);
+                        }
+                        await until(() => hud.ItemRemakeStateScripted().New != 0, 60 * 10); await frames(60 * 4);
+                        GD.Print($"live: combat remake window: {State()}");
+                        Shot("remake_result.png");
+                        break;
+                    }
+                    case "remakeapply":     // the movie's onClickApply: 1 the new roll, 0 the current one
+                    {
+                        int pick = arg == "keep" ? 0 : 1;
+                        GD.Print($"live: combat remake apply {arg}: {(hud.ItemRemakeCallScripted("onClickApply", pick) ? "raised" : "no window")}");
+                        await frames(60 * 4);
+                        GD.Print($"live: combat remake window: {State()}");
+                        Shot($"remake_apply_{arg}.png");
+                        break;
+                    }
+                    case "remakeclose":
+                        hud.ItemRemakeCloseScripted(); await frames(60);
+                        Check("the remake window closed", !hud.ItemRemakeStateScripted().Open);
+                        Shot("remake_close.png");
+                        break;
+                    default: GD.Print($"live: combat: unknown step {step}"); break;
+                }
+                continue;
+            }
             if (step.StartsWith("enchant"))      // the item enchant steps: enchantopen, enchantselect, enchantpress, enchantclose
             {
                 switch (step)

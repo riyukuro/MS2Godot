@@ -272,8 +272,8 @@ public class InventoryTests
     {
         Packs();
         var (h, c, book) = Load();
-        var raised = new List<string>(); var sent = new List<(int, bool)>(); int toggled = 0;
-        c.Button += raised.Add; c.ToggleDialog += id => toggled = id; c.View.RequestSort = (t, s) => sent.Add((t, s));
+        var raised = new List<string>(); var sent = new List<(int, bool)>(); var toggled = new List<int>();
+        c.Button += raised.Add; c.ToggleDialog += toggled.Add; c.View.RequestSort = (t, s) => sent.Add((t, s));
         Assert.That(c.OnCallback("OnClickSort", Array.Empty<object>()), Is.True);
         Assert.That(sent, Is.EqualTo(new[] { (0, false) }), "no expired item: sent at once");
         Assert.That(c.OnCallback("onClickSlotExpand", new object[] { "Equip" }), Is.True);
@@ -282,12 +282,13 @@ public class InventoryTests
         Assert.That(c.OnCallback("onClickOpenBank", Array.Empty<object>()), Is.False, "the client returns 0");
         Assert.That(c.OnCallback("onClickMesoDrop", Array.Empty<object>()), Is.False, "no branch in the client: 0");
         Assert.That(c.OnCallback("OnSelected", new object[] { "Elixir" }), Is.False, "no branch in the client: 0");
-        Assert.That(raised, Is.EqualTo(new[] { "onClickItemRemakeOption", "onClickOpenBank" }), "the expand is the dialog's own; the two unhandled ones raise nothing");
-        Assert.That(toggled, Is.EqualTo(0x4e8d));
+        Assert.That(raised, Is.EqualTo(new[] { "onClickOpenBank" }), "the expand is the dialog's own; the two unhandled ones raise nothing");
+        // onClickItemRemakeOption (:945): MyPC::FUN_141528970 opens the Change Attributes window 0x4eeb, the callback still answers 0
+        Assert.That(toggled, Is.EqualTo(new[] { 0x4e8d, 0x4eeb }));
         // onClickItemOption (:858-866): the auto-loot dialog 0x4e6c, SetMode(1) then OpenDialog
         var opened = new List<(int, int)>(); c.OpenDialogMode += (id, mode) => opened.Add((id, mode));
         Assert.That(c.OnCallback("onClickItemOption", Array.Empty<object>()), Is.True);
-        Assert.That((opened.Single(), raised.Count), Is.EqualTo(((0x4e6c, 1), 2)), "opened in mode 1, nothing raised");
+        Assert.That((opened.Single(), raised.Count), Is.EqualTo(((0x4e6c, 1), 1)), "opened in mode 1, nothing raised");
 
         // an expired item: box 0x2a1, the answer sends (0 = stack)
         MessageBoxData shown = null;
