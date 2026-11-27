@@ -167,13 +167,6 @@ public partial class HudScene
         uiRoot.AddChild(guildMovie);
     }
 
-    /// <summary>The guild dialog's vfunc_13: UIDialog's Escape closes it.</summary>
-    bool GuildKeys(InputEventKey k)
-    {
-        if (GuildOpen && k.Keycode == Key.Escape) { guild.Close(); return true; }
-        return false;
-    }
-
     /// <summary>The scripted live run's guild dialog: opened as the menu's Guild entry does (CUIService::ToggleDialog
     /// (0x4e4f)); false when it was already up.</summary>
     public bool OpenGuildScripted()

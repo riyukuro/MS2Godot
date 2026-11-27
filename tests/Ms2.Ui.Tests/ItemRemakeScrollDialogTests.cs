@@ -467,6 +467,20 @@ public class ItemRemakeScrollDialogTests
         two.C.DropTarget(41);
         two.C.RequestClose();
         Assert.That((two.Boxes.Count, two.ClosedCount), Is.EqualTo((0, 1)), "state 2 closes at once");
+
+        // the key walk's Escape (vfunc_13) closes the same way: state 3 asks and takes the key, state 2 closes at once
+        var esc = new Rig();
+        esc.AddGood(41);
+        esc.C.DropTarget(41);
+        esc.Confirm();
+        esc.Roll(41, (1, 20));
+        Assert.That(esc.C.EscapeKey(), Is.True);
+        Assert.That((esc.Boxes.Count, esc.Boxes.Last().Msg, esc.C.IsClosed), Is.EqualTo((1, esc.T("s_itemremake_scroll_ask_close"), false)));
+        var esc2 = new Rig();
+        esc2.AddGood(41);
+        esc2.C.DropTarget(41);
+        Assert.That(esc2.C.EscapeKey(), Is.True);
+        Assert.That((esc2.Boxes.Count, esc2.ClosedCount), Is.EqualTo((0, 1)));
     }
 
     [Test]

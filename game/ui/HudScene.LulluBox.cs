@@ -63,12 +63,4 @@ public partial class HudScene
         m.Host.Unload();
         m.QueueFree();
     }
-
-    /// <summary>UIDialog's key handling: Escape closes the box.</summary>
-    bool LulluBoxKeys(InputEventKey k)
-    {
-        if (!LulluBoxOpen || k.Keycode != Key.Escape) return false;
-        lulluBox.Close();
-        return true;
-    }
 }

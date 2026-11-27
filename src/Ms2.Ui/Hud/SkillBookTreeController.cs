@@ -858,6 +858,9 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         return true;
     }
 
+    /// <summary>Escape in the key walk: vfunc_69, the same guarded close as the close button.</summary>
+    public override void EscapeClose() => RequestClose();
+
     /// <summary>The close button and Escape (UIDialog vfunc_69 / vfunc_70: vfunc_71 first, vfunc_67 when it returns 0).</summary>
     public void RequestClose()
     {

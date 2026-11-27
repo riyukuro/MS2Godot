@@ -136,6 +136,9 @@ public sealed class ItemRemakeScrollDialogController : UiController, IDragSlotOw
         if (!CloseGuard()) Close();
     }
 
+    /// <summary>The key walk's Escape (UIDialog::vfunc_13) closes through vfunc_70 as the close button does: state 3 asks first.</summary>
+    public override void EscapeClose() => RequestClose();
+
     public override bool OnCallbackBeforeDialog(string name, object[] args)
     {
         if (!string.Equals(name, "onCloseDialog", StringComparison.OrdinalIgnoreCase)) return false;

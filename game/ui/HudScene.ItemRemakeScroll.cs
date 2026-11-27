@@ -127,12 +127,4 @@ public partial class HudScene
 
     /// <summary>The window closed as its close button closes it.</summary>
     public void ItemRemakeScrollCloseScripted() { if (ItemRemakeScrollOpen) itemRemakeScroll.RequestClose(); }
-
-    /// <summary>UIDialog's key handling: Escape closes the window through vfunc_71 (state 3 asks first).</summary>
-    bool ItemRemakeScrollKeys(InputEventKey k)
-    {
-        if (!ItemRemakeScrollOpen || k.Keycode != Key.Escape) return false;
-        itemRemakeScroll.RequestClose();
-        return true;
-    }
 }

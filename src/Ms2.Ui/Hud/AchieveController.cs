@@ -145,6 +145,9 @@ public sealed class AchieveController : UiController
         return false;
     }
 
+    /// <summary>The key walk's Escape: <see cref="OnKey"/>'s Escape branch (vfunc_13, :425).</summary>
+    public override bool EscapeKey() => OnKey(true, false);
+
     /// <summary>vfunc_53 (:469): "all", then each kind's name = its mark. A deviation: kind 0's name is "",
     /// which the client writes as an attribute with no name; an XML attribute needs a name, so it is not written (the load
     /// reads it back as 1 either way, XmlGetAttr finding nothing).</summary>

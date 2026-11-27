@@ -107,6 +107,9 @@ public sealed class PartyDpsController : UiController
     /// <summary>vfunc_67, UIDialog's close, the way ToggleDialog (uiservice.cpp:1628, FUN_1419246f0) and Escape
     /// (uidialog.cpp:840, vfunc_13 to vfunc_69) close the meter: the party group keeps running, with its tallies and timer.
     /// Only the movie's own close button sends OnCloseDialog, which stops the group.</summary>
+    public override void EscapeClose() => CloseKeepingTheGroup();
+
+    /// <summary>The close that keeps the group running.</summary>
     public void CloseKeepingTheGroup()
     {
         if (IsClosed || Closing) return;

@@ -100,12 +100,4 @@ public partial class HudScene
 
     /// <summary>The window closed as its close button closes it.</summary>
     public void EnchantScrollCloseScripted() { if (EnchantScrollOpen) enchantScroll.Close(); }
-
-    /// <summary>UIDialog's key handling: Escape closes the window (vfunc_67).</summary>
-    bool EnchantScrollKeys(InputEventKey k)
-    {
-        if (!EnchantScrollOpen || k.Keycode != Key.Escape) return false;
-        enchantScroll.Close();
-        return true;
-    }
 }

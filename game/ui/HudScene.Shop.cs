@@ -153,11 +153,10 @@ public partial class HudScene
     /// <summary>UIShopDialog::vfunc_72 each frame (timer rollover, zero allocations).</summary>
     void ShopTick() { if (ShopOpen) shop.Process(); }
 
-    /// <summary>UIShopDialog's keys: Escape closes (CloseShop), Enter searches when m_inputSearch is focused (vfunc_13).</summary>
+    /// <summary>UIShopDialog's keys: Enter searches when m_inputSearch is focused (vfunc_13).</summary>
     bool ShopKeys(InputEventKey k)
     {
         if (!ShopOpen) return false;
-        if (k.Keycode == Key.Escape) { shop.CloseShop(); return true; }
         if (k.Keycode == Key.Enter) return shop.OnEnterKey();
         return false;
     }

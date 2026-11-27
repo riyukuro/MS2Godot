@@ -118,14 +118,6 @@ public partial class HudScene
         if (MailOpen) mail.Process();   // UIMailListDialog::vfunc_15: the flags the packets set
     }
 
-    /// <summary>UIMailListDialog's key handling, as UIDialog's: Escape closes it.</summary>
-    bool MailKeys(InputEventKey k)
-    {
-        if (!MailOpen || k.Keycode != Key.Escape) return false;
-        mail.Close();
-        return true;
-    }
-
     /// <summary>
     /// Opens the mail list (FUN_141924680 -> vfunc_65): the movie runs its own ActionScript with UIMailListDialog's C++ side
     /// (MailListController). A dialog that is open is left; the movie is dropped when its close tween ends.

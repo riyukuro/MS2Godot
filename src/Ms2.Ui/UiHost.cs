@@ -73,7 +73,8 @@ public sealed class UiHost
     {
         if (Controller.IsDialogEntity)
         {
-            Model.TopLayer = Id;                                    // UIDialog's open: FUN_1422d4dd0(m_20)
+            Controller.AddToLayer();                                // UIDialog's open (uidialog.cpp:582): AddToLayer(this, m_e0)
+            Model.TopLayer = Id;                                    // then FUN_1422d4dd0(m_20)
             Guide.GuideManager.Current?.QueueOccurrence(Guide.GuideOccurrence.Dialog, 0);   // vfunc_65 (uidialog.cpp:585)
         }
         if (!Player.Start()) return false;

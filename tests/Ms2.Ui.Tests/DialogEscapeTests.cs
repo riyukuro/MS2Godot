@@ -115,11 +115,23 @@ public class DialogEscapeTests
         const string walk = "DialogGates.EscapeKey(MovieDialog.Live)";
         int end = hud.IndexOf(walk, start, StringComparison.Ordinal);
         Assert.That(end, Is.GreaterThan(start), "the walk line");
-        string keys = hud[start..end];
+        string keys = hud[start..hud.LastIndexOf('\n', end)];   // up to the walk's own line
         foreach (var hand in new[] { "famePointBoard.Close", "FamePointBoardOpen", "levelUpGuide.Close", "learningQuest.Close",
                                      "ItemEnchantKeys", "itemEnchant.Close", "TreasureMapKeys", "treasureMap.Close",
-                                     "ItemMergeKeys", "itemMerge.Close" })
+                                     "ItemMergeKeys", "itemMerge.Close", "Key.Escape &&", "GuildKeys", "MailKeys", "TradeKeys",
+                                     "StoreKeys", "ItemLockKeys", "ItemGetOptionKeys", "ItemBreakKeys", "ItemRemakeKeys", "ItemRemakeScrollKeys",
+                                     "EnchantScrollKeys", "ItemMergeRevertKeys", "SelectItemBoxKeys", "GachaBoxKeys",
+                                     "LulluBoxKeys", "ItemPreviewKeys", "MarketBillKeys" })
             Assert.That(keys, Does.Not.Contain(hand), hand + " runs before the walk");
+        // every dialog takes Esc through the walk only: no other HUD key handler reads the key
+        foreach (var f in Directory.GetFiles(Path.Combine(dir.FullName, "game", "ui"), "HudScene*.cs"))
+        {
+            string text = File.ReadAllText(f);
+            if (Path.GetFileName(f) == "HudScene.cs") text = text.Replace(walk, "");
+            foreach (var line in text.Split('\n'))
+                if (line.Contains("Key.Escape") && line.Contains(".Close"))
+                    Assert.That(line, Does.Contain("CreativeMenu"), Path.GetFileName(f) + " closes a dialog on Esc by hand");
+        }
         foreach (var f in new[] { "HudScene.ItemEnchant.cs", "HudScene.TreasureMap.cs", "HudScene.ItemMerge.cs" })
             Assert.That(File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", f)), Does.Not.Contain("Key.Escape"), f + " closes on Esc by hand");
     }
@@ -140,6 +152,84 @@ public class DialogEscapeTests
         Settle(registry);
         Assert.That(map.IsClosed || merge.IsClosed, Is.False, "neither closes");
         Assert.That(DialogGates.AnyClosable(registry), Is.True, "the field Esc's CloseAllDialogs still closes them");
+    }
+
+    /// <summary>The walk goes by the layer's order, not the registry's: each dialog joins its layer's tail at its open
+    /// (AddToLayer, uiswfentitymanager.cpp:749), so the guide opened over the inventory closes first wherever it sits in the
+    /// list, and a dialog closed and opened again goes back to the tail.</summary>
+    [Test]
+    public void EscGoesByTheOpenOrderNotTheListOrder()
+    {
+        var guide = new LearningQuestController();
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
+        var inv = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        Load(inv); Load(guide);
+        UiController[] registry = { guide, inv };   // the guide's movie first in the list
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(guide.IsClosed, Is.True, "the inventory is under the guide");
+        Assert.That(inv.IsClosed, Is.False, "one dialog per key");
+        Assert.That(guide.LayerPlace, Is.EqualTo(0), "RemoveFromLayer at the close (FUN_141924190, uidialog.cpp:378)");
+
+        var guide2 = new LearningQuestController();
+        Load(guide2);
+        inv.Close(); Settle(inv);
+        var inv2 = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        Load(inv2);
+        UiController[] again = { inv2, guide2 };
+        Assert.That(DialogGates.EscapeKey(again), Is.True);
+        Settle(again);
+        Assert.That(inv2.IsClosed, Is.True, "the inventory opened again is at the tail");
+        Assert.That(guide2.IsClosed, Is.False);
+    }
+
+    /// <summary>A click on a dialog's movie sends OnTopMostLayer: UIDialog::vfunc_78 (uidialog.cpp:809) moves it to its
+    /// layer's tail (BringToFront, uiswfentitymanager.cpp:769), so the fame point board clicked after the guide opened over it
+    /// closes first.</summary>
+    [Test]
+    public void TheClickedDialogTakesEscFirst()
+    {
+        Model();
+        var fame = new FamePointBoardController { TableString = tables.StringTableText };
+        var guide = new LearningQuestController();
+        Load(fame); Load(guide);
+        Assert.That(fame.DialogCallback("OnTopMostLayer"), Is.True);
+        Assert.That(fame.LayerPlace, Is.GreaterThan(guide.LayerPlace));
+        UiController[] registry = { fame, guide };
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(fame.IsClosed, Is.True, "the clicked board closes first");
+        Assert.That(guide.IsClosed, Is.False);
+    }
+
+    /// <summary>A plain dialog on a chosen entity manager layer, over the learning guide's movie.</summary>
+    sealed class LayerDialog : UiController
+    {
+        readonly int layer;
+        public LayerDialog(int layer) => this.layer = layer;
+        public override string Movie => "uilearningquestdialog";
+        protected override string EntityMethod => "setData";
+        public override int EntityLayer => layer;
+    }
+
+    /// <summary>The layers go 0 to 4: a dialog on a lower layer is asked first even when the other opened later. The revival
+    /// dialog is on layer 3 (uirevivaldialog.cpp:157), a modal dialog on 0 (uimodaldialog.cpp:21), the others on 4.</summary>
+    [Test]
+    public void TheLowerLayerIsAskedFirst()
+    {
+        Assert.That(new RevivalDialogController().EntityLayer, Is.EqualTo(3));
+        Assert.That(new InviteGroupDialogController(null).EntityLayer, Is.EqualTo(0));
+        Assert.That(new LearningQuestController().EntityLayer, Is.EqualTo(4));
+        var low = new LayerDialog(3);
+        var guide = new LearningQuestController();
+        Load(low); Load(guide);
+        Assert.That(low.EntityShown && guide.EntityShown, Is.True, "both shown");
+        Assert.That(low.LayerPlace, Is.LessThan(guide.LayerPlace), "the guide opened later");
+        UiController[] registry = { low, guide };
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(low.IsClosed, Is.True, "layer 3 is asked before layer 4");
+        Assert.That(guide.IsClosed, Is.False, "one dialog per key");
     }
 
     [Test]

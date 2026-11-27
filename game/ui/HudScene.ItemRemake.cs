@@ -127,15 +127,4 @@ public partial class HudScene
 
     /// <summary>The window closed as its close button closes it.</summary>
     public void ItemRemakeCloseScripted() { if (ItemRemakeOpen) itemRemake.Close(); }
-
-    /// <summary>UIItemRemakeOptionDialog's key handler: Escape closes it, except while a remake is out (state 3 with the
-    /// animation), when the key is swallowed. vfunc_13 (:345) also swallows the action key 0x493e2 then, but its 1 only ends
-    /// the UI key pass (UISwfEntityManager::FUN_1422d1c20, uiswfentitymanager.cpp:321) for the dialogs after it; GFxService::OnTick
-    /// (gfxservice.cpp:198) drops the result and the field's action key does not read it, so the key is left to the rest here.</summary>
-    bool ItemRemakeKeys(InputEventKey k)
-    {
-        if (!ItemRemakeOpen || k.Keycode != Key.Escape) return false;
-        if (!itemRemake.SwallowsKeys) itemRemake.Close();
-        return true;
-    }
 }

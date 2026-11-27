@@ -94,14 +94,6 @@ public partial class HudScene
         }
     }
 
-    /// <summary>UIStoreDialog's key handling, as UIDialog's: Escape closes it.</summary>
-    bool StoreKeys(InputEventKey k)
-    {
-        if (!StoreOpen || k.Keycode != Key.Escape) return false;
-        store.Close();
-        return true;
-    }
-
     /// <summary>UIStoreDialog::vfunc_15 once per frame.</summary>
     void StoreTick()
     {

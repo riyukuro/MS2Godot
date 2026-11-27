@@ -65,11 +65,10 @@ public partial class HudScene
     /// <summary>UIBlackMarketDialog::vfunc_15 each frame (the pages' ticks).</summary>
     void BlackMarketTick() { if (BlackMarketOpen) blackMarket.Process(); }
 
-    /// <summary>UIBlackMarketDialog's keys: Escape closes it (UIDialog's), Enter and Tab go to the movie (vfunc_13).</summary>
+    /// <summary>UIBlackMarketDialog's keys: Enter and Tab go to the movie (vfunc_13).</summary>
     bool BlackMarketKeys(InputEventKey k)
     {
         if (!BlackMarketOpen) return false;
-        if (k.Keycode == Key.Escape) { blackMarket.Close(); return true; }
         if (k.Keycode == Key.Enter) { blackMarket.Key(true); return true; }
         if (k.Keycode == Key.Tab) { blackMarket.Key(false); return true; }
         return false;

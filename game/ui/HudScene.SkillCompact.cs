@@ -82,13 +82,11 @@ public partial class HudScene
         return 0;
     }
 
-    /// <summary>The window's keys: while its hot key field reads a key (vfunc_13 @0x140f9e700), every press goes to it;
-    /// Escape closes it otherwise (UIDialog::vfunc_13).</summary>
+    /// <summary>The window's keys: while its hot key field reads a key (vfunc_13 @0x140f9e700), every press goes to it.</summary>
     bool SkillCompactKeys(InputEventKey k)
     {
         if (!SkillCompactOpen) return false;
         if (skillCompact.CapturingKey) return skillCompact.OnKey(DikOfGodotKey(k.PhysicalKeycode));
-        if (k.Keycode == Key.Escape) { skillCompact.Close(); return true; }
         return false;
     }
 }

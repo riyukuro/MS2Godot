@@ -88,6 +88,32 @@ public abstract class UiController
         return true;
     }
 
+    /// <summary>
+    /// m_e0, the entity manager layer (0..4) the dialog joins at its open: 4 from the UIDialog ctor (uidialog.cpp:200);
+    /// UIRevivalDialog sets 3 (uirevivaldialog.cpp:157), UIModalDialog 0 (uimodaldialog.cpp:21). The key walk asks layer 0
+    /// first (UISwfEntityManager::FUN_1422d1c20, uiswfentitymanager.cpp:296).
+    /// </summary>
+    public virtual int EntityLayer => 4;
+
+    static long layerClock;
+
+    /// <summary>The dialog's place in m_listLayers[m_e0]: 0 while it is not in the list; a larger one is nearer the tail.</summary>
+    internal long LayerPlace { get; private set; }
+
+    /// <summary>UISwfEntityManager::AddToLayer (uiswfentitymanager.cpp:749), at the open (uidialog.cpp:582): appended to the
+    /// tail only when it is not in the list already.</summary>
+    internal void AddToLayer()
+    {
+        if (LayerPlace == 0) LayerPlace = System.Threading.Interlocked.Increment(ref layerClock);
+    }
+
+    /// <summary>BringToFront (:769), UIDialog::vfunc_78 on the movie's OnTopMostLayer (uidialog.cpp:809, :891): a dialog in
+    /// the list moves to its tail, so a clicked dialog is the first its layer asks.</summary>
+    internal void BringToFront()
+    {
+        if (LayerPlace != 0) LayerPlace = System.Threading.Interlocked.Increment(ref layerClock);
+    }
+
     /// <summary>vfunc_9 (uiswfentity.cpp:193): the entity (m_30) is shown. The key walk asks only shown entities.</summary>
     public bool EntityShown => Host?.Entity != null && Rt.ToBoolean(Host.Get(Host.Entity, "visible"));
 
@@ -296,7 +322,7 @@ public abstract class UiController
             case "onclosedialog": Close(); return true;           // vfunc_70 -> vfunc_67 (vfunc_71 is 0)
             case "onstartdrag": dragging = true; return true;     // vfunc_76
             case "onstopdrag": StopDrag(); return true;           // vfunc_77
-            case "ontopmostlayer": return true;                   // vfunc_78: BringToFront; one movie per window here
+            case "ontopmostlayer": BringToFront(); return true;   // vfunc_78
             case "onendclose":      // m_c0 not 2: closed, the guide's dialog occurrence (3), Unload
                 if (closeState != 2) { closeState = 2; Guide.GuideManager.Current?.QueueOccurrence(Guide.GuideOccurrence.Dialog, 0); Unloaded?.Invoke(); }
                 return true;
@@ -331,6 +357,7 @@ public abstract class UiController
         {
             placedFromFile = false;
             StopDrag();
+            LayerPlace = 0;            // FUN_141924190 (:378): RemoveFromLayer(this, m_e0)
             Guide.GuideManager.Current?.QueueOccurrence(Guide.GuideOccurrence.Dialog, 0);   // FUN_141924190 (uidialog.cpp:380)
         }
         if (!TweenEnabled)

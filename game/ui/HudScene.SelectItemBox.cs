@@ -89,14 +89,6 @@ public partial class HudScene
         uiRoot.AddChild(itemMultiOpenMovie);
     }
 
-    /// <summary>UIDialog's key handling: Escape closes the select dialog.</summary>
-    bool SelectItemBoxKeys(InputEventKey k)
-    {
-        if (!SelectItemBoxOpen || k.Keycode != Key.Escape) return false;
-        selectItemBox.Close();
-        return true;
-    }
-
     /// <summary>--uigen-open selectitembox|multiopenbox: the dialog over a fixture item (no live session; the shot never sends).</summary>
     void OpenSelectItemBoxShot(bool multi)
     {

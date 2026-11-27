@@ -47,12 +47,4 @@ public partial class HudScene
         GD.Print($"item merge revert: load={itemRevertMovie.Loaded}");
         uiRoot.AddChild(itemRevertMovie);
     }
-
-    /// <summary>UIItemMergeRevertDialog::vfunc_72 (= vfunc_55): Escape closes it.</summary>
-    bool ItemMergeRevertKeys(InputEventKey k)
-    {
-        if (!ItemRevertOpen || k.Keycode != Key.Escape) return false;
-        itemRevert.Close();
-        return true;
-    }
 }

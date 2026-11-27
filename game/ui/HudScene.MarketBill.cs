@@ -63,12 +63,4 @@ public partial class HudScene
         GD.Print($"merat bill: load={marketBillMovie.Loaded}");
         uiRoot.AddChild(marketBillMovie);
     }
-
-    /// <summary>Escape closes the bill (cancel).</summary>
-    bool MarketBillKeys(InputEventKey k)
-    {
-        if (!MarketBillOpen || k.Keycode != Key.Escape) return false;
-        marketBill.Close();
-        return true;
-    }
 }

@@ -200,18 +200,15 @@ public partial class HudScene
         if (PartySearchOpen) partySearch.Tick();
     }
 
-    /// <summary>Escape closes the register window first, then the search window (UIDialog's vfunc_13); Return goes to the
-    /// open one's onProcessKey.</summary>
+    /// <summary>Return goes to the open register or search window's onProcessKey (their Escape is the key walk's).</summary>
     bool PartySearchKeys(InputEventKey k)
     {
         if (PartySearchRegisterOpen)
         {
-            if (k.Keycode == Key.Escape) { partySearchRegister.Close(); return true; }
             if (k.Keycode is Key.Enter or Key.Tab) { partySearchRegister.Key(k.Keycode != Key.Tab); return true; }
         }
         if (PartySearchOpen)
         {
-            if (k.Keycode == Key.Escape) { partySearch.Close(); return true; }
             if (k.Keycode == Key.Enter) return partySearch.EnterKey();
         }
         return false;

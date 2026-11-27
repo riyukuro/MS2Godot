@@ -122,11 +122,10 @@ public partial class HudScene
         public void ShowIconNotice(string icon, string msg, int effect) { GD.Print($"live: achieve toast icon {icon} {msg}"); inner.ShowIconNotice(icon, msg, effect); }
     }
 
-    /// <summary>UIAchieveDialog::vfunc_13 (:425) while it is shown: Escape (closePopup, else close) and Enter (the search).</summary>
+    /// <summary>UIAchieveDialog::vfunc_13 (:425) while it is shown: Enter (the search); its Escape is the key walk's (AchieveController.EscapeKey).</summary>
     bool AchieveKeys(InputEventKey k)
     {
         if (!AchieveOpen) return false;
-        if (k.Keycode == Key.Escape) return achieve.OnKey(true, false);
         if (k.Keycode == Key.Enter) return achieve.OnKey(false, true);
         return false;
     }

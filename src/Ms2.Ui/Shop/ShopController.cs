@@ -746,6 +746,9 @@ public sealed partial class ShopController : UiController, Hud.IMessageBoxListen
     /// </summary>
     public void RequestClose() { if (!IsClosed) Close(); }
 
+    /// <summary>UIShopDialog::vfunc_13 runs UIDialog's first (uishopdialog.cpp:1336): Escape closes through vfunc_71, CloseShop.</summary>
+    public override void EscapeClose() => CloseShop();
+
     /// <summary>UIShopDialog::CloseShop (@0x141aff000, uishopdialog.cpp:2641): closes any active shop trade / buyItem
     /// message box, then closes the shop dialog.</summary>
     public void CloseShop()

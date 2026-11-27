@@ -38,12 +38,4 @@ public partial class HudScene
         if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"item get option: mode {mode} load={itemGetOptionMovie.Loaded}");
         uiRoot.AddChild(itemGetOptionMovie);
     }
-
-    /// <summary>UIDialog's key handling: Escape closes it.</summary>
-    bool ItemGetOptionKeys(InputEventKey k)
-    {
-        if (!ItemGetOptionOpen || k.Keycode != Key.Escape) return false;
-        itemGetOption.Close();
-        return true;
-    }
 }

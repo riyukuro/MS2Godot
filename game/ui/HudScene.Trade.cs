@@ -73,14 +73,6 @@ public partial class HudScene
     /// <summary>The book the inventory and the popup menu use: the session's, null offline.</summary>
     static TradeBook Trades => Ms2Godot.Net.LiveSession.Instance?.Trades;
 
-    /// <summary>UITradeDialogEx's key handling, as UIDialog's: Escape closes it (vfunc_67, SendTradeMode7).</summary>
-    bool TradeKeys(InputEventKey k)
-    {
-        if (!TradeOpen || k.Keycode != Key.Escape) return false;
-        trade.Close();
-        return true;
-    }
-
     /// <summary>
     /// OpenDialog(0x4e83) from OnTradeStarted: the movie runs its own ActionScript with UITradeDialogEx's C++ side. vfunc_66
     /// places it beside the open inventory, or opens the inventory beside it ("openWindowPos").

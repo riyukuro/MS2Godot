@@ -43,18 +43,31 @@ public static class DialogGates
     }
 
     /// <summary>
-    /// The dialogs' part of UISwfEntityManager::FUN_1422d1c20 (uiswfentitymanager.cpp:296-330) for a key: the entities are
-    /// asked last-added first, each shown one (vfunc_9) through its key handler (<see cref="UiController.EscapeKey"/>,
-    /// UIDialog::vfunc_13), and the first that takes the key ends the walk. The client walks its five layers in turn; the
-    /// registry keeps the movies in the order they came, which is the order the HUD draws them. True = a dialog took it.
+    /// The dialogs' part of UISwfEntityManager::FUN_1422d1c20 (uiswfentitymanager.cpp:296-330) for a key: layers 0..4 in
+    /// turn, each from its tail to its head (<see cref="UiController.EntityLayer"/>, <see cref="UiController.LayerPlace"/>:
+    /// joined at the open, moved to the tail by a click, left at the close); each shown one (vfunc_9) is asked through its key
+    /// handler (<see cref="UiController.EscapeKey"/>, UIDialog::vfunc_13), and the first that takes the key ends the walk.
+    /// The list is the registry's in any order; a dialog not in its layer is not asked. Each step picks the next place down
+    /// with one pass, no allocation: the walk runs only on a key press. True = a dialog took it.
     /// </summary>
     public static bool EscapeKey(IReadOnlyList<UiController> dialogs)
     {
-        for (int i = dialogs.Count - 1; i >= 0; i--)
+        for (int layer = 0; layer < 5; layer++)
         {
-            if (i >= dialogs.Count) continue;                // a close that unloads now leaves the list shorter
-            var d = dialogs[i];
-            if (d.IsDialogEntity && d.EntityShown && d.EscapeKey()) return true;
+            long below = long.MaxValue;
+            while (true)
+            {
+                UiController next = null;
+                for (int i = 0; i < dialogs.Count; i++)
+                {
+                    var d = dialogs[i];
+                    long at = d.LayerPlace;
+                    if (at != 0 && at < below && d.EntityLayer == layer && (next == null || at > next.LayerPlace)) next = d;
+                }
+                if (next == null) break;
+                below = next.LayerPlace;
+                if (next.IsDialogEntity && next.EntityShown && next.EscapeKey()) return true;
+            }
         }
         return false;
     }

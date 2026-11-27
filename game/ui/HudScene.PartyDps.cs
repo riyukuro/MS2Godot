@@ -117,7 +117,6 @@ public partial class HudScene
             partyDpsCastThrough = true;
             return true;
         }
-        if (PartyDpsOpen && k.Keycode == Key.Escape) { TogglePartyDps(); return true; }
         return false;
     }
 

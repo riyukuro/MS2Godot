@@ -1887,12 +1887,11 @@ public partial class HudScene : Node, IUiStageHost
         uiRoot.AddChild(groupInviteMovie);
     }
 
-    /// <summary>The invite dialog's vfunc_13: UIDialog's first (Escape closes), then its Enter. It is modal, so it is asked first.
+    /// <summary>The invite dialog's vfunc_13: its Enter (UIDialog's Escape is the key walk's).
     /// Only the main Return key (WasKeyPressed(0x1c), DIK_RETURN), not the keypad's (DIK 0x9c), as the chat windows.</summary>
     bool GroupInviteKeys(InputEventKey k)
     {
         if (!GroupInviteOpen) return false;
-        if (k.Keycode == Key.Escape) { groupInvite.Close(); return true; }
         return groupInvite.OnKey(k.Keycode == Key.Enter);
     }
     Action<string> groupLink;
@@ -2126,7 +2125,6 @@ public partial class HudScene : Node, IUiStageHost
         if (actions && k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }   // a DirectInput key code is a physical key
         if (actions && k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }  // action 400006, DIK 50 (keytable.cpp:744)
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
-        if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
         if (gameDictionary?.IsClosed == false && k.Keycode == Key.Enter && gameDictionary.EnterKey()) return true;
         if (inventory?.IsClosed == false && k.Keycode == Key.Enter && inventory.EnterKey()) return true;
         if (actions && k.PhysicalKeycode == Key.I) { if (!RideRefusesKey(0x61a81)) ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
@@ -2138,37 +2136,12 @@ public partial class HudScene : Node, IUiStageHost
         { ToggleDungeonRoom(); return true; }    // action 400037 (DIK 40): ToggleDialog(0x4ebd), keytable.cpp:828
         if (actions && DungeonControlCenterController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
         { ToggleDungeonSearch(); return true; }  // action 400018: ToggleDialog(0x4f84 or 0x4f1c), keytable.cpp:806-808
-        bool open = questLog != null && questLogSide?.IsClosed == false;
-        if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
-        if (k.Keycode == Key.Escape && DungeonRoomOpen) { dungeonRoom.Close(); return true; }
-        if (k.Keycode == Key.Escape && DungeonControlCenterOpen) { dungeonControlCenter.Close(); return true; }
-        if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
-        if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
-        if (k.Keycode == Key.Escape && PcInfoOpen) { pcInfo.Close(); return true; }
-        if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.RequestClose(); return true; }
-        if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
         if (MailSendKeys(k)) return true;
-        if (MailKeys(k)) return true;
-        if (TradeKeys(k)) return true;
-        if (StoreKeys(k)) return true;
-        if (ItemLockKeys(k)) return true;
-        if (ItemGetOptionKeys(k)) return true;
-        if (ItemBreakKeys(k)) return true;
-        if (ItemRemakeKeys(k)) return true;
-        if (ItemRemakeScrollKeys(k)) return true;
-        if (EnchantScrollKeys(k)) return true;
-        if (ItemMergeRevertKeys(k)) return true;
-        if (SelectItemBoxKeys(k)) return true;
-        if (GachaBoxKeys(k)) return true;
-        if (LulluBoxKeys(k)) return true;
-        if (ItemPreviewKeys(k)) return true;
-        if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
         if (CommunityKeys(k)) return true;
-        if (GuildKeys(k)) return true;
         if (PartySearchKeys(k)) return true;
         // the other dialogs: each shown one closes on Esc through UIDialog::vfunc_13, the top-most first
         if (k.Keycode == Key.Escape && Ms2.Ui.Hud.DialogGates.EscapeKey(MovieDialog.Live)) return true;

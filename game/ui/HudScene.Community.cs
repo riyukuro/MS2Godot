@@ -198,12 +198,10 @@ public partial class HudScene
         bool enter = k.Keycode == Key.Enter;
         if (CommunityQueryOpen)
         {
-            if (k.Keycode == Key.Escape) { communityQuery.Close(); return true; }
             if (communityQuery.OnKey(enter, k.Keycode == Key.Tab)) return true;
         }
         if (CommunityOpen)
         {
-            if (k.Keycode == Key.Escape) { community.Close(); return true; }
             if (enter && community.OnKey(true)) return true;
         }
         return false;

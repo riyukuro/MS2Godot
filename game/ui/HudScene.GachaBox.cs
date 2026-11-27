@@ -63,12 +63,4 @@ public partial class HudScene
         m.Host.Unload();
         m.QueueFree();
     }
-
-    /// <summary>UIDialog's key handling: Escape closes the machine.</summary>
-    bool GachaBoxKeys(InputEventKey k)
-    {
-        if (!GachaBoxOpen || k.Keycode != Key.Escape) return false;
-        gachaBox.Close();
-        return true;
-    }
 }

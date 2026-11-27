@@ -67,14 +67,13 @@ public partial class HudScene
         return names.Values;
     }
 
-    /// <summary>UIMailSendDialog::vfunc_13: Escape closes (UIDialog), Enter and Tab go to the movie; a typed character marks the
+    /// <summary>UIMailSendDialog::vfunc_13: Enter and Tab go to the movie; a typed character marks the
     /// receiver's candidates to be rebuilt (vfunc_74).</summary>
     bool MailSendKeys(InputEventKey k)
     {
         if (!MailSendOpen || !k.Pressed) return false;
         switch (k.Keycode)
         {
-            case Key.Escape: mailSend.Close(); return true;
             case Key.Enter: return mailSend.OnKeyCode(MailSendDialogController.EnterKey);
             case Key.Tab: return mailSend.OnKeyCode(MailSendDialogController.TabKey);
         }

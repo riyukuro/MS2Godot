@@ -34,13 +34,4 @@ public partial class HudScene
         GD.Print($"item preview: load={itemPreviewMovie.Loaded}");
         uiRoot.AddChild(itemPreviewMovie);
     }
-
-    /// <summary>Escape closes it: UIDialog::vfunc_13 (@0x141925900, uidialog.cpp:848) runs the close (vfunc_69) when Escape is
-    /// pressed, the dialog is open and neither vfunc_64 nor flag 1 holds. STILL-OPEN: those two guards for this dialog.</summary>
-    bool ItemPreviewKeys(InputEventKey k)
-    {
-        if (!ItemPreviewOpen || k.Keycode != Key.Escape) return false;
-        itemPreview.Close();
-        return true;
-    }
 }

@@ -16,6 +16,9 @@ public abstract class ModalDialogController : UiController
     /// <summary>IsModalDialogShown (@0x141a55620).</summary>
     public static bool IsModalDialogShown => ModalDialogId != 0;
 
+    /// <summary>m_e0 = 0 (uimodaldialog.cpp:21): the first layer the key walk asks.</summary>
+    public override int EntityLayer => 0;
+
     /// <summary>vfunc_48: the dialog's UI type id, its layer in s_keyInput.</summary>
     public abstract int TypeId { get; }
 

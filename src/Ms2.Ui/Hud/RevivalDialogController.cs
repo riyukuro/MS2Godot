@@ -105,6 +105,8 @@ public sealed class RevivalEnvironment
 public sealed class RevivalDialogController : UiController, IMessageBoxListener, IMessageBoxTimerListener
 {
     public override string Movie => "uirevivaldialog";
+    /// <summary>m_e0 = 3 (uirevivaldialog.cpp:157): the key walk asks it before the layer-4 dialogs.</summary>
+    public override int EntityLayer => 3;
     protected override string EntityMethod => "alignment";                  // the movie's game entity, as UIRevivalDialog::vfunc_43 finds it
     public override string TypeName => "RevivalDialog";                     // GetTypeName (uirevivaldialog.cpp:172)
     /// <summary>UIRevivalDialog's ctor (@0x141aba6a0, uirevivaldialog.cpp:152) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog

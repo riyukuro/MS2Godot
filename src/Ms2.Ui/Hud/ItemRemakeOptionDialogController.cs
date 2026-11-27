@@ -146,6 +146,12 @@ public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOw
     /// <summary>vfunc_13 (@0x14129dbe0, :345): with a remake out (state 3) the action key 0x493e2 and Escape are swallowed.</summary>
     public bool SwallowsKeys => Ani != null && State == 3;
 
+    /// <summary>The key walk's Escape (vfunc_13, :345): it closes the dialog, except while a remake is out (state 3 with the
+    /// animation), when the key is swallowed. vfunc_13 also swallows the action key 0x493e2 then, but its 1 only ends the UI key
+    /// pass (UISwfEntityManager::FUN_1422d1c20, uiswfentitymanager.cpp:321) for the dialogs after it; GFxService::OnTick
+    /// (gfxservice.cpp:198) drops the result and the field's action key does not read it.</summary>
+    public override bool EscapeKey() => !IsClosed && (SwallowsKeys || base.EscapeKey());
+
     // ---- the bag and the slots ---------------------------------------------------------------------------------------
 
     /// <summary>FUN_14129dd50 (:367): the category 0 items, then the shown worn items of layer 0, that CanRemakeOption(2) passes,
