@@ -91,6 +91,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         /// <summary>The seconds of PCM the stream was made with: the head, or all of it.</summary>
         public double HeadSeconds;
         public bool Complete;
+        /// <summary>Whether the rest is still wanted: the main thread rejecting the head stops its decode.</summary>
+        public readonly SegmentRest Rest = new();
     }
     /// <summary>The head a music segment plays from while its rest decodes. A cue's voice starts once the head is decoded,
     /// ~10-15 ms for the 140 s segments, where the whole segment took ~0.3-0.6 s (MpegFrameRunTests); the client streams the
@@ -704,10 +706,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             if (!playbackGuard.AcceptDecode(gen))
             {
                 GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id}: decoded after a newer cue, dropped");
-                return;
+                return false;
             }
             cueSegments[seg.Id] = entry;
             PlaySegment(cue, seg, crossfadeMs, promptUsec);
+            return true;
         }, advance ? () => { if (playbackGuard.AcceptDecode(gen)) EndActiveVoice(); } : null);
     }
 
@@ -724,6 +727,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             // a predecode that lands after the cue changed is the outgoing voice's next segment
             if (playbackGuard.AcceptDecode(gen)) cueSegments[next.Id] = entry;
             else if (gen == outgoingGeneration) outgoingSegments[next.Id] = entry;
+            else return false;
+            return true;
         }, null);
     }
 
@@ -733,10 +738,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// the main thread at once; then the rest is decoded and the stream takes the whole PCM, which a voice playing the head
     /// goes on into at its own position (AudioStreamWAV::set_data swaps the data under the audio server's lock, and the
     /// playback reads the data, its length and the loop points afresh at every mix), and <see cref="CompleteSegment"/>
-    /// runs. Anything else is decoded whole first, as before. <paramref name="onFail"/> (if any) runs on the main thread when
-    /// nothing could be decoded.
+    /// runs. Anything else is decoded whole first, as before. <paramref name="onReady"/> says whether it took the segment:
+    /// if it did not (a newer cue came first, or the voice it was for moved on), the rest stops at its next step and is
+    /// never set. <paramref name="onFail"/> (if any) runs on the main thread when nothing could be decoded.
     /// </summary>
-    void DecodeSegment(SoundClip clip, bool selfLoop, Action<SegmentAudio> onReady, Action onFail)
+    void DecodeSegment(SoundClip clip, bool selfLoop, Func<SegmentAudio, bool> onReady, Action onFail)
     {
         System.Threading.Tasks.Task.Run(() =>
         {
@@ -789,13 +795,21 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                     Clip = clip, Wav = Stream(run.Rate, run.Channels, head, loop: false), Seconds = run.Seconds, Rate = run.Rate,
                     Channels = run.Channels, HeadSeconds = (double)head.Length / (2 * run.Channels * run.Rate),
                 };
-                decodedSegments.Enqueue(() => onReady(entry));
+                decodedSegments.Enqueue(() => entry.Rest.Resolve(onReady(entry)));
             }
-            var all = SafeDecode.Try(clip, run.Whole, out failure);
+            // a second of PCM a step (~2-3 ms of decode), so a rejected head stops the rest soon after the main thread sees it
+            var all = SafeDecode.Try(clip, () => run.Rest(run.Rate, () => entry.Rest.KeepDecoding), out failure);
             lock (poolGate)
             {
                 if (poolClosed) return;
                 if (failure != null) GD.PushWarning(failure);
+                if (all == null && failure == null)
+                {
+                    double done = (double)run.Written / (run.Channels * run.Rate);
+                    double skippedMb = (run.SampleCount - run.Written) * 2 / 1048576.0;
+                    decodedSegments.Enqueue(() => GD.Print($"audio: bgm {clip.Name}: its head was dropped, the rest not decoded ({done:F1} of {run.Seconds:F1} s decoded, {skippedMb:F1} MB of PCM not)"));
+                    return;
+                }
                 bool decoded = all != null;
                 if (decoded)
                 {
@@ -829,15 +843,14 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             if (slotAudio[i] != entry) continue;
             var p = musicPlayers[i];
             if (p == null || !IsInstanceValid(p)) continue;
-            if (!decoded)
+            switch (MusicSegmentHead.OnRestArrived(decoded, slotCurrentCue[i] && i == crossfade.ActiveSlot, p.Playing))
             {
-                if (slotCurrentCue[i] && i == crossfade.ActiveSlot) EndActiveVoice();
-                else ReleaseSlot(i);
-            }
-            else if (!p.Playing)
-            {
-                p.Play((float)entry.HeadSeconds);
-                GD.Print($"audio: bgm slot {i} {entry.Clip.Name}: the head ran out before the rest decoded, on from {entry.HeadSeconds:F2} s");
+                case MusicSegmentHead.RestArrival.EndActiveVoice: EndActiveVoice(); break;
+                case MusicSegmentHead.RestArrival.ReleaseSlot: ReleaseSlot(i); break;
+                case MusicSegmentHead.RestArrival.ResumeFromHead:
+                    p.Play((float)entry.HeadSeconds);
+                    GD.Print($"audio: bgm slot {i} {entry.Clip.Name}: the head ran out before the rest decoded, on from {entry.HeadSeconds:F2} s");
+                    break;
             }
         }
     }
@@ -913,10 +926,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     void OnSlotFinished(int slot)
     {
+        var end = MusicSegmentHead.OnSlotFinished(slotAudio[slot] != null, slotAudio[slot]?.Complete == true, slotCurrentCue[slot]);
         // the head ran out before the rest decoded: CompleteSegment goes on from there, and the end stays chained
-        if (slotAudio[slot] is { Complete: false }) return;
+        if (end == MusicSegmentHead.SlotEnd.WaitForRest) return;
         Unchain(slot);
-        if (!slotCurrentCue[slot])
+        if (end == MusicSegmentHead.SlotEnd.ChainOutgoing)
         {
             if (!ChainOutgoing(slot)) ReleaseSlot(slot);
             return;
@@ -948,9 +962,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         int sg = ++slotGeneration[slot];
         DecodeSegment(clip, MusicController.IsUnconditionalSelfLoop(next), decoded =>
         {
-            if (slotGeneration[slot] != sg || slotCurrentCue[slot] || !crossfade.Busy(slot)) return;
+            if (slotGeneration[slot] != sg || slotCurrentCue[slot] || !crossfade.Busy(slot)) return false;
             outgoingSegments[next.Id] = decoded;
             PlayOutgoing(slot, next, decoded);
+            return true;
         }, () =>
         {
             // the voice ends where its segment did, as one with nothing to follow

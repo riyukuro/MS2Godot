@@ -104,6 +104,20 @@ public sealed class MpegFrameRun
         return Written * 2 == bytes.Length ? bytes : bytes[..(Written * 2)];
     }
 
+    /// <summary>
+    /// <see cref="Whole"/> in steps of about <paramref name="stepFrames"/> PCM frames, asking <paramref name="keepGoing"/>
+    /// before each: null once it says no, with the run left where it stopped (the frames not yet decoded never are).
+    /// </summary>
+    public byte[] Rest(int stepFrames, Func<bool> keepGoing)
+    {
+        while (!Done)
+        {
+            if (!keepGoing()) return null;
+            DecodeBytes((int)Math.Min(int.MaxValue, (long)Written / Channels + stepFrames));
+        }
+        return Whole();
+    }
+
     void DecodeBytes(int pcmFrames)
     {
         bytes ??= new byte[SampleCount * 2];

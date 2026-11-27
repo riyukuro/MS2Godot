@@ -684,6 +684,64 @@ public sealed class MusicPlaybackGuard
 }
 
 /// <summary>
+/// The rules for a music segment that plays from its decoded head while its rest decodes on a pool thread
+/// (FieldAudio.DecodeSegment): what a voice's player finishing means, what the rest's arrival does to a voice on it, and
+/// whether the rest is still worth decoding once the main thread has seen the head.
+/// </summary>
+public static class MusicSegmentHead
+{
+    public enum SlotEnd
+    {
+        /// <summary>The head's end, not the segment's: the rest's arrival goes on from there (<see cref="RestArrival.ResumeFromHead"/>).</summary>
+        WaitForRest,
+        /// <summary>An outgoing voice's segment ended: it chains into its own next segment, or its slot is freed.</summary>
+        ChainOutgoing,
+        /// <summary>The current cue's segment ended: the cue advances (if the playback guard still has it chained).</summary>
+        AdvanceCue,
+    }
+
+    /// <summary>A music voice's player finished. <paramref name="hasSegment"/>: the slot has a decoded segment;
+    /// <paramref name="complete"/>: its stream has the whole PCM; <paramref name="currentCue"/>: the voice is the current cue's.</summary>
+    public static SlotEnd OnSlotFinished(bool hasSegment, bool complete, bool currentCue) =>
+        hasSegment && !complete ? SlotEnd.WaitForRest : currentCue ? SlotEnd.AdvanceCue : SlotEnd.ChainOutgoing;
+
+    public enum RestArrival
+    {
+        /// <summary>The voice is still on the head and goes on into the whole PCM at its own position.</summary>
+        Nothing,
+        /// <summary>The head ran out before the rest came: the voice plays on from the head's end.</summary>
+        ResumeFromHead,
+        /// <summary>The rest failed and this is the current cue's active voice: it ends as one with nothing to follow.</summary>
+        EndActiveVoice,
+        /// <summary>The rest failed on another voice (outgoing, or the cue's but not active): its slot is freed.</summary>
+        ReleaseSlot,
+    }
+
+    /// <summary>A segment's rest decoded (<paramref name="decoded"/>) or failed, for a voice playing that segment.</summary>
+    public static RestArrival OnRestArrived(bool decoded, bool activeVoiceOfCue, bool playing) =>
+        !decoded ? activeVoiceOfCue ? RestArrival.EndActiveVoice : RestArrival.ReleaseSlot
+        : playing ? RestArrival.Nothing : RestArrival.ResumeFromHead;
+}
+
+/// <summary>
+/// Whether a segment's rest is still wanted, shared between the pool thread that decodes it and the main thread that
+/// takes or rejects the head. The pool thread starts on the rest at once and asks <see cref="KeepDecoding"/> between
+/// steps; when the main thread rejects the head (a newer cue came first, or the outgoing voice it was for moved on),
+/// <see cref="Resolve"/> stops the rest at the next step.
+/// </summary>
+public sealed class SegmentRest
+{
+    volatile int state;   // 0 pending, 1 taken, 2 rejected
+
+    /// <summary>False once the head was rejected; true while it is pending or taken.</summary>
+    public bool KeepDecoding => state != 2;
+    public bool Rejected => state == 2;
+
+    /// <summary>The main thread took the head (<paramref name="taken"/>) or rejected it. Called once.</summary>
+    public void Resolve(bool taken) => state = taken ? 1 : 2;
+}
+
+/// <summary>
 /// Parameters of a SoundMusic effect (kEffectSoundMusic = 3, CSoundMusicEffectParam @0x14178fd20,
 /// vfunc_1 @0x14178fdb0, soundmusiceffectparam.cpp:69-84).
 /// </summary>
