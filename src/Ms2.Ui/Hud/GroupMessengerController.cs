@@ -22,6 +22,7 @@ public sealed class GroupMessengerController : UiController, IMessageBoxListener
     public override string Movie => "uigroupmessenger";
     protected override string EntityMethod => "setData";
     public override string TypeName => "GroupMessenger";      // GetTypeName (:301)
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uigroupmessenger.cpp:289)
 
     /// <summary>The box tags (the statics :88).</summary>
     public const string EditTag = "groupEdit", ExitTag = "groupExit";

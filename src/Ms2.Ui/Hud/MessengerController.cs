@@ -32,6 +32,7 @@ public sealed class MessengerController : UiController
     public override bool AlwaysOn => true;
     protected override string EntityMethod => "updateAdditiveButton";
     public override string TypeName => "MessengerDialog";      // GetTypeName (:604)
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uimessenger.cpp:594)
 
     /// <summary>Unk_MessengerChatType values the target list uses (BuildSubjectList :1807).</summary>
     public const int Social = 0, Party = 7, Guild = 8, World = 0xb, Channel = 0xc, Super = 0x10, GuildMegaphone = 0x12, Talk = 0x14;

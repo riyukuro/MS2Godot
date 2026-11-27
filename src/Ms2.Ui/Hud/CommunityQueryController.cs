@@ -25,6 +25,7 @@ public sealed class CommunityQueryController : ModalDialogController, IMessageBo
     protected override string EntityMethod => "initData";
     /// <summary>GetTypeName (@0x1418da870).</summary>
     public override string TypeName => "CommunityQueryDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uibuddyeventlistener.cpp:1604)
 
     public BuddyBook Book { get; }
 

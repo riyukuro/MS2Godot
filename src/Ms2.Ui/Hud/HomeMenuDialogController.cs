@@ -70,6 +70,7 @@ public class HomeMenuDialogController : UiController, IMessageBoxListener
     public override string Movie => "uihomemenudialog";
     protected override string EntityMethod => "setState";
     public override string TypeName => "HomeMenuDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uihomemenudialog.cpp:224)
     /// <summary>UIHomeMenuDialog's ctor (@0x140c29160, uihomemenudialog.cpp:220) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
     /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
     protected override bool TweenEnabled => false;

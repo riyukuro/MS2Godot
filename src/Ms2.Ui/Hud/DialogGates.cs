@@ -49,8 +49,10 @@ public static class DialogGates
     /// handler (<see cref="UiController.EscapeKey"/>, UIDialog::vfunc_13), and the first that takes the key ends the walk.
     /// The list is the registry's in any order; a dialog not in its layer is not asked. Each step picks the next place down
     /// with one pass, no allocation: the walk runs only on a key press. True = a dialog took it.
+    /// <paramref name="textFocused"/> is IsTextFieldFocused(2): then a dialog without <see cref="UiController.KeysWhileTextFocused"/>
+    /// (m_5c) is passed. The IME composition test (UpdateJapaneseImeComposition, every entity passed) has no input here.
     /// </summary>
-    public static bool EscapeKey(IReadOnlyList<UiController> dialogs)
+    public static bool EscapeKey(IReadOnlyList<UiController> dialogs, bool textFocused = false)
     {
         for (int layer = 0; layer < 5; layer++)
         {
@@ -66,6 +68,7 @@ public static class DialogGates
                 }
                 if (next == null) break;
                 below = next.LayerPlace;
+                if (textFocused && !next.KeysWhileTextFocused) continue;
                 if (next.IsDialogEntity && next.EntityShown && next.EscapeKey()) return true;
             }
         }

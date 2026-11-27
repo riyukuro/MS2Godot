@@ -21,6 +21,7 @@ public sealed class InviteGroupDialogController : ModalDialogController
     protected override string EntityMethod => "updateUserCount";
     /// <summary>GetTypeName (@0x14199f820).</summary>
     public override string TypeName => "InviteGroupDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uiinventorydialog.cpp:1945)
 
     readonly GroupMessengerBrowserController browser;
 

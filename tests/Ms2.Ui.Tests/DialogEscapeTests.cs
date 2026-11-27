@@ -112,10 +112,11 @@ public class DialogEscapeTests
         string hud = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"));
         int start = hud.IndexOf("bool DialogKeys(InputEvent e)", StringComparison.Ordinal);
         Assert.That(start, Is.GreaterThan(0), "DialogKeys");
-        const string walk = "DialogGates.EscapeKey(MovieDialog.Live)";
+        const string walk = "DialogGates.EscapeKey(MovieDialog.Live, Ms2.Ui.InputBlock.TextFieldFocused())";
         int end = hud.IndexOf(walk, start, StringComparison.Ordinal);
         Assert.That(end, Is.GreaterThan(start), "the walk line");
         string keys = hud[start..hud.LastIndexOf('\n', end)];   // up to the walk's own line
+        keys = keys.Replace("Key.Escape && Ms2.Ui.Hud.DialogGates.EscapeKey(MovieDialog.Live, true)", "");   // the walk under text focus
         foreach (var hand in new[] { "famePointBoard.Close", "FamePointBoardOpen", "levelUpGuide.Close", "learningQuest.Close",
                                      "ItemEnchantKeys", "itemEnchant.Close", "TreasureMapKeys", "treasureMap.Close",
                                      "ItemMergeKeys", "itemMerge.Close", "Key.Escape &&", "GuildKeys", "MailKeys", "TradeKeys",
@@ -230,6 +231,43 @@ public class DialogEscapeTests
         Settle(registry);
         Assert.That(low.IsClosed, Is.True, "layer 3 is asked before layer 4");
         Assert.That(guide.IsClosed, Is.False, "one dialog per key");
+    }
+
+    /// <summary>While a text field has the focus the walk asks only the entities with m_5c (uiswfentitymanager.cpp:296-357):
+    /// the guide, opened last, has none and keeps its place; the community query dialog, whose ctor sets it
+    /// (uibuddyeventlistener.cpp:1604), takes the key. With no text focus the guide closes first as before.</summary>
+    [Test]
+    public void TextFocusAsksOnlyTheDialogsWithTheFlag()
+    {
+        var query = new CommunityQueryController(new BuddyBook { Common = id => $"#{id:x}" })
+        {
+            Common = id => $"#{id:x}", Checker = new Ms2.Formats.Text.BanTextChecker(_ => null), ShowBox = _ => { }, NextBox = () => { }
+        };
+        query.OnQuery(0, 1, "Ann");
+        var guide = new LearningQuestController();
+        Assert.That(query.KeysWhileTextFocused && !guide.KeysWhileTextFocused, Is.True);
+        Load(query); Load(guide);
+        Assert.That(query.EntityShown && guide.EntityShown, Is.True, "both shown");
+        UiController[] registry = { query, guide };
+        Assert.That(DialogGates.EscapeKey(registry, textFocused: true), Is.True);
+        Settle(registry);
+        Assert.That(query.IsClosed, Is.True, "the query dialog takes Esc over the text field");
+        Assert.That(guide.IsClosed, Is.False, "the guide is passed while the field has the focus");
+        Assert.That(DialogGates.EscapeKey(registry, textFocused: true), Is.False, "no other dialog with the flag");
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(guide.IsClosed, Is.True);
+    }
+
+    /// <summary>The community window's m_5c follows ChangeTab: set on the blocked and home tabs only
+    /// (uibuddyeventlistener.cpp:1061); the pc info dialog has it, the own info dialog not (uipcinfodialog.cpp:238).</summary>
+    [Test]
+    public void TheFlagFollowsTheClientSetters()
+    {
+        Assert.That(new MyInfoController { PcInfoDialog = true }.KeysWhileTextFocused, Is.True);
+        Assert.That(new MyInfoController().KeysWhileTextFocused, Is.False);
+        Assert.That(new Ms2.Ui.Shop.ShopController().KeysWhileTextFocused, Is.True);
+        Assert.That(new InventoryController().KeysWhileTextFocused, Is.False);
     }
 
     [Test]

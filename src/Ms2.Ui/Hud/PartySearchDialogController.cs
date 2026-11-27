@@ -28,6 +28,7 @@ public sealed class PartySearchDialogController : UiController, IMessageBoxListe
     protected override string EntityMethod => "buildItemListTo";
     /// <summary>GetTypeName (@0x140f8c580).</summary>
     public override string TypeName => "PartySearchDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uipartysearchdialog.cpp:306)
 
     readonly PartyBook book;
 

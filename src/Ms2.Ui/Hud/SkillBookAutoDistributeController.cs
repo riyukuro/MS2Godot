@@ -18,6 +18,7 @@ public sealed class SkillBookAutoDistributeController : ModalDialogController
     public override string Movie => "uiskillbookautodistributedialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "SkillBookAutoDistributeDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uiskillbookautodistributedialog.cpp:164)
 
     public const int UiId = 0x4f20;
     public override int TypeId => UiId;

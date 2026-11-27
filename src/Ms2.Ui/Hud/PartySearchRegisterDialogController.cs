@@ -39,6 +39,7 @@ public sealed class PartySearchRegisterDialogController : ModalDialogController,
     }
     /// <summary>GetTypeName (@0x1413208b0).</summary>
     public override string TypeName => "PartySearchRegisterDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uipartysearchregisterdialog.cpp:107)
 
     readonly PartyBook book;
 

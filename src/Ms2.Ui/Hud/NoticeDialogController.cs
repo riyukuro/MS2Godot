@@ -20,6 +20,7 @@ public sealed class NoticeDialogController : UiController
     public override bool AlwaysOn => true;
     protected override string EntityMethod => "alignment";        // GameEntity's; the dialog is the movie's only GameEntity
     public override string TypeName => "NoticeDialog";            // GetTypeName (:96)
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uinoticedialog.cpp:85)
 
     object mainWindow, showButton, maviewButton, hitArea;
     uint hideAt;                                                  // m_nHideAt (+0x1f8): tick (ms) to hide at, 0 = none

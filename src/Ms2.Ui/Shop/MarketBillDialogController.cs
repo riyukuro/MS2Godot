@@ -61,6 +61,7 @@ public sealed class MarketBillDialogController : ModalDialogController
     public override string Movie => "uimarketbilldialog";
     protected override string EntityMethod => "initData";
     public override string TypeName => "MarketBillDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uimarketbilldialog.cpp:284)
     public const int UiId = 0x4f17;
     public override int TypeId => UiId;
 

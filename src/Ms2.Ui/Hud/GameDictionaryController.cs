@@ -26,6 +26,7 @@ public sealed class GameDictionaryController : UiController
     public sealed record Entry(string Name, int Id, int Type, int LevelOrGrade, int InvisibleLevel, int FieldId);
 
     public override string TypeName => "GameDictionaryDialog";      // GetTypeName (@0x140f44900)
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uigamedictionarydialog.cpp:158)
 
     /// <summary>UIGameDictionaryDialog's ctor (@0x140f447d0, uigamedictionarydialog.cpp:153) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
 

@@ -88,6 +88,10 @@ public abstract class UiController
         return true;
     }
 
+    /// <summary>m_5c (UISwfEntity::FUN_1422dc3d0): set by FUN_1422dc3b0(1), mostly in the ctor. While a text field has the
+    /// focus the key walk (uiswfentitymanager.cpp:296) asks only the entities that have it.</summary>
+    public virtual bool KeysWhileTextFocused => false;
+
     /// <summary>
     /// m_e0, the entity manager layer (0..4) the dialog joins at its open: 4 from the UIDialog ctor (uidialog.cpp:200);
     /// UIRevivalDialog sets 3 (uirevivaldialog.cpp:157), UIModalDialog 0 (uimodaldialog.cpp:21). The key walk asks layer 0

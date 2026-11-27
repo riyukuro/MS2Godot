@@ -43,6 +43,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
     public override string Movie => "uimyinfodialog";
     protected override string EntityMethod => "setTodayMemo";
     public override string TypeName => "MyInfoDialog";
+    /// <summary>m_5c: UIPCInfoDialog's ctor sets it (FUN_1422dc3b0(1), uipcinfodialog.cpp:238); the own info dialog's does not.</summary>
+    public override bool KeysWhileTextFocused => PcInfoDialog;
 
     /// <summary>UIMyInfoDialog's m_strGemBag / m_strEquipBag (its constructor, uimyinfodialog.cpp:203).</summary>
     public const string GemBag = "MyPcInfoDialog.Gem", EquipBag = "MyPcInfoDialog.Equip";

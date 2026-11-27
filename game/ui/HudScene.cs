@@ -2117,7 +2117,9 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     bool DialogKeys(InputEvent e)
     {
-        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k) return false;
+        // a Godot text control has the focus: only the walk runs, over the dialogs with m_5c (uiswfentitymanager.cpp:296)
+        if (UiFocus.IsTyping) return k.Keycode == Key.Escape && Ms2.Ui.Hud.DialogGates.EscapeKey(MovieDialog.Live, true);
         if (SkillCompactKeys(k)) return true;
         PerformanceKeys(k);                                   // CUIService::FUN_141aec690: left Ctrl+P, the key goes on
         if (PartyDpsKeys(k)) return true;
@@ -2144,7 +2146,7 @@ public partial class HudScene : Node, IUiStageHost
         if (CommunityKeys(k)) return true;
         if (PartySearchKeys(k)) return true;
         // the other dialogs: each shown one closes on Esc through UIDialog::vfunc_13, the top-most first
-        if (k.Keycode == Key.Escape && Ms2.Ui.Hud.DialogGates.EscapeKey(MovieDialog.Live)) return true;
+        if (k.Keycode == Key.Escape && Ms2.Ui.Hud.DialogGates.EscapeKey(MovieDialog.Live, Ms2.Ui.InputBlock.TextFieldFocused())) return true;
         return false;
     }
 

@@ -23,6 +23,7 @@ public sealed class BlackMarketDialogController : UiController, IBlackMarketDial
     protected override string EntityMethod => "onProcessKey";
     /// <summary>GetTypeName.</summary>
     public override string TypeName => "BlackMarketDialog";
+    public override bool KeysWhileTextFocused => true;   // FUN_1422dc3b0(1) in the ctor (uiblackmarketdialog.cpp:104)
 
     public BlackMarketBook Book { get; }
     /// <summary>The black market tab and option tables (vfunc_65's table Load).</summary>

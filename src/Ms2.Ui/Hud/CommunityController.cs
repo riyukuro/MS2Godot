@@ -29,6 +29,10 @@ public sealed class CommunityController : UiController, IMessageBoxListener
     protected override string EntityMethod => "buildBuddyList";
     /// <summary>GetTypeName (@0x1418d3bf0).</summary>
     public override string TypeName => "CommunityDialog";
+    /// <summary>m_5c, which ChangeTab sets (FUN_1422dc3b0, uibuddyeventlistener.cpp:1061): on the blocked and home tabs (3, 4)
+    /// the key walk asks the window while a text field has the focus. SetTab before the load leaves it.</summary>
+    public override bool KeysWhileTextFocused => keysWhileTextFocused;
+    bool keysWhileTextFocused;
 
     /// <summary>IsFeatureEnabled(0x82): the VIP row on the nearby tab and OnVIPGMClick.</summary>
     public const int VipFeature = 0x82;
@@ -401,6 +405,7 @@ public sealed class CommunityController : UiController, IMessageBoxListener
     {
         if (NoMovie) return;
         if (t < 0 || t >= 5) return;
+        keysWhileTextFocused = t == 3 || t == 4;
         tab = t;
         BuildBuddyList(t);
     }
