@@ -144,8 +144,8 @@ public partial class FieldFadeCheck : Node
         var two = four.Take(2).ToList();
         if (four.Count == 4)
         {
-            // the pair where depth and distance disagree: the camera looks along D, at 0.29 s more depth for two[3], so
-            // two[3] draws first though two[2] is the farther from the eye (1.19 s against s)
+            // the pair where depth and distance disagree: the camera looks along D, at 0.29 s more depth for four[3], so
+            // four[3] draws first though four[2] is the farther from the eye (1.19 s against s)
             Vector3 m2 = DrawCentre(b, four[2]).Value, m3 = DrawCentre(b, four[3]).Value;
             float s = m2.DistanceTo(m3);
             var u = (m3 - m2) / s;
@@ -158,6 +158,12 @@ public partial class FieldFadeCheck : Node
             if (b.Fade.FadingProps(four[2]).Count + b.Fade.FadingProps(four[3]).Count > 0) fails.Add("order: the depth pair holds prop parts");
             else if (!(eye.DistanceTo(m2) > eye.DistanceTo(m3) && (m3 - eye).Dot(dir) > (m2 - eye).Dot(dir))) fails.Add("order: the depth pair's camera is not placed as meant");
             Order(b, four[3], four[2]);
+            // the camera turned round, and one 16 ms frame with no test (no feet): the order is keyed again in the frame,
+            // four[2] now the deeper (PreRenderProcessList updates every group each frame)
+            feet = null;
+            Look(m2 + dir * (2 * s), -dir);
+            b.Fade.StepFrame(16);
+            Order(b, four[2], four[3]);
         }
         else fails.Add("order: fewer than four fade targets with a drawn standard material");
         if (two.Count == 2)

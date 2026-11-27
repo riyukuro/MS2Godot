@@ -426,6 +426,14 @@ public partial class FieldFade : Node
             Test(clock);
             nextTest = clock + TestPeriodMs;
         }
+        Rekey();
+    }
+
+    /// <summary>The held fades keyed again each frame, as PreRenderProcessList updates every shell group with the camera's
+    /// direction before its sort (ms2renderlistprocessor.cpp:877-881).</summary>
+    void Rekey()
+    {
+        if (fadeOut.Count + fadeIn.Count > 0 && camera() is { } cam && cam.IsInsideTree()) Sort(-cam.GlobalBasis.Z);
     }
 
     void Test(double now)
@@ -458,7 +466,6 @@ public partial class FieldFade : Node
             if (RayHits(t, a, da) || RayHits(t, b, db)) Add(hit, t);
         }
         Apply(hit, now);
-        Sort(-cam.GlobalBasis.Z);
     }
 
     readonly List<(float Key, Element El)> sorted = new();
@@ -471,13 +478,15 @@ public partial class FieldFade : Node
     }
 
     /// <summary>
-    /// Each held entity's draw order among the transparent draws. Its key is AlphaShellComposite::Update's
+    /// Each held entity's draw order among the transparent draws, each frame (<see cref="Tick"/>). Its key is AlphaShellComposite::Update's
     /// (@0x14098f020, alphacomponent.cpp:229-273): the mean over its shells of FUN_140994320, the dot of the shell's world
     /// bound centre with the camera's world direction (GetCameraData, ms2renderlistprocessor.cpp:665, 879). CompareAlpha
     /// (@0x1414dee00) draws the largest key first, so the deepest along the view goes first. Element k (from the deepest)
     /// draws its depth passes at render priority 1 + 2k and its colour at 2 + 2k (Godot's limit 127 holds 63 apart; more
     /// share the last pair).
-    /// STILL-OPEN: Update moves the key by FUN_141b71c50's bias for a shell with either of two extra data tags
+    /// STILL-OPEN: the client sorts the groups among its other alpha objects (ComputeDepth's keys, one std::sort,
+    /// ms2renderlistprocessor.cpp:882); here they draw after every other transparent draw.
+    /// Update moves the key by FUN_141b71c50's bias for a shell with either of two extra data tags
     /// (DAT_143ae51d0, DAT_143ae5190); the tags are not read here, so no key is moved. A draw's centre is its box's, not
     /// its NiBound's.
     /// </summary>
@@ -646,12 +655,13 @@ public partial class FieldFade : Node
     internal void TestNow() => Test(clock);
 
     /// <summary>For the headless check: a frame <paramref name="ms"/> after the last one, the fades stepped on the fade clock
-    /// (capped as GameTimeClock's step) and the test not run.</summary>
+    /// (capped as GameTimeClock's step), the held fades keyed again, and the test not run.</summary>
     internal void StepFrame(double ms)
     {
         Step(ms);
         UpdateFadeOut(clock);
         UpdateFadeIn(clock);
+        Rekey();
     }
 
     /// <summary>For the headless check: the fade clock (milliseconds).</summary>
