@@ -129,6 +129,27 @@ public sealed class PartyNotices
         }
     }
 
+    /// <summary>
+    /// OnDungeonMatchError (@0x140e146f0, uidungeonhelper.cpp:333): the plain box of the error's common string; errors 2 and 9 show the
+    /// formatted text (the parameter, the name) with ShowMessageBoxWithCallback(text, 0, no callback). An error the client's switch
+    /// does not list asserts there (uidungeonhelper.cpp:299) and shows nothing.
+    /// </summary>
+    public void OnDungeonMatchError(DungeonMatchError e)
+    {
+        switch (e.Error)
+        {
+            case 1: Box("s_dungeonMatch_error_notFoundDungeon"); break;
+            case 2: ShowBox(MessageBoxQueue.CreateWithCallback(ClientFormat.Format(Key("s_dungeonMatch_error_overMaxRegisterUser"), e.Param), 0, null)); break;
+            case 3: Box("s_dungeonMatch_error_lackRequire"); break;
+            case 4: Box("s_dungeonMatch_error_containCouldNotEnter"); break;
+            case 5: Box("s_dungeonMatch_error_insideDungeonUser"); break;
+            case 6: Box("s_dungeonMatch_error_isNotChief"); break;
+            case 7: Box("s_dungeonMatch_error_hasOfflineUser"); break;
+            case 8: Box("s_dungeonMatch_error_hasDungeonMatchCooldown"); break;
+            case 9: ShowBox(MessageBoxQueue.CreateWithCallback(ClientFormat.Format(Key("s_dungeonMatch_error_hasDungeonMatchCooldownParty"), e.Name ?? ""), 0, null)); break;
+        }
+    }
+
     /// <summary>FUN_140d73ff0(key): a plain box of the common string by key.</summary>
     void Box(string key) => ShowBox(MessageBoxQueue.Create(0, Key(key), null, ""));
 

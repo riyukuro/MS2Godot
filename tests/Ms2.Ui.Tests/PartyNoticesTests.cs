@@ -297,4 +297,32 @@ public class PartyNoticesTests
         Assert.That(line.Msg, Does.Contain("'event:inviteParty,Bob'"));
         Assert.That(line.Msg, Does.Contain("Bob"));
     }
+
+    [Test]
+    public void ADungeonMatchErrorShowsItsBoxAndAnUnlistedOneShowsNothing()
+    {
+        // OnDungeonMatchError (uidungeonhelper.cpp:333): a plain box per error, errors 2 and 9 with the number and the name in the text.
+        var plain = new[] { (1, "s_dungeonMatch_error_notFoundDungeon"), (3, "s_dungeonMatch_error_lackRequire"), (4, "s_dungeonMatch_error_containCouldNotEnter"),
+            (5, "s_dungeonMatch_error_insideDungeonUser"), (6, "s_dungeonMatch_error_isNotChief"), (7, "s_dungeonMatch_error_hasOfflineUser"),
+            (8, "s_dungeonMatch_error_hasDungeonMatchCooldown") };
+        foreach (var (error, key) in plain)
+        {
+            var rec = Make(true);
+            rec.Ui.OnDungeonMatchError(new DungeonMatchError(error, 0, ""));
+            Assert.That(rec.Boxes.Select(b => (b.Msg, b.Type)), Is.EqualTo(new[] { (Key(key), 0) }), $"error {error}");
+            Assert.That(rec.Chat.Count + rec.Notices.Count, Is.Zero);
+        }
+        var over = Make(true);
+        over.Ui.OnDungeonMatchError(new DungeonMatchError(2, 7, "x"));
+        Assert.That(over.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { ClientFormat.Format(Key("s_dungeonMatch_error_overMaxRegisterUser"), 7) }));
+        var party = Make(true);
+        party.Ui.OnDungeonMatchError(new DungeonMatchError(9, 0, "Bob"));
+        Assert.That(party.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { ClientFormat.Format(Key("s_dungeonMatch_error_hasDungeonMatchCooldownParty"), "Bob") }));
+        foreach (int error in new[] { 0, 10, 99 })
+        {
+            var rec = Make(true);
+            rec.Ui.OnDungeonMatchError(new DungeonMatchError(error, 0, ""));
+            Assert.That(rec.Boxes, Is.Empty, $"error {error}");
+        }
+    }
 }

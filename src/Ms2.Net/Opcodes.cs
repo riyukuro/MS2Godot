@@ -47,6 +47,7 @@ public enum Inbound : ushort {
     LegionBattle = 0xF4,          // RecvOp LegionBattle: CSceneStateGame::OnLegionBattle (scenestategame.cpp:8480)
     Wedding = 0x128,              // RecvOp Wedding (commonfiles/opcodes.h:294): CWeddingManager::OnPacket (weddingmanager.cpp:198)
     InGameRank = 0xEE,            // RecvOp InGameRank: CGameRankingCli::OnPacket (gamerankingcli.cpp:350)
+    DungeonMatch = 0xEF,          // RecvOp DungeonMatch: CSceneStateGame::OnDungeonMatch @0x14173e4b0 (scenestategame.cpp:5184)
     PremiumClub = 0xEB,           // RecvOp PremiumClub: CSceneStateGame::OnPremiumClub (scenestategame.cpp:8426)
     ResponsePet = 0xCC,           // RecvOp ResponsePet: CPetManager::OnResponsePet (petmanager.cpp:722)
     FunctionCube = 0x4D,        // RecvOp FunctionCube: CSceneStateGame::OnFunctionCube (scenestategame.cpp:3660, @0x1417212a0) -> CFunctionCubeService::FUN_14122f270 (functioncubeobject.cpp:2411)

@@ -169,7 +169,7 @@ public class DungeonRoomPanelTests
     [Test]
     public void ALevelLimitIsRedBelowAndWhiteFromTheLevel()
     {
-        var room = Room(r => r.GroupType > 0 && r.LimitPlayerLevel > 1, "a level limit");
+        var room = Room(r => r.GroupType > 0 && r.LimitPlayerLevel > 1 && r.GearScore == 0 && r.MinUserCount == 0 && r.LimitClearDungeon.Count == 0, "a level limit and no other counted limit");
         var below = Make(room, (ushort) (room.LimitPlayerLevel - 1));
         var at = Make(room, room.LimitPlayerLevel);
         var limit = Sub(below, "m_subPanel1");

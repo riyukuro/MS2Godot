@@ -48,6 +48,9 @@ public partial class LiveSession
     /// (command, notice kind). The command is the client's number of the kind (AddRecord 6, RewardNotice 7, AddReward 20).</summary>
     public event Action<int, int> DungeonRoomPacket;
 
+    /// <summary>OnDungeonMatchError (@0x140e146f0): the match error of the server's DungeonMatch packet.</summary>
+    public event Action<Ms2.Net.Packets.DungeonMatchError> DungeonMatchErrorReceived;
+
     void OnRoomDungeon(RoomDungeonReply m)
     {
         ApplyRoomDungeon(m);

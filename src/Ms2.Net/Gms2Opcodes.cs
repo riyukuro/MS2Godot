@@ -47,6 +47,7 @@ static class Gms2Opcodes {
         [Inbound.NpcNotice] = 0xEA,
         [Inbound.BannerList] = 0xB5,
         [Inbound.InGameRank] = 0xF0,
+        [Inbound.DungeonMatch] = 0xF1,
         [Inbound.LegionBattle] = 0xF6,
         [Inbound.Mentoring] = 0x10C,
         [Inbound.Survival] = 0x11B,

@@ -3048,6 +3048,11 @@ public partial class LiveSession : Node
                 FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
             else if (game.Is(p, Inbound.FieldEntrance))
                 OnFieldEntrance(Ms2.Net.Packets.FieldEntrance.Read(p.Reader()));   // OnFieldEntrance (scenestategame.cpp:2366)
+            else if (game.Is(p, Inbound.DungeonMatch))
+            {
+                var dm = Ms2.Net.Packets.DungeonMatchError.Read(p.Reader());   // OnDungeonMatch (scenestategame.cpp:5184): mode 0 only
+                if (dm != null) { GD.Print($"live: dungeon match error {dm.Error} ({dm.Param}, {dm.Name})"); DungeonMatchErrorReceived?.Invoke(dm); }
+            }
             else if (game.Is(p, Inbound.RoomDungeon))
                 OnRoomDungeon(Ms2.Net.Packets.RoomDungeonReply.Read(p.Reader(), game.Profile));   // OnRoomDungeon (scenestategame.cpp:4531)
             else if (game.Is(p, Inbound.WorldShareInfo))
