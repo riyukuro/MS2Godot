@@ -467,6 +467,7 @@ public sealed partial class RemoteLayer : Node3D
             SelfObjectId = () => Tracker.SelfObjectId,
             Viewer = () => LiveSession.Instance?.OwnPlayer,
         });
+        if (balloons.Controller is { } balloonCtl) balloonCtl.CameraReady = OwnPcInField;
         // GameObjectController::GetGravity: the field's scene gravity, as the field gives the local player
         // STILL-OPEN: a field without the local player (none in a live field) falls back to the default scene gravity
         gravity = field.GetNodeOrNull<Player>("Player")?.Gravity ?? MoveConfig.SceneGravity;

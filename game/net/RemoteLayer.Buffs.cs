@@ -98,6 +98,15 @@ public partial class RemoteLayer
         if (npcBuffs.Remove(objectId, out var old)) old.ClearAll();
     }
 
+    /// <summary>
+    /// CameraMgr FUN_140a18070 (m_1b0), the balloon's camera test (UIBuffBalloon vfunc_2 / vfunc_5): set by FUN_140ae9ed0
+    /// (camera.cpp:803) when FUN_140aec4c0 makes the field's camera entity, which WorldService::OnObjectCreated runs for the
+    /// MyPC right after SetMyPC (worldservice_1.cpp:3132); cleared by FUN_140aead90 (camera.cpp:855) at the field's unload,
+    /// before SetMyPC(0) (worldservice_1.cpp:10103). So: the own FieldAddUser of this field was read (the session's own object
+    /// id is set there and dropped with the old field's PC). With no live session (a headless check) the camera counts as ready.
+    /// </summary>
+    static bool OwnPcInField() => LiveSession.Instance is not { } s || s.SelfObjectId > 0;
+
     static uint BuffTick() => unchecked((uint)(LiveSession.Instance?.ServerTick ?? 0));
 
     /// <summary>AdditionalCliList::UpdateEffects for the other players' and the npcs' lists, once per frame (the own one runs in
