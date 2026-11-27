@@ -149,6 +149,7 @@ public enum Inbound : ushort {
     SkillPoint = 0x44,
     SkillBookTree = 0x10C,
     BuddyEmote = 0x10D,     // RecvOp::BuddyEmote (commonfiles/opcodes.h:269): CNetworkService::OnBuddyEmote @0x14153e280 (networkservice.cpp:1096)
+    BuddyBadge = 0x10E,     // RecvOp::BuddyBadge (commonfiles/opcodes.h:270): CNetworkService::OnBuddyBadge @0x14153f6c0 (networkservice.cpp:1187)
     SkillMacro = 0xD1,          // RecvOp::SkillMacro (commonfiles/opcodes.h:216): the compact skill control tabs
     CheckCharNameResult = 0xD3, // RecvOp::CheckCharNameResult (commonfiles/opcodes.h:217): CSceneStateGame::OnCheckCharNameResult
     ProxyGameObj = 0x7E,
@@ -249,6 +250,7 @@ public enum Outbound : ushort {
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
     BuddyEmote = 0xA3,      // SendOp::BuddyEmote (commonfiles/opcodes.h:466): the couple emotion invite, answers and cancel
+    BuddyBadge = 0xA4,      // SendOp::BuddyBadge (commonfiles/opcodes.h:467): CoupleEffectSystem's couple badge effect sends
     Attendance = 0x66,      // SendOp::Attendance: UIAttendGiftDialog's mode 2, 3, 4 and 8 sends (uiattendgiftdialog.cpp); GMS2 0x67
     Job = 0x25,                 // SendOp::Job (commonfiles/opcodes.h:342): UISkillBookTreeDialog::RequestJob, JobSystemCli::RequestReset
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests

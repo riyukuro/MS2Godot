@@ -69,9 +69,47 @@ public sealed partial class NpcEmoticons : CanvasLayer
         public string Name = "";
         public Node3D Root;
         public Func<Vector3> Anchor;
-        /// <summary>The PC's worn gems (the chat balloon gem's skin).</summary>
+        /// <summary>The PC's worn gems (the chat balloon gem's skin, the buddy badge).</summary>
         public GemEquip Gems;
+        /// <summary>The PC's side of the buddy badge (its couple effect system, PC m_spCouple11d8).</summary>
+        public CouplePc Couple;
     }
+
+    /// <summary>
+    /// The couple effect systems' field (<see cref="ICoupleWorld"/>): the PCs by character id (FUN_141bd1530, the own one too),
+    /// the field's limit content 0x400, the kept effects at a point, the BuddyBadge sends and the constants'
+    /// CoupleEffectCheckTick and CoupleEffectCheckRadius (clientconstants.h:807-808; the client's defaults 5000 and 500).
+    /// </summary>
+    sealed class CoupleWorld : ICoupleWorld
+    {
+        readonly NpcEmoticons owner;
+        CharEffectGems gems;
+
+        public CoupleWorld(NpcEmoticons owner)
+        {
+            this.owner = owner;
+            CheckTick = (uint)Math.Max(0, owner.constants.Int("CoupleEffectCheckTick", 5000));
+            CheckRadius = owner.constants.Float("CoupleEffectCheckRadius", 500);
+        }
+
+        public CouplePc FindPc(long characterId)
+        {
+            foreach (var x in owner.pcs.Values)
+                if (x.Couple != null && x.Couple.CharacterId == characterId) return x.Couple;
+            return null;
+        }
+
+        public bool CoupleEffectLimited => Ms2Godot.Net.LiveSession.Instance?.FieldHasLimitContent(0x400) ?? false;
+        public int SpawnEffect(string effect, System.Numerics.Vector3 at) => Ms2Godot.Net.LiveSession.Instance?.SpawnKeptEffectAt(effect, at) ?? 0;
+        public void RemoveEffect(int id) => Ms2Godot.Net.LiveSession.Instance?.StopKeptEffect(id);
+        public void Send(Ms2.Net.Wire.IOutPacket packet) => Ms2Godot.Net.LiveSession.Instance?.SendBuddyBadge(packet);
+        public uint CheckTick { get; }
+        public float CheckRadius { get; }
+        public uint Now => unchecked((uint)Time.GetTicksMsec());
+        public CharEffectGems Gems => gems ??= CharEffectGems.Load(owner.assets.Packs);
+    }
+
+    CoupleWorld coupleWorld;
 
     readonly UiAssets assets;
     readonly ClientConstants constants;
@@ -346,6 +384,10 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 r.PremiumTime, r.PcBangGrade, r.WeddingState);
         foreach (var gone in pcs.Keys.Where(k => !now.ContainsKey(k)).ToList())
         {
+            // FieldRemoveUser: MyPC's PC::FUN_141663500 with the leaving object, then the PC's destructor (its couple
+            // system's SetEffectMode(1)); the kept badge effects go with the PC's model
+            MyPc()?.Couple?.UserRemoved(gone);
+            pcs[gone].Gems.CharEffect?.Remove();
             balloons.RemovePc(pcs[gone].Balloon);
             byPcBalloon.Remove(pcs[gone].Balloon);
             pcs.Remove(gone);
@@ -354,7 +396,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         {
             if (!pcs.TryGetValue(id, out var x) || x.Root != v.Root)
             {
-                if (x != null) { balloons.RemovePc(x.Balloon); byPcBalloon.Remove(x.Balloon); }
+                if (x != null) { x.Gems.CharEffect?.Remove(); balloons.RemovePc(x.Balloon); byPcBalloon.Remove(x.Balloon); }
                 var b = new ChatBalloonController.Actor
                 {
                     ObjectId = id,
@@ -364,6 +406,17 @@ public sealed partial class NpcEmoticons : CanvasLayer
                     Offset = constants.Float("OffsetPcChatballoon", 210),
                 };
                 pcs[id] = x = new Pc { Balloon = b, Gems = new GemEquip(balloons, b) { GemSystem = GemSystem } };
+                // the buddy badge (CGemCharEffect): the wearer's effect kept on the PC's root, the couple system on the PC
+                var root = v.Root;
+                x.Couple = new CouplePc
+                {
+                    CharacterId = v.Char, ObjectId = id, Name = v.Name, IsMine = v.Me,
+                    Gender = v.Me ? (Viewer as Player)?.Gender ?? 0 : s.GenderOf(id),
+                    Position = () => IsInstanceValid(root) ? ClientSpace(root.GlobalPosition) : System.Numerics.Vector3.Zero,
+                };
+                coupleWorld ??= new CoupleWorld(this);
+                int casterKind = s.ObjectKind(id);
+                x.Gems.CharEffect = new CharEffectGem(coupleWorld, x.Couple, e => s.SpawnKeptEffect(e, root, casterKind), s.StopKeptEffect);
                 byPcBalloon[b] = x;
                 // PC::CanUseItem of this player (pc.cpp:4683, PcItemUse) on each gem's packet record
                 var use = new PcItemUse.Pc
@@ -381,10 +434,57 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 x.Gems.ApplyAll();
                 // MyPC::vfunc_12 (mypc.cpp:1013-1024): the own model's load loads its type 2 gem's damage font
                 if (v.Me && x.Gems.WornGemId(2) is var gem and not 0) DamageFontAsked?.Invoke(gem);
+                // FieldAddUser: MyPC's PC::FUN_1416634a0 with the new PC's character id (the own one's too)
+                MyPc()?.Couple?.UserAdded(v.Char);
             }
-            x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor;
+            x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor; x.Couple.Name = v.Name;
             x.Balloon.ProfileImage = Ms2Godot.Net.ProfileImageService.Images.Path(v.Char, v.Picture, true);
         }
+    }
+
+    /// <summary>The own PC of the field, null when not in yet.</summary>
+    Pc MyPc()
+    {
+        foreach (var x in pcs.Values) if (x.Balloon.IsMyPc) return x;
+        return null;
+    }
+
+    /// <summary>A godot position in the client's z-up space (x, -z, y).</summary>
+    static System.Numerics.Vector3 ClientSpace(Vector3 g) => new(g.X, -g.Z, g.Y);
+
+    /// <summary>
+    /// OnBuddyBadge (networkservice.cpp:1187-1202) for the field's PC of the character id (none: nothing): kinds 0 and 2 its
+    /// couple effect shown (PC::FUN_141663620), 1 hidden (PC::FUN_141663680), 3 the partner name given to its worn badge of
+    /// the item uid (CItem::SetCoupleName).
+    /// </summary>
+    void OnBuddyBadge(Ms2.Net.Packets.BuddyBadgeMessage m)
+    {
+        SyncPcs();
+        Pc x = null;
+        foreach (var p in pcs.Values) if (p.Couple?.CharacterId == m.CharacterId) { x = p; break; }
+        if (x == null) return;
+        switch (m.Kind)
+        {
+            case Ms2.Net.Packets.BuddyBadgeMessage.Show:
+            case Ms2.Net.Packets.BuddyBadgeMessage.ShowToNewcomer: x.Couple.Show(); break;
+            case Ms2.Net.Packets.BuddyBadgeMessage.Hide: x.Couple.Hide(); break;
+            case Ms2.Net.Packets.BuddyBadgeMessage.PartnerName: x.Gems.SetCoupleName(m.ItemUid, m.Name); break;
+        }
+    }
+
+    /// <summary>The live checks' line on the buddy badges of the field's PCs.</summary>
+    public string CoupleLine()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var x in pcs.Values)
+        {
+            if (x.Couple == null) continue;
+            var c = x.Couple.Couple;
+            sb.Append($"[{x.Name} badge={(x.Gems.Item(GemEquip.CharEffectType)?.GemId ?? 0)} wearerFx={x.Gems.CharEffect?.EffectCount ?? 0} pending={x.Couple.Pending}");
+            if (c != null) sb.Append($" partner={c.PartnerId} linked={c.Linked} active={c.Active} inRange={c.InRange} fx={c.EffectId} name={c.Name}");
+            sb.Append("] ");
+        }
+        return sb.ToString();
     }
 
     /// <summary>The current field's gemSystem (CFieldDataCli m_bGemSystem); true without field data.</summary>
@@ -440,7 +540,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     public override void _EnterTree()
     {
         if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; talk.SpecialNpcBalloon += OnSpecialNpcBalloon; }
-        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) { ls.BadgeEquipped += OnBadgeEquip; ls.BattleStanceChanged += OnBattleStance; }
+        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) { ls.BadgeEquipped += OnBadgeEquip; ls.BattleStanceChanged += OnBattleStance; ls.BuddyBadgeReceived += OnBuddyBadge; }
         if (live) Live = this;
         sizeSource = GetViewport();
         sizeSource.SizeChanged += Relayout;
@@ -450,7 +550,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
     public override void _ExitTree()
     {
         if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; talk.SpecialNpcBalloon -= OnSpecialNpcBalloon; }
-        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) { ls.BadgeEquipped -= OnBadgeEquip; ls.BattleStanceChanged -= OnBattleStance; }
+        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) { ls.BadgeEquipped -= OnBadgeEquip; ls.BattleStanceChanged -= OnBattleStance; ls.BuddyBadgeReceived -= OnBuddyBadge; }
+        // the field's PCs go with the field: each one's couple system released (SetEffectMode(1))
+        foreach (var x in pcs.Values) x.Gems.CharEffect?.Remove();
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
         if (Live == this) Live = null;
     }
@@ -495,6 +597,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
         }
         // GameObject m_unk_bc of the PCs: from the focus (the local player)
         foreach (var x in pcs.Values) if (IsInstanceValid(x.Root)) x.Balloon.Distance = eye.DistanceTo(x.Root.GlobalPosition);
+        // PC::vfunc (pc.cpp:4476): each PC's couple effect system's Update (only the own linked one acts)
+        foreach (var x in pcs.Values) x.Couple?.Update();
         bool layer = MovieLayerHost.Layers.IsVisible(CommonDepth.Emoticon);
         controller.Process(Project);
         bool balloonLayer = MovieLayerHost.Layers.IsVisible(CommonDepth.ChatBalloon);

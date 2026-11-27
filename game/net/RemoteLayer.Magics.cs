@@ -206,6 +206,10 @@ public sealed partial class RemoteLayer
     /// is the target's m_b30 (<see cref="RegionSkills.SpawnOn"/>).</summary>
     public int SpawnKeptEffect(string effect, Node3D actor, int casterKind, bool noCull = false) =>
         RegionFx?.SpawnOn(effect, actor, casterKind, noCull) ?? 0;
+    /// <summary>FUN_1411a49c0 with no actor at a client space point (the identity rotation, scale 1), kept: its id, 0 when it
+    /// did not spawn (the couple effect system's SpawnEffect).</summary>
+    public int SpawnKeptEffectAt(string effect, System.Numerics.Vector3 at) =>
+        RegionFx?.Spawn(effect, new Ms2.Formats.Model.Xform(new Ms2.Formats.Model.Vec3(at.X, at.Y, at.Z), Ms2.Formats.Model.Xform.Identity.R, 1), true, 0) ?? 0;
     /// <summary>CEffectService::FUN_1411a6060: a kept effect stops at once.</summary>
     public void StopKeptEffect(int id) => RegionFx?.FadeOut(id, 0);
     /// <summary>CEffectService::FUN_1411a69e0: a kept effect released.</summary>

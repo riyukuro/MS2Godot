@@ -15,14 +15,17 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// The owner's decision is PC::CanUseItem (pc.cpp:4683), ported in <see cref="PcItemUse"/>: the live field sets
 /// <see cref="CanUse"/> to it with the packet record of each gem and its owner's state. A gem distilled without a record
-/// (the tests) has no item state, so the default passes it. The other gem types' apply and remove (transparency, name
-/// tag, effects, pet skin, ...) are not ported here.
+/// (the tests) has no item state, so the default passes it. The buddy badge (type 7, CGemCharEffect) applies and removes
+/// through <see cref="CharEffect"/>. The other gem types' apply and remove (transparency, name tag, effects, pet skin, ...)
+/// are not ported here.
 /// </para>
 /// </summary>
 public sealed class GemEquip
 {
     /// <summary>GEM_CHATBALLOON (itemgem.h:127).</summary>
     public const int ChatBalloonType = 3;
+    /// <summary>GEM_CHAREFFECT (itemgem.h): the buddy badge.</summary>
+    public const int CharEffectType = Ms2.Ui.CharEffectGems.GemType;
 
     /// <summary>
     /// A worn gem item: its item id and its gem's id (CGemBase m_nGemId), with the packet's item record (the CItem the
@@ -45,6 +48,8 @@ public sealed class GemEquip
     /// without a record, which has no item state to test.
     /// </summary>
     public Func<Gem, bool> CanUse = _ => true;
+    /// <summary>The owner's CGemCharEffect (type 7, itemgem.cpp:791-830); null leaves a buddy badge unapplied.</summary>
+    public Ms2.Ui.CharEffectGem CharEffect;
 
     public GemEquip(ChatBalloonController balloons, ChatBalloonController.Actor owner)
     {
@@ -102,6 +107,7 @@ public sealed class GemEquip
         if (!GemSystem()) return;
         if (type == ChatBalloonType && balloons.PcBalloon(owner) is { } e)
             ChatBalloonController.SetSkin(e, ChatBalloonSkin(gem.GemId));
+        if (type == CharEffectType) CharEffect?.Apply(gem.Record, gem.GemId);
     }
 
     /// <summary>CItemGem::vfunc_7 of the type's gem.</summary>
@@ -109,6 +115,16 @@ public sealed class GemEquip
     {
         if (type == ChatBalloonType && balloons.PcBalloon(owner) is { } e)
             ChatBalloonController.SetSkin(e, "");
+        if (type == CharEffectType) CharEffect?.Remove();
+    }
+
+    /// <summary>OnBuddyBadge kind 3 (networkservice.cpp:1196-1199): the worn type 7 gem's item, when its uid is this one, takes
+    /// the couple name (CItem::SetCoupleName); the couple system keeps the name it was made with.</summary>
+    public bool SetCoupleName(long itemUid, string name)
+    {
+        if (!items.TryGetValue(CharEffectType, out var g) || g.Record is not { } rec || rec.Uid != itemUid) return false;
+        rec.CoupleName = name ?? "";
+        return true;
     }
 
     /// <summary>FUN_1405a7e80: the gem id as a decimal string, the skin CGemChatBalloon::vfunc_6 gives the balloon.</summary>
