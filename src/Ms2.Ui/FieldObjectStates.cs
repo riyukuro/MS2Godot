@@ -370,6 +370,20 @@ public sealed class BreakableObjects
     /// </summary>
     public void Update(long nowMs, int serverTick) => Update(nowMs, (int?)serverTick);
 
+    ulong steppedFrame = ulong.MaxValue;
+
+    /// <summary>
+    /// <see cref="Update(long, int)"/> once per drawn <paramref name="frame"/>: WorldService's tick moves the markers before
+    /// the actors step (worldservice_1.cpp:9648-9655, then the actor loop at gameobject.cpp:307-312), so the first caller of a
+    /// frame (the field's marker step, ahead of the player) runs it and a later one in the same frame does nothing.
+    /// </summary>
+    public void UpdateOnce(ulong frame, long nowMs, int serverTick)
+    {
+        if (frame == steppedFrame) return;
+        steppedFrame = frame;
+        Update(nowMs, (int?)serverTick);
+    }
+
     void Update(long nowMs, int? serverTick)
     {
         NowMs = nowMs;

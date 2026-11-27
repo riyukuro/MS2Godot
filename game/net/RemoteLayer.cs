@@ -785,6 +785,7 @@ public sealed partial class RemoteLayer : Node3D
         }
         var pc = RemotePc.Create($"Pc{u.ObjectId}", visual, anim, body.anims, gravity, SpawnPoint(G(u.Position)), u.Rotation.Z, faceGrids);
         pc.JobGroup = u.User.JobCode;          // the user block's job group (CharacterInfo maps JobGroup from it)
+        pc.Platforms = LiveSession.Instance?.Breakables;   // the ride on a moving marker (PCBase::vfunc_68)
         pc.BattleStance = u.InBattle;
         pc.Effects = PlayGroundEffects;
         int asker = u.ObjectId;
@@ -1260,6 +1261,9 @@ public sealed partial class RemoteLayer : Node3D
         // confirm count expiring at its end tick
         uint now = (uint)Time.GetTicksMsec();
         uint tick = (uint)(LiveSession.Instance?.ServerTick ?? 0);
+        // the markers' Update(GetTickCountMs2()) (worldservice_1.cpp:9650-9655): the fades and the move cycles, before the PCs
+        // step and ride them (the actor loop, gameobject.cpp:307-312); done already when the field's MarkerStep ran first
+        LiveSession.Instance?.Breakables.UpdateOnce(Engine.GetProcessFrames(), now, unchecked((int)tick));
         foreach (var a in users.Values)
         {
             a.Pc.Tick(dt);
@@ -1269,7 +1273,6 @@ public sealed partial class RemoteLayer : Node3D
         }
         TickBuffEffects();
         TickRemoteMagics(now);
-        LiveSession.Instance?.Breakables.Update(now, unchecked((int)tick));   // the markers' Update(GetTickCountMs2()) (worldservice_1.cpp:9650-9655): the fades and the move cycles
         LiveSession.Instance?.Vibrates.Update(tick);   // the world tick's vibrators (worldservice_1.cpp:9243-9250)
         if (TombTags.Count > 0) { RunVibrateTags(); RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);

@@ -149,8 +149,7 @@ public partial class Player : CharacterBody3D
     readonly GroundMaterialSnapshot ground = new();   // m_str958 and the hit report entity's MapAttribute
     ulong hitOwner;                       // the instance id of the last touched shape owner (its entity's metas are read once)
     string hitBreakable;                  // that owner's breakable marker (FindMarkerByEntity on the report's entity), null: none
-    string carryId;                       // PCBase m_unk_ae0: the marker the last frame stood by
-    Ms2.Formats.Model.Vec3 carryPos;           // PCBase m_posAE8: that marker's position then (field units)
+    readonly Ms2.Ui.PlatformCarry carry = new();   // PCBase m_unk_ae0 / m_posAE8: the marker stood by last frame and its position then
     /// <summary>The field's breakable markers (the session's, or the offline dev ones), for the platform carry.</summary>
     public Ms2.Ui.BreakableObjects Platforms;
     NxController nx;
@@ -800,19 +799,11 @@ public partial class Player : CharacterBody3D
     /// </summary>
     Vector3 Carry(ref bool pushed)
     {
-        var marker = hitBreakable != null ? Platforms?.Find(hitBreakable) : null;
-        var move = Vector3.Zero;
-        if (marker != null && hitBreakable == carryId)
-        {
-            var d = marker.Position - carryPos;
-            if (d.X != 0 || d.Y != 0 || d.Z != 0) pushed = true;
-            var g = new Vector3((float)d.X, (float)d.Z, (float)-d.Y);   // field (x, y, z) to Godot (x, z, -y)
-            if (!(d.Z > 0)) move = g;
-            else GlobalPosition += g;
-        }
-        if (marker != null) carryPos = marker.Position;
-        carryId = marker != null ? hitBreakable : null;
-        return move;
+        if (carry.Step(Platforms, hitBreakable, out var d)) pushed = true;
+        var g = new Vector3((float)d.X, (float)d.Z, (float)-d.Y);   // field (x, y, z) to Godot (x, z, -y)
+        if (!Ms2.Ui.PlatformCarry.SetsAtOnce(d)) return g;
+        GlobalPosition += g;
+        return Vector3.Zero;
     }
 
     /// <summary>The field's region skill objects, the force zones WorldService::FUN_141bc8420 reads first; null without them.</summary>

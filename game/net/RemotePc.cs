@@ -10,8 +10,8 @@ namespace Ms2Godot.Net;
 /// its controller (GameObjectController::CreateController, the capsule and NxCharacter sweep of the local player,
 /// <see cref="NxController"/>) moves and collides, its hit report keeps the touched entity (water, ground material), and its
 /// animation's "run*" / "walk*" text keys play steps (PCBase::TextKeyEvent, pcbase.cpp:997-1008).
-/// STILL-OPEN: the world box slide of PCBase::vfunc_68 (WorldService::FUN_141bd36f0), the moving platform carry
-/// (pcbase.cpp:1794-1816), the pushes of WorldService::FUN_141bc8420 and the TRANSDEST hold frame of a KFM blend
+/// The moving platform carry of PCBase::vfunc_68 (pcbase.cpp:1797-1817) runs here as in the local player (<see cref="Ms2.Ui.PlatformCarry"/>): every PCBase rides.
+/// STILL-OPEN: the world box slide of PCBase::vfunc_68 (WorldService::FUN_141bd36f0), the pushes of WorldService::FUN_141bc8420 and the TRANSDEST hold frame of a KFM blend
 /// (the local player's PlaySequence) are not ported for remote PCs. A hit's StateHit, lift and push are (RemotePcHit).
 /// </summary>
 public sealed partial class RemotePc : IRemotePc
@@ -48,6 +48,10 @@ public sealed partial class RemotePc : IRemotePc
     float groundDistance = float.MaxValue;
     // GameObjectControllerHitReport
     int hitGroup = -1; ulong hitOwner;
+    string hitBreakable;                   // that owner's breakable marker (FindMarkerByEntity), null: none
+    readonly Ms2.Ui.PlatformCarry carry = new();
+    /// <summary>The session's breakable markers, for the platform carry; null: none (a ridee).</summary>
+    public Ms2.Ui.BreakableObjects Platforms;
     // the sequence the states asked for
     int currentAct = -1; string currentName; double lastPos = -1;
 
@@ -229,6 +233,13 @@ public sealed partial class RemotePc : IRemotePc
             if (s != RemotePcStates.StateWalk && s != RemotePcStates.StateFall && s != RemotePcStates.StateJump) { v.X = 0; v.Z = 0; }
             disp += v;
         }
+        // the ride (:1797-1817): the stood-by marker's move joins the frame's move, or an upward one is set at once
+        if (carry.Step(Platforms, hitBreakable, out var c))
+        {
+            var g = new Vector3((float)c.X, (float)c.Z, (float)-c.Y);   // field (x, y, z) to Godot (x, z, -y)
+            if (Ms2.Ui.PlatformCarry.SetsAtOnce(c)) Body.GlobalPosition += g;
+            else disp += g;
+        }
         if (disp != Vector3.Zero) ControllerMove(disp, dt);
     }
 
@@ -353,6 +364,7 @@ public sealed partial class RemotePc : IRemotePc
         hitOwner = id;
         hitGroup = owner != null && owner.HasMeta(FieldBuilder.KindMeta) ? (int)owner.GetMeta(FieldBuilder.KindMeta)
                  : collider is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
+        hitBreakable = owner != null && owner.HasMeta(FieldBuilder.BreakableMeta) ? (string)owner.GetMeta(FieldBuilder.BreakableMeta) : null;
         ground.Entity = FieldBuilder.GroundMaterial(owner);
     }
 
@@ -363,6 +375,7 @@ public sealed partial class RemotePc : IRemotePc
         if (ridee.hitOwner == 0) return;
         hitOwner = ridee.hitOwner;
         hitGroup = ridee.hitGroup;
+        hitBreakable = ridee.hitBreakable;
         ground.Entity = ridee.ground.Entity;
     }
 

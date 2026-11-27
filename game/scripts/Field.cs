@@ -264,6 +264,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         Movement.MoveProof.Effects = (packs, builder);   // the scripted run's fx step
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
         if (player != null) { Triggers.Bind(player.Climbs); player.ForceRegions = regionSkills.Objects; player.Platforms = Net.LiveSession.Instance?.Breakables ?? devBreakables; }   // FUN_141bc8420's zones
+        if (player?.Platforms != null) AddChild(new World.MarkerStep { Markers = player.Platforms, Live = Net.LiveSession.Instance != null });   // the markers move before the player steps
         await Budget();
         // From here to the end of the load, one frame: FieldContents.Start adopts the loading screen into the field, so no
         // frame is drawn between it and Loaded. The field is enabled again first, as it was throughout the one-frame build:
@@ -590,7 +591,9 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
     /// the jump speed sqrt(2 * 2h * -g) and its apex (:314-319), the jump curve (:361) and the fall (:385-387). The PhysX to world
     /// scale is 100. No scene entity: nothing changes.
     /// STILL-OPEN: SetGravity skips an entity that holds model 0x7b4582d6 (unnamed); a zero or positive value makes the client's
-    /// jump speed the square root of zero or less, so ours keeps the gravity it has for it (no main quest field sends one).</summary>
+    /// jump speed the square root of zero or less, so ours keeps the gravity it has for it (no main quest field sends one).
+    /// STILL-OPEN: SetGravity then refreshes the CUGCBallObjects for the new gravity (FUN_141bca630, worldservice_1.cpp:856-864);
+    /// no UGC ball object is ported.</summary>
     bool Ms2.Ui.Hud.IFieldScene.SetGravity(float z)
     {
         if (!hasPhysXScene) return false;
@@ -1225,7 +1228,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         {
             // offline (MS2_BREAKABLE_STATE) the markers run on the local clock, as the session's do on the server tick (RemoteLayer)
             uint now = (uint)Time.GetTicksMsec();
-            devBreakables.Update(now, unchecked((int)now));
+            devBreakables.UpdateOnce(Engine.GetProcessFrames(), now, unchecked((int)now));   // done already when MarkerStep ran first
         }
         if (player != null)
         {

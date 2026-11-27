@@ -685,7 +685,9 @@ public sealed class FieldBuilder
                 // its only collision is the NxCollision box that follows the marker (world/FieldBreakables). Kept here, a
                 // moving platform's mesh would stay at rest under the box and stop the ride.
                 // STILL-OPEN: the other field models without PhysXProp (MS2InteractMesh, EffectMesh, the portals) still
-                // get their NIF meshes here
+                // get their NIF meshes here. The npc ground leaves them out too: the server places and moves the npcs, so a
+                // breakable floor missing from it changes nothing live; an offline npc walk that samples npcGround on one of
+                // these floors would fall through it.
                 bool nifPhysX = Ms2.Ui.BreakableObjects.NifPhysX(e);
                 if (isMesh && !fluid && generated == null && nifPhysX)
                     foreach (var shape in me.Collision) npcGround.Add(shape, xf);
