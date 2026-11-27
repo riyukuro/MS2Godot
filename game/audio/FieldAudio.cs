@@ -156,16 +156,21 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             if (crossfade.Busy(i) && musicPlayers[i] is { } p && IsInstanceValid(p) && p.Playing) p.Seek((float)p.GetPlaybackPosition());
     }
 
-    /// <summary>The gate hold for the outgoing voices: each goes back to its start where its last
-    /// <see cref="MusicPlaybackGuard.PredecodeLeadSeconds"/> seconds start. Gate sessions only.</summary>
-    void HoldOutgoingVoices()
+    /// <summary>The gate hold for the voices the playback guard does not track: each outgoing voice, and the active one
+    /// while the guard has no segment armed (a cue's decode, or a cue at the voice cap), goes back to its start where its
+    /// last <see cref="MusicPlaybackGuard.PredecodeLeadSeconds"/> seconds start. A segment no longer than that lead is left
+    /// to play: it would otherwise be sent back to its start every frame. Gate sessions only.</summary>
+    void HoldUntrackedVoices()
     {
+        bool holdActive = !playbackGuard.IsSegmentActive;
         for (int i = 0; i < musicPlayers.Length; i++)
         {
-            if (i == crossfade.ActiveSlot || !crossfade.Busy(i)) continue;
+            if ((i == crossfade.ActiveSlot && !holdActive) || !crossfade.Busy(i)) continue;
             var p = musicPlayers[i];
             if (p == null || !p.Playing || p.Stream == null) continue;
-            if (p.GetPlaybackPosition() >= p.Stream.GetLength() - MusicPlaybackGuard.PredecodeLeadSeconds) p.Seek(0);
+            double length = p.Stream.GetLength();
+            if (length > MusicPlaybackGuard.PredecodeLeadSeconds && p.GetPlaybackPosition() >= length - MusicPlaybackGuard.PredecodeLeadSeconds)
+                p.Seek(0);
         }
     }
 
@@ -594,7 +599,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                 else if (playbackGuard.TryBeginPredecode(pos)) PredecodeNextSegment();
             }
         }
-        if (gateHold && crossfade.HasOutgoing) HoldOutgoingVoices();
+        if (gateHold && (crossfade.HasOutgoing || !playbackGuard.IsSegmentActive)) HoldUntrackedVoices();
     }
 
     /// <summary>The busy slots' volumes; a free slot's player is stopped and gets its volume when a segment takes it.</summary>
@@ -666,7 +671,9 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         return true;
     }
 
-    void DecodeAndPlaySegment(int gen, MusicCue cue, MusicSegment seg, SoundClip clip, int crossfadeMs)
+    /// <param name="advance">The active voice's own next segment (an EndOfSegment advance): if it cannot be decoded, the
+    /// voice ends there and frees its slot, as one with nothing to follow. A cue's first segment leaves the slots alone.</param>
+    void DecodeAndPlaySegment(int gen, MusicCue cue, MusicSegment seg, SoundClip clip, int crossfadeMs, bool advance = false)
     {
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
         System.Threading.Tasks.Task.Run(() =>
@@ -677,7 +684,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             {
                 if (poolClosed) return;
                 if (failure != null) GD.PushWarning(failure);
-                if (pcm == null) return;   // undecodable segment stays silent
+                if (pcm == null)   // undecodable segment stays silent
+                {
+                    if (advance) decodedSegments.Enqueue(() => { if (playbackGuard.AcceptDecode(gen)) EndActiveVoice(); });
+                    return;
+                }
                 var wav = Stream(pcm, data, selfLoop);
                 decodedSegments.Enqueue(() =>
                 {
@@ -816,7 +827,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             {
                 if (poolClosed) return;
                 if (failure != null) GD.PushWarning(failure);
-                if (pcm == null) return;
+                if (pcm == null)   // the voice ends where its segment did, as one with nothing to follow
+                {
+                    decodedSegments.Enqueue(() => { if (slotGeneration[slot] == sg && !slotCurrentCue[slot]) ReleaseSlot(slot); });
+                    return;
+                }
                 var wav = Stream(pcm, data, selfLoop);
                 decodedSegments.Enqueue(() =>
                 {
@@ -851,8 +866,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         var next = MusicState.AdvanceSegment();
         if (next == null)
         {
-            activeSegment = null;
-            ReleaseSlot(crossfade.ActiveSlot);   // one-shot cue or no matching link condition: stop cleanly
+            EndActiveVoice();   // one-shot cue or no matching link condition: stop cleanly
             return;
         }
         if (cueSegments.ContainsKey(next.Id))
@@ -861,8 +875,15 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             return;
         }
         var clip = library.ResolveSegment(next);
-        if (clip == null) { ReleaseSlot(crossfade.ActiveSlot); return; }
-        DecodeAndPlaySegment(playbackGuard.Generation, MusicState.CurrentCue, next, clip, crossfadeMs);
+        if (clip == null) { EndActiveVoice(); return; }
+        DecodeAndPlaySegment(playbackGuard.Generation, MusicState.CurrentCue, next, clip, crossfadeMs, advance: true);
+    }
+
+    /// <summary>The active voice's segment ended with nothing to follow: no segment is active, and its slot is freed.</summary>
+    void EndActiveVoice()
+    {
+        activeSegment = null;
+        ReleaseSlot(crossfade.ActiveSlot);
     }
 
     /// <summary>Play a sound event by name (event volume from the FEV).</summary>
