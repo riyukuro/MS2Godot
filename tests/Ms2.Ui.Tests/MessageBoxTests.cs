@@ -173,6 +173,10 @@ public class MessageBoxTests
         Assert.That(c.IsIdle, Is.True, "the box is closed by the field change");
         Assert.That(MessageBoxQueue.IsIdle, Is.True, "the queue is empty");
         Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "the keys are back");
+        h.Player.Tick();
+        // FUN_14151f460(1) → CloseAll(1): the movie's closeAll calls back OnClick for the shown box, so its listener hears
+        // button 1 (the movie's choice: the same with CloseAll(0)); a listener that answers button 1 runs on a field change
+        Assert.That(l.Answers, Is.EqualTo(new[] { (1, "gameexit") }), "the listener hears the close");
     }
 
     [Test]
