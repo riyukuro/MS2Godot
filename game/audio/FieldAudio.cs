@@ -188,7 +188,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             if ((i == crossfade.ActiveSlot && !holdActive) || !crossfade.Busy(i)) continue;
             var p = musicPlayers[i];
             if (p == null || !p.Playing || p.Stream == null) continue;
-            double length = p.Stream.GetLength();
+            // the whole segment's length: a stream still on its head is only the head long (DecodeSegment)
+            double length = slotAudio[i]?.Seconds ?? p.Stream.GetLength();
             if (length > MusicPlaybackGuard.PredecodeLeadSeconds && p.GetPlaybackPosition() >= length - MusicPlaybackGuard.PredecodeLeadSeconds)
                 p.Seek(0);
         }
