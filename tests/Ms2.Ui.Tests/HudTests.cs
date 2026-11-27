@@ -3927,4 +3927,27 @@ public partial class HudTests
         Assert.That(ActionCaption.Lift(t, true, 30000001), Is.EqualTo(ActionCaption.Of(t.Common(0x63a), ore)));
         Assert.That(ActionCaption.Lift(t, false, 30000001), Is.EqualTo(""));
     }
+
+    [Test]
+    public void TheGiveUpDungeonButtonShowsForTheLeaderWhileTheStageFlagIsSet()
+    {
+        // UpdateGiveUpDungeonButton (@0x141a79840, uipartydialog.cpp:1168): the character's stage with IsStageFlagSet, and the local player the leader
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        RoomStageDungeonCli stage = null;
+        var rooms = new Ms2.Formats.World.DungeonRoomTable(f => null, null, null, null);
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, MapName = _ => "Field", GetStage = () => stage };
+        var h = Load(c, m);
+        bool Shown() => Rt.ToBoolean(h.Get(h.Child("m_giveUpDungeon"), "visible"));
+        Assert.That(Shown(), Is.False, "no stage");
+        stage = new RoomStageDungeonCli(21001001, 1, true, rooms, new Ms2.Formats.World.DungeonMissionTable(new System.Xml.Linq.XElement("ms2"), null));
+        c.OnPartyMessage(new PartyOtherMode(0x11));
+        Assert.That(Shown(), Is.False, "the flag counts at stage 0 only");
+        stage = new RoomStageDungeonCli(21001001, 0, true, rooms, new Ms2.Formats.World.DungeonMissionTable(new System.Xml.Linq.XElement("ms2"), null));
+        c.OnPartyMessage(new PartyOtherMode(0x11));
+        Assert.That(Shown(), Is.True, "the leader, stage 0, the flag set");
+        book.Apply(new PartyLeaderChange(3), PartyFixture.SelfCharacterId, true);
+        c.OnPartyMessage(new PartyOtherMode(0x11));
+        Assert.That(Shown(), Is.False, "not the leader");
+    }
 }

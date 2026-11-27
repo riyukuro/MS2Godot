@@ -188,6 +188,7 @@ public partial class HudScene
             Field = SlotFieldData(),
             MapName = id => menuModel.Tables.MapName(id),
             LocalPlayerDead = () => live?.Me.Dead ?? false,   // PCBase::IsDead; offline: never dead
+            GetStage = () => live?.Stage,
         };
         if (live?.GameSession is { } gs) c.ServerNow = () => gs.ServerTime;     // GetServerTime
         c.SlotMenuOpen = () => popupMenu != null && !popupMenu.IsClosed && popupMenu.InfoString == PopupMenuController.PartySlotInfo;

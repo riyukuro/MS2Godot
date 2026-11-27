@@ -33,6 +33,8 @@ public sealed class PartyController : UiController
     public FieldData Field;
     /// <summary>The local player is dead (PCBase::IsDead, the live MyCharacter.Dead); unset: false.</summary>
     public Func<bool> LocalPlayerDead = () => false;
+    /// <summary>GetMyCharacter()->GetStage() (CMyCharacter::GetStage): the dungeon stage the server's RoomStageDungeon packet made; null without one.</summary>
+    public Func<RoomStageDungeonCli> GetStage = () => null;
     /// <summary>The popup menu (FindPopupMenu(0x4e39)) is open for a party slot (not IsClosed, GetInfoString "partySlot").</summary>
     public Func<bool> SlotMenuOpen = () => false;
     /// <summary>CStringTable::FUN_141811980(3, id): the map name.</summary>
@@ -402,9 +404,9 @@ public sealed class PartyController : UiController
     /// <summary>UpdateCreateClubButton @0x141a79770 (:1152): with feature 0x56, shown to the leader.</summary>
     void UpdateCreateClubButton() => Show("m_createClub", Model.IsFeatureEnabled(0x56) && Party.IsLeader(SelfCharacterId));
 
-    /// <summary>UpdateGiveUpDungeonButton @0x141a79840 (:1168): shown to the leader in a dungeon stage with its flag set.
-    /// STILL-OPEN: no dungeon stage feed, so hidden.</summary>
-    void UpdateGiveUpDungeonButton() => Show("m_giveUpDungeon", false);
+    /// <summary>UpdateGiveUpDungeonButton @0x141a79840 (:1168): shown to the leader while the character's stage has its flag set
+    /// (RoomStageDungeonCli::IsStageFlagSet: stage 0 and the flag), else hidden.</summary>
+    void UpdateGiveUpDungeonButton() => Show("m_giveUpDungeon", GetStage() is { IsStageFlagSet: true } && Party.IsLeader(SelfCharacterId));
 
     /// <summary>ArrangeBottomButton @0x141a75a20 (:552).</summary>
     public void ArrangeBottomButton() { if (Host?.Entity != null) Host.Invoke(Host.Entity, "arrangeBottomButton"); }
