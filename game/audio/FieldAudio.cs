@@ -853,6 +853,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public int EffectSoundsOutOfView;
     /// <summary>Effect sounds not made because their cooltimeID was cooling (<see cref="Ms2.Formats.World.CooltimeTable.Use"/>).</summary>
     public int EffectSoundsCooling;
+    /// <summary>Effect sounds not made because the "mute all" sound option is on (<see cref="PlayEffectSound"/>).</summary>
+    public int EffectSoundsMuted;
     /// <summary>The field is the music concert (<see cref="EffectPart.IsMusicConcert"/>), set by Field on its build.</summary>
     public bool InMusicConcert;
 
@@ -874,6 +876,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (part.SkipMusicConcert && InMusicConcert) return 0;
         if (Ms2.Formats.World.EffectSkipTable.SoundEventOutOfView(effectSkip, part, owner.Kind, ToNumerics(at),
                 Viewer?.Invoke() is { } eye ? ToNumerics(eye) : null)) { EffectSoundsOutOfView++; return 0; }
+        // CSoundEventEffect::vfunc_3 (soundeventmgr.cpp:460): with the "mute all" option on (the sound options' first byte,
+        // bMuteAll; not the mute while the window is in the background) no sound is made, so no voice is taken and the
+        // cooltime below is not used
+        if (GameOptions.Current.SoundOption.MuteAll) { EffectSoundsMuted++; return 0; }
         // CSoundEventEffect::vfunc_3 (soundeventmgr.cpp:463): a cooling cooltimeID makes no sound (GetTickCount ms)
         if (part.CooltimeId != 0 && cooltimes?.Use(part.CooltimeId, System.Environment.TickCount64) == false) { EffectSoundsCooling++; return 0; }
         string ev = part.SoundEventFor(owner.JobCode, GameOptions.SoundFlag.DisableJobSound);
