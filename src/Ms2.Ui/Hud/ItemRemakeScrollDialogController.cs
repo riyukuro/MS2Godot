@@ -294,6 +294,21 @@ public sealed class ItemRemakeScrollDialogController : UiController, IDragSlotOw
         SendRemakeRequest(uid, unk);
     }
 
+    /// <summary>UIMessageBox::HandleRemakeOptionScrollBindPetButton (@0x1419fda70, uimessagebox.cpp:1809) past the box's data:
+    /// no local player, 0; the yes (button 0) needs the box's item (FindItemByUid, else 0) and, with the window made
+    /// (Unk_MessageBoxDialog 0x4f09), the window not closed (vfunc_55, else 0), then SendRemakeRequest(arg 0, 1). 1 otherwise.</summary>
+    public static bool AnswerBindPet(ItemRemakeScrollDialogController dialog, bool hasLocalPlayer, Func<long, Item> findItem,
+        int button, long itemUid, long arg)
+    {
+        if (!hasLocalPlayer) return false;
+        if (button != 0) return true;
+        if (findItem?.Invoke(itemUid) == null) return false;
+        if (dialog == null) return true;
+        if (dialog.IsClosed) return false;
+        dialog.SendRemakeRequest(arg, 1);
+        return true;
+    }
+
     /// <summary>
     /// SendRemakeRequest (@0x140f59ad0, :433): the checks of FUN_140f59420 again; a pet row (not yet confirmed, unk 0) on an item
     /// that binds on use and is not bound asks first in box 0x11 (s_msg_transfer_bind_pet_remakeoption with the player's name,

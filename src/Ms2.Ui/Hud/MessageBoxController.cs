@@ -260,6 +260,11 @@ public sealed class MessageBoxController : UiController
     /// on with the binding skip (EquipGem(item, a0, 1)); false when the inventory no longer has the item.</summary>
     public Func<long, int, bool> UseBindGemEquipItem;
 
+    /// <summary>HandleRemakeOptionScrollBindPetButton past the box's data (uimessagebox.cpp:1809): the button, the box's item uid
+    /// and arg 0 (the remake target), answered by <see cref="ItemRemakeScrollDialogController.AnswerBindPet"/>; false keeps
+    /// the box. Null: no local player (0).</summary>
+    public Func<int, long, long, bool> RemakeOptionScrollBindPet;
+
     /// <summary>CPartyManager::SendPartyMode2(answer): HandlePartyinviteButton's answer to the last invite.</summary>
     public Action<int> AnswerPartyInvite;
 
@@ -544,6 +549,8 @@ public sealed class MessageBoxController : UiController
             return HandleConfirmChangeCharNameButton(button);
         if (tag == "useBindGemEquipItem")
             return HandleUseBindGemEquipItemButton(button);
+        if (tag == ItemRemakeScrollDialogController.BindPetTag)              // s_143af3d00 (uimessagebox.cpp:1042-1046)
+            return HandleRemakeOptionScrollBindPetButton(button);
         if (tag == InventoryController.LearnSkillTag)                      // s_143af3c88 (uimessagebox.cpp:968-972)
             return HandleLearnSkillButton(button);
         if (tag == InventoryController.LearnEmotionTag)                    // s_143af3ca0 (uimessagebox.cpp:983-987)
@@ -877,6 +884,14 @@ public sealed class MessageBoxController : UiController
         if (data == null) return true;
         if (button == 0 && !(UseBindGemEquipItem?.Invoke(data.ItemUid, data.ArgInt(0, 0)) ?? false)) return false;
         return true;
+    }
+
+    /// <summary>HandleRemakeOptionScrollBindPetButton @0x1419fda70 (uimessagebox.cpp:1809): no record, 1; the rest goes to
+    /// <see cref="RemakeOptionScrollBindPet"/>.</summary>
+    bool HandleRemakeOptionScrollBindPetButton(int button)
+    {
+        if (data == null) return true;
+        return RemakeOptionScrollBindPet?.Invoke(button, data.ItemUid, data.ArgLong(0, 0)) ?? false;
     }
 
     /// <summary>MessageBoxFactory.getCurMsgBox: the movie's last box (m_msgBoxArray's tail), null when none.</summary>

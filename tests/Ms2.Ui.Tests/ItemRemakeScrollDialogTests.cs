@@ -490,6 +490,39 @@ public class ItemRemakeScrollDialogTests
     }
 
     [Test]
+    public void ThePetBindBoxYesSendsTheRemakeOnlyWithThePlayerTheItemAndTheWindow()
+    {
+        // HandleRemakeOptionScrollBindPetButton (@0x1419fda70, uimessagebox.cpp:1809) through the box layer's tag handler
+        var r = new Rig();
+        r.AddGood(41);
+        r.C.DropTarget(41);
+        var box = new MessageBoxData(0x11) { Extra = ItemRemakeScrollDialogController.BindPetTag, ItemUid = 41 };
+        box.Append(41L);
+        bool player = true;
+        var boxes = new MessageBoxController();
+        boxes.RemakeOptionScrollBindPet = (b, uid, arg) => ItemRemakeScrollDialogController.AnswerBindPet(r.C, player, r.C.FindItem, b, uid, arg);
+        boxes.data = null;
+        Assert.That(boxes.HandlePlainTag(0, ItemRemakeScrollDialogController.BindPetTag), Is.True, "no record: 1");
+        boxes.data = box;
+        Assert.That((boxes.HandlePlainTag(1, ItemRemakeScrollDialogController.BindPetTag), r.Sent.Count), Is.EqualTo((true, 0)), "no: nothing");
+        player = false;
+        Assert.That((boxes.HandlePlainTag(0, ItemRemakeScrollDialogController.BindPetTag), r.Sent.Count), Is.EqualTo((false, 0)), "no player");
+        player = true;
+        var held = r.Inv[41];
+        r.Inv.Remove(41);
+        Assert.That((boxes.HandlePlainTag(0, ItemRemakeScrollDialogController.BindPetTag), r.Sent.Count), Is.EqualTo((false, 0)), "the item gone");
+        r.Inv[41] = held;
+        Assert.That(ItemRemakeScrollDialogController.AnswerBindPet(null, true, r.C.FindItem, 0, 41, 41), Is.True, "no window: 1, nothing");
+        Assert.That(boxes.HandlePlainTag(0, ItemRemakeScrollDialogController.BindPetTag), Is.True);
+        Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ChangeAttributesScrollRequest.Remake(ScrollUid, 41, 0, false))), "the yes: the remake");
+        Assert.That((r.Stored.Count, Stats(held)), Is.EqualTo((0, "4=10,16=12")));
+        r.C.Close();
+        for (int i = 0; i < 120 && !r.C.IsClosed; i++) r.Player.Tick();
+        Assert.That((boxes.HandlePlainTag(0, ItemRemakeScrollDialogController.BindPetTag), r.Sent.Count), Is.EqualTo((false, 1)), "the window closed");
+        Assert.That(new MessageBoxController { data = box }.HandlePlainTag(0, ItemRemakeScrollDialogController.BindPetTag), Is.False, "no HUD: 0");
+    }
+
+    [Test]
     public void RowTextsFollowTheClient()
     {
         // GetScrollLimitNotice (@0x140f5d460) and GetScrollDescription (@0x140f5dd50)
