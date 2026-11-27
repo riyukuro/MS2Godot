@@ -325,6 +325,12 @@ public partial class AlphaRenderCheck : Node
         Model("fog_off", fogged, Grey(1, "a NoFog mesh draws without the depth fog"), NoFog(Quad("q", 0)));
         Field("field_fog_on", fogged, Grey(0, "field: full depth fog to black"), Quad("q", 0));
         Field("field_fog_off", fogged, Grey(1, "field: a NoFog mesh draws without the depth fog"), NoFog(Quad("q", 0)));
+        // fog, then saturate, then blend (PS 0x42a9d9d0's depth-fog mad before the A8R8G8B8 write): a blended type-0 quad
+        // 0.5 from the camera (a share of 0.5 under the same fog), emissive 3 at alpha 0.5 over black stores sat(1.5) * 0.5
+        // = 0.5; the fog after the saturate, or none, gives 0.75
+        var hot = Mesh(Emit(Quad("q", 9.5f, 0.1f), 3, 3, 3), 0xED);
+        hot.Material = "MS2StandardMaterial"; hot.MaterialAlpha = 0.5f;
+        Model("fog_saturate_blend", fogged, Grey(0.5f, "a blended colour fogged before it saturates"), hot);
 
         // the shadow of a blended mesh, with or without the z write: it stops casting and a shadow-only twin with the opaque form casts in its place
         var castRoot = Model("caster", main, null, Mesh(Quad("blend_zw", 0), 0xED), Mesh(Quad("blend_nozw", 0, 0.5f), 0xED, 1));

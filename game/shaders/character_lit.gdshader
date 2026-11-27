@@ -197,6 +197,11 @@ void fragment() {
 	// s_fPitch about up x dir, an axis of length h that is not unitised, so neither result is unit length. In closed
 	// form, with h the camera direction's horizontal length and dz its up part: light = cos * flat - sin * h * up, rim =
 	// cos * dir + sin * (h * dz * flat - h * h * up). s_fYaw is 0 (only the rim light dialog sets it). Y up here.
+	// The client unitises kFlat with efd::Point3::UnitizeVector (Point3_Win32.inl:255-259), a table worth 7 bits, so its
+	// light is up to 1/128 longer or shorter than this exact normalize (0.1-0.2% in the captures: under 1 LSB here); the
+	// rim takes no unitise and matches exactly. A camera looking straight down (h = 0): UnitizeVector turns the zero kFlat
+	// into zero, so the client's light is 0 (a flat half-lambert of 0.25), where the bias below picks +x. No camera mode
+	// reaches |h| < 1e-5.
 	vec3 up = vec3(0.0, 1.0, 0.0);
 	vec3 fwd = -INV_VIEW_MATRIX[2].xyz;
 	float h = length(fwd.xz);

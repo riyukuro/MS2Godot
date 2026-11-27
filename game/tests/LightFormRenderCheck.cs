@@ -19,7 +19,9 @@ namespace Ms2Godot.Tests;
 /// <item>types 1-3 (MS2CharacterMaterial): the character light from the camera (SetSunDirection's light and rim directions,
 /// also from a camera looking down), ColorBoost on the whole composite, not clamped;</item>
 /// <item>MS2AlphaBoostMaterial (the swap of a blended mesh at an opacity above 1): MS2Light, the colour times the opacity;</item>
-/// <item>an own light pair (PortraitView.OwnLights): type 0 takes the pair's direction, not the field's.</item>
+/// <item>an own light pair (PortraitView.OwnLights): type 0 takes the pair's direction, not the field's;</item>
+/// <item>through a field camera (Field.FogLayer) with the Godot environment fog on: the depth fog applied by the shader once,
+/// before the saturate, and no environment fog on top.</item>
 /// </list>
 /// The quad faces Godot +z (file -y) at the origin; the camera looks at it from +z, so the view vector is the normal.
 /// Quits with 0 when all hold, else 1.
@@ -33,7 +35,7 @@ public partial class LightFormRenderCheck : Node
     ModelBuilder mb;
 
     // one field light: the sun at N.L = 0.5 on the quad, diffuse 0.6, ambient 0.4, no scene ambient, no specular, no point lights
-    const float SunColor = 0.6f, SunAmbient = 0.4f, Ndl = 0.5f;
+    const float SunColor = 0.6f, SunAmbient = 0.4f, Ndl = 0.5f, SunSpecular = 0.5f;
     // the character light from a level camera: the camera direction tilted 30 degrees down, N.L = cos 30 on the quad
     static readonly float HalfLambert = Mathf.Pow(0.5f * Mathf.Cos(Mathf.DegToRad(30)) + 0.5f, 2f);
 
@@ -53,15 +55,19 @@ public partial class LightFormRenderCheck : Node
         return m;
     }
 
-    /// <summary>Builds the mesh as one model in a new viewport over black, the camera 10 in front of the quad.</summary>
-    Node3D Model(string name, Func<Color, string> check, ModelMesh mesh, Vector3? camPos = null)
+    /// <summary>Builds the mesh as one model in a new viewport over black, the camera 10 in front of the quad. With
+    /// <paramref name="fog"/> the camera carries the field's fog layer (1 << 20) and the environment has a dense white fog.</summary>
+    Node3D Model(string name, Func<Color, string> check, ModelMesh mesh, Vector3? camPos = null, bool fog = false)
     {
         var md = new ModelData { RootLocal = Xform.Identity };
         md.Meshes.Add(mesh);
         var vp = new SubViewport { Size = new Vector2I(Size, Size), OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
-        vp.AddChild(new WorldEnvironment { Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
+        var env = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
+        if (fog) { env.FogEnabled = true; env.FogLightColor = Colors.White; env.FogDensity = 1f; }
+        vp.AddChild(new WorldEnvironment { Environment = env });
         AddChild(vp);
         var cam = new Camera3D { Name = "Cam", Current = true, Fov = Fov, Compositor = Ms2Bloom.GammaOut() };   // the game's gamma conversion for views without bloom
+        if (fog) cam.CullMask |= 1u << 20;
         vp.AddChild(cam);
         var root = mb.Build(md, name);
         vp.AddChild(root);
@@ -116,10 +122,14 @@ public partial class LightFormRenderCheck : Node
         RenderingServer.GlobalShaderParameterSet("ms2_sun_dir", sunDir);
         RenderingServer.GlobalShaderParameterSet("ms2_sun_color", new Vector3(SunColor, SunColor, SunColor));
         RenderingServer.GlobalShaderParameterSet("ms2_sun_ambient", new Vector3(SunAmbient, SunAmbient, SunAmbient));
-        RenderingServer.GlobalShaderParameterSet("ms2_sun_specular", Vector3.Zero);
+        // the sun's specular reaches only the specular cases (the others have no enabled specular property)
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_specular", new Vector3(SunSpecular, SunSpecular, SunSpecular));
         RenderingServer.GlobalShaderParameterSet("ms2_ambient", Vector3.Zero);
         RenderingServer.GlobalShaderParameterSet("ms2_light_count", 0f);
         RenderingServer.GlobalShaderParameterSet("ms2_hfog", Vector3.Zero);
+        // the depth fog for the fog-layer cases: near 0, far 20, the quad 10 away, so a share of 0.5 to black
+        RenderingServer.GlobalShaderParameterSet("ms2_fog", new Vector4(0, 20, 0, 0));
+        RenderingServer.GlobalShaderParameterSet("ms2_fog_color", Vector3.Zero);
 
         // calibration: emissive 0.5 with no material ambient or diffuse, so no light term
         var calib = Quad("MS2CharacterMaterial", ambient: 0, emissive: 0.5f);
@@ -147,6 +157,29 @@ public partial class LightFormRenderCheck : Node
         boosted.Diffuse = new float[] { 0, 0, 0 };
         boosted.ExtraFloats["ColorBoost"] = 2;
         Model("type1_color_boost", Grey(0.5f, "ColorBoost scales the whole composite"), boosted);
+        // the diffuse term is inside the boost and the specular outside it (mad r0.xyz, c18.x, r0.yzw, r1: the spec is r1).
+        // Diffuse 0.25 alone at ColorBoost 2: 2 * 0.25 * (sun * half-lambert + the sun's ambient * (1 - half-lambert)); the sun's
+        // ambient share sits in the diffuse light, times the material diffuse. The specular alone at ColorBoost 4 (colour 1,
+        // glossiness 1): the sun's specular 0.5 times N.H, H between the character light and the view (the camera's axis), not
+        // boosted.
+        var difBoost = Quad("MS2CharacterMaterial", ambient: 0);
+        difBoost.Diffuse = new float[] { 0.25f, 0.25f, 0.25f };
+        difBoost.ExtraFloats["ColorBoost"] = 2;
+        Model("type1_boost_diffuse", Grey(2 * 0.25f * chr, "ColorBoost scales the diffuse term"), difBoost);
+        var specBoost = Quad("MS2CharacterMaterial", ambient: 0);
+        specBoost.Diffuse = new float[] { 0, 0, 0 };
+        specBoost.SpecularOn = true; specBoost.Specular = new float[] { 1, 1, 1 }; specBoost.Glossiness = 1;
+        specBoost.ExtraFloats["ColorBoost"] = 4;
+        var levelL = -SunDirection(new Vector3(0, 0, -1)).Light;
+        float nh = n.Dot((levelL + n).Normalized());
+        Model("type1_boost_spec", Grey(SunSpecular * nh, "ColorBoost leaves the specular out"), specBoost);
+
+        // the depth fog before the saturate (PS 0x42a9d9d0: the height fog's lrp v5.x, then the depth fog's mad by v6.x, then
+        // the A8R8G8B8 write): emissive 1.6 under a 0.5 share to black stores 0.8; a saturate before the fog gives 0.5, and
+        // Godot's environment fog on top (white, dense) would push it toward 1
+        var fogged = Quad("MS2CharacterMaterial", ambient: 0, emissive: 1.6f);
+        fogged.Diffuse = new float[] { 0, 0, 0 };
+        Model("type1_fog_then_saturate", Grey(0.8f, "the depth fog before the saturate, no environment fog"), fogged, fog: true);
 
         // MS2AlphaBoostMaterial: a blended MS2CharacterMaterial mesh at material alpha 1.5 draws as type 0 times 1.5, saturated
         // into the 8-bit target with its opacity (CreateRenderTargetSurface @0x1416a3cd0), so over black it reads type 0 * 1.5
