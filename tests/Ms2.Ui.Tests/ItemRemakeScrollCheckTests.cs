@@ -65,6 +65,55 @@ public class ItemRemakeScrollCheckTests
         TestContext.Out.WriteLine($"row {id}: lv {r.LevelMin}-{r.LevelMax}, {r.Ranks.Length} ranks, {r.Slots.Length} slots, lock {r.LockOption}, kind {r.OptionKind}, value {r.OptionValue}");
     }
 
+    /// <summary>
+    /// Every &lt;remakeScroll&gt; row of MS2_DATA and MS2_GMS2_DATA, each id's last row whose feature is on: the table gives
+    /// the row's level range, its rank, slot and item lists in order, its pet kind and its three option fields. Every row has
+    /// a level range, a rank in 1..6, something to match (the check's order: the item list, else pets, else the slot list) and
+    /// an option value. Prints the counts.
+    /// </summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryRowReadsAsTheTableHasIt(string variable)
+    {
+        using var p = new PackSet(RcGap.Data(variable));
+        var t = new GameTables(p, "en");
+        var path = TablePath.Resolve(p, "itemremakescroll.xml");
+        Assert.That(path, Is.Not.Null);
+        var rows = new Dictionary<int, System.Xml.Linq.XElement>();
+        foreach (var x in GameStrings.Parse(p.Read("Xml", path)).Root!.Elements("remakeScroll"))
+        {
+            int key = ItemData.Atoi((string)x.Attribute("id") ?? "");
+            if (key != 0 && FeatureElements.IsAvailable(p, x)) rows[key] = x;
+        }
+        Assert.That(rows, Is.Not.Empty);
+        static uint[] List(System.Xml.Linq.XElement e, string n) => ((string)e.Attribute(n) ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries).Select(v => (uint)ItemData.Atoi(v)).ToArray();
+        var bad = new List<string>();
+        int withItems = 0, pet = 0, locked = 0;
+        foreach (var (id, e) in rows)
+        {
+            int Num(string n) => ItemData.Atoi((string)e.Attribute(n) ?? "");
+            var r = t.RemakeScroll(id);
+            if (r == null) { bad.Add($"{id}: no row"); continue; }
+            if ((r.LevelMin, r.LevelMax, r.PetKind, r.LockOption, r.OptionKind, r.OptionValue)
+                != ((ushort)Num("minLv"), (ushort)Num("maxLv"), Num("onlyPet"), Num("representOpValue"), Num("addOpKind"), Num("addOpValue")))
+                bad.Add($"{id}: fields");
+            if (!r.Ranks.SequenceEqual(List(e, "rank"))) bad.Add($"{id}: ranks");
+            if (!r.Slots.SequenceEqual(List(e, "slot"))) bad.Add($"{id}: slots");
+            if (!r.Items.SequenceEqual(List(e, "item"))) bad.Add($"{id}: items");
+            if (r.LevelMin > r.LevelMax) bad.Add($"{id}: level {r.LevelMin}-{r.LevelMax}");
+            if (r.Ranks.Length == 0 || r.Ranks.Any(k => k is < 1 or > 6)) bad.Add($"{id}: rank list");
+            if (r.Slots.Length == 0 && r.Items.Length == 0 && r.PetKind == 0) bad.Add($"{id}: nothing to match");
+            if (r.OptionValue == 0) bad.Add($"{id}: no option value");
+            if (r.Items.Length != 0) withItems++;
+            if (r.PetKind != 0) pet++;
+            if (r.LockOption != 0) locked++;
+        }
+        Assert.That(t.RemakeScroll(rows.Keys.Max() + 1), Is.Null, "an id past the table");
+        Assert.That(bad, Is.Empty, string.Join("; ", bad.Take(20)));
+        TestContext.Out.WriteLine($"{variable}: {rows.Count} rows, {withItems} with items, {pet} pet, {locked} with the option lock");
+    }
+
     [Test]
     public void TheChecksBeforeTheOptionsGoInTheClientOrder()
     {
