@@ -320,6 +320,27 @@ public partial class LiveSession
                 }
                 continue;
             }
+            if (step.StartsWith("music:"))      // music:<cue>/<ms>/<cue>.../<ms>: cues played the way a trigger's BGM sound plays them, each followed by its wait, with the music slots' gains traced each frame of a crossfade
+            {
+                var audio = FieldAudio.Instance;
+                if (audio == null) { GD.Print($"live: combat {step}: no field audio"); continue; }
+                audio.TraceMusicGains = true;
+                var parts = step[6..].Split('/');
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    int v = int.Parse(parts[i]);
+                    if (i % 2 == 1)
+                    {
+                        ulong waitEnd = Time.GetTicksMsec() + (ulong)v;
+                        while (Time.GetTicksMsec() < waitEnd) await frames(1);
+                        continue;
+                    }
+                    bool played = audio.PlayTriggerMusic(v);
+                    GD.Print($"live: combat music cue {v} at {audio.AudioClockMs:F0} ms: {(played ? "played" : "NOT played")}, {(audio.MusicCrossfading ? "fading" : "not fading")}");
+                }
+                audio.TraceMusicGains = false;
+                continue;
+            }
             if (step == "rolloff")      // the listener, the playing 3D voices and the nearest ambient players: distance, gain now and the old falloff's
             {
                 GD.Print($"live: combat rolloff: {FieldAudio.Instance?.DescribeRolloff() ?? "no field audio"}");
