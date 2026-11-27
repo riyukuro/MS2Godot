@@ -95,6 +95,24 @@ public sealed record RoomDungeonReply(
     static RoomDungeonReply Of(RoomDungeonKind kind, byte mode) =>
         new(kind, mode, NoRecords, null, 0, 0, 0, NoClosing, 0, 0, NoRewards, null, 0, 0);
 
+    /// <summary>The weekly reward refresh command the control center compares (UIDungeonControlCenter::OnDungeonRewardPacket @0x140c0cf20, uidungeoncategory.cpp:712, a second listener of 0x1A).</summary>
+    public const byte WeeklyRefreshMode = 0x17;
+
+    /// <summary>
+    /// The command number the client's listeners of 0x1A see (their own switch over the first byte, in the KMS client's numbering): the add record,
+    /// reward notice and add reward modes as 6, 7 and 20, and the byte 0x17 as it is, which the record manager has no case for
+    /// (DungeonRecordManagerCli::OnPacket @0x140b20be0), so it reads as <see cref="RoomDungeonKind.Unknown"/> and reaches only the control center.
+    /// STILL-OPEN: the GMS2 client's number of that refresh is in no recording (the GMS2 server's 0x17 is the boost state), so GMS2 raises none.
+    /// </summary>
+    public int ClientCommand(ProtocolProfile profile) => Kind switch
+    {
+        RoomDungeonKind.AddRecord => 6,
+        RoomDungeonKind.RewardNotice => 7,
+        RoomDungeonKind.AddReward => 20,
+        RoomDungeonKind.Unknown when !profile.IsGms2 && Mode == WeeklyRefreshMode => WeeklyRefreshMode,
+        _ => 0,
+    };
+
     /// <summary>What the number the profile sent means: KMS as is; on GMS2 only the recorded numbers (5, 6, 7, then the client's modes from 10 on, sent one higher).</summary>
     public static RoomDungeonKind KindOf(byte mode, ProtocolProfile profile)
     {

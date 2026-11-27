@@ -124,4 +124,25 @@ public class RcRoomDungeonTests {
         Assert.That(ProtocolProfile.Kms2525.Number(Inbound.RoomDungeon), Is.EqualTo((ushort) 0x1A));
         Assert.That(ProtocolProfile.Gms2.Number(Inbound.RoomDungeon), Is.EqualTo((ushort) 0x1A));
     }
+
+    static RoomDungeonReply Kms(params byte[] body) => RoomDungeonReply.Read(new ByteReader(body), ProtocolProfile.Kms2525);
+
+    // UIDungeonControlCenter::OnDungeonRewardPacket (@0x140c0cf20) compares the raw first byte to 0x17, which the record manager does not read.
+    [Test] public void TheKmsWeeklyRefreshByteReachesTheControlCenterAsItIs() {
+        var m = Kms(0x17);
+        Assert.That(m.Kind, Is.EqualTo(RoomDungeonKind.Unknown));
+        Assert.That(m.ClientCommand(ProtocolProfile.Kms2525), Is.EqualTo(RoomDungeonReply.WeeklyRefreshMode));
+    }
+
+    [Test] public void TheGms2ByteSeventeenIsTheBoostStateAndRefreshesNothing() {
+        var m = RoomDungeonReply.Read(new ByteReader(new byte[] { 0x17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }), ProtocolProfile.Gms2);
+        Assert.That(m.Kind, Is.EqualTo(RoomDungeonKind.BoostState));
+        Assert.That(m.ClientCommand(ProtocolProfile.Gms2), Is.EqualTo(0));
+    }
+
+    [Test] public void TheMappedModesKeepTheirCommandNumbers() {
+        Assert.That(Gms2(AddRecord, out _).ClientCommand(ProtocolProfile.Gms2), Is.EqualTo(6));
+        Assert.That(Kms(7, 1, 0, 0, 0, 0).ClientCommand(ProtocolProfile.Kms2525), Is.EqualTo(7));
+        Assert.That(Kms(new byte[17].Select((b, i) => i == 0 ? (byte)0x16 : b).ToArray()).ClientCommand(ProtocolProfile.Kms2525), Is.EqualTo(0), "the boost state raises no command");
+    }
 }

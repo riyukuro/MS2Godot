@@ -66,7 +66,7 @@ public partial class LiveSession
     void OnRoomDungeon(RoomDungeonReply m)
     {
         ApplyRoomDungeon(m);
-        int cmd = m.Kind switch { RoomDungeonKind.AddRecord => 6, RoomDungeonKind.RewardNotice => 7, RoomDungeonKind.AddReward => 20, _ => 0 };
+        int cmd = m.ClientCommand(game.Profile);
         if (cmd != 0) DungeonRoomPacket?.Invoke(cmd, m.NoticeKind);
     }
 
