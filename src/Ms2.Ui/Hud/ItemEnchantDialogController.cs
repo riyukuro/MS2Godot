@@ -20,6 +20,9 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
     public override string Movie => "uiitemenchantdialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemEnchantDialog";
+    /// <summary>vfunc_13 @0x1419bfc40 (uiitemenchantdialog.cpp:550) returns 0 without UIDialog's: Esc passes the dialog, and only
+    /// the field Esc's CloseAllDialogs closes it.</summary>
+    public override bool EscapeKey() => false;
     /// <summary>UIItemEnchantDialog's ctor (@0x1419befc0, uiitemenchantdialog.cpp:431) and UIItemModifyDialogBase's (uiitemenchantdialog.cpp:329, @0x1419be860) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
     /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
     protected override bool TweenEnabled => false;

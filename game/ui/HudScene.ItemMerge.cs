@@ -95,12 +95,4 @@ public partial class HudScene
         live.ItemMergeReceived += On;
         unwatchItemMerge = () => live.ItemMergeReceived -= On;
     }
-
-    /// <summary>UIItemMergeOptionDialog::vfunc_13: Escape closes it except while it waits for the answer or merges.</summary>
-    bool ItemMergeKeys(InputEventKey k)
-    {
-        if (!ItemMergeOpen || k.Keycode != Key.Escape) return false;
-        if (itemMerge.CanClose) itemMerge.Close();
-        return true;
-    }
 }

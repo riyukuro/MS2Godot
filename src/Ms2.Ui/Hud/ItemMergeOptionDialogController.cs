@@ -122,6 +122,9 @@ public sealed class ItemMergeOptionDialogController : UiController
 
     /// <summary>vfunc_13: Escape or the action key may close the dialog except while waiting for the answer (4) or merging (5).</summary>
     public bool CanClose => Phase != 4 && Phase != 5;
+    /// <summary>vfunc_13 (uiitemmergeoptiondialog.cpp:430) has no UIDialog call: Esc (or action 0x493e2) is taken while it waits
+    /// for the answer or merges (phase 4/5); otherwise it passes the dialog without closing it.</summary>
+    public override bool EscapeKey() => !IsClosed && !CanClose;
 
     /// <summary>vfunc_67: both bags released, the picks cleared, phase 0.</summary>
     public override void Close()

@@ -20,6 +20,9 @@ public sealed class ItemTreasureMapDialogController : UiController
     public override string Movie => "uiitemtreasuremapdialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => Name;   // GetTypeName (@0x140c55210)
+    /// <summary>vfunc_13 (uiitemtreasuremapdialog.cpp:167) returns 0 without UIDialog's: Esc passes the dialog, and only the
+    /// field Esc's CloseAllDialogs closes it.</summary>
+    public override bool EscapeKey() => false;
     /// <summary>The type name, also the name the talk opens it by.</summary>
     public const string Name = "ItemTreasureMapDialog";
 

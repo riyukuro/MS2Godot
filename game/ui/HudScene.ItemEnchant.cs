@@ -94,11 +94,4 @@ public partial class HudScene
                 if (!cell.Empty && cell.ItemId == id && (rank == 0 || live.Items.Get(cell.Uid)?.Rarity == rank)) n += cell.Amount;
         return n;
     }
-
-    bool ItemEnchantKeys(InputEventKey k)
-    {
-        if (!ItemEnchantOpen || k.Keycode != Key.Escape) return false;
-        itemEnchant.Close();
-        return true;
-    }
 }

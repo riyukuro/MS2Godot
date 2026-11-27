@@ -2152,15 +2152,12 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemLockKeys(k)) return true;
         if (ItemGetOptionKeys(k)) return true;
         if (ItemBreakKeys(k)) return true;
-        if (ItemMergeKeys(k)) return true;
-        if (ItemEnchantKeys(k)) return true;
         if (ItemRemakeKeys(k)) return true;
         if (EnchantScrollKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
         if (GachaBoxKeys(k)) return true;
         if (LulluBoxKeys(k)) return true;
-        if (TreasureMapKeys(k)) return true;
         if (ItemPreviewKeys(k)) return true;
         if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;

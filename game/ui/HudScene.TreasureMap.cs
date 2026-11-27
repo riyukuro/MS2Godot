@@ -65,12 +65,4 @@ public partial class HudScene
         m.Host.Unload();
         m.QueueFree();
     }
-
-    /// <summary>UIDialog's key handling: Escape closes the dialog.</summary>
-    bool TreasureMapKeys(InputEventKey k)
-    {
-        if (!TreasureMapOpen || k.Keycode != Key.Escape) return false;
-        treasureMap.Close();
-        return true;
-    }
 }
