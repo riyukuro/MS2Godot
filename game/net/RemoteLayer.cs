@@ -326,7 +326,7 @@ public sealed partial class RemoteLayer : Node3D
         var equips = r.Equips; var outfit = r.Outfit2;
         if (!Ms2.Net.Packets.WornEquips.PutOn(ref equips, ref outfit, p, wornLayer)) return false;
         r.Equips = equips; r.Outfit2 = outfit; r.WornAbilities = null;
-        equip.Reapply(r.Visual, LookOf(r));
+        Redress(r);
         return true;
     }
 
@@ -338,9 +338,25 @@ public sealed partial class RemoteLayer : Node3D
         var equips = r.Equips; var outfit = r.Outfit2;
         if (Ms2.Net.Packets.WornEquips.PutOff(ref equips, ref outfit, p.ItemUid, wornLayer) == null) return false;
         r.Equips = equips; r.Outfit2 = outfit; r.WornAbilities = null;
-        equip.Reapply(r.Visual, LookOf(r));
+        Redress(r);
         return true;
     }
+
+    /// <summary>
+    /// The pc's model follows a change of its worn items (EquipApplier.Reapply, only the changed slots), then takes the weapon rig
+    /// the new items give and the hold its state asks for: Reapply makes a new rig (SaveRig), and a put-on or put-off of a
+    /// weapon rebuilds the hands (PC::vfunc_127 / vfunc_128, pc.cpp:1400-1415, through CEquipment's RefreshModel and
+    /// PC::UpdateWeaponAction, pc.cpp:2838-2874), as the own body does (PlayerLook.Redress).
+    /// </summary>
+    void Redress(Remote r, EquipSlot? force = null)
+    {
+        equip.Reapply(r.Visual, LookOf(r), force);
+        r.Weapons = EquipApplier.RigOf(r.Visual);
+        RefreshWeapons(r);
+    }
+
+    /// <summary>Another pc's weapon rig (null without one or without the pc).</summary>
+    public EquipApplier.WeaponRig WeaponsOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Weapons : null;
 
     /// <summary>OnItemUpdate for another player's worn item (the packet read its body again, ItemUpdate.Updated):
     /// CEquipItem's model update (FUN_1411dd1c0) rebuilds that item's model; here the item's slot is rebuilt.</summary>
@@ -348,7 +364,7 @@ public sealed partial class RemoteLayer : Node3D
     {
         if (item == null || !users.TryGetValue(objectId, out var r)) return;
         r.WornAbilities = null;
-        equip.Reapply(r.Visual, LookOf(r), item.Slot);
+        Redress(r, item.Slot);
     }
 
     /// <summary>
@@ -655,7 +671,7 @@ public sealed partial class RemoteLayer : Node3D
         codiClock = 0;
         if (codiNext == long.MaxValue || ServerNow() < codiNext) return;
         foreach (var r in users.Values)
-            if (OutfitShown(r.CodiStart, r.CodiEnd) != r.CodiShown) equip.Reapply(r.Visual, LookOf(r));
+            if (OutfitShown(r.CodiStart, r.CodiEnd) != r.CodiShown) Redress(r);
         ArmCodi();
     }
 
@@ -665,7 +681,7 @@ public sealed partial class RemoteLayer : Node3D
     {
         if (!users.TryGetValue(t.ActorId, out var r)) return false;
         r.CodiStart = t.Start; r.CodiEnd = t.End;
-        equip.Reapply(r.Visual, LookOf(r));
+        Redress(r);
         ArmCodi();
         return true;
     }
