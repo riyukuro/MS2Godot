@@ -43,8 +43,9 @@ public partial class FieldAudio
     /// elevation part of the pan (<see cref="Player3DOutput.ElevationScale"/>).</summary>
     public Vector3 ListenerUp { get; private set; }
 
-    /// <summary>The listener for this frame: at <see cref="Viewer"/> with the camera's facing; at the camera when there is
-    /// no viewer (Godot's own listener then).</summary>
+    /// <summary>The listener for this frame: at <see cref="Viewer"/> with the camera's facing; with no viewer where Godot
+    /// hears from, the viewport's current listener (the field's own, at the camera target, which stays where it was without
+    /// one: Field.cs) or else the camera.</summary>
     void UpdateListener()
     {
         var cam = GetViewport()?.GetCamera3D();
@@ -61,8 +62,9 @@ public partial class FieldAudio
             return;
         }
         if (listenerOn) { listener.ClearCurrent(); listenerOn = false; }
-        HasListener = cam != null;
-        if (cam != null) { ListenerAt = cam.GlobalPosition; ListenerRight = cam.GlobalBasis.X.Normalized(); ListenerUp = cam.GlobalBasis.Y.Normalized(); }
+        var heard = GetViewport()?.GetAudioListener3D() is { } other ? other.GlobalTransform : cam?.GlobalTransform;
+        HasListener = heard != null;
+        if (heard is { } h) { ListenerAt = h.Origin; ListenerRight = h.Basis.X.Normalized(); ListenerUp = h.Basis.Y.Normalized(); }
     }
     Transform3D lastListener;
 
@@ -114,6 +116,9 @@ public partial class FieldAudio
             if (gains3d.PanChanged(slot, out float pan)) v.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
             return;
         }
+        // no curve: a clip with no event. Every clip the game plays on a 3D voice is an event's (SoundLibrary.ResolveEvent,
+        // which takes the event's curve) and every 3D event has one (DistanceRolloffTests), so no 3D event of MS2's data
+        // comes here; Godot's own pan with no elevation scale is left for a clip made some other way
         gains3d.Clear(slot);
         if (clip.Is2D)
         {

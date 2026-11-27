@@ -162,6 +162,7 @@ public partial class AmbientSounds : Node3D
             player.AttenuationFilterDb = 0;   // Godot shelves the highs by the volume too (Player3DOutput)
             player.PanningStrength = 0;
         }
+        // else Godot's inverse distance and pan: a 3D event with no curve, which MS2's data has none of (DistanceRolloffTests)
         AddChild(player);
         Count++;
         Live++;
