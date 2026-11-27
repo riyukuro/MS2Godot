@@ -175,6 +175,21 @@ public class KeyInputTests
     }
 
     [Test]
+    public void AClosedDialogsLateUnloadDoesNotGiveBackAReopenedDialogsLayer()
+    {
+        // closed with the tween, reopened under the same type id before the old movie's onendclose fires Unloaded
+        var old = (ModalDialogController)RuntimeHelpers.GetUninitializedObject(typeof(BillDialogController));
+        var again = (ModalDialogController)RuntimeHelpers.GetUninitializedObject(typeof(BillDialogController));
+        old.SetEntityVisible(true);
+        old.SetEntityVisible(false);
+        again.SetEntityVisible(true);
+        old.Release();                                // the old instance's late Unloaded
+        Assert.That((InputBlock.OwnKeysBlocked, InputBlock.ActionKeys, ModalDialogController.ModalDialogId), Is.EqualTo((true, false, again.TypeId)), "the reopened dialog still holds the keys");
+        again.Release();
+        Assert.That((InputBlock.OwnKeysBlocked, InputBlock.ActionKeys, ModalDialogController.IsModalDialogShown), Is.EqualTo((false, true, false)));
+    }
+
+    [Test]
     public void ASecondModalDialogKeepsTheHoldWhenTheFirstCloses()
     {
         var a = (ModalDialogController)RuntimeHelpers.GetUninitializedObject(typeof(BillDialogController));

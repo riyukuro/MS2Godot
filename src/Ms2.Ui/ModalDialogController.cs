@@ -19,11 +19,18 @@ public abstract class ModalDialogController : UiController
     /// <summary>vfunc_48: the dialog's UI type id, its layer in s_keyInput.</summary>
     public abstract int TypeId { get; }
 
+    /// <summary>This instance took the layer and has not given it back. A dialog that closes with its tween and is reopened under the
+    /// same type id fires the old instance's Unloaded after the new one took the layer; without this the old one's Release
+    /// would erase the new one's layer (the client has one dialog object per id, so it has no such race).</summary>
+    bool tookLayer;
+
     protected ModalDialogController() { Unloaded += Release; }
 
     /// <summary>vfunc_8's visibility: vfunc_47(nVisible == 0), then the modal dialog id.</summary>
     public override void SetEntityVisible(bool visible)
     {
+        if (!visible && !tookLayer) return;
+        tookLayer = visible;
         KeyInput.MoveAndAttack(!visible, TypeId);
         if (visible) ModalDialogId = TypeId;
         else ClearModalDialogId();
@@ -37,8 +44,10 @@ public abstract class ModalDialogController : UiController
     }
 
     /// <summary>vfunc_68 (@0x141a555e0) is vfunc_8(0): the layers are given back (a layer that is not held changes nothing).</summary>
-    void Release()
+    internal void Release()
     {
+        if (!tookLayer) return;
+        tookLayer = false;
         KeyInput.MoveAndAttack(true, TypeId);
         ClearModalDialogId();
     }
