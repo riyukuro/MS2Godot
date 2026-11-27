@@ -153,7 +153,8 @@ public sealed partial class PlayerNameTag : CanvasLayer
         var anchor = DummyAnchor.Point(dummies, "Eff_UI", model, player.RootName) ?? player.GlobalPosition;
         Anchor = anchor;
         var ride = Ride;
-        bool on = !camera.IsPositionBehind(anchor) && ride is not { NameTagHide: true };   // vfunc_8 (uinametag.cpp:327-333)
+        bool on = !camera.IsPositionBehind(anchor) && ride is not { NameTagHide: true }   // vfunc_8 (uinametag.cpp:327-333)
+            && !player.HidesNameTag;                                                     // :334, uihudentity.cpp:200-210
         node.Visible = on;
         if (!on) return;
         var p = camera.UnprojectPosition(anchor);

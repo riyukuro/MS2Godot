@@ -654,12 +654,12 @@ public partial class RemoteRideCheck : Node3D
         bool rOn = Ride(hide.Data.Id), rOff = Off(), pOn = Ride(plain.Data.Id), pOff = Off();
         if (rOn || !rOff || !pOn || !pOff) fails.Add($"remote hideRider {hide.Data.Id}: shown riding {rOn}, after {rOff}; plain {plain.Data.Id} riding {pOn}, after {pOff}");
         pc.RideOn(hide);
-        bool oOn = pc.Visual.Visible, mountShown = hide.Visual.Visible;
+        bool oOn = pc.Visual.Visible, mountShown = hide.Visual.Visible, tagKept = !pc.HidesNameTag;   // uihudentity.cpp:200-207
         pc.RideOn(plain);                     // RideOn rides the old mount off first
         bool oSwap = pc.Visual.Visible;
         pc.RideOff();
         bool oOff = pc.Visual.Visible;
-        if (oOn || !mountShown || !oSwap || !oOff) fails.Add($"own hideRider: shown riding {oOn} (mount {mountShown}), plain after swap {oSwap}, after {oOff}");
+        if (oOn || !mountShown || !tagKept || !oSwap || !oOff) fails.Add($"own hideRider: shown riding {oOn} (mount {mountShown}, name tag {tagKept}), plain after swap {oSwap}, after {oOff}");
         GD.Print($"remote ride: hideRider {hide.Data.Id} hides the rider ({!rOn}, own {!oOn}), shown after ride off ({rOff}, own {oOff}); plain {plain.Data.Id} shown");
     }
 
@@ -667,7 +667,8 @@ public partial class RemoteRideCheck : Node3D
     /// of kind 3 to hide and a remove of it to show): FieldPropertyHideMyPCCli::vfunc_4 / vfunc_5 (fieldpropertycli.cpp:146-171)
     /// add and remove hide reason 1 on the local player and its ridee; ApplyHideReasons hides the body and turns its simple
     /// shadow off (pcbase.cpp:1188-1203); a rider that has the reason gets on with its ridee hidden (pcbase.cpp:3334-3335);
-    /// a remove of a kind not registered does nothing, and ClearFieldProperties (a field leave) unapplies it.</summary>
+    /// a remove of a kind not registered does nothing, and ClearFieldProperties (a field leave) unapplies it. The hidden own pc
+    /// has no name tag while its ridee is hidden too (UIHudEntity::Entity::vfunc_8, uihudentity.cpp:200-210).</summary>
     void HideMyPC(Player pc)
     {
         const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
@@ -682,18 +683,18 @@ public partial class RemoteRideCheck : Node3D
             string at = profile.IsGms2 ? "GMS2" : "KMS";
             bool Shown() => pc.Visual.Visible && !own.Off && !pc.IsHidden;
             Recv("0203");
-            bool removeNothing = Shown();
+            bool removeNothing = Shown() && !pc.HidesNameTag;
             Recv("0103");
-            bool hidden = !pc.Visual.Visible && own.Off && pc.HasHideReason(Player.HideReasonField);
+            bool hidden = !pc.Visual.Visible && own.Off && pc.HasHideReason(Player.HideReasonField) && pc.HidesNameTag;
             Recv("0203");
-            bool back = Shown();
+            bool back = Shown() && !pc.HidesNameTag;
             Recv("0001000000" + "03");
             bool listHidden = !pc.Visual.Visible && own.Off;
             pc.RideOn(plain);
             var ms = plain.Visual.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode);
-            bool mountHidden = plain.Hidden && !plain.Visual.Visible && ms is { Off: true };
+            bool mountHidden = plain.Hidden && !plain.Visual.Visible && ms is { Off: true } && pc.HidesNameTag;
             Recv("0203");
-            bool mountBack = !plain.Hidden && plain.Visual.Visible && ms is { Off: false } && pc.Visual.Visible;
+            bool mountBack = !plain.Hidden && plain.Visual.Visible && ms is { Off: false } && pc.Visual.Visible && !pc.HidesNameTag;
             Recv("0103");
             bool mountHiddenRiding = plain.Hidden && !plain.Visual.Visible && !pc.Visual.Visible;
             ls.FieldProperties.Clear();
@@ -703,7 +704,7 @@ public partial class RemoteRideCheck : Node3D
             if (!removeNothing || !hidden || !back || !listHidden || !mountHidden || !mountBack || !mountHiddenRiding || !cleared)
                 fails.Add($"hide my pc {at}: remove unregistered {removeNothing}, hidden {hidden}, back {back}, list {listHidden}, mount on hidden {mountHidden}, "
                     + $"mount back {mountBack}, add riding {mountHiddenRiding}, field leave {cleared}");
-            else GD.Print($"remote ride: hide my pc {at}: kind 3 hides the own pc, its shadow and its mount {plain.Data.Id}; its remove and a field leave show them");
+            else GD.Print($"remote ride: hide my pc {at}: kind 3 hides the own pc, its shadow, its name tag and its mount {plain.Data.Id}; its remove and a field leave show them");
         }
     }
 

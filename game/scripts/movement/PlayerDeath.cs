@@ -117,6 +117,12 @@ public partial class Player
     /// <summary>The hide reason of the field's HideMyPC property (field property 3).</summary>
     public const int HideReasonField = 1;
 
+    /// <summary>UIHudEntity::Entity::vfunc_8 (uihudentity.cpp:200-210, called with IsDead from UINameTag::Entity::vfunc_8,
+    /// uinametag.cpp:334): a body hidden by vfunc_23(1) (GameObject m_unk_b0, FUN_14123c660) that is not dead has no name
+    /// tag, unless it rides a ridee that is shown (a hideRider mount alone keeps the tag).</summary>
+    public bool HidesNameTag => Visual is { Visible: false } && !DeadFlag && State != MoveState.Dead
+        && Mount?.Visual is not { Visible: true };
+
     /// <summary>FieldPropertyHideMyPCCli::vfunc_4 (@0x140b27700) / vfunc_5 (@0x140b27790), fieldpropertycli.cpp:146-171, on
     /// the local player: AddHideReason(1) or RemoveHideReason(1), then the same on its ridee when it rides.</summary>
     public void SetHideMyPC(bool on)
