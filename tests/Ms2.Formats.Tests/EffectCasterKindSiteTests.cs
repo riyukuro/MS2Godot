@@ -139,6 +139,20 @@ public class EffectCasterKindSiteTests
         new("net/RemoteLayer.Magics.cs", "RegionFx?.Spawn(effect, new Ms2.Formats.Model.Xform(new Ms2.Formats.Model.Vec3(at.X, at.Y, at.Z)",
             "RegionSkills.Spawn: CasterSystem",
             "0: CoupleEffectSystem::SpawnEffect's effect at the pair's middle, the request's +8 0 (unit_140b0e5f0_coupleeffectsystem.cpp:214-218)"),
+        // the combat sounds: the hit sound takes the record owner's GetObjectKind (worldservice_1.cpp:6304; PlayHitSound
+        // effectservice.cpp:1355), an event voice its actor's (PlayEventVoice effectservice.cpp:1381)
+        new("net/RemoteLayer.CombatSounds.cs", "audio.PlayHitSound(dot.Attack,", "ownerKind",
+            "the owner's GetObjectKind (CombatVoice.ObjectKind: own PC 1, other PC 3, npc 5, boss 6, none 0): a dot's hit sound on an npc (CNpc::vfunc_34, unit_14108e1e0_npcactorandvibrate.cpp:1927-1935)"),
+        new("net/RemoteLayer.CombatSounds.cs", "audio.PlayHitSound(hit.Attack,", "ownerKind",
+            "the owner's GetObjectKind (CombatVoice.ObjectKind): a PC's cast, dot or splash hit sound (PC::vfunc_33 / 34 / 35, pc.cpp:955-957, :990-998, :1078-1080)"),
+        new("net/RemoteLayer.CombatSounds.cs", "CasterMyPc, body.GlobalPosition", "Ms2.Audio.SoundMusicEffectState.CasterMyPc",
+            "1: myPC_Dead, its actor the own PC (PC::FUN_141653740, pc.cpp:1173)"),
+        new("net/RemoteLayer.CombatSounds.cs", "CasterMyPc, me.GlobalPosition", "Ms2.Audio.SoundMusicEffectState.CasterMyPc",
+            "1: otherPC_Kill, its actor the owner, the own PC (PC::FUN_141653740, pc.cpp:1173)"),
+        new("net/RemoteLayer.CombatSounds.cs", "CasterOtherPc, o.Visual.GlobalPosition", "Ms2.Audio.SoundMusicEffectState.CasterOtherPc",
+            "3: otherPC_Kill, its actor the owner, another PC; the rows are onlyCasterMyPC, so the client plays none (effectservice.cpp:1371)"),
+        new("net/NpcLayer.cs", "CasterMyPc, player, player)", "Ms2.Audio.SoundMusicEffectState.CasterMyPc",
+            "1: Boss_Kill / Boss_EndKill, played for the own PC (CNpc::vfunc_33, unit_14108e1e0_npcactorandvibrate.cpp:1889-1902)"),
     };
 
     static readonly Regex Entry = new(
