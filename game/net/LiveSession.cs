@@ -1968,6 +1968,7 @@ public partial class LiveSession : Node
         fieldBuilder = builder;
         FieldProperties.Lights = field;   // the field's ambient and sun light entities: stored light records apply now
         if (field.TriggerCamera != null) field.TriggerCamera.LocalCamerasOn = FieldProperties.LocalCamerasOn;   // CameraMgr m_24c is not the field's: the list's kind 10 may have come first
+        FieldProperties.Scene = field;    // its MS2PhysXScene: a stored gravity record applies now
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         if (pendingBackground != null) { ShowBackground(field, pendingBackground); pendingBackground = null; }

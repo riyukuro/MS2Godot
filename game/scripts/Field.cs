@@ -15,7 +15,7 @@ namespace Ms2Godot;
 /// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).
 /// </summary>
-public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFollow, Ms2.Ui.ILocalCameraTarget, ITargetCameraView, Ms2.Ui.Hud.IFieldLights
+public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFollow, Ms2.Ui.ILocalCameraTarget, ITargetCameraView, Ms2.Ui.Hud.IFieldLights, Ms2.Ui.Hud.IFieldScene
 {
     /// <summary>The field a session opens in when nothing names another (Tria): the setup step builds its navmesh.</summary>
     public const string StartField = "02000001_tw_tria";
@@ -581,6 +581,26 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         }
     }
 
+    bool hasPhysXScene;
+    /// <summary>The scene gravity set after the field was built (units/s^2), for the other players' controllers.</summary>
+    public System.Action<float> SceneGravitySet;
+
+    /// <summary>The field property of kind 1 (WorldService::SetGravity, worldservice_1.cpp:5268-5289): the field's MS2PhysXScene
+    /// Gravity becomes (0, 0, z), which every controller's GetGravity(false) reads (gameobjectcontrollerphysxhelpers.cpp:393-405):
+    /// the jump speed sqrt(2 * 2h * -g) and its apex (:314-319), the jump curve (:361) and the fall (:385-387). The PhysX to world
+    /// scale is 100. No scene entity: nothing changes.
+    /// STILL-OPEN: SetGravity skips an entity that holds model 0x7b4582d6 (unnamed); a zero or positive value makes the client's
+    /// jump speed the square root of zero or less, so ours keeps the gravity it has for it (no main quest field sends one).</summary>
+    bool Ms2.Ui.Hud.IFieldScene.SetGravity(float z)
+    {
+        if (!hasPhysXScene) return false;
+        if (!(z < 0f)) return true;
+        float g = z * 100f;
+        if (player != null) player.Gravity = g;
+        SceneGravitySet?.Invoke(g);
+        return true;
+    }
+
     /// <summary>The ambient and directional lights' Dimmer, times the HDR light scale <paramref name="k"/>.</summary>
     void SetSunAndAmbient(float k)
     {
@@ -746,6 +766,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         player.Cubes.Cells.InstallObjectOf = Net.LiveSession.InstallObjectOf;
         Movement.MoveConfig.LoadConstants(packs);
         player.Gravity = Movement.MoveConfig.FieldGravity(map);
+        hasPhysXScene = map.OfModel("MS2PhysXScene").Any();
         var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC")
               ?? map.Entities.FirstOrDefault(e => e.ModelName.StartsWith("SpawnPointPC"));
         var pos = sp?.Position ?? new Vec3(0, 0, 0);

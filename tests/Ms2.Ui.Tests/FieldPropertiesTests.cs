@@ -151,9 +151,41 @@ public class FieldPropertiesTests
     [Test]
     public void OnlyTheKindsWithAnApplyCountAsApplied()
     {
-        // fieldpropertycli.cpp: the hide (3), the tag symbols (5), the sight range (6), the lights (8, 9) and the local cameras (10)
+        // fieldpropertycli.cpp: the gravity (1), the hide (3), the tag symbols (5), the sight range (6), the lights (8, 9) and the local cameras (10)
         // have an apply here; the weather (7, :197) is kept in Weather but nothing changes the field's weather with it
         var applied = Enumerable.Range(0, 13).Where(k => FieldProperties.Applies((byte)k)).ToArray();
-        Assert.That(applied, Is.EqualTo(new[] { 3, 5, 6, 8, 9, 10 }));
+        Assert.That(applied, Is.EqualTo(new[] { 1, 3, 5, 6, 8, 9, 10 }));
+    }
+
+    sealed class Scene : IFieldScene
+    {
+        public bool Has = true;
+        public readonly List<float> Set = new();
+        public bool SetGravity(float z) { if (Has) Set.Add(z); return Has; }
+    }
+
+    [Test]
+    public void AGravityRecordSetsTheSceneGravityAndARemoveKeepsIt()
+    {
+        var f = new FieldProperties();
+        // before the field is built: stored, applied when the scene is set (the enter's list comes first)
+        f.Apply(new FieldPropertyMessage.List(new FieldProperty[] { new FieldProperty.Gravity(-25f) }));
+        var s = new Scene();
+        f.Scene = s;
+        Assert.That(s.Set, Is.EqualTo(new[] { -25f }));
+        f.Apply(new FieldPropertyMessage.Add(new FieldProperty.Gravity(-9.8f)));
+        Assert.That(s.Set, Is.EqualTo(new[] { -25f, -9.8f }));
+        // FieldPropertyGravityCli has no unapply (fieldpropertycli.h:15): the remove drops the record only
+        f.Apply(new FieldPropertyMessage.Remove(1));
+        Assert.That((s.Set.Count, f.Find(1)), Is.EqualTo((2, (FieldProperty)null)));
+        // other kinds do not touch the gravity
+        f.Apply(new FieldPropertyMessage.Add(new FieldProperty.Weather(2)));
+        Assert.That(s.Set.Count, Is.EqualTo(2));
+        // a new field: no old record applies to its scene
+        f.Apply(new FieldPropertyMessage.Add(new FieldProperty.Gravity(-39f)));
+        f.Clear();
+        var next = new Scene();
+        f.Scene = next;
+        Assert.That(next.Set, Is.Empty);
     }
 }

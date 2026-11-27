@@ -98,7 +98,7 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>Per gender: the body model, its action sequences and the animation library they are in, shared by the PCs
     /// of that gender (the first one's player loads them).</summary>
     readonly Dictionary<byte, (ModelData md, ActionAnims anims, AnimationLibrary lib)> bodies = new();
-    readonly float gravity;
+    float gravity;
     GroundEffectTable groundTable;
     World.GroundEffects groundFx;
     readonly Random groundRng = new();
@@ -474,9 +474,22 @@ public sealed partial class RemoteLayer : Node3D
         // GameObjectController::GetGravity: the field's scene gravity, as the field gives the local player
         // STILL-OPEN: a field without the local player (none in a live field) falls back to the default scene gravity
         gravity = field.GetNodeOrNull<Player>("Player")?.Gravity ?? MoveConfig.SceneGravity;
+        field.SceneGravitySet = SetGravity;
     }
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
+
+    /// <summary>The field's scene gravity changed (a field property of kind 1): the PCs and mounts here and the ones made later
+    /// read it, as every controller reads the one NxScene's gravity.</summary>
+    void SetGravity(float g)
+    {
+        gravity = g;
+        foreach (var r in users.Values)
+        {
+            r.Pc.Gravity = g;
+            if (r.Ridee != null) r.Ridee.Gravity = g;
+        }
+    }
 
     /// <summary>A damage number to show (UIDamageText::FUN_141911e90): the number, the npc hit (null when the target is
     /// not an npc) and the other player hit (null when the target is not one).</summary>

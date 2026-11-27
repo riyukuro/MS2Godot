@@ -40,7 +40,7 @@ public sealed partial class RemotePc : IRemotePc
     public Action<string, string, Vector3, float> Effects;
 
     // GameObjectController
-    readonly float gravity;
+    float gravity;
     Vector3 kVel;                          // m_kVelocity (Godot axes)
     float airTime; bool fallTimerRunning;  // m_kFallTimer
     bool jumping; float jumpV0, jumpApex, jumpTime, jumpH;
@@ -613,7 +613,9 @@ public sealed partial class RemotePc : IRemotePc
     // STILL-OPEN: the scale easing (PCBase::vfunc_97, pcbase.cpp:2504-2519, m_fScaleA8 / m_fScaleAC) is taken as 1f.
     public float ScaleAnimRate => 1f;
     public float AnimSpeed { get; set; } = 1f;
-    public float Gravity => gravity;
+    /// <summary>The scene gravity (units/s^2) its controller reads (GameObjectController::GetGravity(false)); a field property
+    /// of kind 1 sets it for every controller of the field.</summary>
+    public float Gravity { get => gravity; set => gravity = value; }
     public float JumpHeight => MoveConfig.JumpParam;
     public float AirSpeedScale => MoveConfig.FallMoveSpeed;
     public float TurnSpeed => MoveConfig.TurnSpeedDeg;

@@ -20,10 +20,14 @@ namespace Ms2.Ui.Hud;
 /// UpdateDirectionalLight @0x141bc51d0, worldservice_1.cpp:4362-4437, called from the world update at :9736). Neither light
 /// class overrides the unapply (vfunc_5 stays FieldProperty's empty @0x1403808d0, fieldpropertycli.h:12-22), so a remove or a
 /// clear only drops the record and stops a running fade: the light keeps the colour it has.
+/// Kind 1 sets the scene gravity through <see cref="Scene"/> (FieldPropertyGravityCli::vfunc_4, fieldpropertycli.cpp:140:
+/// WorldService::SetGravity @0x141bca3c0, worldservice_1.cpp:5268-5289, writes (0, 0, value) to the field's MS2PhysXScene
+/// Gravity and does nothing on a field without one). The class has no unapply (fieldpropertycli.h:15, MS2_FPCLI), so a remove
+/// keeps the gravity; a new field's scene starts from its own Gravity.
 /// Kind 3 hides the own player while it is registered (<see cref="HideMyPCApplied"/>): a list or an add applies it, and a
 /// remove or a clear unapplies it (RemoveFieldProperty and ClearFieldProperties call vfunc_5, worldservice_1.cpp:5354-5378).
 /// Kind 10 turns the field's automatic local cameras on or off (<see cref="LocalCamerasOn"/>).
-/// STILL-OPEN: the other kinds' effects (gravity, music concert, lock of the own player, user tag symbol, photo studio); the sight range's war fog and npc visibility (FUN_141bd6810's rest); the weather's world
+/// STILL-OPEN: the other kinds' effects (music concert, lock of the own player, user tag symbol, photo studio); the sight range's war fog and npc visibility (FUN_141bd6810's rest); the weather's world
 /// effect (CEffectService::FUN_1411a7e80).
 /// </summary>
 public sealed class FieldProperties
@@ -31,6 +35,7 @@ public sealed class FieldProperties
     readonly Dictionary<byte, FieldProperty> byKind = new();
     readonly Dictionary<byte, LightFade> fades = new();
     IFieldLights lights;
+    IFieldScene scene;
 
     /// <summary>The field's ambient and sun light entities (WorldService::FUN_141bd0420 with the model keys 0x169ea355 and
     /// 0x628f2cf9), null without a field. A light record applied while this is null does nothing, as in the client when the
@@ -46,6 +51,24 @@ public sealed class FieldProperties
             foreach (byte k in new byte[] { 8, 9 })
                 if (byKind.TryGetValue(k, out var p)) ApplyLight(p);
         }
+    }
+
+    /// <summary>The field's physics scene (the MS2PhysXScene entity SetGravity writes), null without a field. Setting it
+    /// applies a stored gravity record (the field is built after the record arrived).</summary>
+    public IFieldScene Scene
+    {
+        get => scene;
+        set
+        {
+            scene = value;
+            if (value != null && byKind.TryGetValue(1, out var p)) ApplyGravity(p);
+        }
+    }
+
+    /// <summary>Kind 1's apply: SetGravity of the record's value (fieldproperty.cpp:66 reads it as a raw f32).</summary>
+    void ApplyGravity(FieldProperty p)
+    {
+        if (p is FieldProperty.Gravity g) scene?.SetGravity(g.Value);
     }
 
     /// <summary>Applies one 0xCA message (null: the client did nothing).</summary>
@@ -70,17 +93,18 @@ public sealed class FieldProperties
         }
     }
 
-    /// <summary>The kinds whose apply this port has (each FieldPropertyXCli::vfunc_4 above, fieldpropertycli.cpp): the hide
-    /// (3), the tag symbols (5), the sight range (6), the two lights (8, 9) and the local cameras (10). The others are read
-    /// and kept but do nothing here: the gravity (1), the music concert (2), the lock of the own player (4), the weather (7:
+    /// <summary>The kinds whose apply this port has (each FieldPropertyXCli::vfunc_4 above, fieldpropertycli.cpp): the gravity
+    /// (1), the hide (3), the tag symbols (5), the sight range (6), the two lights (8, 9) and the local cameras (10). The others
+    /// are read and kept but do nothing here: the music concert (2), the lock of the own player (4), the weather (7:
     /// FieldPropertyWeatherCli::vfunc_4, fieldpropertycli.cpp:197, changes the effect service's weather; <see cref="Weather"/>
     /// holds the value and nothing applies it yet, FieldWeather's STILL-OPEN) and the photo studio (11).</summary>
-    public static bool Applies(byte kind) => kind is 3 or 5 or 6 or 8 or 9 or 10;
+    public static bool Applies(byte kind) => kind is 1 or 3 or 5 or 6 or 8 or 9 or 10;
 
     /// <summary>A record's vfunc_4, for the kinds the port applies.</summary>
     void ApplyOne(FieldProperty p)
     {
         ApplyLight(p);
+        ApplyGravity(p);
         if (p.Kind == 5) UserTagSymbolApplied?.Invoke();
         if (p is FieldProperty.HideMyPC) HideMyPCApplied?.Invoke(true);
         if (p is FieldProperty.EnableLocalCamera e) SetLocalCameras(e.Value);
@@ -116,7 +140,7 @@ public sealed class FieldProperties
     public void Clear()
     {
         foreach (var p in byKind.Values.ToArray()) Unapply(p);
-        byKind.Clear(); fades.Clear(); lights = null;
+        byKind.Clear(); fades.Clear(); lights = null; scene = null;
         LocalCamerasOn = true;   // CameraMgr::FUN_140aead90 on the same leave (worldservice_1.cpp:10103, camera.cpp:877)
     }
 
@@ -192,6 +216,14 @@ public interface IFieldLights
 {
     Vector3 Ambient { get; set; }
     Vector3 Sun { get; set; }
+}
+
+/// <summary>The field's physics scene: the MS2PhysXScene entity's Gravity, which the scene and every character controller of
+/// the field reads (GameObjectController::GetGravity(false), gameobjectcontrollerphysxhelpers.cpp:393-405).</summary>
+public interface IFieldScene
+{
+    /// <summary>WorldService::SetGravity: sets the scene's gravity z (m/s^2); false when the field has no scene entity.</summary>
+    bool SetGravity(float z);
 }
 
 /// <summary>One light's fade between field property records: from the colour it had when the record applied to the record's colour
