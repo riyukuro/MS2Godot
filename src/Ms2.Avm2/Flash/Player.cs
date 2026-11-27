@@ -1774,8 +1774,9 @@ namespace Ms2.Avm2.Flash
 
         /// <summary>
         /// A key from the host: keyDown/keyUp to the focus (or the stage); Tab moves focus; typed characters go to an input field.
-        /// shift, ctrl and alt are the key event's modifiers (UpdateModifiers @0x1422DAD70), which CreateKeyboardEventObject
-        /// (@0x142467340) writes to the KeyboardEvent; Shift (16), Control (17) and Alt (18) themselves set or clear the
+        /// shift, ctrl and alt are the key event's modifiers (UpdateModifiers @0x1422DAD70), kept in the event's
+        /// EventId.KeysState that the KeyboardEvent's altKey / ctrlKey / shiftKey getters read (sfr_as3_09.cpp:1718-1760;
+        /// CreateKeyboardEventObject @0x142467340 does not set them); Shift (16), Control (17) and Alt (18) themselves set or clear the
         /// keyboard state's key (<see cref="ShiftKeyDown"/>) the mouse events read.
         /// </summary>
         public void Key(uint keyCode, uint charCode, bool down, bool shift = false, bool ctrl = false, bool alt = false)
