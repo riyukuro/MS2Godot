@@ -71,4 +71,25 @@ public class ProfileSelectionTests {
             Assert.That(r.Length - r.Position, Is.EqualTo(0));
         }
     }
+
+    /// <summary>The GMS2 client has no ChangeAttributes keep, select or opened send (its 0x76 sends are modes 0, 2, 5 and 6): on a GMS2
+    /// session those send nothing, the remake and the apply go out, and a KMS session sends all of them.</summary>
+    [Test]
+    public async Task ChangeAttributesSendsOnlyTheModesTheProfileHas() {
+        foreach (var (version, gms2) in new[] { (12u, true), (2525u, false) }) {
+            var io = new MemoryStream();
+            io.Write(Hello(version));
+            io.Position = 0;
+            var ch = new MapleChannel(io);
+            ch.Profile = gms2 ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
+            await ch.ReadHandshakeAsync();
+            foreach (var (p, sent) in new (IOutPacket, bool)[] {
+                (ChangeAttributesRequest.Opened(), !gms2), (ChangeAttributesRequest.Keep(), !gms2), (ChangeAttributesRequest.Select(6), !gms2),
+                (ChangeAttributesRequest.Remake(5), true), (ChangeAttributesRequest.Apply(5), true) }) {
+                long before = io.Length;
+                await ch.SendAsync(p);
+                Assert.That(io.Length > before, Is.EqualTo(sent), $"{(gms2 ? "GMS2" : "KMS")} {p}");
+            }
+        }
+    }
 }

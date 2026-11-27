@@ -18,6 +18,8 @@ public interface IOutPacket {
 /// <summary>An outbound packet whose layout depends on the protocol profile; the channel writes it with its own profile.</summary>
 public interface IProfileOutPacket : IOutPacket {
     void Write(ByteWriter w, ProtocolProfile profile);
+    /// <summary>False when the profile's client has no such send: the channel then sends nothing.</summary>
+    bool SentOn(ProtocolProfile profile) => true;
 }
 
 /// <summary>
@@ -165,5 +167,6 @@ public sealed class MapleChannel {
     }
 
     public Task SendAsync(IOutPacket packet, CancellationToken ct = default) =>
-        packet is IProfileOutPacket pp ? SendAsync(packet.Op, w => pp.Write(w, Profile), ct) : SendAsync(packet.Op, packet.Write, ct);
+        packet is not IProfileOutPacket pp ? SendAsync(packet.Op, packet.Write, ct)
+        : pp.SentOn(Profile) ? SendAsync(packet.Op, w => pp.Write(w, Profile), ct) : Task.CompletedTask;
 }

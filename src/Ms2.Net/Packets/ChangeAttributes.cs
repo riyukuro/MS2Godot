@@ -60,14 +60,23 @@ public readonly record struct RemakeLock(byte Index, short Value);
 /// 0 remake (SendRemakeRequest @0x1412a2380, RemakeOption::vfunc_1): i64 uid, i64 0, u8 count, then u8 index and i16 value each;
 /// 2 apply the new options (OnClickApply @0x14129ed90, ApplyOptionBase): i64 uid; 3 keep the old ones: u8 1;
 /// 4 select the item (SendChangeAttributesMode4): i64 uid; 6 the dialog opened (OnLoadComplete @0x14129d2c0): u8 1.
+/// GMS2: the GMS2 client's 0x76 sends are modes 0 (writer @0x140391d80: the KMS layout), 2 (@0x140392410: i64), 5 (@0x140391fe0)
+/// and 6 (@0x140392300: i64, i32, the KMS mode 8 ForceFill); the upstream server's ChangeAttributesHandler reads the same four.
+/// It has no keep, select or opened send, so modes 3, 4 and 6 are not sent on GMS2 (a GMS2 6 is ForceFill with an i64 and an i32).
+/// STILL-OPEN: the GMS2 dialog's own flow (its mode 5 send and its receive kinds 1, 2, 4, 6 and 9, UIItemRemakeOptionDialog
+/// vfunc_79 @0x1409eaaf0) is not ported; GMS2 uses the KMS flow minus those sends.
 /// </summary>
-public sealed record ChangeAttributesRequest(byte Mode, long Uid = 0, RemakeLock[] Locks = null) : IOutPacket {
+public sealed record ChangeAttributesRequest(byte Mode, long Uid = 0, RemakeLock[] Locks = null) : IProfileOutPacket {
     public Outbound Op => Outbound.ChangeAttributes;
     public static ChangeAttributesRequest Remake(long uid, params RemakeLock[] locks) => new(0, uid, locks);
     public static ChangeAttributesRequest Apply(long uid) => new(2, uid);
     public static ChangeAttributesRequest Keep() => new(3);
     public static ChangeAttributesRequest Select(long uid) => new(4, uid);
     public static ChangeAttributesRequest Opened() => new(6);
+
+    public bool SentOn(ProtocolProfile profile) => !profile.IsGms2 || Mode is 0 or 2;
+
+    public void Write(ByteWriter w, ProtocolProfile profile) => Write(w);
 
     public void Write(ByteWriter w) {
         w.WriteByte(Mode);
