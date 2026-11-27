@@ -62,6 +62,7 @@ public sealed partial class RemoteLayer
         try { m = Mount.Load(packs, builder, a.RideId, r.Gender); }
         catch (Exception ex) { GD.PushWarning($"live: riding {a.RideId} of {r.Name}: {ex.Message}"); return; }
         var ridee = RemotePc.CreateRidee($"Ridee{r.ObjectId}", m, gravity, r.Pc.Body.Position + Vector3.Up * 25f, r.Pc.RotationZ, faceGrids);
+        ridee.Platforms = LiveSession.Instance?.Breakables;   // Ridee is a PCBase (ridee.h:39): its frame rides a moving marker too (vfunc_68)
         AddChild(ridee.Body);
         // Ridee::vfunc_49 (ridee.cpp:848-858): its own CObjectShadow of the PC row, the row's shadow scale, lifted 1
         FieldShadows.Character(ridee.Body, m.Visual, Ms2.Formats.Options.GraphicOptionTable.PC, m.Data.ShadowScale, 1f);

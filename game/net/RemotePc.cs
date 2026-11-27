@@ -50,7 +50,7 @@ public sealed partial class RemotePc : IRemotePc
     int hitGroup = -1; ulong hitOwner;
     string hitBreakable;                   // that owner's breakable marker (FindMarkerByEntity), null: none
     readonly Ms2.Ui.PlatformCarry carry = new();
-    /// <summary>The session's breakable markers, for the platform carry; null: none (a ridee).</summary>
+    /// <summary>The session's breakable markers, for the platform carry (a PC's and a ridee's: Ridee is a PCBase, ridee.h:39); null: none.</summary>
     public Ms2.Ui.BreakableObjects Platforms;
     // the sequence the states asked for
     int currentAct = -1; string currentName; double lastPos = -1;
