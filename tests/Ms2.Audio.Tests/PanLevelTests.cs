@@ -568,4 +568,52 @@ public class PanLevelTests
             Assert.That(upDb, Is.EqualTo(flatDb).Within(1e-5f), "volume");
         }
     }
+    /// <summary>Godot's far / near for a sound 45 degrees to the side in the listener's plane, recorded at strengths 1, 0.866
+    /// and 0.5 (the meso pickup at 500 on the Dummy driver's capture): 1 - s g with g 0.366 to 0.367, so linear in s.</summary>
+    static readonly (float s, float q)[] GodotAt45 = { (0, 1), (0.5f, 0.8170f), (0.866f, 0.6819f), (1, 0.6338f) };
+
+    /// <summary>
+    /// The probe's numbers for a sound above or below the listener: the meso pickup at 500, 45 degrees to the side and 30 up
+    /// or down, has a left share of 0.6900 in FMOD's render at camera pitches 0, 30, 45 and 60, and 0.7199 on the ground. The
+    /// port's strength there (the pan level at 500 times the elevation scale) through Godot's recorded far / near at 45
+    /// degrees in the listener's plane gives FMOD's share within 0.003 (Godot's recording 0.6917); without the scale it was
+    /// 0.7237, over-panned by 0.034.
+    /// </summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void ElevatedSoundSharesAsFmodsRender(string variable)
+    {
+        var c = Event(variable, "Item", "09200002");
+        var eye = new Vector3(10, 120, -40);
+        Assert.That(Player3DOutput.PanBasis(Vector3.UnitX, out var r, out var u, out _), Is.True);
+        var flat = new Vector3(MathF.Sqrt(0.5f), 0, -MathF.Sqrt(0.5f));   // 45 degrees right of the level facing (-Z)
+        float el = MathF.PI / 6;
+        float full = Player3DOutput.PanningStrength(c.PanLevelAt(500));
+        foreach (var (src, fmod) in new[] { (eye + 500 * flat, 0.7199f),
+                     (eye + 500 * (MathF.Cos(el) * flat + MathF.Sin(el) * Vector3.UnitY), 0.6900f),
+                     (eye + 500 * (MathF.Cos(el) * flat - MathF.Sin(el) * Vector3.UnitY), 0.6900f) })
+        {
+            Assert.That(Player3DOutput.GodotPanSide(src, eye, r, u), Is.EqualTo(0.7071f).Within(1e-4f));
+            float s = full * Player3DOutput.ElevationScale(src, eye, u);
+            // the level row keeps the 0.004 the in-plane pan has at 45 degrees (MesoPickupPansLikeFmod)
+            Assert.That(GodotShareAt45(s), Is.EqualTo(fmod).Within(fmod < 0.7f ? 0.003f : 0.0045f), $"strength {s:F3}");
+            if (fmod < 0.7f) Assert.That(GodotShareAt45(full) - fmod, Is.GreaterThan(0.03f), "without the scale");
+        }
+    }
+
+    /// <summary>The near channel's power share at 45 degrees in the listener's plane for strength <paramref name="s"/>.</summary>
+    static float GodotShareAt45(float s)
+    {
+        float q = GodotAt45[^1].q;
+        for (int i = 1; i < GodotAt45.Length; i++)
+            if (s <= GodotAt45[i].s)
+            {
+                var (s0, q0) = GodotAt45[i - 1];
+                var (s1, q1) = GodotAt45[i];
+                q = q0 + (q1 - q0) * (s - s0) / (s1 - s0);
+                break;
+            }
+        if (s > 1) q = 1 - s * (1 - GodotAt45[^1].q);   // linear past the last recorded strength
+        return 1 / (1 + q * q);
+    }
 }
