@@ -60,7 +60,7 @@ public sealed partial class EffectInstance : Node3D
         // per particle its rotation axis (null without "Has Rotation Axes"); per generation each master node's parent slot
         // in MasterNodes, each master mesh's node slot, and the material its clones share when nothing animates it
         public Clone[] Clones; public System.Numerics.Vector3[] RotAxis;
-        public int[][] ParentSlot, MeshSlot; public ShaderMaterial[][] SharedMat;
+        public int[][] ParentSlot, MeshSlot; public ShaderMaterial[][] SharedMat, SharedGlow;
         public bool ClonesOk;                                     // the kernel that ran is ported (SetupClones)
         public bool Refused, Shown = true;                        // the quads' generator refuses the system; Node.Visible as last set
         public double LastScaled = double.NegativeInfinity;      // the reset controller's last scaled time (ParticleSystemDef.ResetCtl)
@@ -587,19 +587,28 @@ void fragment() {
     /// The meshes are the client's glow-click ones (EffectMesh.GlowMask). The particle systems never join: the client's
     /// NiPSParticleSystem::LoadBinary sets NiAVObject flag 0x400 on every system it streams (exe 0x141e9b64e), and the
     /// glow-click predicate turns 0x400 objects away first (FUN_1414cffc0 through FUN_14098dfc0,
-    /// ms2materialswapprocessor.cpp:158-170).</summary>
-    void GlowTwin(MeshState ms)
+    /// ms2materialswapprocessor.cpp:158-170). A mesh particle's clones do join: the swap runs on each object of the visible
+    /// array (MS2MaterialSwapProcessor, ms2materialswapprocessor.cpp:100-115), where the clones stand as their own meshes
+    /// (the particle container's OnVisible, NiPSMeshParticleSystem.cpp:459-463), copies of a master (Clone, :223, :263) that
+    /// is a plain mesh without flag 0x400. <paramref name="shared"/> is the mask material of a clone sharing its colour
+    /// material (SharedMat); the twin then draws through it and sets nothing on it. Returns the twin's material, or null.</summary>
+    ShaderMaterial GlowTwin(MeshState ms, ShaderMaterial shared = null)
     {
         var m = ms.Def.Mesh;
-        if (!GlowPass.Wanted || !ms.Def.GlowMask || mb.Texture(m.Textures["glow"]) == null) return;
-        var gm = new ShaderMaterial { Shader = MaskShader(m, false, ms.MorphTargets), RenderPriority = ms.Mat.RenderPriority };
-        foreach (var name in MaskUniforms(gm.Shader))
+        if (!GlowPass.Wanted || !ms.Def.GlowMask || mb.Texture(m.Textures["glow"]) == null) return null;
+        var gm = shared;
+        if (gm == null)
         {
-            var v = ms.Mat.GetShaderParameter(name);
-            if (v.VariantType != Variant.Type.Nil) gm.SetShaderParameter(name, v);
+            gm = new ShaderMaterial { Shader = MaskShader(m, mirrored, ms.MorphTargets), RenderPriority = ms.Mat.RenderPriority };
+            foreach (var name in MaskUniforms(gm.Shader))
+            {
+                var v = ms.Mat.GetShaderParameter(name);
+                if (v.VariantType != Variant.Type.Nil) gm.SetShaderParameter(name, v);
+            }
         }
         ms.Glow = gm;
         ms.Node.AddChild(new MeshInstance3D { Mesh = ms.Node.Mesh, MaterialOverride = gm, Name = ms.Node.Name + "_glow", Layers = GlowPass.Bit, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+        return gm;
     }
 
     static readonly Dictionary<Shader, StringName[]> maskUniforms = new();
@@ -962,7 +971,11 @@ void fragment() {
                 foreach (var cl in ps.Clones)
                     if (cl != null)
                         foreach (var ms in cl.Meshes)
-                            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
+                            if (ms.Def.Mesh.Cull != FaceCull.None)
+                            {
+                                ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
+                                if (ms.Glow != null) ms.Glow.Shader = MaskShader(ms.Def.Mesh, mirrored, ms.MorphTargets);
+                            }
         // the quads of every other system (a mesh-particle system has no quad material: its clones above keep their mesh's cull)
         foreach (var ps in systems)
             if (!ps.Def.MeshParticles && ps.Def.Material.Mesh.Cull != FaceCull.None) ps.Mat.Shader = PartShader(ps.Def, mirrored);
@@ -1561,7 +1574,7 @@ void fragment() {
         int n = ps.Pos.Length, gens = d.MasterNodes.Length;
         ps.Clones = new Clone[n];
         if (d.HasRotationAxes) ps.RotAxis = new System.Numerics.Vector3[n];
-        ps.ParentSlot = new int[gens][]; ps.MeshSlot = new int[gens][]; ps.SharedMat = new ShaderMaterial[gens][];
+        ps.ParentSlot = new int[gens][]; ps.MeshSlot = new int[gens][]; ps.SharedMat = new ShaderMaterial[gens][]; ps.SharedGlow = new ShaderMaterial[gens][];
         for (int g = 0; g < gens; g++)
         {
             var nodes = d.MasterNodes[g]; var mi = d.MasterMeshes[g];
@@ -1569,7 +1582,7 @@ void fragment() {
             for (int k = 0; k < nodes.Length; k++) par[k] = Array.IndexOf(nodes, scene.Nodes[nodes[k]].Parent);
             var slot = ps.MeshSlot[g] = new int[mi.Length];
             for (int j = 0; j < mi.Length; j++) slot[j] = Array.IndexOf(nodes, scene.Meshes[mi[j]].Node);
-            ps.SharedMat[g] = new ShaderMaterial[mi.Length];
+            ps.SharedMat[g] = new ShaderMaterial[mi.Length]; ps.SharedGlow[g] = new ShaderMaterial[mi.Length];
         }
         ps.ClonesOk = gens > 0 && d.NormalMethod == AlignedQuad.LocalFixed && d.UpMethod == AlignedQuad.LocalFixed
                       && (!d.HasRotations || d.HasRotationAxes);
@@ -1597,18 +1610,21 @@ void fragment() {
     }
 
     /// <summary>A new clone of generation g's master: its meshes, hidden until DrawClones places them. A master mesh no
-    /// controller animates draws through one material for every clone (SharedMat, made with the first).</summary>
+    /// controller animates draws through one material for every clone (SharedMat, made with the first), and so does its glow
+    /// twin (GlowTwin, SharedGlow).</summary>
     Clone BuildClone(PSys ps, int g)
     {
         var mi = ps.Def.MasterMeshes[g];
         var cl = new Clone { Gen = g, Meshes = new MeshState[mi.Length], World = new Transform3D[ps.Def.MasterNodes[g].Length] };
-        var shared = ps.SharedMat[g];
+        var shared = ps.SharedMat[g]; var sharedGlow = ps.SharedGlow[g];
         for (int j = 0; j < mi.Length; j++)
         {
             var em = scene.Meshes[mi[j]];
             bool anim = MeshAnimated(em);
             var ms = BuildMeshState(em, anim ? null : shared[j]);
             if (!anim && shared[j] == null) shared[j] = ms.Mat;
+            var gm = GlowTwin(ms, anim ? null : sharedGlow[j]);
+            if (!anim && sharedGlow[j] == null) sharedGlow[j] = gm;
             ms.Node.Visible = false;
             z.AddChild(ms.Node);
             cl.Meshes[j] = ms;

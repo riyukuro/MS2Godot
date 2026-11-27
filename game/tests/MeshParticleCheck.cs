@@ -16,6 +16,8 @@ namespace Ms2Godot.Tests;
 /// (PostUpdate, :376-436). A dead particle's clone is hidden (RemoveParticle, :326-340). Steps that reuse the pooled clones
 /// allocate 0 B, both when the masters share one material and when an alpha and a UV controller give each clone its own,
 /// run at the clone's age (StartAnimations, :229-300; most master meshes in the data are animated). Before the port the system drew its particles as quads and the master meshes statically.
+/// With a glow map on the masters each clone of a glow-click master (blended SRCALPHA / INVSRCALPHA) draws a glow-mask twin,
+/// shared with the clone's material or its own with it; an additive master's clone draws none (EffectInstance.GlowTwin).
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class MeshParticleCheck : Node
@@ -29,7 +31,7 @@ public partial class MeshParticleCheck : Node
         Ambient = new float[] { 0, 0, 0 }, Diffuse = new float[] { 0, 0, 0 }, Emissive = new float[] { 1, 1, 1 },
     };
 
-    static EffectScene Scene(double stop, bool animated = false, bool quads = false)
+    static EffectScene Scene(double stop, bool animated = false, bool quads = false, bool glow = false)
     {
         var sc = new EffectScene { Duration = 10 };
         // the system node turned a quarter about +Z (row-major: X goes to +Y)
@@ -38,6 +40,12 @@ public partial class MeshParticleCheck : Node
         sc.Nodes.Add(new EffectNode { Name = "leaf", Parent = 1, Local = Xform.Identity with { T = new Vec3(0, 0, Up) } });
         sc.Meshes.Add(new EffectMesh { Mesh = Quad("root"), Node = 1, Master = true });
         sc.Meshes.Add(new EffectMesh { Mesh = Quad("leaf"), Node = 2, Master = true });
+        if (glow)
+        {
+            // the root blends SRCALPHA / INVSRCALPHA (a glow-click mesh), the leaf SRCALPHA / ONE (not one)
+            foreach (var em in sc.Meshes) em.Mesh.Textures["glow"] = "glow.dds";
+            sc.Meshes[0].Mesh.AlphaFlags = 0xED; sc.Meshes[1].Mesh.AlphaFlags = 0x100D;
+        }
         if (animated)
             foreach (var em in sc.Meshes)
             {
@@ -81,9 +89,23 @@ public partial class MeshParticleCheck : Node
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
 
-    EffectInstance Start(double stop, bool animated = false, bool quads = false, Node parent = null)
+    ModelBuilder glowMb;
+
+    // a builder whose texture cache holds the glow map (no game data here), as alpha_render does
+    ModelBuilder GlowBuilder()
     {
-        var fx = new EffectInstance(Scene(stop, animated, quads), new ModelBuilder(null, null), 10, 1);
+        if (glowMb != null) return glowMb;
+        glowMb = new ModelBuilder(null, null);
+        var img = Image.CreateEmpty(4, 4, false, Image.Format.Rgba8);
+        img.Fill(Colors.White);
+        var cache = (Dictionary<string, Texture2D>)typeof(ModelBuilder).GetField("textures", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(glowMb);
+        cache["glow.dds"] = ImageTexture.CreateFromImage(img);
+        return glowMb;
+    }
+
+    EffectInstance Start(double stop, bool animated = false, bool quads = false, Node parent = null, bool glow = false)
+    {
+        var fx = new EffectInstance(Scene(stop, animated, quads, glow), glow ? GlowBuilder() : new ModelBuilder(null, null), 10, 1);
         (parent ?? this).AddChild(fx);
         fx.FileSpace = Transform3D.Identity;
         return fx;
@@ -159,6 +181,12 @@ public partial class MeshParticleCheck : Node
             fx.QueueFree();
         }
 
+        // glow-mask twins on the clones (the glow pass on for this part only)
+        bool wanted = GlowPass.Wanted;
+        GlowPass.Wanted = true;
+        try { Glow(fails); }
+        finally { GlowPass.Wanted = wanted; }
+
         // A mirrored world (an x-mirrored parent): the effect's culled sides swap when it enters the tree (_EnterTree). A
         // mesh-particle system builds no quad material, so the quad pass skips it and goes on to the quad system after it;
         // the clones made so far take the mirrored cull of their master meshes, and later ones take it as they are made.
@@ -174,6 +202,65 @@ public partial class MeshParticleCheck : Node
         Mirrored(fx, "clones made after it", fails);
         GD.Print($"mesh particle: mirrored: {before} clones before the move, {Shown(fx, fails).Count} after 50 steps");
         if (before == 0) fails.Add("mirrored: no clone made before the move");
+        flip.QueueFree();
+    }
+
+    /// <summary>The glow twin under a clone mesh: its one child on the glow layer, drawing the mask shader.</summary>
+    static MeshInstance3D Twin(MeshInstance3D m)
+    {
+        MeshInstance3D twin = null;
+        for (int i = 0; i < m.GetChildCount(); i++)
+            if (m.GetChild(i) is MeshInstance3D c && c.Layers == GlowPass.Bit) twin = c;
+        return twin;
+    }
+
+    void Glow(List<string> fails)
+    {
+        foreach (bool animated in new[] { false, true })
+        {
+            string path = animated ? "glow animated" : "glow shared";
+            var fx = Start(10, animated, glow: true);
+            for (int f = 0; f < 100; f++) fx._Process(0.02);
+            var live = Shown(fx, fails);
+            if (live.Count < 2) { fails.Add($"{path}: {live.Count} clones live"); fx.QueueFree(); continue; }
+            foreach (var (root, leaf) in live)
+            {
+                var t = Twin(root);
+                if (t == null) { fails.Add($"{path}: a blended clone with a glow map draws no glow-mask twin"); continue; }
+                if (t.Mesh != root.Mesh) fails.Add($"{path}: the twin draws another mesh");
+                if (t.MaterialOverride is not ShaderMaterial gm || !gm.Shader.Code.Contains("ALBEDO = mix(vec3(g)"))
+                    fails.Add($"{path}: the twin does not draw the glow mask");
+                else if (animated && (float)gm.GetShaderParameter("alpha") != (float)((ShaderMaterial)root.MaterialOverride).GetShaderParameter("alpha"))
+                    fails.Add($"{path}: twin alpha {gm.GetShaderParameter("alpha")}, the clone's {((ShaderMaterial)root.MaterialOverride).GetShaderParameter("alpha")}");
+                if (Twin(leaf) != null) fails.Add($"{path}: an additive clone draws a glow-mask twin");
+            }
+            var t0 = Twin(live[0].Root); var t1 = Twin(live[1].Root);
+            if (t0 != null && t1 != null && (t0.MaterialOverride == t1.MaterialOverride) == animated)
+                fails.Add(animated ? $"{path}: two animated clones share a mask material" : $"{path}: two clones of an unanimated master have their own mask materials");
+            long bytes = CheckAlloc.Least(() => { for (int i = 0; i < 50; i++) fx._Process(0.02); });
+            GD.Print($"mesh particle: {path}: {live.Count} clones with twins, 250 steps {bytes} B");
+            if (bytes != 0) fails.Add($"{path}: steps reusing pooled clones allocated {bytes} B");
+            fx.QueueFree();
+        }
+        // mirrored: the clones' twins take the mirrored cull too, before and after the move
+        var mfx = Start(10, glow: true);
+        for (int f = 0; f < 20; f++) mfx._Process(0.02);
+        var flip = new Node3D { Transform = new Transform3D(new Basis(new Vector3(-1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)), Vector3.Zero) };
+        AddChild(flip);
+        RemoveChild(mfx);
+        flip.AddChild(mfx);
+        for (int pass = 0; pass < 2; pass++)
+        {
+            int twins = 0;
+            foreach (var (root, _) in Shown(mfx, fails))
+                if (Twin(root) is { } t)
+                {
+                    twins++;
+                    if (!((ShaderMaterial)t.MaterialOverride).Shader.Code.Contains("cull_front")) fails.Add($"glow mirrored ({(pass == 0 ? "before" : "after")} the move): a twin keeps its unmirrored cull");
+                }
+            if (twins == 0) fails.Add("glow mirrored: no twin shown");
+            for (int f = 0; f < 50; f++) mfx._Process(0.02);
+        }
         flip.QueueFree();
     }
 
