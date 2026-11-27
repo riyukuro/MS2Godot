@@ -163,6 +163,7 @@ public class ShopAvatarTests
     [Test]
     public void ResetAndShowMyEquipResetTheCamera()
     {
+        // The start angle is the client's read-back of the field facing (GitHub issue #14): see AvatarControl.PlayerStartZ
         // ResetAvatarOutfit (@0x140d3f9a0) and FUN_140d3fa30 (@0x140d3fa30) end in ResetCamera (@0x140d3e130)
         Packs();
         var model = NewModel();
@@ -170,17 +171,17 @@ public class ShopAvatarTests
         c.OnCallback("OnAvatarMouseDown", new object[] { 1 });
         c.OnCallback("OnAvatarMouseMove", new object[] { 40, 20, 1 });
         var turned = c.Avatar.Angle;
-        Assert.That(turned, Is.Not.EqualTo((0f, 0f, 90f)));
+        Assert.That(turned, Is.Not.EqualTo((0f, 0f, AvatarControl.PlayerStartZ)));
         int resets = 0, turns = 0;
         c.Avatar.CameraReset += () => resets++;
         c.Avatar.Turned += () => turns++;
         c.OnCallback("onClickUnequipAll", Array.Empty<object>());
-        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 90f)), "the angle is back at the start");
+        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, AvatarControl.PlayerStartZ)), "the angle is back at the start");
         Assert.That((resets, turns), Is.EqualTo((1, 1)));
         c.OnCallback("OnAvatarMouseDown", new object[] { 1 });
         c.OnCallback("OnAvatarMouseMove", new object[] { 40, 20, 1 });
         c.OnCallback("onClickShowMyEquip", Array.Empty<object>());
-        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 90f)));
+        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, AvatarControl.PlayerStartZ)));
         Assert.That(resets, Is.EqualTo(2));
     }
 
