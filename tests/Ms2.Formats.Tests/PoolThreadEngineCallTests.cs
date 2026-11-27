@@ -23,6 +23,9 @@ public class PoolThreadEngineCallTests
             "the music decode: the stream build and the warning run under poolGate while poolClosed is unset; _ExitTree sets it"),
         new("audio/FieldAudio.cs", "cueSegments[next.Id] = (clip, pcm, wav);", "poolGate",
             "the next segment's decode: as above"),
+        new("audio/FieldAudio.cs", "outgoingSegments[next.Id] = decoded;", "poolGate",
+            "an outgoing voice's next segment (ChainOutgoing): the decode and ToBytes are Ms2.Audio (no engine); the warning and " +
+            "the stream build run under poolGate while poolClosed is unset; the play is queued to the main thread"),
         new("audio/AmbientSounds.cs", "SafeDecode.Decode(clip, out var failure)", null,
             "MpegDecoder and the channel correlation and power share (Player3DOutput.Channels, Ms2.Audio: no engine); the warning goes through EngineCalls"),
         new("audio/AmbientSounds.cs", "started.Enqueue(() => Start(sound, pcm, stereo, data, begin, end))", null,
