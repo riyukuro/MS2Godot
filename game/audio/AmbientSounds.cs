@@ -106,7 +106,11 @@ public partial class AmbientSounds : Node3D
             if (on) Create(e);
             return;
         }
-        if (on && !s.On) s.StartedAt = clock;   // the event starts again
+        // Off then on starts the event again. An on while it is already on reaches the client's event->start() too
+        // (StopOrReset(1), soundeventmgr.cpp:733-736, then :1474-1478), but FMOD Ex leaves a playing event as it is: no
+        // callbacks, the same channel and position, and the render the same as one without the second start. So the
+        // player and its clock are kept.
+        if (on && !s.On) s.StartedAt = clock;
         s.On = on;
         if (s.Clip.Rolloff is { } curve)
         {
