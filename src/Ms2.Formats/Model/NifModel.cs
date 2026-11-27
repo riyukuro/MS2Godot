@@ -1155,7 +1155,17 @@ public sealed class ModelData
         mesh.EnvV = Axis(new Vec3(0, 1, 0));
     }
 
-    public static ModelData Load(NifFile nif)
+    /// <summary>
+    /// A model nif's bones and meshes. A mesh flagged APP_CULLED in the file is left out, and so is a mesh under a node
+    /// flagged so: NiAVObject::Cull (NiAVObject.cpp:419-423) hands an object to the culling process only when it is not
+    /// app-culled, and NiNode::OnVisible (NiNode.cpp:642-653) reaches its children only through Cull, so nothing under a
+    /// culled node is drawn; the character mesh merger skips the same subtrees (FUN_141049d50 and FUN_14104d450,
+    /// charactermeshmerger.cpp:979, :1846: a culled object is passed over and its children are not queued).
+    /// <paramref name="keepCulledSubtrees"/> keeps the meshes under a culled node, for a reader that carries the node flags
+    /// itself (EffectScene: its visibility controllers can show such a node).
+    /// STILL-OPEN: a KF sequence's visibility track (KfAnimation reads none) that shows such a node in a model.
+    /// </summary>
+    public static ModelData Load(NifFile nif, bool keepCulledSubtrees = false)
     {
         var B = nif.Blocks;
         var md = new ModelData();
@@ -1189,6 +1199,7 @@ public sealed class ModelData
             var b = B[i];
             if (b.Type != "NiMesh") continue;
             if ((b.IntOr("Flags", 0) & 1) != 0) continue;           // APP_CULLED helper geometry
+            if (!keepCulledSubtrees && UnderCulledNode(B, parent, i)) continue;
             long primitive = b.Int("Primitive Type");                  // 0 triangles, 1 triangle strips
             if (primitive != 0 && primitive != 1) throw new NotSupportedException("only triangle lists and strips");
             var s = MeshStreams(nif, i);
@@ -1387,5 +1398,13 @@ public sealed class ModelData
             md.Meshes.Add(mesh);
         }
         return md;
+    }
+
+    /// <summary>Whether a node above block <paramref name="i"/> is flagged APP_CULLED (NiAVObject flag 0x1) in the file.</summary>
+    static bool UnderCulledNode(List<NifStruct> B, Dictionary<int, int> parent, int i)
+    {
+        for (int a = i; parent.TryGetValue(a, out var p); a = p)
+            if ((B[p].IntOr("Flags", 0) & 1) != 0) return true;
+        return false;
     }
 }

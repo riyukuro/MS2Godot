@@ -761,7 +761,7 @@ public sealed class EffectScene
         }
         foreach (var nd in sc.Nodes) nd.Parent = parent.TryGetValue(nd.Block, out var p) && sc.NodeOfBlock.TryGetValue(p, out var pn) ? pn : -1;
 
-        var model = ModelData.Load(n);
+        var model = ModelData.Load(n, keepCulledSubtrees: true);   // the nodes carry their own culling (EffectNode.Culled)
         var meshOf = new Dictionary<int, EffectMesh>();
         foreach (var m in model.Meshes)
         {
