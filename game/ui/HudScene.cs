@@ -4047,6 +4047,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         ownBuffs.ServerTick = () => live.GameSession is { } gs ? unchecked((uint)gs.ServerTick) : 0;
         ownBuffs.OwnerIsMyPc = true;
+        ownBuffs.Balloon = () => Ms2Godot.Net.LiveBuffBalloons.Live?.Of(live.SelfObjectId);   // PC::vfunc_84 of the own PC
         ownBuffs.Effects = live.BuffEffects;    // the start, keep, stop and invoke effects on the own PC
         live.OwnBuffList = ownBuffs;
         var buffs = ownBuffs;

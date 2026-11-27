@@ -47,6 +47,26 @@ public partial class RemoteLayer
         return npcBuffs.GetValueOrDefault(objectId);
     }
 
+    /// <summary>The list's balloon (PC::vfunc_84 / CNpc::vfunc_84), read when a balloon level is added or removed.</summary>
+    static Func<IBuffBalloon> BalloonOf(int objectId) => () => LiveBuffBalloons.Live?.Of(objectId);
+
+    /// <summary>The balloon layer's actor of an object id: the local player, another player or an npc (its Eff_UI anchor).</summary>
+    LiveBuffBalloons.Target? BalloonTarget(int objectId)
+    {
+        if (objectId == Tracker.SelfObjectId)
+        {
+            if (LiveSession.Instance?.OwnPlayer is not { } p || !IsInstanceValid(p)) return null;
+            var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(p.Gender);
+            return new(p, () => World.DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>(ModelPath), p.RootName) ?? p.GlobalPosition,
+                true, null);
+        }
+        if (users.TryGetValue(objectId, out var r))
+            return r.Root != null && IsInstanceValid(r.Root) ? new(r.Root, r.Anchor, true, () => r.Pc?.States.Dead ?? false) : null;
+        return npcs.RootOf(objectId) is { } root ? new(root, npcs.AnchorOf(objectId), false, () => npcs.IsDead(objectId)) : null;
+    }
+
+    static readonly NodePath ModelPath = "Model";
+
     /// <summary>OnFieldAddNpc's DecodeListPacket: a new list for the npc, its entries marked as the entry list's (m_b40), so they
     /// play no start effect. A list the id had is cleared first (the old npc's ~AdditionalCliList ClearAll).</summary>
     void AddNpcBuffs(Ms2.Net.Packets.FieldAddNpc n)
@@ -54,7 +74,7 @@ public partial class RemoteLayer
         DropNpcBuffs(n.ObjectId);
         if (!npcs.Has(n.ObjectId)) return;
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).Additional.GetLevel;
-        var list = new AdditionalBuffList(levelOf) { Effects = BuffEffects, ServerTick = BuffTick };
+        var list = new AdditionalBuffList(levelOf) { Effects = BuffEffects, ServerTick = BuffTick, Balloon = BalloonOf(n.ObjectId) };
         foreach (var b in n.Buffs) list.Apply(Ms2.Net.Packets.BuffPacket.FromAdd(b) with { FromList = true });
         npcBuffs[n.ObjectId] = list;
     }

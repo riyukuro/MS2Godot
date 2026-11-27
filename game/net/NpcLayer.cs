@@ -50,6 +50,7 @@ public sealed class NpcLayer
         public ShaderMaterial HpMat;                 // a replay's stand-in quad
         public World.NpcHpBar Bar;                  // a live field's movie bar
         public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
+        public Func<Godot.Vector3> Anchor;        // the Eff_UI point (vfunc_10), in world space
         public readonly Ms2.Ui.Skills.NpcVibrate Vibrate = new();   // m_vibrate (+0xe18)
         public Godot.Vector3 VisualBase;          // the body's place under the root, which the shake moves off and back to
         public readonly Ms2.Ui.Skills.ColorBoost Boost = new();   // PCBase m_colorBoost
@@ -248,13 +249,14 @@ public sealed class NpcLayer
         Tags?.AddNpc(root, i.Placeholder ? null : i.Visual, row);
         if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
         i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
+        // the actor's vfunc_10 anchor, its Eff_UI dummy (the hp bar's and the buff balloon's): the point is memoized per model
+        // while the npc stands still (DummyMemo, as the name tag's anchor); the body's Model node is read at each call, so a
+        // body NpcNotice mode 2 changed anchors it too
+        Func<Godot.Vector3> anchor = i.Anchor = () => i.ModelNode != null
+            ? World.DummyAnchor.Point(row.EffectDummies, "Eff_UI", i.ModelNode, "Scene Root") ?? root.GlobalPosition
+            : World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition;
         if (Bars != null)
         {
-            // the point is memoized per model while the npc stands still (DummyMemo, as the name tag's anchor)
-            // the body's Model node is read at each call, so a body NpcNotice mode 2 changed anchors it too
-            Func<Godot.Vector3> anchor = () => i.ModelNode != null
-                ? World.DummyAnchor.Point(row.EffectDummies, "Eff_UI", i.ModelNode, "Scene Root") ?? root.GlobalPosition
-                : World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition;
             // CNpc::vfunc_80: the row's hpBar flag makes the entity (hidden until active and shown); CNpc::vfunc_12's
             // property tag 2 row is shown and filled from the spawn stat
             i.Bar = Bars.AddNpc(i.Talk, anchor, n.Stats[2].Health, n.Stats[0].Health);
@@ -849,6 +851,9 @@ public sealed class NpcLayer
     public float AnimSpeed(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? (float)i.Player.SpeedScale : 0;
 
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
+
+    /// <summary>The npc's Eff_UI anchor (vfunc_10) as the hp bar reads it; null when there is no npc of the id.</summary>
+    public Func<Godot.Vector3> AnchorOf(int id) => inst.TryGetValue(id, out var i) ? i.Anchor : null;
 
     /// <summary>The npc's root node, dead or not; null when there is no npc of the id.</summary>
     public Node3D RootOf(int id) => inst.TryGetValue(id, out var i) && i.Root != null && GodotObject.IsInstanceValid(i.Root) ? i.Root : null;

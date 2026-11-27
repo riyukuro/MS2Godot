@@ -90,6 +90,7 @@ public sealed partial class RemoteLayer : Node3D
     readonly CombatLayer combat;
     readonly LiveNameTags tags;
     readonly LiveHpBars bars;
+    readonly LiveBuffBalloons balloons;
     readonly PackSet packs;
     readonly Dictionary<int, Remote> users = new();
     /// <summary>Per gender: the body model, its action sequences and the animation library they are in, shared by the PCs
@@ -459,6 +460,13 @@ public sealed partial class RemoteLayer : Node3D
             InParty = id => LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(id) != null,
         });
         npcs.Bars = bars;
+        // UIBuffBalloon (0x4ea4): each actor's balloon, asked for by its buff list (PC::vfunc_84, CNpc::vfunc_84)
+        field.AddChild(balloons = new LiveBuffBalloons(packs)
+        {
+            Resolve = BalloonTarget,
+            SelfObjectId = () => Tracker.SelfObjectId,
+            Viewer = () => LiveSession.Instance?.OwnPlayer,
+        });
         // GameObjectController::GetGravity: the field's scene gravity, as the field gives the local player
         // STILL-OPEN: a field without the local player (none in a live field) falls back to the default scene gravity
         gravity = field.GetNodeOrNull<Player>("Player")?.Gravity ?? MoveConfig.SceneGravity;
@@ -787,7 +795,7 @@ public sealed partial class RemoteLayer : Node3D
         // OnAddUser (scenestategame.cpp:11185-11186): no current health after the stats -> FUN_14166ce50(1), the dead flag
         if (r.HpCur == 0) pc.States.SetDead(true);
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
-        r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf) { Effects = BuffEffects, ServerTick = BuffTick };
+        r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf) { Effects = BuffEffects, ServerTick = BuffTick, Balloon = BalloonOf(r.ObjectId) };
         r.Death.BuffsDisableRevival = () => r.Buffs.IsDisableRevivalHere;
         r.Death.Revival.Apply(u);   // OnAddUser (scenestategame.cpp:11280-11281): the confirm end tick and count, the flag
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b) with { FromList = true });   // DecodeListPacket's m_b40
