@@ -14,8 +14,7 @@ namespace Ms2.Ui.Hud;
 /// ingredients and options; a remake sends mode 0 (with an option to lock), kind 1 shows the old and the new options; the apply
 /// sends mode 2 (the new) or 3 (keep the old).
 /// <para>STILL-OPEN: the remake sale (CGameRule::FUN_140478cd0's GameEventSaleRemake rates, the reader skips them) is
-/// <see cref="SaleRate"/>, 0 by default; the item event
-/// listener (UIItemEventListener, FUN_1419cae20); the debug buttons and the kind 8 resend (onClickForceRemake,
+/// <see cref="SaleRate"/>, 0 by default; the debug buttons and the kind 8 resend (onClickForceRemake,
 /// onClickCompareEnchant, m_debugBtnFillIngredient*); what the type argument of FUN_1412752d0 changes.</para>
 /// </summary>
 public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOwner
@@ -150,7 +149,9 @@ public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOw
     // ---- the bag and the slots ---------------------------------------------------------------------------------------
 
     /// <summary>FUN_14129dd50 (:367): the category 0 items, then the shown worn items of layer 0, that CanRemakeOption(2) passes,
-    /// fill the bag named by the type name.</summary>
+    /// fill the bag named by the type name. Only the load (:242) and the apply (:555) fill it: the window registers as an item
+    /// event listener (OnLoadComplete :243, FUN_1419cae20) but its listener vftable (0x142ed6b28) keeps every base slot
+    /// (the empty stubs 0x140be53b0-0x140be95e0), so an item added while it is open joins the bag only at the next fill.</summary>
     public void FillBag()
     {
         if (Host?.Entity == null || closing || Ani == null) return;

@@ -143,6 +143,21 @@ public class ItemRemakeOptionDialogTests
     }
 
     [Test]
+    public void AnItemAddedWhileOpenJoinsTheBagAtTheNextFill()
+    {
+        // OnLoadComplete registers an item event listener (:243) whose vftable 0x142ed6b28 keeps every empty base slot:
+        // only the load and the apply (:555) fill the bag
+        var r = new Rig();
+        r.AddGood(1);
+        r.C.FillBag();
+        r.AddGood(2);
+        var name = ItemRemakeOptionDialogController.BagName;
+        Assert.That(r.C.GetBagSlotBindings(ItemRemakeOptionDialogController.Bag), Is.EquivalentTo(new[] { name(1) }));
+        r.C.FillBag();
+        Assert.That(r.C.GetBagSlotBindings(ItemRemakeOptionDialogController.Bag), Is.EquivalentTo(new[] { name(1), name(2) }));
+    }
+
+    [Test]
     public void PickNeedsTheOpenAnswerAndARemakeableHeldItem()
     {
         // SendChangeAttributesMode4 (:602)
