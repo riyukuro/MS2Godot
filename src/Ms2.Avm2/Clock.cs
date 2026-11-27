@@ -2,7 +2,8 @@ namespace Ms2.Avm2;
 
 public sealed partial class Runtime
 {
-    /// <summary>Milliseconds since the movie started (getTimer); advanced by the player, so runs are reproducible.</summary>
+    /// <summary>The movie's frame clock in ms: setTimeout, setInterval and flash.utils.Timer run on it, advanced 1000/fps per
+    /// Player tick. getTimer is real time instead (Player.ASTimerMs).</summary>
     public double TimerMs;
     /// <summary>Wall clock for new Date(); a fixed value when <see cref="FixedWallClock"/> is set (tests, scans).</summary>
     public DateTime? FixedWallClock;

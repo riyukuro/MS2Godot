@@ -1596,10 +1596,28 @@ namespace Ms2.Avm2.Flash
 
         static readonly System.Diagnostics.Stopwatch wallClock = System.Diagnostics.Stopwatch.StartNew();
 
-        /// <summary>The double click's clock in ms: GenerateMouseEvents reads Timer::GetTicks()/1000 as a UInt32
-        /// (sfr_as3_17.cpp:7134), the wall clock, not the movie's frame timer, which falls behind when frames are dropped.
-        /// Tests set their own.</summary>
-        public Func<double> Clock = () => wallClock.Elapsed.TotalMilliseconds;
+        Func<double> clock = () => wallClock.Elapsed.TotalMilliseconds;
+        long startTickMs = (long)wallClock.Elapsed.TotalMilliseconds;
+
+        /// <summary>
+        /// The real clock in ms, Timer::GetTicks()/1000 (GetTicks counts microseconds). The double click reads it as a UInt32
+        /// (GenerateMouseEvents, sfr_as3_17.cpp:7134), and getTimer reads it less the movie start (<see cref="ASTimerMs"/>).
+        /// Both are real time, not the frame count, which falls behind when frames are dropped. Tests set their own; setting
+        /// one also restarts the movie clock at its current reading, as if the movie started then.
+        /// </summary>
+        public Func<double> Clock { get => clock; set { clock = value; startTickMs = (long)Math.Floor(value()); } }
+
+        /// <summary>
+        /// getTimer: GlobalObjectCPP::getTimer (@0x142428d70, sfr_as3_04.cpp:2943) gives (SInt32)MovieImpl::GetASTimerMs
+        /// (@0x14256ee60, sfr_gfx_01i.cpp:1169) = Timer::GetTicks()/1000 - StartTickMs, real ms since the movie started.
+        /// StartTickMs is the ctor's GetTicks()/1000 (sfr_gfx_01i.cpp:1879); here the Player's construction, or the
+        /// moment a test sets <see cref="Clock"/>. The setTimeout / Timer clock (<see cref="Runtime.TimerMs"/>) is a different
+        /// one and stays as it is.
+        /// STILL-OPEN: MovieImpl::SetPause (@0x1425762f0, sfr_gfx_01i.cpp:1196) moves StartTickMs on by the paused time,
+        /// so getTimer stops while paused. No pause of a movie is ported (no caller found in the game code), so none is
+        /// applied here. The TestStream record/play branch of GetASTimerMs is a Scaleform test tool and is not ported.
+        /// </summary>
+        public int ASTimerMs => unchecked((int)((long)Math.Floor(clock()) - startTickMs));   // both whole ms, as GetTicks()/1000
 
         /// <summary>GenerateMouseEvents' double-click window: a second release within this many ms of the last click, at the
         /// same stage pixel (sfr_as3_17.cpp:7140, GFX_DOUBLE_CLICK_TIME_MS).</summary>

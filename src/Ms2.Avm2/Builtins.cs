@@ -464,7 +464,7 @@ static class Builtins
             if (Rt.IsUndef(v)) rt.NoteMissing("data: definition " + n);
             return v;
         });
-        rt.Function("flash.utils.getTimer", a => Rt.Box((int)rt.TimerMs));
+        rt.Function("flash.utils.getTimer", a => Rt.Box(rt.Player is { } p ? p.ASTimerMs : (int)rt.TimerMs));   // Player.ASTimerMs; no movie: the tick clock
         rt.Function("flash.utils.describeType", a => { rt.NoteMissing("flash.utils.describeType"); return null; });
         rt.Function("flash.utils.setTimeout", a => Rt.Box(rt.AddTimeout(A(a, 0) as AsFunction, Rt.ToNumber(A(a, 1)), a.Length > 2 ? a[2..] : Array.Empty<object>(), false)));
         rt.Function("flash.utils.setInterval", a => Rt.Box(rt.AddTimeout(A(a, 0) as AsFunction, Rt.ToNumber(A(a, 1)), a.Length > 2 ? a[2..] : Array.Empty<object>(), true)));
