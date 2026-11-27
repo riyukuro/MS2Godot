@@ -132,23 +132,24 @@ public sealed class DungeonControlCenterController : UiController
 
     // ---- the party and the rules of the lists ----
 
-    /// <summary>The level and gear score the lists are for: in a party the lowest of the online members (GetMinMemberLevel and
-    /// GetMinMemberGearScore, the first online member starting the minimum), else the player's. Null without a local player.</summary>
-    (ushort Level, uint GearScore)? ListLevel()
+    /// <summary>The level and gear score the lists are for: in a party the lowest of the online members (GetMinMemberLevel @0x14162c0b0 and
+    /// GetMinMemberGearScore @0x14162c1e0, partymanager.cpp:860-888: each loop takes a member's value while the minimum so far is 0, so a
+    /// member's 0 only stays when no later member has more), else the player's. Null without a local player.</summary>
+    internal (ushort Level, uint GearScore)? ListLevel()
     {
         if (LocalPlayer() is not { } me) return null;
         if (book == null || !book.IsInParty) return me;
         ushort level = 0;
         uint gear = 0;
-        bool first = true;
         foreach (var m in book.Members)
         {
             if (m.Offline) continue;
             ushort l = (ushort)m.User.Level;
             uint gs = (uint)m.User.GearScore;
-            if (first) { level = l; gear = gs; first = false; continue; }
-            if (l < level) level = l;
-            if (gs < gear) gear = gs;
+            if (level == 0) level = l;
+            if (level > l) level = l;
+            if (gear == 0) gear = gs;
+            if (gear > gs) gear = gs;
         }
         return (level, gear);
     }

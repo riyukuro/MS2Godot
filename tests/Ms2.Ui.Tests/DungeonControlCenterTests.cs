@@ -249,6 +249,18 @@ public class DungeonControlCenterTests
         Assert.That(rooms.Count(r => r.GroupType > 0), Is.GreaterThan(rooms.Count / 2), "most rooms carry a group type");
         Assert.That(rooms.Select(r => r.GroupType).Where(g => g > 0), Is.All.InRange(1, 14));
         Assert.That(Tables().DungeonRooms.GetMatchRooms(90, 0).Count() + Tables().DungeonRooms.GetRoomsForLevel(90, 0).Count(), Is.GreaterThan(0));
+        // the whole list: every row that gives a groupType gets a group from it (an unknown name would give 0)
+        string entry = TablePath.Resolve(packs, "DungeonRoom.xml");
+        Assert.That(entry, Is.Not.Null);
+        var rows = Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", entry)).Root.Elements("dungeonRoom")
+            .Where(x => !string.IsNullOrEmpty((string)x.Attribute("groupType"))).ToList();
+        Assert.That(rows, Is.Not.Empty);
+        foreach (var x in rows)
+        {
+            uint id = (uint)(int)x.Attribute("dungeonRoomID");
+            if (Tables().DungeonRooms.GetRoom(id) is not { } room) continue;
+            Assert.That(room.GroupType, Is.InRange(1, 14), $"room {id} groupType=\"{(string)x.Attribute("groupType")}\"");
+        }
     }
 
     static readonly ClientConstants NoConstants = new(new Dictionary<string, string>());
@@ -288,6 +300,27 @@ public class DungeonControlCenterTests
         e.C.ClearState = _ => 0;
         e.C.MemberClearState = (_, _) => 12;
         Assert.That(e.C.CanEnterDungeonRoom(solo[0]), Is.True, "alone, only the player's state counts");
+    }
+
+    static PartyBook PartyOf(params (int Level, int GearScore)[] members)
+    {
+        var book = new PartyBook();
+        var list = members.Select((m, i) => new PartyInfoMember(false, new PartyUser
+        {
+            AccountId = 101 + i, CharacterId = 1 + i, Name = "n" + i, MapId = 2000001, Level = (short)m.Level, Channel = 1, GearScore = m.GearScore,
+        })).ToArray();
+        book.Apply(new PartyInfo(false, 9, 1, list, false, 0), 1, false);
+        return book;
+    }
+
+    [Test]
+    public void ThePartyMinimumTakesALaterMembersValueOverAnEarlierZero()
+    {
+        // GetMinMemberLevel / GetMinMemberGearScore (partymanager.cpp:860-888): "if (value == 0) value = x; if (value > x) value = x;"
+        var c = new DungeonControlCenterController(PartyOf((50, 0), (40, 300))) { LocalPlayer = () => ((ushort)60, 900u), SelfCharacterId = () => 1 };
+        Assert.That(c.ListLevel(), Is.EqualTo(((ushort)40, 300u)), "an earlier 0 gear score is replaced by the next member's");
+        c = new DungeonControlCenterController(PartyOf((40, 300), (50, 0))) { LocalPlayer = () => ((ushort)60, 900u), SelfCharacterId = () => 1 };
+        Assert.That(c.ListLevel(), Is.EqualTo(((ushort)40, 0u)), "a later 0 is the minimum");
     }
 
     // ---- settings ----
