@@ -374,7 +374,8 @@ void fragment() {
     // particle system after reading the file's flags (NiPSParticleSystem.cpp:1282, exe 0x141e9afd0), so every particle
     // system draws without the depth fog, whatever its blend (NifModel.ParticleSystemFlag); its mesh particles inherit that
     // property state (NiPSMeshParticleSystem.cpp:270). The pillar capture (02000110, eff_com_recovery.nif) draws all four of
-    // its systems, the SRCALPHA / INVSRCALPHA PArray01 and leaf too, with no fog in the shaders, and its meshes fogged. The height
+    // its systems, the SRCALPHA / INVSRCALPHA PArray01 and leaf too, without the depth fog (FOGENABLE FALSE, no g_FogColor):
+    // the blended two keep the height fog in the pixel shader, the dest-ONE bling ones have none; its meshes have both. The height
     // fog comes first, but not on meshes whose dest blend is ONE (NiStandardMaterial::GenerateDescriptor,
     // NiStandardMaterial.cpp:687-697; the Godot height_fog flag). The glow and shimmer passes have no fog
     // (ms2glowmaterial.cpp:126, ms2shimmermaterial.cpp:52); the ribbon, swoosh, beam and lightning effects turn it off on
