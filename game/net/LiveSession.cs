@@ -4373,7 +4373,7 @@ public partial class LiveSession : Node
             }
         }
         // MS2_LIVE_MOVES="step|step|...": field moves in game, each waiting for the new field's entry (FieldEntered, at most
-        // 90 s) and 3 s more: "warp:<map>" (the GM chat command, the server's RequestFieldEnter), "dungeon:<room>" (the GM
+        // 90 s) and 3 s more: "warp:<map>" (the GM chat command, the server's RequestFieldEnter), "chat:<line>" (a chat line typed in), "dungeon:<room>" (the GM
         // /dungeon command: the server moves the player to the room's server with GameToGame 0x10), "portal:<id>" or
         // "portal:any" (the player put in that open portal's box, then the action key), "~N" (wait N s), "mark:<name>"
         // (the node count and the managed heap after a full collect). With MS2_LIVE_MOVE_SHOTS=<dir> the screen is shot
@@ -4432,6 +4432,13 @@ public partial class LiveSession : Node
                     live.SendParty(new Ms2.Net.Packets.RoomDungeonEntryRequest(uint.Parse(step[10..]), false, 0, false));
                     GD.Print($"live: move {n}: room entry {step[10..]} sent");
                     sent = true;
+                }
+                else if (step.StartsWith("chat:"))
+                {
+                    // "chat:<line>": a chat line (a GM command) typed in, no field move awaited (a /kill all in a dungeon, say)
+                    bool typed = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(step[5..]);
+                    GD.Print($"live: move {n}: chat {step[5..]} {(typed ? "typed" : "no chat window")}");
+                    await Frames(120);
                 }
                 else if (step == "finder" && tree.CurrentScene is Ui.HudScene fh)
                 {
