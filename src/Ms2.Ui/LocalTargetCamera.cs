@@ -166,6 +166,25 @@ public struct LocalCameraPrev
     public float Nearest, Farthest, ZoomOutHeight, ZoomInHeight;
 }
 
+/// <summary>CameraMgr's mode rules around the local camera mode (camera.cpp), by mode type (GetModeType, camera.h:248).</summary>
+public static class LocalCameraModes
+{
+    public const int Target = 2, LocalTarget = 0x10;
+
+    /// <summary>FUN_140aed4b0 (@0x140aed4b0, camera.cpp:1390-1407): false for the modes 1 and 3 to 10, true for any other
+    /// (0, 2 and 11 up).</summary>
+    public static bool AutoCheckMode(int mode) => mode is not (1 or (>= 3 and <= 10));
+
+    /// <summary>The mode part of CameraMgr::FUN_140aece50 (@0x140aece50, camera.cpp:1203-1206): the auto check runs when
+    /// the mode is not the local one (IsLocalTargetMode, :1362) and FUN_140aed4b0 holds.</summary>
+    public static bool AutoCheckRuns(int mode) => mode != LocalTarget && AutoCheckMode(mode);
+
+    /// <summary>The local mode's constructor (localtargetcameramode.cpp:122-128) reads the previous mode's shown and placed
+    /// cameras and loose when it is a CTargetCameraMode: the follow mode (2) or another local mode (0x10, a subclass).
+    /// Any other previous mode takes the constructor's other branch (the manager's camera and the client constants).</summary>
+    public static bool BuildsOverTargetMode(int mode) => mode is Target or LocalTarget;
+}
+
 /// <summary>
 /// CLocalTargetCameraMode (localtargetcameramode.cpp), the camera mode 0x10 a field's local camera runs: it moves from the
 /// follow camera to the setup's view of the target over InterpolationTime, holds it there with the wheel's zoom steps, and
@@ -233,6 +252,22 @@ public sealed class LocalTargetCamera
         looseUpdate = prev.LooseUpdate;
         eased = true;
     }
+
+    /// <summary>
+    /// This mode as a local mode built over it reads it (the constructor, localtargetcameramode.cpp:98-129, with pPrev this
+    /// mode): vfunc_1 gives 0x10 (localtargetcameramode.h:45); m_68 is the copy CCameraMode::FUN_140afdaa0 made
+    /// (cameramode.cpp:285) and nothing here changes it; m_6c, m_50, m_setting (ShowFrame, vfunc_39, puts the placed
+    /// camera there), m_78, m_c0 and m_d8; the mode is a CTargetCameraMode, so its loose (FUN_14183d9a0); and m_54, m_58,
+    /// m_60, m_64 for FUN_140afdaa0's copy.
+    /// </summary>
+    public LocalCameraPrev AsPrev() => new()
+    {
+        Type = LocalCameraModes.LocalTarget,
+        Yaw = prevYaw, Pitch = pitch, Distance = distance,
+        Setting = setting, Center = center, Shown = shown, Placed = placed,
+        LooseFinal = looseFinal, LooseNow = looseNow, LooseUpdate = looseUpdate,
+        Nearest = nearest, Farthest = farthest, ZoomOutHeight = zoomOutHeight, ZoomInHeight = zoomInHeight,
+    };
 
     /// <summary>m_setting.m_0 (FUN_140ad4b30): the mode's fov, as vfunc_11 sets it.</summary>
     public float Fov => setting.Fov;

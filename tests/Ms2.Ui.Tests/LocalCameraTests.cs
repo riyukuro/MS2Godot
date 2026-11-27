@@ -190,6 +190,62 @@ public class LocalCameraTests
         Assert.That(cam.Fov, Is.EqualTo(34f));
     }
 
+    /// <summary>The auto check's modes: FUN_140aed4b0 (camera.cpp:1390-1407) is false for modes 1 and 3-10 and true for every
+    /// other, and FUN_140aece50 (:1203-1206) skips the local mode itself; the enter builds over the follow or a local mode
+    /// (the constructor's dynamic_cast branch, localtargetcameramode.cpp:122-128).</summary>
+    [Test]
+    public void TheAutoCheckRunsFromEveryModeButOneThreeToTenAndTheLocalOne()
+    {
+        foreach (int m in new[] { 0, 2, 11, 12, 15, 0x11, 0x20 })
+            Assert.That(LocalCameraModes.AutoCheckRuns(m), Is.True, $"mode {m}");
+        foreach (int m in new[] { 1, 3, 4, 5, 6, 7, 8, 9, 10, 0x10 })
+            Assert.That(LocalCameraModes.AutoCheckRuns(m), Is.False, $"mode {m}");
+        Assert.That(LocalCameraModes.AutoCheckMode(0x10), Is.True, "FUN_140aed4b0 itself holds for 0x10; the caller skips it");
+        Assert.That(LocalCameraModes.BuildsOverTargetMode(2), Is.True);
+        Assert.That(LocalCameraModes.BuildsOverTargetMode(0x10), Is.True);
+        Assert.That(LocalCameraModes.BuildsOverTargetMode(4), Is.False, "the lock mode: STILL-OPEN");
+        Assert.That(LocalCameraModes.BuildsOverTargetMode(3), Is.False, "the fly-by mode: STILL-OPEN");
+    }
+
+    /// <summary>The packet's enter while an auto local mode runs (camera.cpp:1172-1176: SetMode(0x10, 1) builds a new local
+    /// mode over the running one): the new mode starts from the running one's shown and placed cameras and its setting, its
+    /// m_1ec is 0x10 (localtargetcameramode.h:45), and it moves in to the trigger setup's view; its move back sets 0x10
+    /// pending (vfunc_8's return, :~245).</summary>
+    [Test]
+    public void AnEnterOverARunningLocalModeBuildsOverIt()
+    {
+        var t = new Target();
+        var auto = new LocalTargetCamera(Prev(t.Position!.Value));
+        var a = Setup(1, 8001);
+        a.Setting = a.Setting with { Fov = 50, Rotation = new Vector3(0, 30, 60) };
+        auto.Start(a, t);
+        Run(auto, t, 1.1f);
+        auto.Frame(1 / 60f, 0, t);
+        Assert.That(auto.Steady, Is.True);
+        var prev = auto.AsPrev();
+        Assert.That(prev.Type, Is.EqualTo(LocalCameraModes.LocalTarget));
+        Assert.That(prev.Shown, Is.EqualTo(auto.Shown));
+        Assert.That(prev.Placed, Is.EqualTo(auto.Placed));
+        Assert.That(prev.Setting.Fov, Is.EqualTo(50f));
+
+        var cam = new LocalTargetCamera(prev);
+        Assert.That(cam.PreviousType, Is.EqualTo(0x10));
+        Assert.That(cam.Shown, Is.EqualTo(auto.Shown), "starts from the running local mode's camera");
+        Assert.That(cam.Placed, Is.EqualTo(auto.Placed));
+        Assert.That(cam.Fov, Is.EqualTo(50f));
+        var s = Setup();
+        cam.Start(s, t);
+        Run(cam, t, s.InterpolationTime + 0.05f);
+        cam.Frame(1 / 60f, 0, t);
+        Assert.That(cam.Steady, Is.True);
+        var c = t.Position.Value + s.OffsetPosition;
+        Near(cam.Placed.Position, c - Dir(s.Setting.Rotation) * s.TargetDistance, "at the trigger setup's view", 0.5f);
+        Assert.That(cam.Fov, Is.EqualTo(45f));
+        t.LocalCamerasOn = false;
+        Run(cam, t, s.InterpolationTime + 0.1f);
+        Assert.That(cam.PendingMode, Is.EqualTo(0x10), "the client's move back sets the local mode again (STILL-OPEN, class summary)");
+    }
+
     [Test]
     public void AnAutoSetupAbortsOnceTheTargetLeavesItsScopeOrBox()
     {
@@ -288,7 +344,7 @@ public class LocalCameraTests
             }
         }
 
-        int uses = 0, hits = 0, misses = 0, enters = 0, leaves = 0, noField = 0;
+        int uses = 0, hits = 0, misses = 0, enters = 0, leaves = 0, noField = 0, overAuto = 0;
         foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("trigger/", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e, StringComparer.Ordinal))
         {
             var bytes = packs.Read("Xml", entry);
@@ -328,11 +384,31 @@ public class LocalCameraTests
                 t.LocalCamerasOn = false;
                 Run(cam, t, s.InterpolationTime + 0.1f);
                 Assert.That(cam.PendingMode, Is.EqualTo(2), $"{entry} {id}");
+                // the same enter while each auto setup of the field runs: built over that local mode
+                if (!enter) continue;
+                foreach (var au in list.Where(x => x.Operate is 1 or 3))
+                {
+                    overAuto++;
+                    var ta = new Target { Position = s.Setting.Position, Rotation = new Vector3(0, 0, 45) };
+                    var running = new LocalTargetCamera(Prev(ta.Position.Value));
+                    running.Start(au, ta);
+                    Run(running, ta, au.InterpolationTime + 0.05f);
+                    var over = new LocalTargetCamera(running.AsPrev());
+                    Assert.That(over.PreviousType, Is.EqualTo(0x10), $"{entry} {id} over {au.LocalCameraId}");
+                    Assert.That(over.Shown, Is.EqualTo(running.Shown), $"{entry} {id} over {au.LocalCameraId}");
+                    ta.Rotation = new Vector3(0, 0, 45);
+                    over.Start(s, ta);
+                    Run(over, ta, s.InterpolationTime + 0.05f);
+                    over.Frame(1 / 60f, 0, ta);
+                    Assert.That(over.Steady, Is.True, $"{entry} {id} over {au.LocalCameraId}");
+                    Near(over.Placed.Position, c - Dir(s.Setting.Rotation) * s.TargetDistance, $"{entry} {id} over {au.LocalCameraId}", 0.5f);
+                    Assert.That(over.Fov, Is.EqualTo(s.Setting.Fov), $"{entry} {id} over {au.LocalCameraId}");
+                }
             }
         }
         TestContext.Progress.WriteLine($"{variable}: {withCameras.Count} fields with {setups} local cameras (Operate {string.Join(", ", operates.Select(kv => $"{kv.Key}: {kv.Value}"))}), "
             + $"{autoFound} found by the auto check, {boxless} Operate 3 without their box; {uses} SetLocalCamera uses ({enters} enter, {leaves} leave): "
-            + $"{hits} name an Operate 2 setup, {misses} none, {noField} in a field without an xblock");
+            + $"{hits} name an Operate 2 setup, {misses} none, {noField} in a field without an xblock; {overAuto} enters over an auto setup of the same field");
         Assert.That(setups, Is.GreaterThan(100));
         Assert.That(hits, Is.GreaterThan(50));
         Assert.That(operates.GetValueOrDefault(1), Is.GreaterThan(0));

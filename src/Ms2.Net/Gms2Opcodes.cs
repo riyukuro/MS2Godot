@@ -179,7 +179,7 @@ static class Gms2Opcodes {
         [Inbound.SetCraftMode] = 0x6A,
         [Inbound.MinimapPing] = 0x123,
         [Inbound.CharacterAbility] = 0xE1,
-        [Inbound.ShadowExpedition] = 0xE3,
+        [Inbound.ShadowExpedition] = 0xE3,   // the upstream Maple2 server's SendOp ShadowExpedition (SendOp.cs:230; KMS2 0xE1); that server writes no body for it (its boss gauge triggers only log), so the body is read with the KMS2 layout; STILL-OPEN: the GMS2 exe reader is not traced
         [Inbound.UserEnv] = 0xAA,
         [Inbound.Mastery] = 0xCF,
         [Inbound.HomeCommand] = 0xB9,
@@ -191,7 +191,7 @@ static class Gms2Opcodes {
         [Inbound.OneTimeEffect] = 0xF3,
         [Inbound.CameraInterpolation] = 0xF4,
         [Inbound.TimeScale] = 0xF5,
-        [Inbound.ChangeBackground] = 0x100,
+        [Inbound.ChangeBackground] = 0x100,  // the upstream Maple2 server's SendOp ChangeBackground (SendOp.cs:254; KMS2 0xFE); its writer FieldPropertyPacket.Background is the one string the KMS2 reader takes
         [Inbound.GuideRecord] = 0x8B,
         [Inbound.DynamicChannel] = 0xA9,
         [Inbound.ChatStamp] = 0x128,

@@ -84,8 +84,11 @@ public interface ILocalCameraFollow
 /// The local camera mode (0x10, CLocalTargetCameraMode) runs over the field's local camera setups (<see cref="Setups"/>):
 /// the trigger's LocalCamera packet enters and leaves an Operate 2 setup (<see cref="EnterLocal"/>), and each frame the
 /// auto check enters an Operate 1 or 3 setup the player stands in (<see cref="AutoCheck"/>).
-/// STILL-OPEN (local mode): entering from a mode other than the follow one (the fly-by, lock or another local mode: the
-/// constructor's non-target branch and m_1ec of that mode), which does nothing here; a fly-by toward or from the local mode;
+/// The packet's enter also runs from a local mode (the new one is built over it, <see cref="Ms2.Ui.LocalTargetCamera.AsPrev"/>).
+/// STILL-OPEN (local mode): entering from the lock or fly-by mode (the constructor's non-target branch), which does nothing
+/// here; leaving a local mode that was entered from another local mode (its m_1ec is 0x10, so FUN_140aed260 and the move
+/// back's SetPendingMode set the local mode again with no setup started, the default Unk_CameraSetup of camera.cpp:529),
+/// where the mode stays; a fly-by toward or from the local mode;
 /// the camera's target an NPC (the packet's object id: SetTarget(npc), FUN_141bdb5a0, FUN_141bd9e60, m_27c); the order of
 /// the auto check (WorldService's update, worldservice_1.cpp:9778) against CameraMgr::Update, taken as before it.
 /// </summary>
@@ -107,6 +110,7 @@ public sealed class TriggerCamera
     System.Func<int, System.Numerics.Vector3, bool> localBoxContains;   // localTarget.BoxContains, made once in Bind: AutoCheck runs per frame
     Ms2.Ui.LocalTargetCamera local;
     bool keepDistance;          // the follow mode's m_bc (FUN_14183cc80)
+    bool starting;              // StartLocal's SetMode, which a FUN_140aed1e0 (the setup's start) follows
     float keptDistance;         // g_143aef240
 
     /// <summary>m_entitySetups: the field's local camera setups (WorldService::FUN_141bbd640 at the field load).</summary>
@@ -178,9 +182,11 @@ public sealed class TriggerCamera
     {
         if (nMode is not (Target or Lock or LocalTarget)) return;
         if ((flyBy || mode == FlyBy) && (nMode == LocalTarget || mode == LocalTarget)) return;   // STILL-OPEN: no fly-by with the local mode
+        if (nMode == LocalTarget && mode == LocalTarget && !starting) return;   // STILL-OPEN: the local mode again with no setup (class summary)
         pendingMode = 0;
-        // the old mode's vfunc_7: the local mode started from the follow one hands it its shown camera
-        if (mode == LocalTarget && nMode != LocalTarget && local.PreviousType == Target) follow?.TakeShown(local.Shown);
+        // the old mode's vfunc_7 (localtargetcameramode.cpp:147-155): a local mode started from the follow one hands it its
+        // shown and placed cameras, also when the next mode is another local mode
+        if (mode == LocalTarget && local.PreviousType == Target) follow?.TakeShown(local.Shown);
         if (flyBy)
         {
             setting = Current;
@@ -214,9 +220,9 @@ public sealed class TriggerCamera
         {
             // the follow mode's vfunc_7 (targetcameramode.cpp:162-166): g_143aef240 = m_bc ? m_50 : 0
             if (mode == Target) keptDistance = keepDistance ? follow.FollowDistance : 0;
-            // the constructor over the follow mode, then vfunc_11 .. vfunc_5 of m_setting (the follow mode's own, so they
-            // change nothing) and vfunc_6(1)
-            local = new Ms2.Ui.LocalTargetCamera(follow.LocalPrev);
+            // the constructor over the current mode (the follow one, or the local one it replaces), then vfunc_11 .. vfunc_5
+            // of m_setting (that mode's own, so they change nothing) and vfunc_6(1)
+            local = new Ms2.Ui.LocalTargetCamera(mode == LocalTarget ? local.AsPrev() : follow.LocalPrev);
             mode = LocalTarget;
             return;
         }
@@ -250,8 +256,9 @@ public sealed class TriggerCamera
     /// <summary>
     /// CameraMgr::FUN_140aecbb0 (@0x140aecbb0, camera.cpp:1143-1194), the LocalCamera packet: the first Operate 2 setup of
     /// that id (none for id 0 or an unknown id: nothing happens). In the follow mode the follow mode keeps its distance for
-    /// the leave (FUN_14183cc80(1): m_bc = 1). Enter: no fly-by, m_setting = the current mode's, the local mode, and its
-    /// Start with the setup. Leave: FUN_140aed260 (:1331-1346) back to the mode the local one started from (the follow
+    /// the leave (FUN_14183cc80(1): m_bc = 1). Enter, from any mode (an auto local mode too): no fly-by, m_setting = the
+    /// current mode's, the local mode (SetMode(0x10, 1) builds a new one over the current), and its Start with the setup.
+    /// Leave: FUN_140aed260 (:1331-1346) back to the mode the local one started from (the follow
     /// one), then SetTarget(player, 1), which places the follow camera at once at the kept distance (m_bc with a kept
     /// distance) or the farthest. Returns false when the id names no setup.
     /// </summary>
@@ -262,7 +269,7 @@ public sealed class TriggerCamera
         if (wasTarget) keepDistance = true;
         if (enter)
         {
-            if (!wasTarget || follow == null) return true;   // STILL-OPEN: entering from another mode
+            if (!Ms2.Ui.LocalCameraModes.BuildsOverTargetMode(mode) || follow == null) return true;   // STILL-OPEN: from the lock or fly-by mode
             StartLocal(s);
             // STILL-OPEN: objectId != 0 (the camera's target an NPC)
         }
@@ -283,13 +290,13 @@ public sealed class TriggerCamera
     }
 
     /// <summary>
-    /// CameraMgr::FUN_140aece50 (@0x140aece50, camera.cpp:1197-1238): with the local cameras on, setups held, and the
-    /// follow mode current (FUN_140aed4b0 holds for it, IsLocalTargetMode does not), the first Operate 1 setup within its
+    /// CameraMgr::FUN_140aece50 (@0x140aece50, camera.cpp:1197-1238): with the local cameras on, setups held, and a mode
+    /// the check runs from (<see cref="Ms2.Ui.LocalCameraModes.AutoCheckRuns"/>: not the local one, not 1 or 3-10), the first Operate 1 setup within its
     /// Scope of the player or Operate 3 setup whose trigger box holds the player starts the local mode.
     /// </summary>
     public void AutoCheck()
     {
-        if (!LocalCamerasOn || Setups.Count == 0 || mode != Target || follow == null) return;
+        if (!LocalCamerasOn || Setups.Count == 0 || !Ms2.Ui.LocalCameraModes.AutoCheckRuns(mode) || follow == null) return;
         if (localTarget?.Position is not { } p) return;
         if (Ms2.Ui.LocalCameraSetup.FindAuto(Setups, p, localBoxContains) is { } s) StartLocal(s);
     }
@@ -298,7 +305,9 @@ public sealed class TriggerCamera
     {
         flyBy = false;
         setting = Current;
+        starting = true;
         SetMode(LocalTarget, true);
+        starting = false;
         local?.Start(s, localTarget);
     }
 
