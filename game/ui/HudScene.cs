@@ -1650,9 +1650,6 @@ public partial class HudScene : Node, IUiStageHost
     {
         damageText?.ClearAll();                      // FUN_141ad9dc0 -> UIDamageText::ClearAll
         RoomTimerMapChange();
-        CloseDungeonLobby();                         // UISceneGame::vfunc_49 -> CloseClosableDialogs: flag 0 only, not flag 2 (uidungeonlobby.cpp:50)
-        CloseBossBar();                              // the same walk: flag 1 only (uishadowexpeditionbossbar.cpp:244)
-        CloseDungeonRewardOnLeave();                 // the same walk; no flag (HudScene.DungeonReward.cs)
         WorldUnLoadComplete();
         CloseHomeMenuOnLeave();
         if (fieldScene != null && IsInstanceValid(fieldScene))

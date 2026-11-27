@@ -9,7 +9,8 @@ namespace Ms2Godot.Ui;
 /// The dungeon lobby notice, UIDungeonLobby (0x4f21, movie uidungeonlobby; uidungeonlobby.cpp). The server's DungeonWaiting packet
 /// (opcode 0xF0) reaches its OnRoomPacket (@0x140e17930), which stores the room and the lobby's size and opens the dialog
 /// (FUN_141924680, uidialog.cpp:445); OnLoadComplete fills the title and sub title from them.
-/// The field's scene leave closes it (UISceneGame::vfunc_49 -> CloseClosableDialogs, uiservice.cpp:1496: the ctor sets flag 0, not flag 2).
+/// The game scene's leave closes it (<see cref="OnSceneLeft"/>: UISceneGame::vfunc_49 -> CloseClosableDialogs, uiservice.cpp:1496: the ctor sets flag 0,
+/// not flag 2); a same-server field change does not.
 /// STILL-OPEN: what else closes the dialog when the player leaves the lobby is not traced. A second packet while it stays open changes the values only, as in the client.
 /// </summary>
 public partial class HudScene

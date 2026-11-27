@@ -20,6 +20,9 @@ public sealed class DungeonRewardWindow
     /// <summary>Closes the open window and drops its movie.</summary>
     public Action CloseWindow = () => { };
 
+    /// <summary>The controller of the window <see cref="Open"/> last showed.</summary>
+    DungeonRewardDialogController shown;
+
     /// <summary>The state the dialog object holds without a window.</summary>
     public DungeonRewardDialogController Stored { get; private set; }
 
@@ -34,6 +37,7 @@ public sealed class DungeonRewardWindow
             return;
         }
         if (!Open(c)) Stored = c;
+        else shown = c;
     }
 
     public void OnOpenRequested()
@@ -42,5 +46,16 @@ public sealed class DungeonRewardWindow
         var c = Stored ?? Create();
         Stored = null;
         if (!Open(c)) Stored = c;
+        else shown = c;
+    }
+
+    /// <summary>
+    /// <see cref="SceneChange.SceneLeft"/>: CloseClosableDialogs (@0x141adc050, uiservice.cpp:1496) closes the open window (the ctor sets no flag 2,
+    /// uidungeonrewarddialog.cpp:293) through vfunc_68, which sends nothing. The state a mode 2 packet stored stays (only vfunc_26 resets it).
+    /// STILL-OPEN: FUN_141ada610 runs only when the scene's open flag (FUN_141ad9e50) was set; it is taken as set.
+    /// </summary>
+    public void OnSceneLeft()
+    {
+        if (IsOpen() && shown != null && !shown.KeptAtSceneLeave) CloseWindow();   // IsOpen is the closed test of CloseClosableDialogs (vfunc_55)
     }
 }

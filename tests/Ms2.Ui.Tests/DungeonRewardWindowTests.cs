@@ -86,6 +86,62 @@ public class DungeonRewardWindowTests
         Assert.That(r.Opened.Single().Type, Is.EqualTo(0));
     }
 
+    /// <summary>The window's owner hangs <see cref="DungeonRewardWindow.OnSceneLeft"/> on <see cref="SceneChange.SceneLeft"/>, as the HUD does.</summary>
+    static void WithSceneLeft(Rig r, Action act)
+    {
+        SceneChange.SceneLeft += r.W.OnSceneLeft;
+        try { act(); } finally { SceneChange.SceneLeft -= r.W.OnSceneLeft; }
+    }
+
+    [Test]
+    public void ASceneStateChangeClosesTheOpenWindowOnceAndKeepsAStoredState()
+    {
+        var r = new Rig();
+        r.W.OnPacket(Result(11));
+        r.Log.Clear();
+        WithSceneLeft(r, () =>
+        {
+            SceneChange.StateChanged();             // the GameToGame move: SetScene -> UISceneGame::vfunc_49 -> CloseClosableDialogs
+            SceneChange.StateChanged();
+        });
+        Assert.That(r.Log, Is.EqualTo(new[] { "close" }));
+        Assert.That(r.Open, Is.False);
+    }
+
+    [Test]
+    public void TheGameScenesLeaveClosesTheOpenWindow()
+    {
+        var r = new Rig();
+        r.W.OnPacket(Result(11));
+        r.Log.Clear();
+        WithSceneLeft(r, SceneChange.GameSceneLeft);
+        Assert.That(r.Log, Is.EqualTo(new[] { "close" }));
+    }
+
+    [Test]
+    public void WithoutAScenesLeaveTheWindowStaysUp()
+    {
+        // a same-server field change reaches neither SceneChange.StateChanged nor GameSceneLeft (CSceneStateGame::OnRequestFieldEnter)
+        var r = new Rig();
+        r.W.OnPacket(Result(11));
+        r.Log.Clear();
+        WithSceneLeft(r, () => { });
+        Assert.That(r.Log, Is.Empty);
+        Assert.That(r.Open, Is.True);
+    }
+
+    [Test]
+    public void ASceneLeaveWithoutAnOpenWindowDoesNothingAndAModeTwoStateStays()
+    {
+        var r = new Rig();
+        r.W.OnPacket(Pkt(2, w => { w.WriteInt(1); w.WriteByte(1); w.WriteInt(8); w.WriteInt(0); }));
+        var stored = r.W.Stored;
+        r.Log.Clear();
+        WithSceneLeft(r, SceneChange.GameSceneLeft);
+        Assert.That(r.Log, Is.Empty);
+        Assert.That(r.W.Stored, Is.SameAs(stored));
+    }
+
     [TestCase((byte)0)]
     [TestCase((byte)1)]
     [TestCase((byte)3)]

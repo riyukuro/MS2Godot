@@ -81,15 +81,17 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// The field's scene leave: UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218) runs FUN_141ada610(0x620001d), which calls
-    /// CloseClosableDialogs (@0x141adc050, uiservice.cpp:1496) and closes every open dialog without flag 2. The reward dialog has no
-    /// handler of its own and its ctor sets no flag (uidungeonrewarddialog.cpp:293), so an open window is closed; the close is
-    /// vfunc_68, which sends nothing (the leave-after-reward request is RequestClose's). The state a mode 2 packet stored stays (only
-    /// vfunc_26 resets it). STILL-OPEN: FUN_141ada610 runs only when the scene's open flag (FUN_141ad9e50) was set; it is taken as set.
+    /// The game scene's leave (<see cref="SceneChange.SceneLeft"/>: a scene state change such as the GameToGame move, and CSceneStateGame::OnLeave):
+    /// UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218) runs FUN_141ada610(0x620001d), which calls CloseClosableDialogs
+    /// (@0x141adc050, uiservice.cpp:1496) and closes every open dialog without flag 2: the dungeon lobby (flag 0, uidungeonlobby.cpp:50), the boss
+    /// bar (flag 1, uishadowexpeditionbossbar.cpp:244) and the result window (no flag, uidungeonrewarddialog.cpp:293; <see cref="DungeonRewardWindow.OnSceneLeft"/>).
+    /// A same-server field change (CSceneStateGame::OnRequestFieldEnter, scenestategame.cpp:~2340) does not reach it, so SwapField leaves them up.
     /// </summary>
-    void CloseDungeonRewardOnLeave()
+    void OnSceneLeft()
     {
-        if (DungeonRewardOpen && dungeonReward.CloseAtSceneLeave()) CloseDungeonReward();
+        CloseDungeonLobby();
+        CloseBossBar();
+        RewardWindow().OnSceneLeft();
     }
 
     /// <summary>vfunc_72 (@0x140e21bd0), per frame.</summary>
