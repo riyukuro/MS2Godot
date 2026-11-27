@@ -2,6 +2,7 @@ using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
+using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
 
@@ -151,6 +152,42 @@ public class MessageBoxTests
         Click(h, "m_button1");
         Assert.That(c.IsIdle, Is.True);
         Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "closed: the keys are back");
+    }
+
+    static RequestFieldEnter FieldEnterPacket(int map, byte error = 0) => new(error, map, 0, 0, 0, 0, default, default, 0);
+
+    /// <summary>The restored client: a box up over a field change (the exit confirmation) is gone in the new field, the keys work.</summary>
+    [Test]
+    public void ANewFieldClosesTheShownBoxAndGivesTheKeysBack()
+    {
+        var (h, c) = Load();
+        var l = new Listener();
+        MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, l, "gameexit");
+        h.Player.Tick();
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, true)), "the box is up");
+        var entry = new Ms2.Net.FieldEntry();
+        var r = FieldEnter.Take(entry, FieldEnterPacket(2000001), new BreakableObjects(), new LiftableObjects(), new LiftableTargetBoxes());
+        Assert.That(r, Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(c.IsIdle, Is.True, "the box is closed by the field change");
+        Assert.That(MessageBoxQueue.IsIdle, Is.True, "the queue is empty");
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "the keys are back");
+    }
+
+    [Test]
+    public void ARefusedOrRepeatedFieldEnterKeepsTheShownBox()
+    {
+        var (h, c) = Load();
+        MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, null, "gameexit");
+        h.Player.Tick();
+        var entry = new Ms2.Net.FieldEntry();
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062, 5), new BreakableObjects(), new LiftableObjects(), new LiftableTargetBoxes()), Is.EqualTo(FieldEnterResult.Refused));
+        Assert.That(c.IsIdle, Is.False, "a refused field enter leaves the box");
+        MessageBoxQueue.Clear(1);
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), new BreakableObjects(), new LiftableObjects(), new LiftableTargetBoxes()), Is.EqualTo(FieldEnterResult.NewField));
+        MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, null, "gameexit");
+        h.Player.Tick();
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), new BreakableObjects(), new LiftableObjects(), new LiftableTargetBoxes()), Is.EqualTo(FieldEnterResult.LoadingAlready));
+        Assert.That(c.IsIdle, Is.False, "a field enter while the field loads leaves the box");
     }
 
     [Test]

@@ -51,6 +51,9 @@ public partial class LiveSession
         fieldEntry.TornDown();   // m_state = 6: the next server's entry is a fresh load, the cube map values go
         DropOwnPc();
         PortalAction.Current = null;
+        // CStateService::FUN_1417e25a0(0x620003b) runs FUN_14151f460(1) before the scene switch (networkservice.cpp:953):
+        // no message box stays up over the move
+        Ms2.Ui.Hud.MessageBoxQueue.Clear(1);
         moveClock.Restart();
         ResetReconnect();
         var old = game;

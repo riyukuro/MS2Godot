@@ -641,6 +641,13 @@ public static class FieldEnter
         lifts.FieldLeft();
         targets.Clear();
         vibrates?.Clear();   // the field reset's m_420, m_468 and m_5e8 RemoveAll (worldservice_1.cpp:10066-10076)
+        // The restored client shows no message box in the new field: a box up when the field enter came (the exit
+        // confirmation) was gone once the field loaded, and the keys worked again. The drop-the-queue-and-close-all call is
+        // FUN_14151f460(1) (@0x14151f460, messageboxqueue.cpp:81), which CStateService::FUN_1417e25a0 and
+        // CSceneStateGame::OnLeave (CloseClosableDialogs) run on a scene change; STILL-OPEN: what runs it on a field enter
+        // inside the game scene is the UI scene's field-load slot (GFxSceneService::FUN_1422ba150 -> vfunc_53,
+        // worldservice_1.cpp:3392), which is not in the decompile, so the point of the call here is the observed one.
+        Hud.MessageBoxQueue.Clear(1);
         return FieldEnterResult.NewField;
     }
 }
