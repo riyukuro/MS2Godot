@@ -681,7 +681,13 @@ public sealed class FieldBuilder
                 if (llid == null || !llid.StartsWith("urn:llid:")) continue;
                 var me = Model(llid);
                 if (me == null) continue;
-                if (isMesh && !fluid && generated == null)
+                // a field breakable's NIF PhysX meshes never reach the scene (BreakableObjects.NifPhysX: no PhysXProp model);
+                // its only collision is the NxCollision box that follows the marker (world/FieldBreakables). Kept here, a
+                // moving platform's mesh would stay at rest under the box and stop the ride.
+                // STILL-OPEN: the other field models without PhysXProp (MS2InteractMesh, EffectMesh, the portals) still
+                // get their NIF meshes here
+                bool nifPhysX = Ms2.Ui.BreakableObjects.NifPhysX(e);
+                if (isMesh && !fluid && generated == null && nifPhysX)
                     foreach (var shape in me.Collision) npcGround.Add(shape, xf);
 
                 // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes; a model that
@@ -769,7 +775,7 @@ public sealed class FieldBuilder
                     }
                     return tc.Body;
                 }
-                if (generate && me.Collision.Count > 0) SkippedNifMeshes++;
+                if ((generate || !nifPhysX) && me.Collision.Count > 0) SkippedNifMeshes++;
                 else if (me.Collision.Count > 0)
                 {
                     // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props), every shape in the entity's

@@ -27,6 +27,15 @@ namespace Ms2.Ui;
 /// </summary>
 public sealed class BreakableObjects
 {
+    /// <summary>
+    /// Whether the entity's NIF PhysX meshes reach the scene: ecrPhysX PropService::HandleSceneGraphAddedMessage
+    /// (PropService.cpp:455-458) makes the NIF's PhysX prop only for an entity whose model contains PhysXProp. A field
+    /// breakable (MS2BreakableNIF: MS2Breakable, MS2MapProperties, Mesh ...) has none, so its only collision is
+    /// CBreakableObject's NxCollision box (MakeNxBoxController, breakableobject.cpp:656-705), which follows the marker.
+    /// Other entities are left to the field builder's own rules.
+    /// </summary>
+    public static bool NifPhysX(FieldEntity e) => !e.HasMixin("MS2Breakable") || e.HasMixin("PhysXProp");
+
     public sealed class Marker
     {
         public string Name { get; internal set; }

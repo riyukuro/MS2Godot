@@ -11,7 +11,8 @@ namespace Ms2.Ui.Tests;
 /// arg2 on/off). The server finds each id's MS2BreakableNIF / MS2BreakableActor by its TriggerBreakableID and sends the
 /// marker by its entity id (Breakable 0x4F mode 1); the client's marker of that entity (worldservice_1.cpp:6757-6768)
 /// then runs CBreakableObject::Update's cycle (breakableobject.cpp:359-445). So each id must name a breakable entity of
-/// the script's field, the field's markers must hold it, and a moving one's cycle must stay on its path.
+/// the script's field, the field's markers must hold it, its NIF's PhysX meshes must stay out of the scene (only its box
+/// moves with it), and a moving one's cycle must stay on its path.
 /// </summary>
 public class TriggerBreakableSweepTests
 {
@@ -82,6 +83,9 @@ public class TriggerBreakableSweepTests
                 }
                 var m = b.Find(e.Raw.Id);
                 if (m == null) { bad.Add($"{u.File}: id {u.Id} ({e.Raw.Id}) has no marker"); continue; }
+                // its NIF's PhysX meshes stay out of the scene (no PhysXProp model): only the box that follows the marker
+                // collides, so nothing at rest holds a rider back
+                if (BreakableObjects.NifPhysX(e)) bad.Add($"{u.File}: id {u.Id} ({e.Flat?.Name}) keeps its NIF PhysX meshes");
                 if (!m.Moves) continue;
                 moving++;
                 // the cycle (wait, go, wait, back) at 50 ms steps and at the end of the go: the marker stays on its segment and

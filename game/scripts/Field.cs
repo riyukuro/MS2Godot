@@ -253,7 +253,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
         GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, {fb.FrozenGroups} static meshes held at the add time, grid {fb.InstancingGrid}, {fb.NotReceivingDraws} draws without the sun shadow, {fb.NotReceivingBlended} of them blended), " +
-                 $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
+                 $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX or breakable entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
         cameraPlanes = CameraFrustum.Gameplay(flats);
