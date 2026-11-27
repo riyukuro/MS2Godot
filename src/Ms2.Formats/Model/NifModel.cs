@@ -1014,6 +1014,31 @@ public sealed class ModelData
     public static int LightForm(string material) =>
         material == null ? NiStandardLightForm : IsStandardLightMaterial(material) ? MS2LightForm : CharacterLightForm;
 
+    /// <summary>The z-buffer and stencil state of the render object (a mesh or a particle system) at block
+    /// <paramref name="block"/>: the nearest NiZBufferProperty and NiStencilProperty up the scene graph
+    /// (NiNode::UpdateProperties pushes each node's properties over its parent's; <see cref="ModelMesh.ZFlags"/>,
+    /// <see cref="ModelMesh.DrawMode"/>), and whether an NiSortAdjustNode above it turns sorting off
+    /// (<see cref="ModelMesh.NoSort"/>). <paramref name="parent"/> maps a block to the node whose Children hold it.</summary>
+    public static void ReadDrawState(NifFile nif, IReadOnlyDictionary<int, int> parent, int block, ModelMesh mesh)
+    {
+        var B = nif.Blocks;
+        bool zSet = false, stSet = false;
+        for (int n = block, guard = 0; n >= 0 && guard < 256; n = parent.TryGetValue(n, out int up) ? up : -1, guard++)
+        {
+            int z = -1, st = -1;
+            if (B[n].Type == "NiSortAdjustNode") mesh.NoSort = B[n].IntOr("Sorting Mode", 0) == 1;   // SORTING_OFF
+            if (!B[n].TryGetValue("Properties", out var pv) || pv is not long[] props) continue;
+            foreach (var p in props)
+            {
+                if (p < 0) continue;
+                if (B[(int)p].Type == "NiZBufferProperty") z = (int)p;
+                else if (B[(int)p].Type == "NiStencilProperty") st = (int)p;
+            }
+            if (z >= 0 && !zSet) { mesh.ZFlags = (int)B[z].Int("Flags"); zSet = true; }
+            if (st >= 0 && !stSet) { mesh.DrawMode = ((int)B[st].Int("Flags") >> 10) & 3; stSet = true; }
+        }
+    }
+
     /// <summary>The client gives the render object (a mesh or a particle system) at block <paramref name="block"/>
     /// MS2AlphaBoostMaterial when it loads, whatever material it names: its own NiMaterialProperty has an alpha above 1, or
     /// that property's first controller is an NiAlphaController whose key-based interpolator has a float key above 1.
@@ -1337,7 +1362,6 @@ public sealed class ModelData
             if (vertexRegions != null && OtherVertexRegions(nif, i, vertexRegions, nv) is { } other)
                 md.Warnings.Add($"{mesh.Name}: stream {other} has other submesh regions than {positionKey}");
             mesh.Indices = SubmeshIndices(s["INDEX"].v, SubmeshRegions(nif, i, "INDEX", submeshes, s["INDEX"].v.Length), vertexRegions, primitive == 1);
-            bool zSet = false, stSet = false;
             foreach (var p in b.Ints("Properties"))
             {
                 if (p < 0) continue;
@@ -1363,22 +1387,7 @@ public sealed class ModelData
                 if (prop.Type == "NiSpecularProperty") mesh.SpecularOn = (prop.IntOr("Flags", 0) & 1) != 0;
             }
 
-            // the z-buffer and stencil state: the nearest property up the scene graph (NiNode::UpdateProperties pushes
-            // each node's properties over its parent's)
-            for (int n = i, guard = 0; n >= 0 && guard < 256; n = parent.TryGetValue(n, out int up) ? up : -1, guard++)
-            {
-                int z = -1, st = -1;
-                if (B[n].Type == "NiSortAdjustNode") mesh.NoSort = B[n].IntOr("Sorting Mode", 0) == 1;   // SORTING_OFF
-                if (!B[n].TryGetValue("Properties", out var pv) || pv is not long[] props) continue;
-                foreach (var p in props)
-                {
-                    if (p < 0) continue;
-                    if (B[(int)p].Type == "NiZBufferProperty") z = (int)p;
-                    else if (B[(int)p].Type == "NiStencilProperty") st = (int)p;
-                }
-                if (z >= 0 && !zSet) { mesh.ZFlags = (int)B[z].Int("Flags"); zSet = true; }
-                if (st >= 0 && !stSet) { mesh.DrawMode = ((int)B[st].Int("Flags") >> 10) & 3; stSet = true; }
-            }
+            ReadDrawState(nif, parent, i, mesh);
 
             if (skinned)
             {

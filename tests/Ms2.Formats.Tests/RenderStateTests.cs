@@ -94,6 +94,73 @@ public class RenderStateTests
         Assert.That(on.Distinct(), Is.Empty);
     }
 
+    /// <summary>A particle system inherits the culled side as a mesh does: the healing pillar's fixed-normal quads
+    /// (PArray01, LOCAL_FIXED) take the default DRAW_CCW_OR_BOTH and cull their back faces, as the client's D3DCULL_CW draw
+    /// of them does; an NiStencilProperty with DRAW_BOTH on the node above the system turns the culling off. The system
+    /// used to keep the default whatever its parents held.</summary>
+    [Test]
+    public void ParticleSystemsInheritTheDrawMode()
+    {
+        var (packs, spec) = NifEnv.Open();
+        var n = NifFile.Load(spec, packs.Read(Archive, "bg/common/eff_com_recovery.nif"));
+        var pillar = EffectScene.Load(n).Systems.Single(s => s.Name == "PArray01");
+        Assert.That(pillar.Aligned && pillar.NormalMethod == AlignedQuad.LocalFixed, "fixed-normal quads");
+        Assert.That(pillar.Material.Mesh.Cull, Is.EqualTo(FaceCull.Back));
+
+        // the member portal's two-sided stencil property (19840, DRAW_BOTH), put on the pillar system's parent node
+        var portal = NifFile.Load(spec, packs.Read(Archive, "bg/common/eff_com_portal_b.nif"));
+        var both = portal.Blocks.First(b => b.Type == "NiStencilProperty" && ((b.Int("Flags") >> 10) & 3) == 3);
+        int blk = pillar.Material.Mesh.Block;
+        int up = Enumerable.Range(0, n.Blocks.Count).Single(i => n.Blocks[i].TryGetValue("Children", out var c) && c is long[] kids && kids.Contains(blk));
+        n.Blocks.Add(both);
+        n.Blocks[up]["Properties"] = n.Blocks[up].Ints("Properties").Append(n.Blocks.Count - 1).ToArray();
+        var edited = EffectScene.Load(n).Systems.Single(s => s.Name == "PArray01");
+        Assert.That(edited.Material.Mesh.DrawMode, Is.EqualTo(3));
+        Assert.That(edited.Material.Mesh.Cull, Is.EqualTo(FaceCull.None));
+    }
+
+    /// <summary>Every effect particle system's culled side is the draw mode of the nearest NiStencilProperty on it or above it
+    /// (the default DRAW_CCW_OR_BOTH without one), as for meshes. The census: no system has one, so every system culls its
+    /// back faces; the fixed-normal and per-particle-normal quads are the ones that can show their back.</summary>
+    [Test]
+    public void EverySystemCullsAsItsInheritedDrawMode()
+    {
+        var (packs, spec) = NifEnv.Open();
+        int files = 0, systems = 0;
+        var census = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        var bad = new List<string>();
+        foreach (var entry in packs.List(Archive).Where(e => e.EndsWith(".nif")).OrderBy(e => e, StringComparer.Ordinal))
+        {
+            NifFile nif; EffectScene sc;
+            try { nif = NifFile.Load(spec, packs.Read(Archive, entry)); sc = EffectScene.Load(nif); } catch { continue; }
+            files++;
+            var B = nif.Blocks;
+            var parent = new Dictionary<int, int>();
+            for (int i = 0; i < B.Count; i++)
+                if (B[i].TryGetValue("Children", out var c) && c is long[] kids)
+                    foreach (var k in kids) if (k >= 0) parent[(int)k] = i;
+            foreach (var d in sc.Systems)
+            {
+                systems++;
+                int want = 0;
+                for (int b = d.Material.Mesh.Block, guard = 0; b >= 0 && guard < 256; b = parent.TryGetValue(b, out int u) ? u : -1, guard++)
+                {
+                    var st = B[b].Ints("Properties").Where(p => p >= 0 && B[(int)p].Type == "NiStencilProperty").Select(p => (int)p).ToList();
+                    if (st.Count > 0) { want = ((int)B[st[^1]].Int("Flags") >> 10) & 3; break; }
+                }
+                if (d.Material.Mesh.DrawMode != want) bad.Add($"{entry} {d.Name}: draw mode {d.Material.Mesh.DrawMode}, inherited {want}");
+                string gen = !d.Aligned ? "facing" : d.NormalMethod == AlignedQuad.Camera ? "aligned camera normal" : $"aligned normal method {d.NormalMethod}";
+                string key = $"{d.Material.Mesh.Cull} {gen}";
+                census[key] = census.GetValueOrDefault(key) + 1;
+            }
+        }
+        TestContext.Progress.WriteLine($"effect NIFs {files}, particle systems {systems}");
+        foreach (var (k, v) in census) TestContext.Progress.WriteLine($"  {v,6} {k}");
+        Assert.That(files, Is.GreaterThan(1000));
+        Assert.That(systems, Is.GreaterThan(10000));
+        Assert.That(bad, Is.Empty);
+    }
+
     /// <summary>The faces culled per draw mode, as NiDX9RenderState maps it with left-handed culling off
     /// (NiDX9RenderState.cpp:380-389): DRAW_CCW_OR_BOTH and DRAW_CCW the back faces, DRAW_CW the front faces, DRAW_BOTH none.</summary>
     [Test]

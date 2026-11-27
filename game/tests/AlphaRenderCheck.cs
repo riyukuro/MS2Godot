@@ -120,21 +120,35 @@ public partial class AlphaRenderCheck : Node
 
     /// <summary>One still particle at the effect's origin, shaded by <paramref name="m"/> as the system's material (blended
     /// 0xED at the material alpha), in a new viewport; the camera as in <see cref="Effect"/>.</summary>
-    void Particle(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u)
+    void Particle(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u, Action<ParticleSystemDef> setup = null, bool mirrored = false)
     {
         m.AlphaFlags = 0xED; m.MaterialAlpha = alpha;
         var sc = new EffectScene { Duration = 10 };
         sc.Nodes.Add(new EffectNode { Name = "n" });
         var sys = new ParticleSystemDef { Node = 0, Name = "p", AlphaFlags = 0xED, MaxParticles = 1, Material = new EffectMesh { Mesh = m, Node = 0 } };
         sys.Emitters.Add(new EmitterDef { Kind = EmitterKind.Box, Name = "e", Node = 0, Size = 20, Lifespan = 100, Rate = _ => 100, RateCtl = new TimeCtl() });
+        setup?.Invoke(sys);
         sc.Systems.Add(sys);
         var vp = View(mask);
         var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
-        vp.AddChild(fx);
+        // a mirrored placement (an x-mirrored basis) is set before the effect enters the tree, as callers do
+        if (mirrored) fx.Transform = new Transform3D(new Basis(new Vector3(-1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)), Vector3.Zero);
         fx.FileSpace = Transform3D.Identity;
-        vp.GetNode<Camera3D>("Cam").GlobalTransform = fx.GetChild<Node3D>(0).GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 0, 10));
+        vp.AddChild(fx);
+        // the camera at file (0,0,10) looking at the origin, file +y up, with an unmirrored basis of its own
+        var z = fx.GetChild<Node3D>(0).GlobalTransform;
+        vp.GetNode<Camera3D>("Cam").LookAtFromPosition(z * new Vector3(0, 0, 10), z * Vector3.Zero, z.Basis * Vector3.Up);
         cases.Add((name, vp, check));
     }
+
+    /// <summary>The system's quads as NiPSAlignedQuadGenerator draws them with a fixed normal and up (LOCAL_FIXED, file
+    /// space): normal (0,0,<paramref name="nz"/>), up (0,1,0).</summary>
+    static Action<ParticleSystemDef> FixedNormal(float nz) => d =>
+    {
+        d.Aligned = true; d.NormalMethod = AlignedQuad.LocalFixed; d.UpMethod = AlignedQuad.LocalFixed;
+        d.NormalDirection = new Vec3(0, 0, nz); d.UpDirection = new Vec3(0, 1, 0);
+        d.ScaleLimitU = d.ScaleLimitV = 10000; d.ScaleRestU = d.ScaleRestV = 1;
+    };
 
     // the read-back value in the space the blend runs in (calibrated: an opaque emissive 0.5 quad)
     bool srgbReadback;
@@ -286,6 +300,15 @@ public partial class AlphaRenderCheck : Node
         // MINOR 4: the particle quads draw through the same standard material (SoftParticlesMaterial) into the same target
         Particle("fx_part_saturated", Grey(0.5f, "particle emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
         Particle("fx_part_opacity_saturated", Rgb(0.4f, 0.2f, 0.3f, "particle emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
+        // the quads cull their back faces as a mesh does (the default stencil draw mode, DRAW_CCW_OR_BOTH; the client draws
+        // the healing pillar's fixed-normal quads with D3DCULL_CW and their back to the camera, and they change no pixel):
+        // a fixed-normal quad facing the camera draws, one facing away does not; a facing quad always faces the camera
+        Particle("fx_part_fixed_front", Grey(0.5f, "fixed-normal quad facing the camera"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, setup: FixedNormal(1));
+        Particle("fx_part_fixed_back", Grey(0f, "fixed-normal quad with its back to the camera is culled"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, setup: FixedNormal(-1));
+        // under an x-mirrored placement D3D9 still culls by the screen winding, so the sides swap; a facing quad still draws
+        Particle("fx_part_fixed_front_mirrored", Grey(0f, "mirrored fixed-normal quad is culled"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, setup: FixedNormal(1), mirrored: true);
+        Particle("fx_part_fixed_back_mirrored", Grey(0.5f, "mirrored fixed-normal quad with the normal away draws"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, setup: FixedNormal(-1), mirrored: true);
+        Particle("fx_part_facing_mirrored", Grey(0.5f, "mirrored facing quad draws"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, mirrored: true);
 
         // MS2AlphaBoostMaterial (rgb *= opacity where it is above 1, HandleMS2FinalPixelOutputs ms2standardmaterial.cpp:774-790)
         // into the client's A8R8G8B8 scene target (CreateRenderTargetSurface @0x1416a3cd0): the boosted output saturates

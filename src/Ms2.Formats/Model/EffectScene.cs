@@ -1040,6 +1040,13 @@ public sealed class EffectScene
         // LoadBinary has set its flag 0x400 (NiPSParticleSystem.cpp:1282), so the walk always finds it fog-off
         (_, mat.NoFog) = ModelData.SubtreeTags(n, parent, n.Roots[0], blk);
         d.Material = new EffectMesh { Mesh = mat, Node = node, AlphaBoost = ModelData.AlphaBoost(n, blk) };
+        // The quads' culled side comes down the scene graph as a mesh's does (ModelData.ReadDrawState): the client draws a
+        // system through the same NiDX9RenderState::ApplyStencil as a mesh, and with no NiStencilProperty on it or above it
+        // (no effect system has one) the default DRAW_CCW_OR_BOTH culls the back faces, the side away from the
+        // quad's normal (AlignedQuad.Quad, x cross y = the normal; a facing quad's normal points at the camera). So a
+        // fixed-normal quad seen from behind is not drawn: the healing pillar's six LOCAL_FIXED quads (eff_com_recovery
+        // PArray01) go through D3DCULL_CW with their back to the camera and change no pixel in the client's frame.
+        ModelData.ReadDrawState(n, parent, blk, mat);
 
         foreach (var pi in b.Ints("Properties"))
         {

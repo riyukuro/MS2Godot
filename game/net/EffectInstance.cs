@@ -91,7 +91,7 @@ public sealed partial class EffectInstance : Node3D
     /// <summary>Placement in file space (Z up): translate, rotate, scale from the effect xml.</summary>
     public Transform3D FileSpace { set => z.Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero) * value; }
 
-    static Shader partAdd, partMix;
+    static readonly Dictionary<string, Shader> partShaders = new();
     static readonly Dictionary<string, Shader> meshShaders = new();
     // An effect mesh's built ArrayMesh, one per EffectMesh (the scenes are cached per file): every instance of the effect
     // draws the same vertices with its own material (MaterialOverride), and nothing here changes a built mesh, so a
@@ -183,7 +183,7 @@ void fragment() {
     ALPHA = clamp(a, 0.0, 1.0);
 }";
     static readonly string PartCode = @"shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
+render_mode unshaded, PARTCULL, depth_draw_never, BLEND;
 uniform sampler2D tex : repeat_enable, filter_linear;
 uniform bool has_tex = true;
 uniform vec2 frames = vec2(1.0, 1.0);
@@ -445,7 +445,20 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     // (NiStandardMaterial.cpp:690-692)
     static bool DestOne(int alphaFlags) => alphaFlags >= 0 && ((alphaFlags >> 5) & 15) == 0;
 
-    static Shader Sh(ref Shader cache, string code, string blend) => cache ??= new Shader { Code = WithFog(code).Replace("BLEND", blend) };
+    /// <summary>A particle system's shader: its _HO technique's (EffectMesh.Ho on Material), else the standard quad shader,
+    /// with the culled side of the system's draw mode (ReadSystem's ModelData.ReadDrawState) under the placement's world
+    /// (<paramref name="mirrored"/>, FaceCulls.UnderWorld). The quads never write depth.</summary>
+    static Shader PartShader(ParticleSystemDef d, bool mirrored)
+    {
+        string cull = CullMode(d.Material.Mesh.Cull.UnderWorld(mirrored));
+        if (d.Material.Ho is { } ho) return HoShader(ho, cull + ", depth_draw_never", true, BlendOn(d.AlphaFlags), d.Additive);
+        string key = cull + (d.Additive ? " add" : " mix");
+        if (!partShaders.TryGetValue(key, out var sh))
+            partShaders[key] = sh = new Shader { Code = WithFog(PartCode).Replace("PARTCULL", cull).Replace("BLEND", d.Additive ? "blend_add" : "blend_mix") };
+        return sh;
+    }
+
+    static string CullMode(FaceCull c) => c switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
 
     /// <summary>A mesh's render modes from its NiZBufferProperty and NiStencilProperty (the nearest up the graph, ModelMesh.ZFlags
     /// / DrawMode). Z write on = depth_draw_always (the portals' outer shells are 15, their glow shells 13: test, no write); z test
@@ -460,7 +473,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     /// while Godot flips the culled side of a mirrored instance.</summary>
     internal static string RenderModes(ModelMesh m, bool mirrored = false)
     {
-        string cull = m.Cull.UnderWorld(mirrored) switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
+        string cull = CullMode(m.Cull.UnderWorld(mirrored));
         string depth = m.ZWrite ? "depth_draw_always" : "depth_draw_never";
         return m.ZTest ? $"{cull}, {depth}" : $"{cull}, {depth}, depth_test_disabled";
     }
@@ -538,8 +551,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             if (d.MeshParticles) { SetupClones(ps); systems.Add(ps); continue; }
             // the quads draw through the system's _HO technique (EffectMesh.Ho on Material), else the standard shader
             var ho = d.Material.Ho;
-            var mat = new ShaderMaterial { Shader = ho != null ? HoShader(ho, "cull_disabled, depth_draw_never", true, BlendOn(d.AlphaFlags), d.Additive)
-                : d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
+            var mat = new ShaderMaterial { Shader = PartShader(d, mirrored) };
             if (d.Material.Mesh.NoFog) mat.SetShaderParameter(FxParam.NoFog, true);
             var tex = d.Texture != null ? mb.Texture(d.Texture) : null;
             if (ps.Tex.On) mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
@@ -806,7 +818,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     public override void _EnterTree()
     {
         inTree = true;
-        // the mesh shaders' culled side for the world the effect is placed in (RenderModes): checked on entering the tree,
+        // the mesh and particle shaders' culled side for the world the effect is placed in (RenderModes): checked on entering the tree,
         // as the placement is set after construction. Only here: every caller sets Transform and FileSpace before AddChild,
         // and the scene's own node keys scale by one float, so the sign cannot change later. A caller that turns a placed
         // effect into a mirrored basis would have to check again
@@ -823,6 +835,9 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                     if (cl != null)
                         foreach (var ms in cl.Meshes)
                             if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
+        // the quads of every other system (a mesh-particle system has no quad material: its clones above keep their mesh's cull)
+        foreach (var ps in systems)
+            if (!ps.Def.MeshParticles && ps.Def.Material.Mesh.Cull != FaceCull.None) ps.Mat.Shader = PartShader(ps.Def, mirrored);
     }
     bool mirrored;
     public override void _ExitTree() => inTree = false;
