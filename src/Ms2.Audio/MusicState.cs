@@ -402,27 +402,36 @@ public sealed class BossBgmTracker
 ///   - the first cue with nothing playing starts at full gain;
 ///   - a cue prompted mid-fade keeps every voice: each one still audible ramps from its gain at the prompt down to 0
 ///     over the new cue's crossfadeMs while the new cue ramps 0 to 1 (three voices at 0.50 / 0.50 / 0 at the prompt,
-///     all reaching 0 / 0 / 1 together 2000 ms later).
-/// This keeps <see cref="SlotCount"/> voices; only when every slot is still audible does the quietest one stop at once.
+///     all reaching 0 / 0 / 1 together 2000 ms later);
+///   - the segment player holds at most 10 voices: past that a prompted cue gets no voice, the newest voice keeps its
+///     own 0 to 1 ramp and the older ones ramp to 0 over the new cue's crossfadeMs;
+///   - an EndOfSegment chain of the incoming cue mid-fade goes on with the same ramp (a cue whose 1 s first segment
+///     ends 1 s into a 2 s fade reached full gain 2 s after its prompt);
+///   - a voice whose segment ends with no link to follow is freed, and the other ramps go on;
+///   - a cue prompted when the incoming voice has ended starts at full gain at once, and the voices still fading stop
+///     ramping and hold their gain (0.26 for 65 s), until a later cue with a playing voice ramps them out.
 /// Zero per-frame allocations.
 /// </summary>
 public sealed class MusicCrossfade
 {
-    public const int SlotCount = 4;
+    public const int SlotCount = 10;
     const float Silent = 1e-4f;
 
     readonly float[] gains = new float[SlotCount];
-    readonly float[] startGains = new float[SlotCount];
+    readonly float[] rampFrom = new float[SlotCount];
+    readonly float[] rampTo = new float[SlotCount];
+    readonly float[] rampElapsed = new float[SlotCount];
+    readonly float[] rampDuration = new float[SlotCount];
+    readonly bool[] ramping = new bool[SlotCount];
     readonly bool[] busy = new bool[SlotCount];
     int activeSlot;
     bool fading;
-    float fadeElapsed;
-    float fadeDuration;
 
     public int ActiveSlot => activeSlot;
+    /// <summary>A ramp is running on some voice.</summary>
     public bool IsFading => fading;
-    public float FadeElapsed => fadeElapsed;
-    public float FadeDuration => fadeDuration;
+    public float FadeElapsed => rampElapsed[activeSlot];
+    public float FadeDuration => rampDuration[activeSlot];
     public float Gain(int slot) => gains[slot];
     public bool Busy(int slot) => busy[slot];
     public float ActiveGain => gains[activeSlot];
@@ -439,78 +448,119 @@ public sealed class MusicCrossfade
         }
     }
 
-    /// <summary>
-    /// Begins a transition into a new cue or segment over <paramref name="crossfadeMs"/>; returns the slot that plays it
-    /// and a bit mask of the slots whose players stop now.
-    /// - crossfadeMs &gt; 0 with audio playing (a cue change): every voice still audible becomes an outgoing ramp from its
-    ///   gain now to 0, voices already silent stop, and the incoming one takes a free slot (the quietest busy one when
-    ///   all <see cref="SlotCount"/> are taken) and ramps 0 to 1.
-    /// - crossfadeMs &lt;= 0 during a fade (an EndOfSegment chain of the incoming cue): the active slot keeps its ramp and
-    ///   the outgoing ramps go on.
-    /// - Otherwise (the first cue, or a chain with no fade): the active slot plays at full gain and the others stop.
-    /// </summary>
-    public (int IncomingSlot, int StopMask, bool Crossfading) BeginTransition(int crossfadeMs, bool hasActiveAudio)
+    /// <summary>A voice other than the active one is still held (fading or holding its gain).</summary>
+    public bool HasOutgoing
     {
-        if (crossfadeMs <= 0 && fading) return (activeSlot, 0, true);
-        int stop = 0;
-        if (hasActiveAudio && crossfadeMs > 0)
+        get
         {
-            int incoming = -1, quietest = -1;
             for (int i = 0; i < SlotCount; i++)
-            {
-                if (busy[i] && gains[i] <= Silent) { busy[i] = false; gains[i] = 0f; stop |= 1 << i; }
-                if (!busy[i]) { if (incoming < 0) incoming = i; continue; }
-                startGains[i] = gains[i];
-                if (quietest < 0 || gains[i] < gains[quietest]) quietest = i;
-            }
-            if (incoming < 0) { incoming = quietest; stop |= 1 << incoming; }
-            activeSlot = incoming;
-            busy[incoming] = true;
-            gains[incoming] = 0f;
-            startGains[incoming] = 0f;
-            fading = true;
-            fadeElapsed = 0f;
-            fadeDuration = crossfadeMs * 0.001f;
-            return (incoming, stop, true);
+                if (i != activeSlot && busy[i]) return true;
+            return false;
         }
-
-        for (int i = 0; i < SlotCount; i++)
-        {
-            if (i != activeSlot && busy[i]) stop |= 1 << i;
-            busy[i] = i == activeSlot;
-            gains[i] = i == activeSlot ? 1f : 0f;
-        }
-        fading = false;
-        fadeElapsed = 0f;
-        fadeDuration = 0f;
-        return (activeSlot, stop, false);
     }
 
     /// <summary>
-    /// Advances the fade by <paramref name="deltaSeconds"/>. Zero allocations. Returns the bit mask of the slots whose
-    /// players stop because the fade completed on this tick (0 otherwise).
+    /// Begins a transition into a new cue or segment over <paramref name="crossfadeMs"/>; returns the slot that plays it
+    /// (-1: no voice, nothing plays) and a bit mask of the slots whose players stop now. <paramref name="hasActiveAudio"/>:
+    /// the active voice still plays (or its next segment is on the way).
+    /// - crossfadeMs &gt; 0 with the active voice playing (a cue change): voices already silent stop, every other one ramps
+    ///   from its gain now to 0 over crossfadeMs, and the incoming one takes a free slot and ramps 0 to 1. With all
+    ///   <see cref="SlotCount"/> slots taken the cue gets no voice and the active one keeps its own ramp.
+    /// - crossfadeMs &lt;= 0 with the active voice playing (an EndOfSegment chain): the chained segment takes the active
+    ///   slot with its gain and ramp, and the other ramps go on.
+    /// - Otherwise (the first cue, or a cue after the active voice ended): the new cue plays at full gain; voices still
+    ///   fading stop ramping and hold their gain, silent ones stop.
+    /// </summary>
+    public (int IncomingSlot, int StopMask, bool Crossfading) BeginTransition(int crossfadeMs, bool hasActiveAudio)
+    {
+        bool live = hasActiveAudio && busy[activeSlot];   // read before a silent incoming voice is freed below
+        if (live && crossfadeMs <= 0) return (activeSlot, 0, HasOutgoing);
+        int stop = 0, free = -1;
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (busy[i] && gains[i] <= Silent) Free(i, ref stop);
+            if (!busy[i] && free < 0) free = i;
+        }
+
+        if (live)
+        {
+            float seconds = crossfadeMs * 0.001f;
+            for (int i = 0; i < SlotCount; i++)
+                if (busy[i] && (free >= 0 || i != activeSlot)) Ramp(i, 0f, seconds);
+            if (free < 0) return (-1, stop, true);
+            activeSlot = free;
+            busy[free] = true;
+            gains[free] = 0f;
+            Ramp(free, 1f, seconds);
+            return (free, stop, true);
+        }
+
+        for (int i = 0; i < SlotCount; i++) ramping[i] = false;
+        fading = false;
+        if (busy[activeSlot]) Free(activeSlot, ref stop);
+        busy[activeSlot] = true;
+        gains[activeSlot] = 1f;
+        rampElapsed[activeSlot] = 0f;
+        rampDuration[activeSlot] = 0f;
+        return (activeSlot, stop, HasOutgoing);
+    }
+
+    void Ramp(int slot, float to, float seconds)
+    {
+        rampFrom[slot] = gains[slot];
+        rampTo[slot] = to;
+        rampElapsed[slot] = 0f;
+        rampDuration[slot] = seconds;
+        ramping[slot] = true;
+        fading = true;
+    }
+
+    void Free(int slot, ref int stop)
+    {
+        busy[slot] = false;
+        ramping[slot] = false;
+        gains[slot] = 0f;
+        stop |= 1 << slot;
+    }
+
+    /// <summary>
+    /// A voice's segment ended with nothing to follow: its slot is free again and the other ramps go on (the active slot
+    /// keeps its index, with no voice in it).
+    /// </summary>
+    public void Release(int slot)
+    {
+        int stop = 0;
+        if (busy[slot]) Free(slot, ref stop);
+        fading = false;
+        for (int i = 0; i < SlotCount; i++) fading |= ramping[i];
+    }
+
+    /// <summary>
+    /// Advances the ramps by <paramref name="deltaSeconds"/>. Zero allocations. Returns the bit mask of the slots whose
+    /// ramp to 0 completed on this tick (their players stop; 0 otherwise).
     /// </summary>
     public int Step(float deltaSeconds)
     {
         if (!fading) return 0;
-        if (deltaSeconds > 0f) fadeElapsed += deltaSeconds;
-        if (fadeElapsed >= fadeDuration || fadeDuration <= 0f)
-        {
-            fading = false;
-            fadeElapsed = fadeDuration;
-            int stop = 0;
-            for (int i = 0; i < SlotCount; i++)
-            {
-                if (i != activeSlot && busy[i]) stop |= 1 << i;
-                busy[i] = i == activeSlot;
-                gains[i] = i == activeSlot ? 1f : 0f;
-            }
-            return stop;
-        }
-        float t = fadeElapsed / fadeDuration;
+        int stop = 0;
+        bool any = false;
         for (int i = 0; i < SlotCount; i++)
-            if (busy[i]) gains[i] = i == activeSlot ? t : startGains[i] * (1f - t);
-        return 0;
+        {
+            if (!ramping[i]) continue;
+            if (deltaSeconds > 0f) rampElapsed[i] += deltaSeconds;
+            if (rampElapsed[i] >= rampDuration[i] || rampDuration[i] <= 0f)
+            {
+                rampElapsed[i] = rampDuration[i];
+                ramping[i] = false;
+                gains[i] = rampTo[i];
+                if (rampTo[i] <= 0f) Free(i, ref stop);
+                continue;
+            }
+            gains[i] = rampFrom[i] + (rampTo[i] - rampFrom[i]) * (rampElapsed[i] / rampDuration[i]);
+            any = true;
+        }
+        fading = any;
+        return stop;
     }
 
     /// <summary>
@@ -525,9 +575,14 @@ public sealed class MusicCrossfade
     {
         activeSlot = 0;
         fading = false;
-        fadeElapsed = 0f;
-        fadeDuration = 0f;
-        for (int i = 0; i < SlotCount; i++) { gains[i] = 0f; startGains[i] = 0f; busy[i] = false; }
+        for (int i = 0; i < SlotCount; i++)
+        {
+            gains[i] = 0f;
+            busy[i] = false;
+            ramping[i] = false;
+            rampElapsed[i] = 0f;
+            rampDuration[i] = 0f;
+        }
     }
 }
 

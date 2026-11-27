@@ -167,6 +167,20 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public bool SoundMusicFading => soundMusicFade.IsFading;
     public double MusicPosition => musicPlayers[crossfade.ActiveSlot]?.GetPlaybackPosition() ?? 0;
 
+    /// <summary>The scripted live run's music trace (MS2_LIVE_COMBAT_STEP music): while set, every frame of a crossfade, and
+    /// the frame it ends on, prints the busy music slots' crossfade gains, segments and play state.</summary>
+    public bool TraceMusicGains { get; set; }
+    /// <summary>The sound clock the fades run on, in ms (the trace's time).</summary>
+    public double AudioClockMs => audioClock * 1000;
+
+    void LogMusicGains()
+    {
+        var line = new System.Text.StringBuilder($"audio: bgm gains {AudioClockMs:F0} ms active {crossfade.ActiveSlot}");
+        for (int i = 0; i < musicPlayers.Length; i++)
+            if (crossfade.Busy(i)) line.Append($" | {i} {crossfade.Gain(i):F3} seg {slotSegment[i]?.Id.ToString() ?? "-"} {(musicPlayers[i] is { Playing: true } ? "playing" : "stopped")}");
+        GD.Print(line.ToString());
+    }
+
     /// <summary>The Data/Sound folder under the client's Data folder; null when there is none.</summary>
     public bool Open(string dataDir, PackSet packs = null)
     {
@@ -548,6 +562,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             StopMusicPlayers(crossfade.Step((float)delta));
             if (!crossfade.IsFading) { outgoingSegments.Clear(); outgoingGeneration = -1; }
             gainDirty = true;
+            if (TraceMusicGains) LogMusicGains();
         }
 
         if (gainDirty) ApplyPlayerGains();
@@ -564,9 +579,19 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         }
     }
 
+    /// <summary>The busy slots' volumes; a free slot's player is stopped and gets its volume when a segment takes it.</summary>
     void ApplyPlayerGains()
     {
-        for (int i = 0; i < musicPlayers.Length; i++) ApplyPlayerGain(i);
+        for (int i = 0; i < musicPlayers.Length; i++)
+            if (crossfade.Busy(i)) ApplyPlayerGain(i);
+    }
+
+    /// <summary>A voice's segment ended with nothing to follow: FMOD frees its channel, the other ramps go on.</summary>
+    void ReleaseSlot(int slot)
+    {
+        crossfade.Release(slot);
+        StopMusicPlayers(1 << slot);
+        if (TraceMusicGains) LogMusicGains();
     }
 
     /// <summary>Stops the music players whose bits are set in <paramref name="mask"/> (MusicCrossfade's stop masks).</summary>
@@ -678,10 +703,19 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     void PlaySegment(MusicCue cue, MusicSegment seg, int crossfadeMs)
     {
         if (seg == null || !cueSegments.TryGetValue(seg.Id, out var entry)) return;
-        bool hasActive = musicPlayers[crossfade.ActiveSlot] is { Playing: true };
+        // the active voice is busy while it plays or its next segment is on the way; its end with nothing to follow
+        // frees it (ReleaseSlot)
+        bool hasActive = crossfade.Busy(crossfade.ActiveSlot);
         var (inSlot, stopMask, isCrossfading) = crossfade.BeginTransition(crossfadeMs, hasActive);
         StopMusicPlayers(stopMask);
         if (!isCrossfading) { outgoingSegments.Clear(); outgoingGeneration = -1; }
+        if (inSlot < 0)
+        {
+            // FMOD's segment player is at its 10 voices: the cue gets none and the newest voice keeps its ramp
+            activeSegment = null;
+            GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id}: no music voice free ({MusicCrossfade.SlotCount} fading), not played");
+            return;
+        }
 
         activeSegment = seg;
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
@@ -727,7 +761,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         Unchain(slot);
         if (!slotCurrentCue[slot])
         {
-            ChainOutgoing(slot);
+            if (!ChainOutgoing(slot)) ReleaseSlot(slot);
             return;
         }
         if (!playbackGuard.TryAdvanceOnFinished()) return;
@@ -736,23 +770,24 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     /// <summary>
     /// An outgoing voice's segment ended while it fades out: it goes on into the segment its own links pick under the
-    /// live parameters, at the fading gain of its slot, and stops when none matches (MusicController.NextSegmentOf).
+    /// live parameters, at the fading or held gain of its slot; false when none matches (MusicController.NextSegmentOf),
+    /// and the caller frees the slot.
     /// The start fires the segment-start callback like any other (OnMusicCallback toggles parameter 5), which the
     /// incoming cue's links then see: in the client a cue whose intro links on parameter 5 that comes in over a chained
     /// outgoing voice stops after its intro (cue 196 -> 197 in the FMOD probe: silent from 8.9 s).
     /// </summary>
-    void ChainOutgoing(int slot)
+    bool ChainOutgoing(int slot)
     {
-        if (MusicState == null || library == null || !crossfade.Busy(slot)) return;
+        if (MusicState == null || library == null || !crossfade.Busy(slot)) return false;
         var next = MusicState.NextSegmentOf(slotSegment[slot]);
-        if (next == null) return;
+        if (next == null) return false;
         if (outgoingSegments.TryGetValue(next.Id, out var entry) || cueSegments.TryGetValue(next.Id, out entry))
         {
             PlayOutgoing(slot, next, entry);
-            return;
+            return true;
         }
         var clip = library.ResolveSegment(next);
-        if (clip == null) return;
+        if (clip == null) return false;
         int sg = ++slotGeneration[slot];
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(next);
         System.Threading.Tasks.Task.Run(() =>
@@ -774,6 +809,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                 });
             }
         });
+        return true;
     }
 
     void PlayOutgoing(int slot, MusicSegment seg, (SoundClip Clip, Pcm16 Pcm, AudioStreamWav Wav) entry)
@@ -798,7 +834,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         if (next == null)
         {
             activeSegment = null;
-            return;   // one-shot cue or no matching link condition: stop cleanly
+            ReleaseSlot(crossfade.ActiveSlot);   // one-shot cue or no matching link condition: stop cleanly
+            return;
         }
         if (cueSegments.ContainsKey(next.Id))
         {
@@ -806,7 +843,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             return;
         }
         var clip = library.ResolveSegment(next);
-        if (clip == null) return;
+        if (clip == null) { ReleaseSlot(crossfade.ActiveSlot); return; }
         DecodeAndPlaySegment(playbackGuard.Generation, MusicState.CurrentCue, next, clip, crossfadeMs);
     }
 
