@@ -70,10 +70,22 @@ public partial class MouseMove : Node
     {
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
         var vp = GetViewport();
-        bool control = ControlTakesMouse(vp);
+        bool control = ControlTakesMouse(vp, mb.Position);
         bool over = control || Ui.As3View.AnyMouseOverUi(vp);
         if (mb.Pressed) { gate.Press(over); return; }
         if (gate.Release(over, Moving && !control, InWindow(vp, mb.Position))) Release(mb);
+    }
+
+    /// <summary>
+    /// WM_MOUSELEAVE (0x2a3, OnMouseMessage mousecontroller.cpp:331-334): the cursor left the window, ResetToIdle (m_nMode 1) ends
+    /// the move that runs (FUN_140ad2070) and a press taken no longer walks on its release.
+    /// </summary>
+    public override void _Notification(int what)
+    {
+        if (what != NotificationWMMouseExit) return;
+        gate.Reset();
+        if (Moving) GD.Print("mouse: the cursor left the window, the move stops");
+        Stop();
     }
 
     /// <summary>The sampled flag of the UI movie (<see cref="Ui.As3View.AnyMouseOverUi"/>), or a Godot Control with a mouse filter
@@ -81,6 +93,37 @@ public partial class MouseMove : Node
     public static bool UiTakesMouse(Viewport vp) => Ui.As3View.AnyMouseOverUi(vp) || ControlTakesMouse(vp);
 
     static bool ControlTakesMouse(Viewport vp) => vp.GuiGetHoveredControl() is { MouseFilter: not Control.MouseFilterEnum.Ignore };
+
+    /// <summary>The press/release version of <see cref="UiTakesMouse(Viewport)"/>: the sampled flag, or a Godot Control under the
+    /// event's own position. The viewport's hover follows mouse motion only, so a touch tap (no motion before it) or a control that
+    /// appeared under a still cursor would not be seen through it.</summary>
+    public static bool UiTakesMouse(Viewport vp, Vector2 at) => Ui.As3View.AnyMouseOverUi(vp) || ControlTakesMouse(vp, at);
+
+    /// <summary>A visible Control with a mouse filter other than Ignore holds the point (a hit test, not the hover). A hidden or
+    /// clipping control hides its children as the GUI does. Windows (sub-viewports) are other viewports' own.</summary>
+    public static bool ControlTakesMouse(Viewport vp, Vector2 at)
+    {
+        for (int i = vp.GetChildCount() - 1; i >= 0; i--)
+            if (HitControl(vp.GetChild(i), at)) return true;
+        return false;
+    }
+
+    static bool HitControl(Node n, Vector2 at)
+    {
+        if (n is Window) return false;
+        if (n is CanvasItem { Visible: false }) return false;
+        if (n is CanvasLayer { Visible: false }) return false;
+        if (n is Control c)
+        {
+            var local = c.GetGlobalTransformWithCanvas().AffineInverse() * at;
+            bool inside = new Rect2(Vector2.Zero, c.Size).HasPoint(local);
+            if (inside && c.MouseFilter != Control.MouseFilterEnum.Ignore) return true;
+            if (c.ClipContents && !inside) return false;
+        }
+        for (int i = n.GetChildCount() - 1; i >= 0; i--)
+            if (HitControl(n.GetChild(i), at)) return true;
+        return false;
+    }
 
     /// <summary>CMouseController::IsCursorInWindow (@0x140ad3dd0, mousecontroller.cpp:929-943): 0 to the width and height, both ends in.</summary>
     static bool InWindow(Viewport vp, Vector2 p)

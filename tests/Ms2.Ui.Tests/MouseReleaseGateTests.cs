@@ -50,6 +50,24 @@ public class MouseReleaseGateTests
     }
 
     [Test]
+    public void TheCursorLeavingTheWindowEndsATakenPress()
+    {
+        var g = new MouseReleaseGate();
+        g.Press(false);
+        g.Reset();   // WM_MOUSELEAVE: ResetToIdle, mode 1
+        Assert.That(g.Release(true), Is.False, "mode 1 with the flag set: returns");
+    }
+
+    [Test]
+    public void TheCursorLeavingTheWindowKeepsTheIgnoredRelease()
+    {
+        var g = new MouseReleaseGate();
+        g.Press(true);
+        g.Reset();
+        Assert.That(g.Release(false), Is.False, "m_nIgnoreRelease stays set");
+    }
+
+    [Test]
     public void AReleaseOutOfTheWindowDoesNotWalk()
     {
         var g = new MouseReleaseGate();

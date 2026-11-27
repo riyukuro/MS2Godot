@@ -30,7 +30,7 @@ public partial class PressRoutingCheck : Node
         public override void _Input(InputEvent ev)
         {
             if (ev is not InputEventMouseButton { ButtonIndex: MouseButton.Left } mb) return;
-            bool over = Ms2Godot.Movement.MouseMove.UiTakesMouse(GetViewport());
+            bool over = Ms2Godot.Movement.MouseMove.UiTakesMouse(GetViewport(), mb.Position);
             if (mb.Pressed) gate.Press(over);
             else if (gate.Release(over)) Presses++;
         }
@@ -42,6 +42,7 @@ public partial class PressRoutingCheck : Node
     Game game;
     int lowerDown, upperDown;
     bool controlAdded;
+    ColorRect controlNode;
     readonly List<string> fails = new();
 
     public override void _Ready()
@@ -68,6 +69,13 @@ public partial class PressRoutingCheck : Node
         p.Stage.addChild(s);
         p.Call(s, "addEventListener", "mouseDown", new AsPlainFunction(rt, new NativeMethod("down", (_, __) => { onDown(); return null; })), false, 0, false);
         return (new As3View(p, assets) { AutoPlay = false }, s);
+    }
+
+    void PressNoMotion(float x, float y)
+    {
+        var at = new Vector2(x, y);
+        GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at, ButtonMask = MouseButtonMask.Left }, true);
+        GetViewport().PushInput(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at }, true);
     }
 
     void Press(float x, float y)
@@ -118,7 +126,7 @@ public partial class PressRoutingCheck : Node
             Is(lowerDown == 0 && upperDown == 0 && game.Presses == g0 + 1, $"a press at no dialog with the sample not over did not reach the game (game +{game.Presses - g0})");
             // 6. a Godot Control (the creative menu, a text input) over the ground takes the click: the game does not walk, as when it
             //    ran after the GUI; a press next to it walks
-            var control = new ColorRect { Position = new Vector2(600, 400), Size = new Vector2(100, 100), MouseFilter = Control.MouseFilterEnum.Stop };
+            var control = controlNode = new ColorRect { Position = new Vector2(600, 400), Size = new Vector2(100, 100), MouseFilter = Control.MouseFilterEnum.Stop };
             AddChild(control);
             controlAdded = true;
         }
@@ -130,6 +138,22 @@ public partial class PressRoutingCheck : Node
             g0 = game.Presses;
             Press(750, 550);
             Is(game.Presses == g0 + 1, $"a press next to the control did not walk (game +{game.Presses - g0})");
+            var away = new Vector2(750, 550);
+            GetViewport().PushInput(new InputEventMouseMotion { Position = away, GlobalPosition = away }, true);
+        }
+        if (controlAdded && frames == 50)
+        {
+            int g0;
+            // 7. a tap with no motion before it (touch): the viewport's hover still says "no control" at the old cursor point, the
+            //    press point is on the control
+            g0 = game.Presses;
+            PressNoMotion(650, 450);
+            Is(game.Presses == g0, $"a tap on a Godot control with no motion before it walked (game +{game.Presses - g0})");
+            // 8. a hidden control takes nothing
+            controlNode.Visible = false;
+            g0 = game.Presses;
+            PressNoMotion(650, 450);
+            Is(game.Presses == g0 + 1, $"a tap on a hidden control did not walk (game +{game.Presses - g0})");
             foreach (var f in fails) GD.PrintErr("press routing: " + f);
             GD.Print(fails.Count == 0 ? "press routing: ok" : $"press routing: {fails.Count} failed");
             GetTree().Quit(fails.Count == 0 ? 0 : 1);

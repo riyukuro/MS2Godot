@@ -21,6 +21,10 @@ public sealed class MouseReleaseGate
         taken = !overUi;
     }
 
+    /// <summary>WM_MOUSELEAVE (0x2a3, mousecontroller.cpp:331-334): ResetToIdle, m_nMode 1. A press taken is no longer one, so its
+    /// release over a dialog does not walk. m_nIgnoreRelease is not touched.</summary>
+    public void Reset() => taken = false;
+
     /// <summary>A left release; <paramref name="overUi"/> the sampled flag at it, <paramref name="moving"/> whether the move of
     /// an earlier release still runs (m_nMode == 2), <paramref name="inWindow"/> whether the release is in the window. True when
     /// the release move runs (FUN_140ad23f0).</summary>
