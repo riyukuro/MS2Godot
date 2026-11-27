@@ -23,6 +23,9 @@ namespace Ms2Godot.Movement;
 public partial class MouseMove : Node
 {
     readonly RayQuery ray = new();
+    // FUN_140ad2830's forward probe: CPhysXHelper::CastRay with m_groups 0x201 (mousecontroller.cpp:602-607)
+    readonly RayQuery probeRay = RayQuery.CastRay(ProbeGroups);
+    internal const uint ProbeGroups = 0x201;
     readonly Player player;
     readonly Camera3D camera;
     Vector3 dir;                  // world, flat, unit; zero when not moving
@@ -176,13 +179,40 @@ public partial class MouseMove : Node
             return;
         }
         var to = from + normal * 20000f;
-        using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));
         // FUN_140ad23f0 (mousecontroller.cpp:496-511): no point under the click is ResetToIdle, which ends a running move
-        if (hit.Count == 0) { Stop(); return; }
-        var p = (Vector3)hit[PhysicsKeys.Position];
-        var n = (Vector3)hit[PhysicsKeys.Normal];
-        if (player.Cubes.CubeAt(p - n) == null) { Stop(); return; }     // only cube blocks are picked
-        Go(p);
+        if (ClickPoint(player.GetWorld3D().DirectSpaceState, ray, from, to, player.GetRid()) is not { } hit) { Stop(); return; }
+        if (player.Cubes.CubeAt(hit.Position - hit.Normal) == null) { Stop(); return; }     // only cube blocks are picked
+        Go(hit.Position);
+    }
+
+    /// <summary>
+    /// The click's walk point: FUN_140ad3740 (mousecontroller.cpp:833-870) takes the first pick record, front to back, whose
+    /// entity has a block model (0xd8dea70d, 0x74b363a7; 0xb30dd8f0 on the special pick maps), so a click on an npc or a PC
+    /// passes their model and picks what is behind it. Here the ray's first hit that is not another controller's body (an
+    /// npc's capsule, a remote PC's body): such a body is left out and the ray cast again, up to 16 times.
+    /// </summary>
+    internal static RayQuery.Hit? ClickPoint(PhysicsDirectSpaceState3D space, RayQuery ray, Vector3 from, Vector3 to, Rid self)
+    {
+        var q = ray.Set(from, to, self);
+        for (int i = 0; i < 16; i++)
+        {
+            using var hit = space.IntersectRay(q);
+            if (hit.Count == 0) return null;
+            ulong id = (ulong)hit[PhysicsKeys.ColliderId];
+            if (!NxController.IsController(GodotObject.InstanceFromId(id)))
+                return new RayQuery.Hit((Vector3)hit[PhysicsKeys.Position], (Vector3)hit[PhysicsKeys.Normal], id, (int)hit[PhysicsKeys.Shape]);
+            ray.Ex.Add((Rid)hit[PhysicsKeys.Rid]);
+            q.Exclude = ray.Ex;
+        }
+        return null;
+    }
+
+    /// <summary>FUN_140ad2830's probe (mousecontroller.cpp:581-632): a ray 75 up from the player along the move, 50 long, groups
+    /// 0x201 (0 and 9: an npc's capsule, group 4, and other PCs, group 2, are not in it); its hit.</summary>
+    internal static RayQuery.Hit? ProbeAhead(PhysicsDirectSpaceState3D space, RayQuery probe, Vector3 pos, Vector3 dir, Rid self)
+    {
+        var from = pos + new Vector3(0, MoveConfig.MouseProbeUp, 0);
+        return probe.Nearest(space, from, from + dir * MoveConfig.MouseProbeLen, self, ProbeGroups);
     }
 
     /// <summary>Starts a move to a point (Godot space).</summary>
@@ -225,9 +255,8 @@ public partial class MouseMove : Node
         if (probeT >= MoveConfig.MouseProbeEvery && player.State is Player.MoveState.Walk or Player.MoveState.Idle)
         {
             probeT = 0;
-            var from = player.GlobalPosition + new Vector3(0, MoveConfig.MouseProbeUp, 0);
-            using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, from + dir * MoveConfig.MouseProbeLen, player.GetRid()));
-            if (hit.Count > 0 && player.Cubes.CubeAt((Vector3)hit[PhysicsKeys.Position] - (Vector3)hit[PhysicsKeys.Normal]) != null) { Stop(); return; }
+            if (ProbeAhead(player.GetWorld3D().DirectSpaceState, probeRay, player.GlobalPosition, dir, player.GetRid()) is { } hit &&
+                player.Cubes.CubeAt(hit.Position - hit.Normal) != null) { Stop(); return; }
         }
         // the world direction as camera relative input
         var fwd = new Vector3(-Mathf.Sin(player.CameraYaw), 0, -Mathf.Cos(player.CameraYaw));

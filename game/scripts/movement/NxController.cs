@@ -253,7 +253,7 @@ public sealed class NxController
         return found.Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, groups);
     }
 
-    static bool IsController(GodotObject o) =>
+    internal static bool IsController(GodotObject o) =>
         o is CharacterBody3D || o is Node n && n.HasMeta(MoveConfig.ControllerMeta);
 
     readonly struct Contact

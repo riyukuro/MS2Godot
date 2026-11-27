@@ -17,6 +17,8 @@ namespace Ms2Godot.Tests;
 ///   stateskill.cpp:2862-2874) passes it, and so does a plain move once the npc is dead.
 /// - A live npc pressing the standing player (each move starts inside its capsule): the moves pass through it, as with no
 ///   npc there (SweepCapsuleBox d == 0, CharacterController.cpp:366-374), and allocate nothing.
+/// - Click to move passes a live npc: the click ray picks the floor under it (FUN_140ad3740 picks block models only) and
+///   the forward probe (groups 0x201, FUN_140ad2830) does not hit it.
 /// Quits with 0 when all hold, else 1.
 /// MS2_NPC_CAPSULE_PERF=N (a measurement, not a check): after the checks, N live npcs walk a circle each physics frame
 /// with the runner stepping among them, 300 frames with their capsule bodies and 300 with the bodies freed; prints the
@@ -133,7 +135,44 @@ public partial class NpcCapsuleCheck : Node3D
         Check(pressedBytes / 60 <= 8, $"a step inside the npc's capsule allocates {pressedBytes / 60} B (with no npc {freeBytes / 60} B)");
         GD.Print($"npc capsule check: pressed by a live npc the runner ends at x {pressedX:0.000} (no npc {free:0.000}), " +
                  $"{pressedBytes / 60} B per step (no npc {freeBytes / 60} B)");
+        ClickPast(npc);
         npcs.Remove(4, false);
+    }
+
+    // The click to move ray and its forward probe pass a live npc (FUN_140ad3740 picks block models only; FUN_140ad2830's
+    // probe is groups 0x201): a click down onto the npc picks the floor under it, the probe at the npc has no hit, and the
+    // probe still hits a group 0 wall. An all-layers ray (what both cast before) hits the capsule.
+    void ClickPast(Node3D npc)
+    {
+        var space = GetWorld3D().DirectSpaceState;
+        Place(npc, new Vector3(600, 4, 500));
+        var top = new Vector3(600, 1000, 500);
+        float AllLayers(Vector3 a, Vector3 b)
+        {
+            using var h = space.IntersectRay(PhysicsRayQueryParameters3D.Create(a, b, uint.MaxValue, new Godot.Collections.Array<Rid> { runner.GetRid() }));
+            return h.Count == 0 ? float.NaN : ((Vector3)h[PhysicsKeys.Position]).DistanceTo(a);
+        }
+        float allDown = AllLayers(top, top + Vector3.Down * 2000);
+        var click = Movement.MouseMove.ClickPoint(space, new RayQuery(), top, top + Vector3.Down * 2000, runner.GetRid());
+        Check(click is { } c && Mathf.Abs(c.Position.Y) < 0.5f, $"a click onto the live npc picks {click?.Position}, not the floor under it");
+        Check(allDown < 990, $"the all-layers click ray passes the npc too ({allDown:0.0}): the setup does not test it");
+        runner.GlobalPosition = new Vector3(560, 0.5f, 500);
+        var probe = RayQuery.CastRay(Movement.MouseMove.ProbeGroups);
+        var atNpc = Movement.MouseMove.ProbeAhead(space, probe, runner.GlobalPosition, Vector3.Right, runner.GetRid());
+        var up = runner.GlobalPosition + new Vector3(0, Movement.MoveConfig.MouseProbeUp, 0);
+        float allAhead = AllLayers(up, up + Vector3.Right * Movement.MoveConfig.MouseProbeLen);
+        Check(atNpc == null, $"the forward probe hits the live npc at {atNpc?.Position}");
+        Check(!float.IsNaN(allAhead), "the all-layers probe misses the npc too: the setup does not test it");
+        Place(npc, new Vector3(0, 4, -3000));
+        var wall = new StaticBody3D { Position = new Vector3(600, 100, 500) };
+        wall.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(20, 200, 200) } });
+        AddChild(wall);
+        var atWall = Movement.MouseMove.ProbeAhead(space, probe, runner.GlobalPosition, Vector3.Right, runner.GetRid());
+        Check(atWall != null, "the forward probe misses a group 0 wall");
+        wall.Free();
+        GD.Print($"npc capsule check: a click onto the live npc picks y {click?.Position.Y:0.00} (all layers: the capsule, " +
+                 $"{allDown:0.0} down), the probe at it {(atNpc == null ? "no hit" : "a hit")} (all layers: {allAhead:0.0} ahead), " +
+                 $"at a group 0 wall {(atWall == null ? "no hit" : "a hit")});
     }
 
     void Run()
