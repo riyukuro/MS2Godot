@@ -1162,7 +1162,9 @@ public sealed class ModelData
     /// culled node is drawn; the character mesh merger skips the same subtrees (FUN_141049d50 and FUN_14104d450,
     /// charactermeshmerger.cpp:979, :1846: a culled object is passed over and its children are not queued).
     /// <paramref name="keepCulledSubtrees"/> keeps the meshes under a culled node, for a reader that carries the node flags
-    /// itself (EffectScene: its visibility controllers can show such a node).
+    /// itself (EffectScene: its visibility controllers can show such a node). An effect nif read through this path instead
+    /// (EffectNif.Build, the CombatLayer, reactor, drop, ride and field NPC model loaders) loses them, since KfAnimation
+    /// plays no visibility.
     /// STILL-OPEN: a KF sequence's visibility track (KfAnimation reads none) that shows such a node in a model.
     /// </summary>
     public static ModelData Load(NifFile nif, bool keepCulledSubtrees = false)

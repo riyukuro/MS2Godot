@@ -33,6 +33,32 @@ public class CulledSubtreeTests
         Assert.That(md.Meshes.Select(m => m.Block), Is.EquivalentTo(new[] { 9, 15, 28, 35, 42 }));
     }
 
+    /// <summary>
+    /// The premise of leaving the cover out: no sequence the computer's kfm lists shows Object01. Its Opened sequence
+    /// drives Object01's NiVisController with "hidden" keys only, and Idle_A has no visibility track at all.
+    /// </summary>
+    [Test]
+    public void ComputerSequencesKeepTheCoverHidden()
+    {
+        var (packs, spec) = NifEnv.Open();
+        const string dir = "common/functobj/ugc_functobj_computer_a01/";
+        int vis = 0;
+        foreach (var kf in new[] { "ugc_in_funct_computer_a01_opened.kf", "idle_a.kf" })
+        {
+            var nif = NifFile.Load(spec, packs.Read(Models[0].Archive, dir + kf));
+            foreach (var b in nif.Blocks)
+            {
+                if (nif.StrField(b, "Controller Type") != "NiVisController") continue;
+                Assert.That(nif.StrField(b, "Node Name"), Is.EqualTo("Object01"), kf);
+                var keys = nif.Blocks[(int)b.Int("Data")].Struct("Data").Structs("Keys");
+                Assert.That(keys, Is.Not.Empty, kf);
+                Assert.That(keys.Select(k => Convert.ToInt64(k["Value"])), Is.All.EqualTo(0L), kf);
+                vis++;
+            }
+        }
+        Assert.That(vis, Is.EqualTo(1));
+    }
+
     /// <summary>Each listed model loses exactly its mesh under the culled node, and nothing else.</summary>
     [Test]
     public void WholeListLosesOnlyTheCulledMeshes()
