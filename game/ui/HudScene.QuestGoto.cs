@@ -46,7 +46,7 @@ public partial class HudScene
         Inputs = QuestInputs,
         Meta = () => fieldMeta ??= QuestMapGraph.SharedMeta(assets.Packs),
         Rooms = () => dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e)),
-        Send = p => Ms2Godot.Net.LiveSession.Instance?.SendTalk(p),
+        Send = SendQuestRequest,
         StartPopupQuestTalk = q => World.NpcTalk.Current?.StartPopupQuestTalk(q),
         TalkWithoutNpc = (q, npc) =>
         {
@@ -54,6 +54,18 @@ public partial class HudScene
             return false;
         },
     };
+
+    /// <summary>Sends a go-to or dispatch request; with MS2_LIVE_PACKETS=1 its bytes are printed (one line per press).</summary>
+    static void SendQuestRequest(Ms2.Net.Wire.IOutPacket p)
+    {
+        if (Ms2Godot.Net.LiveSession.LogPackets)
+        {
+            var w = new Maple2.PacketLib.Tools.ByteWriter();
+            p.Write(w);
+            GD.Print($"quest request sent: {p.Op} {Convert.ToHexString(w.Buffer, 0, w.Length)}");
+        }
+        Ms2Godot.Net.LiveSession.Instance?.SendTalk(p);
+    }
 
     // ---- the dispatch box ----------------------------------------------------------------------------------------------
 
@@ -80,7 +92,7 @@ public partial class HudScene
             MapName = id => tables.MapName(id) ?? "",
             ReplaceValueWords = t => tables.ReservedWords.ReplaceValueWords(t, hudModel.HasLocalPlayer ? hudModel.Player.Name : null),
             PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : "",
-            Send = p => Ms2Godot.Net.LiveSession.Instance?.SendTalk(p),
+            Send = SendQuestRequest,
         };
         var d = questDispatch;
         Action<int> started = id => { d.OnStarted(id); ArmQuestDispatch(); }, rewarded = id => { d.OnRewarded(id); ArmQuestDispatch(); },
