@@ -173,6 +173,29 @@ public class DynamicActionDialogTests
     }
 
     [Test]
+    public void OnShiftRClickPreviewsTheActionNotUsesIt()
+    {
+        // vfunc_28 onShiftRClick (uidynamicactiondialog.cpp:336-343) -> PreviewAction (:473-481): PopUInt, 0 ignored, no
+        // list or player check here (the preview dialog's FUN_140e93e70 has its own)
+        var r = Load(r =>
+        {
+            r.Skill(1); r.Skill(2);
+            r.List.Apply(new EmoteMessage.List(new[] { E(1), E(2) }), 0);
+        });
+        var previewed = new List<uint>();
+        var used = new List<uint>();
+        r.C.PreviewAction = previewed.Add;
+        r.C.UseSkill = used.Add;
+        r.C.OnCallback("onShiftRClick", new object[] { 0u });
+        r.C.OnCallback("onShiftRClick", System.Array.Empty<object>());
+        Assert.That(previewed, Is.Empty, "id 0 or no argument: nothing");
+        r.C.OnCallback("onShiftRClick", new object[] { 2u });
+        Assert.That(previewed, Is.EqualTo(new uint[] { 2 }));
+        Assert.That(used, Is.Empty, "a preview casts nothing");
+        Assert.That(r.Sent, Is.Empty);
+    }
+
+    [Test]
     public void OnFavoriteSetsTheEntrySendsModeFourAndRefreshesOnlyWhenFavoriteOnly()
     {
         // vfunc_28 onFavorite (uidynamicactiondialog.cpp:356-374)

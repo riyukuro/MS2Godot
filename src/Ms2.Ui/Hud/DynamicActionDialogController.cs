@@ -11,8 +11,7 @@ namespace Ms2.Ui.Hud;
 /// filters, the favorite toggle (Emote mode 4) and the use of a clicked emotion (onSelectEmotion, <see cref="UseAction"/>).
 /// STILL-OPEN: onFocusIn /
 /// onFocusOut and vfunc_13's key bind flow (the 0x84f confirm box, the 0x84c notice, FUN_14192df00
-/// SetKeyBindingAndSync), onShiftRClick (PreviewAction @0x14192ca10, the skill preview dialog 0x4ec3), the tooltip
-/// (vfunc_49 @0x14192bb30) do nothing here. NotifyClearAchieve (FUN_14192c660) is <see cref="Refresh"/>, which the HUD
+/// SetKeyBindingAndSync) and the tooltip (vfunc_49 @0x14192bb30) do nothing here. onShiftRClick is <see cref="PreviewAction"/>. NotifyClearAchieve (FUN_14192c660) is <see cref="Refresh"/>, which the HUD
 /// calls on a trophy clear.
 /// </summary>
 public sealed class DynamicActionDialogController : UiController
@@ -54,6 +53,10 @@ public sealed class DynamicActionDialogController : UiController
     /// <summary>MyPC::FUN_141525480(id, 0) @0x141525480 (mypc.cpp:2379-2388): the own cast of the skill at GetSkillLevel, through
     /// MyPC::vfunc_102.</summary>
     public Action<uint> UseSkill = _ => { };
+    /// <summary>PreviewAction @0x14192ca10 (uidynamicactiondialog.cpp:473-481): the skill preview dialog (0x4ec3) opened
+    /// (OpenDialog) and the action previewed at level 0 (<see cref="SkillPreviewController.Preview"/>), nothing when the
+    /// HUD has no such dialog (GetSkillPreviewDialog null).</summary>
+    public Action<uint> PreviewAction = _ => { };
 
     public DynamicActionDialogController(EmotionList emotions) { this.emotions = emotions; }
 
@@ -254,7 +257,16 @@ public sealed class DynamicActionDialogController : UiController
                 UseAction(id);
                 return false;
             }
-            // onFocusIn, onFocusOut, onShiftRClick: STILL-OPEN (see the class summary)
+            case "onshiftrclick":
+            {
+                // vfunc_28 (uidynamicactiondialog.cpp:336-343): PopUInt, 0 ignored
+                if (args.Length == 0) return false;
+                uint id = Rt.ToUint32(args[0]);
+                if (id == 0) return false;
+                PreviewAction(id);
+                return false;
+            }
+            // onFocusIn, onFocusOut: STILL-OPEN (see the class summary)
         }
         return false;
     }
