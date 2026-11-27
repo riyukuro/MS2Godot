@@ -82,7 +82,7 @@ static class Gms2Opcodes {
         [Inbound.FurnishingInventory] = 0x24,
         [Inbound.ItemEnchant] = 0x99,
         [Inbound.ChangeAttributes] = 0xCA,
-        [Inbound.ChangeAttributesScroll] = 0xCB,
+        [Inbound.ChangeAttributesScroll] = 0xCB,   // the scroll window's listener registers 0xcb (ctor 0x14085de63, dtor drops it 0x14085df1b)
         [Inbound.ItemLock] = 0xDD,
         [Inbound.StorageInventory] = 0x22,
         [Inbound.ItemPutOn] = 0x25,
@@ -267,7 +267,7 @@ static class Gms2Opcodes {
         [Outbound.Shop] = 0x28,
         [Outbound.ItemMerge] = 0x40,
         [Outbound.ChangeAttributes] = 0x76,
-        [Outbound.ChangeAttributesScroll] = 0x77,
+        [Outbound.ChangeAttributesScroll] = 0x77,   // the scroll window's COutPacket(0x77) then Encode1(1) (0x14085fd4b, 0x140860d69)
         [Outbound.ItemDismantle] = 0x5B,
         [Outbound.SystemShop] = 0x66,
         [Outbound.Quest] = 0x29,
