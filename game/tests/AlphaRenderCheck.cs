@@ -273,19 +273,19 @@ public partial class AlphaRenderCheck : Node
         small.AlphaFlags = 0xED; small.ZFlags = 1; small.Bound = new float[] { 0, 0, 5, 0.5f };
         Model("sort_closest", main, Rgb(1, 0, 0, "closest-point sort draws the big-bound quad last"), big, small);
 
-        // the effect mesh's colour is not saturated before the blend (CompositeFinalRGBAColor into the FP16 target): emissive
-        // (1.6, 1, 2) at material alpha 0.5, SRCALPHA / INVSRCALPHA over black, gives (0.8, 0.5, 1), not the clamped 0.5 grey
-        Effect("fx_unclamped", Rgb(0.8f, 0.5f, 1f, "effect emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
+        // the client draws the scene into an 8-bit target (A8R8G8B8), so the effect mesh's colour is saturated before the blend:
+        // emissive (1.6, 1, 2) at material alpha 0.5, SRCALPHA / INVSRCALPHA over black, gives the even 0.5 grey, not the
+        // hue (0.8, 0.5, 1) an unclamped colour keeps (the light pillars' blue veils and hard quad edges)
+        Effect("fx_saturated", Grey(0.5f, "effect emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
         // the effect mesh's coefficient reaches the shader as it is: emissive 0.5 at alpha 1 reads 0.5, as the field mesh's
         // calib_half does (set as a Color, Godot decoded it from sRGB to 0.21)
         Effect("fx_tint_gamma", Grey(0.5f, "effect emissive 0.5 at alpha 1"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f);
-        // nor is the opacity: material alpha 1.5 (the crystal ring's controller peak) weighs emissive (0.4, 0.2, 0.3) by 1.5
-        // over black, (0.6, 0.3, 0.45), where a saturated opacity gives the emissive as it is
-        Effect("fx_opacity_over_1", Rgb(0.6f, 0.3f, 0.45f, "effect emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
-        // MINOR 4: the particle quads draw through the same standard material (SoftParticlesMaterial), so neither their colour
-        // nor their opacity is saturated either
-        Particle("fx_part_unclamped", Rgb(0.8f, 0.5f, 1f, "particle emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
-        Particle("fx_part_opacity_over_1", Rgb(0.6f, 0.3f, 0.45f, "particle emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
+        // so is the opacity the blend takes: material alpha 1.5 (the crystal ring's controller peak) gives emissive
+        // (0.4, 0.2, 0.3) over black as it is, not weighed by 1.5 to (0.6, 0.3, 0.45)
+        Effect("fx_opacity_saturated", Rgb(0.4f, 0.2f, 0.3f, "effect emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
+        // MINOR 4: the particle quads draw through the same standard material (SoftParticlesMaterial) into the same target
+        Particle("fx_part_saturated", Grey(0.5f, "particle emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
+        Particle("fx_part_opacity_saturated", Rgb(0.4f, 0.2f, 0.3f, "particle emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
 
         // MS2AlphaBoostMaterial (rgb *= opacity where it is above 1, HandleMS2FinalPixelOutputs ms2standardmaterial.cpp:774-790)
         // into the client's A8R8G8B8 scene target (CreateRenderTargetSurface @0x1416a3cd0): the boosted output saturates

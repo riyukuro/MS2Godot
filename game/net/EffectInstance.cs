@@ -155,13 +155,9 @@ void fragment() {
     }
     // the texture colour times the diffuse coefficient: emissive (tint) + ambient * the ambient accumulator + diffuse * the
     // diffuse accumulator, the lights' per vertex (LightDecl; EffectMesh.Shade, LightForm)
-    // The coefficient is not saturated (EffectMesh.Shade), and neither is the colour the pixel shader writes:
-    // HandleMS2FinalPixelOutputs (@0x14274fd00, ms2standardmaterial.cpp:758-792) ends in CompositeFinalRGBColor and CompositeFinalRGBAColor,
-    // which pass the colour on as it is (NiStandardMaterialNodeLibrary.cpp:3057-3106). On a device with FP16 support the client blends
-    // it into its FP16 scene target, which PostProcessingService::OnInit (@0x1416a4860, postprocessingservice.cpp:1750-1751) turns on whenever
-    // the device can convert FP16 to RGBA32 (@0x1416a69a0, :1946-1991; SetFloatTargetFormat @0x1416a36f0, :1400-1411), the
-    // HDR option aside. So a colour above 1 at a low opacity keeps its hue and weight, and only the display clamps the sum.
-    // Godot's 3D buffer is RGBA16F too, so the colour goes out unclamped.
+    // The coefficient is not saturated (EffectMesh.Shade), and the shader passes the colour on as it is
+    // (HandleMS2FinalPixelOutputs @0x14274fd00, ms2standardmaterial.cpp:758-792; CompositeFinalRGBColor and CompositeFinalRGBAColor,
+    // NiStandardMaterialNodeLibrary.cpp:3057-3106); the target saturates it (SceneTargetOut below).
     // The vertex colour takes the place of the terms EffectMesh.VertexColors names (Shade leaves those out of tint and
     // mat_ambient), and its alpha that of the material alpha (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450).
     vec3 coef = tint.rgb + mat_ambient * light_amb + mat_diffuse * light_dif;
@@ -171,16 +167,20 @@ void fragment() {
     vec3 col = t.rgb * coef;
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
-    // The opacity is not saturated either: CompositeFinalRGBAColor writes it as it is, and the FP16 target blends with it
-    // unclamped, so an opacity above 1 (the 02020120 crystals' material alpha 1.2, their ring's controller peak 1.5) weighs
-    // the colour by more than 1 (SRCALPHA) and an additive mesh adds more than its colour.
+    // The opacity: an opacity above 1 (the 02020120 crystals' material alpha 1.2, their ring's controller peak 1.5) only
+    // counts through MS2AlphaBoostMaterial; the target saturates the opacity the blend takes
     float a = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
     // MS2AlphaBoostMaterial (alpha_boost: EffectMesh.AlphaBoost) multiplies the fogged colour by an opacity above 1
     // (ms2standardmaterial.cpp:774-790; the node, ms2materialnodelibrary.cpp:839-846): the depth fog's colour as well
     float k = alpha_boost && a > 1.0 ? a : 1.0;
-    FOG = vec4(ms2_fog_color * k, fog_share);
-    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k;
-    ALPHA = a;
+    // SceneTargetOut: the client draws the scene into an 8-bit target, CreateRenderTargetSurface (@0x1416a3cd0,
+    // postprocessingservice.cpp:1519-1556) hard-codes D3DFMT_A8R8G8B8 for it (CreateOffscreenTarget @0x1416a3bb0; FUN_1416ac3b0,
+    // :2056, binds it in LinkEffects); a float format only holds the post steps' copy of it (CopyTargetToTexture @0x1416abb30).
+    // So the colour, after the depth fog, and the opacity the blend takes are saturated: a colour above 1 at a low opacity
+    // lifts what is behind it evenly instead of tinting it with its hue.
+    FOG = vec4(0.0);
+    ALBEDO = clamp(mix(ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k, ms2_fog_color * k, fog_share), 0.0, 1.0);
+    ALPHA = clamp(a, 0.0, 1.0);
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
@@ -244,18 +244,18 @@ void fragment() {
     if (vc_emi) coef += COLOR.rgb;
     if (vc_dif) coef += COLOR.rgb * light_dif;
     if (vc_amb) coef += COLOR.rgb * light_amb;
-    // neither the colour nor the opacity is saturated, as in the mesh shader (MeshCode): the quads draw through a
-    // standard material (ParticleSystemDef.DetailOpacity), whose outputs go to the FP16 target as they are
-    // (CompositeFinalRGBAColor, NiStandardMaterialNodeLibrary.cpp:3057-3106; postprocessingservice.cpp:1750-1751)
+    // the quads draw through a standard material (ParticleSystemDef.DetailOpacity), whose colour and opacity go out as they
+    // are (CompositeFinalRGBAColor, NiStandardMaterialNodeLibrary.cpp:3057-3106) and the target saturates (SceneTargetOut)
     vec3 col = t.rgb * coef;
     // the glow map adds its colour after the lighting (NiStandardMaterial::HandlePostLightTextureApplication,
     // NiStandardMaterial.cpp:5617-5700, HandleGlowMap :4816-4824), as the mesh shader's
     if (has_glow) col += texture(glow_tex, map_uv(uv, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
     float a = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
     float k = alpha_boost && a > 1.0 ? a : 1.0;     // MS2AlphaBoostMaterial, as the mesh shader's
-    FOG = vec4(ms2_fog_color * k, fog_share);
-    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k;
-    ALPHA = a;
+    // the 8-bit target saturates the fogged colour and the opacity (SceneTargetOut, in the mesh shader)
+    FOG = vec4(0.0);
+    ALBEDO = clamp(mix(ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k, ms2_fog_color * k, fog_share), 0.0, 1.0);
+    ALPHA = clamp(a, 0.0, 1.0);
 }";
     // A block naming an _HO technique (HoTechnique, which gives the formulas and the sampler modes) draws through that
     // effect pass, for a mesh and for a particle system's quads alike: DISSOLVE, GLOW, WRAP (the base map wraps), VC (c0
@@ -354,8 +354,9 @@ void fragment() {
     float a = clamp(texture(detail_tex, rows(uv, detail_r0, detail_r1)).r * b.a * c0.a * 5.0, 0.0, 1.0);
 #endif
     if (!alpha_pass(a)) discard;
-    FOG = vec4(ms2_fog_color, fog_share);
-    ALBEDO = col;
+    // the depth fog, then the target's saturation (SceneTargetOut)
+    FOG = vec4(0.0);
+    ALBEDO = clamp(mix(col, ms2_fog_color, fog_share), 0.0, 1.0);
 #if defined(WRITE_ALPHA)
     ALPHA = a;
 #endif

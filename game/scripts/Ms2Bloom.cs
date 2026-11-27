@@ -48,6 +48,8 @@ layout(push_constant, std430) uniform Params { vec2 step_uv; float threshold; fl
 
 vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
 
+// The client's scene target is 8-bit (A8R8G8B8: CreateRenderTargetSurface @0x1416a3cd0, postprocessingservice.cpp:1519-1556),
+// and the steps read their copy of it (CopyTargetToTexture @0x1416abb30), so the scene they read is at most 1
 #if MODE == 0
 layout(rgba16f, set = 0, binding = 0) uniform restrict readonly image2D scene;
 layout(rgba8, set = 0, binding = 1) uniform restrict writeonly image2D dst;
@@ -59,7 +61,7 @@ void main() {
 	vec3 s = vec3(0.0);
 	for (int y = 0; y < 4; y++)
 		for (int x = 0; x < 4; x++)
-			s += imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb;
+			s += min(imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb, vec3(1.0));
 	s /= 16.0;
 	vec3 b = max(s - pc.threshold, vec3(0.0));
 	// the glow target (GlowPass, full size): its red channel scales the scene colour. Read with Shader0LinearClampSampler at
@@ -91,7 +93,7 @@ void main() {
 	ivec2 size = imageSize(scene);
 	if (any(greaterThanEqual(p, size))) return;
 	vec4 c = imageLoad(scene, p);
-	vec3 g = c.rgb + pc.scale * texture(bloom, (vec2(p) + 0.5) / vec2(size)).rgb;
+	vec3 g = min(c.rgb, vec3(1.0)) + pc.scale * texture(bloom, (vec2(p) + 0.5) / vec2(size)).rgb;
 	imageStore(scene, p, vec4(to_linear(g), c.a));
 }
 #else
