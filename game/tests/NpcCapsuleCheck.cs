@@ -16,6 +16,9 @@ namespace Ms2Godot.Tests;
 ///   ignoreCollisionGroups 20 (groups 2 and 4, heavy gunner JetBoots 10600081; StateSkill::FUN_1417edc20,
 ///   stateskill.cpp:2862-2874) passes it, and so does a plain move once the npc is dead.
 /// Quits with 0 when all hold, else 1.
+/// MS2_NPC_CAPSULE_PERF=N (a measurement, not a check): after the checks, N live npcs walk a circle each physics frame
+/// with the runner stepping among them, 300 frames with their capsule bodies and 300 with the bodies freed; prints the
+/// median of the npc move loop, the runner's controller step and the physics frame, and the main-thread bytes per frame.
 /// </summary>
 public partial class NpcCapsuleCheck : Node3D
 {
@@ -24,6 +27,13 @@ public partial class NpcCapsuleCheck : Node3D
     NpcLayer npcs;
     Player runner;
     int frames;
+    int perfN, perfFrame, table0;
+    List<Node3D> perfRoots;
+    Vector3[] perfHome;
+    readonly List<double> moveUs = new(), stepUs = new(), physMs = new();
+    long perfBytes;
+    System.Reflection.MethodInfo stepMethod;
+    object[] stepArgs;
 
     void Check(bool ok, string what) { if (!ok) fails.Add(what); }
 
@@ -41,6 +51,7 @@ public partial class NpcCapsuleCheck : Node3D
             if (table.Find(id) != null) ids.Add(id);
         Check(ids.Count >= 2, $"{ids.Count} npc rows");
         if (ids.Count < 2) return;
+        table0 = ids[0];
         Check(!table.Find(ids[0]).CapsuleIgnore, $"npc {ids[0]} has the capsule ignore");
         npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 1, NpcId = ids[0] }));
         npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 2, NpcId = ids[0], Hidden = true }));
@@ -98,11 +109,76 @@ public partial class NpcCapsuleCheck : Node3D
         }
         foreach (var f in fails) GD.Print($"npc capsule check: FAIL {f}");
         GD.Print($"npc capsule check: {(fails.Count == 0 ? "OK" : "FAIL")}");
+        if (fails.Count == 0 && runner != null && int.TryParse(OS.GetEnvironment("MS2_NPC_CAPSULE_PERF"), out perfN) && perfN > 0)
+        {
+            StartPerf();
+            return;
+        }
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
+    }
+
+    void StartPerf()
+    {
+        int id = table0;
+        perfRoots = new List<Node3D>(perfN);
+        perfHome = new Vector3[perfN];
+        int side = (int)Mathf.Ceil(Mathf.Sqrt(perfN));
+        for (int i = 0; i < perfN; i++)
+        {
+            npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 100 + i, NpcId = id }));
+            var root = GetNode<Node3D>($"Npc{100 + i}");
+            perfHome[i] = new Vector3(-1200 + 2400f * (i % side) / side, 4, -1200 + 2400f * (i / side) / side);
+            root.Position = perfHome[i];
+            perfRoots.Add(root);
+        }
+        stepMethod = typeof(Player).GetMethod("MoveStep", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        stepArgs = new object[] { new Vector3(10, 0, 0), 1f / 60, 0u };
+        runner.GlobalPosition = new Vector3(-1200, 0.5f, 0);
+        perfFrame = 0;
+        SetPhysicsProcess(true);
+    }
+
+    static double Median(List<double> v) { v.Sort(); return v.Count == 0 ? 0 : v[v.Count / 2]; }
+
+    // one perf frame: frames 0-29 settle, 30-329 measured with bodies, then the bodies freed, 330-359 settle, 360-659 measured
+    void PerfFrame()
+    {
+        int f = perfFrame++;
+        bool measure = f is >= 30 and < 330 or >= 360 and < 660;
+        if (measure) physMs.Add(Performance.GetMonitor(Performance.Monitor.TimePhysicsProcess) * 1000);
+        long b0 = System.GC.GetAllocatedBytesForCurrentThread();
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        float a = f * 0.05f;
+        for (int i = 0; i < perfRoots.Count; i++)
+            perfRoots[i].Position = perfHome[i] + new Vector3(60 * Mathf.Cos(a + i), 0, 60 * Mathf.Sin(a + i));
+        long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (runner.GlobalPosition.X > 1200) runner.GlobalPosition = new Vector3(-1200, 0.5f, runner.GlobalPosition.Z);
+        stepMethod.Invoke(runner, stepArgs);
+        long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
+        long b1 = System.GC.GetAllocatedBytesForCurrentThread();
+        if (measure)
+        {
+            moveUs.Add((t1 - t0) * 1e6 / System.Diagnostics.Stopwatch.Frequency);
+            stepUs.Add((t2 - t1) * 1e6 / System.Diagnostics.Stopwatch.Frequency);
+            perfBytes += b1 - b0;
+        }
+        if (f == 329 || f == 659)
+        {
+            string tag = f == 329 ? "with bodies" : "bodies freed";
+            int bodies = 0;
+            foreach (var r in perfRoots) if (r.GetNodeOrNull("Capsule") != null) bodies++;
+            GD.Print($"npc capsule perf: {perfN} live npcs, {tag} ({bodies} bodies): npc move loop median {Median(moveUs):0.0} us, " +
+                     $"runner step median {Median(stepUs):0.0} us, physics frame median {Median(physMs):0.000} ms, " +
+                     $"main-thread bytes/frame {perfBytes / 300} (incl. the step's reflection call)");
+            moveUs.Clear(); stepUs.Clear(); physMs.Clear(); perfBytes = 0;
+            if (f == 329) foreach (var r in perfRoots) r.GetNodeOrNull("Capsule")?.Free();
+            else { SetPhysicsProcess(false); GetTree().Quit(0); }
+        }
     }
 
     public override void _PhysicsProcess(double delta)
     {
+        if (perfRoots != null) { PerfFrame(); return; }
         if (++frames < 3) return;
         SetPhysicsProcess(false);
         try { Run(); }
