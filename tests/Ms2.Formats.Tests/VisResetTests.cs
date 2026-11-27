@@ -114,6 +114,7 @@ public class VisResetTests
                     if (sc.Unsupported.Contains(u)) bad.Add($"{at}: {u} unsupported");
                 var nodeOf = new Dictionary<int, EffectNode>();
                 foreach (var nd in sc.Nodes) nodeOf[nd.Block] = nd;
+                var master = new HashSet<EffectNode>(sc.Systems.SelectMany(s => s.MasterNodes.SelectMany(g => g)).Select(k => sc.Nodes[k]));
                 var sysOf = new Dictionary<int, ParticleSystemDef>();
                 foreach (var s in sc.Systems) if (s.Node >= 0) sysOf[sc.Nodes[s.Node].Block] = s;
                 for (int i = 0; i < nif.Blocks.Count; i++)
@@ -135,27 +136,27 @@ public class VisResetTests
                         if (nd.Vis.Times.Length == 0 || nd.Vis.Times[0] > nd.VisCtl.Start + 1e-4 || nd.Vis.Times[^1] < nd.VisCtl.Stop - 1e-4)
                             bad.Add($"{at} block {i}: keys {string.Join(",", nd.Vis.Times)} do not cover {nd.VisCtl.Start}-{nd.VisCtl.Stop}");
                         Add($"{where} vis read");
-                        if (nd.Master) Add($"{where} vis under a master");
+                        if (master.Contains(nd)) Add($"{where} vis under a master");
                     }
                     else if (b.Type == "NiPSResetOnLoopCtlr")
                     {
                         Add($"{where} reset controllers");
                         if (!sysOf.TryGetValue((int)target, out var s)) { bad.Add($"{at} block {i}: target {target} is no system"); continue; }
                         if (s.ResetCtl == null || s.ResetCtl.Cycle != 0) { bad.Add($"{at} block {i}: not read"); continue; }
-                        Add($"{where} reset read{(s.Mesh ? " (mesh system)" : "")}");
+                        Add($"{where} reset read{(s.MeshParticles ? " (mesh system)" : "")}");
                     }
                 }
                 bool Up(int k, Func<EffectNode, bool> f) { for (int g = 0; k >= 0 && g < 256; k = sc.Nodes[k].Parent, g++) if (f(sc.Nodes[k])) return true; return false; }
                 foreach (var m in sc.Meshes)
-                    if (!sc.Nodes[m.Node].Master && !sc.Nodes[m.Node].Culled && Up(m.Node, x => x.Culled))
+                    if (!m.Master && !sc.Nodes[m.Node].Culled && Up(m.Node, x => x.Culled))
                     {
                         Add($"{where} meshes under a culled parent");
                         TestContext.Out.WriteLine($"{env}: under a culled parent: {at} {m.Mesh.Name}");
                     }
                 foreach (var s in sc.Systems)
                     if (s.Emitters.Count > 0 && Up(s.Node, x => x.Culled)) Add($"{where} systems culled");
-                foreach (var s in sc.Systems.Where(s => s.Mesh && s.Masters.Length > 0 && s.Masters[0] >= 0))
-                    if (sc.Nodes[s.Masters[0]].Culled) Add($"{where} masters culled");
+                foreach (var s in sc.Systems.Where(s => s.MeshParticles && s.MasterNodes.Length > 0 && s.MasterNodes[0].Length > 0))
+                    if (sc.Nodes[s.MasterNodes[0][0]].Culled) Add($"{where} masters culled");
             }
         foreach (var (k, c) in count) TestContext.Out.WriteLine($"{env}:   {k}: {c}");
         Assert.That(bad, Is.Empty, string.Join("\n", bad.Take(20)));
