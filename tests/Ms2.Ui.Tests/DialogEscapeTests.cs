@@ -75,6 +75,28 @@ public class DialogEscapeTests
         Assert.That(menu.IsClosed, Is.False);
     }
 
+    /// <summary>The fame point board takes Esc through the same walk, in its turn: a dialog opened over it closes first.</summary>
+    [Test]
+    public void EscClosesTheFameBoardInItsTurn()
+    {
+        Model();
+        var fame = new FamePointBoardController { TableString = tables.StringTableText };
+        var guide = new LearningQuestController();
+        Load(fame); Load(guide);
+        Assert.That(fame.EntityShown && guide.EntityShown, Is.True, "both shown");
+
+        UiController[] registry = { fame, guide };
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(guide.IsClosed, Is.True, "the dialog opened last closes first");
+        Assert.That(fame.IsClosed, Is.False, "one dialog per key");
+
+        Assert.That(DialogGates.EscapeKey(registry), Is.True);
+        Settle(registry);
+        Assert.That(fame.IsClosed, Is.True, "then the fame point board");
+        Assert.That(DialogGates.AnyClosable(registry), Is.False);
+    }
+
     [Test]
     public void CloseAllClosesEveryClosableDialogButTheSystemMenu()
     {
