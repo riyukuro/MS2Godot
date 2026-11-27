@@ -428,6 +428,19 @@ public sealed class BeautyCustomize : IBeautyCustomize
         }
     }
 
+    /// <summary>Customize::FUN_140cd2c20 @0x140cd2c20: as <see cref="HasChanges"/>, but an added edit item that IsSameUid finds equal to a
+    /// copy is no change.</summary>
+    public bool HasStyleChanges
+    {
+        get
+        {
+            long uid = EditItemUid;
+            if (IsColorChanged() || IsModifiedUid(uid)) return true;
+            if (IsAddedUid(uid)) return !IsSameUid(uid, out _);
+            return IsRemovedUid(uid);
+        }
+    }
+
     /// <summary>Customize::IsEditItemColorChanged @0x140cd2ea0: the change flags of the edit item have the colour bit.</summary>
     public bool IsEditItemColorChanged => (GetChangeFlags(EditItemUid) & 1) != 0;
 

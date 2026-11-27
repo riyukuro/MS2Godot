@@ -16,6 +16,7 @@ public class BeautyStyleFlowTests
     {
         public int EditItemId { get; set; }
         public bool HasChanges { get; set; }
+        public bool HasStyleChanges { get; set; }
         public bool IsEditItemAdded { get; set; }
         public bool IsEditItemColorChanged { get; set; }
         public bool IsDragging { get; set; }

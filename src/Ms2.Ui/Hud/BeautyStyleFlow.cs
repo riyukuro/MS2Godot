@@ -11,8 +11,8 @@ namespace Ms2.Ui.Hud;
 /// and stays shut without one.
 /// <para>STILL-OPEN: the client opens it from an NPC talk command ("BeautyStyleDialog", uitalkcinematic.cpp:1190, then
 /// OpenBeautyStyleDialog @0x141b1fa20 :1341: dialog 0x4f03, talk mode 4); the talk-dialog dispatch is not ported, so the host has
-/// no caller of <see cref="Open"/> yet. The close path FUN_140f082d0 is not recovered either: <see cref="Shutdown"/> restores the worn
-/// slot (FUN_140f08f70) and closes.</para>
+/// no caller of <see cref="Open"/> yet. The dialog's own close path is <see cref="BeautyStyleDialogController.RequestClose"/>;
+/// <see cref="Shutdown"/> restores the worn slot (FUN_140f08f70) and closes.</para>
 /// </summary>
 public sealed class BeautyStyleFlow
 {

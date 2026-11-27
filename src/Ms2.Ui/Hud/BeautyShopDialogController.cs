@@ -16,6 +16,9 @@ public interface IBeautyCustomize
     int EditItemId { get; }
     /// <summary>Customize::FUN_140cd2a00: anything of the slot was changed (a save is worth asking for).</summary>
     bool HasChanges { get; }
+    /// <summary>Customize::FUN_140cd2c20 (customize.cpp:1948): <see cref="HasChanges"/>, except that an added edit item equal to a copy
+    /// of the same id and slot (CloneItems::IsSameUid) is no change. The saved-styles dialog's close ask and buttons use it.</summary>
+    bool HasStyleChanges { get; }
     bool IsEditItemAdded { get; }
     bool IsEditItemColorChanged { get; }
     bool IsDragging { get; }

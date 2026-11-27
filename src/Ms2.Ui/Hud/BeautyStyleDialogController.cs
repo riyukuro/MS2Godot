@@ -13,8 +13,8 @@ namespace Ms2.Ui.Hud;
 /// and the result (8). The movie callbacks onClickExtendSlot and onClickDeleteCharacterCreateItem ask first and send mode 0x13
 /// / 0x12 on yes (SendBeautyMode19 @0x140f05640, SendBeautyMode18 @0x140f056e0).
 /// <para>STILL-OPEN: the movie's item objects (FUN_140f096f0, FUN_140f09810: the calls updateItems, updateItem and
-/// removeItemAndAdd and InitData's list build), the save path FUN_140f07310 (onClickSaveCurStyle with a free slot, the
-/// callbacks FUN_140f05820 and FUN_140f05850's FUN_140f08220), the bill (UIBillDialog 0x4e7b of OnClickSave), the camera dialog
+/// removeItemAndAdd and InitData's list build), the save path FUN_140f07310 (onClickSaveCurStyle with a free slot and the
+/// callback FUN_140f05820), the bill (UIBillDialog 0x4e7b of OnClickSave), the camera dialog
 /// 0x4ef2 and the per-frame state are not recovered or ported, so the paths that need them do nothing; the Customize is the
 /// host-set <see cref="IBeautyCustomize"/>. The payment's "not enough" box (FUN_14134a2e0) is the host-set
 /// <see cref="NotEnough"/>.</para>
@@ -30,14 +30,35 @@ public sealed class BeautyStyleDialogController : UiController
     /// <summary>The ctor's SetFlag(0, 1) (uibeautyshopstyledialog.cpp:786): always on, so the field Esc's open-dialog test and
     /// CloseAllDialogs pass it by.</summary>
     public override bool AlwaysOn => true;
-    /// <summary>vfunc_13 (uibeautyshopstyledialog.cpp:848): UIDialog's passes an always-on dialog, then Esc runs FUN_140f082d0
-    /// (:1605), which closes in shop mode 2 or with nothing changed and else asks (common string 0x271). STILL-OPEN: its
-    /// changed test (FUN_140cd2c20, not the shop's HasChanges) is not ported, so Esc closes as the walk did.</summary>
+    /// <summary>vfunc_13 (uibeautyshopstyledialog.cpp:848): UIDialog's passes an always-on dialog, then Esc runs
+    /// <see cref="RequestClose"/> and takes the key.</summary>
     public override bool EscapeKey()
     {
         if (IsClosed) return false;
-        Close();
+        RequestClose();
         return true;
+    }
+
+    /// <summary>FUN_140f082d0 (uibeautyshopstyledialog.cpp:1605), Esc and "OnClickClose": nothing without a Customize; in shop mode 2
+    /// or with no change (Customize::FUN_140cd2c20, <see cref="IBeautyCustomize.HasStyleChanges"/>) <see cref="Leave"/> at once; else
+    /// common string 0x271 with buttons ok/cancel, whose answer 0 leaves (FUN_140f05850).</summary>
+    public void RequestClose()
+    {
+        if (Customize == null) return;
+        if (ShopMode == 2 || !Customize.HasStyleChanges) { Leave(); return; }
+        var box = MessageBoxQueue.CreateWithCallback(Model.Tables.Common(0x271), 1, CloseOnOk);
+        box.SetButtonPreset(2);
+        ShowData(box);
+    }
+
+    /// <summary>FUN_140f08220 (uibeautyshopstyledialog.cpp:1591): nothing without a Customize; else the worn slot of the shop kind is
+    /// restored and the dialog ends. STILL-OPEN: the field's vfunc_149 and SetSubScene(0x620001d) of the same path are the host's
+    /// (<see cref="Closed"/>).</summary>
+    public void Leave()
+    {
+        if (Customize == null) return;
+        Customize.RestoreSlot(SlotOfKind(ShopKind));
+        Close();
     }
 
     // ---- host-set parts -----------------------------------------------------------------------------------------------
@@ -229,11 +250,10 @@ public sealed class BeautyStyleDialogController : UiController
 
     void Plain(string key) => ShowData(MessageBoxQueue.CreateWithCallback(Model.Tables.Common(key), 0, (_, _) => true));
 
-    /// <summary>FUN_140f05850: the answer 0 runs FUN_140f08220 (the close path, STILL-OPEN as its body is not recovered here):
-    /// the dialog closes.</summary>
+    /// <summary>FUN_140f05850 (uibeautyshopstyledialog.cpp:1173): the answer 0 runs FUN_140f08220 (<see cref="Leave"/>).</summary>
     bool CloseOnOk(int button, MessageBoxData _)
     {
-        if (button == 0) Close();
+        if (button == 0) Leave();
         return true;
     }
 
@@ -244,6 +264,7 @@ public sealed class BeautyStyleDialogController : UiController
         switch (name.ToLowerInvariant())
         {
             case "onclickextendslot": ClickExtendSlot(); return true;
+            case "onclickclose": RequestClose(); return true;   // :899
             case "onclickdeletecharactercreateitem":
                 if (args.Length > 0) ClickDelete((int)Rt.ToNumber(Host.Get(args[0], "index")));
                 return true;

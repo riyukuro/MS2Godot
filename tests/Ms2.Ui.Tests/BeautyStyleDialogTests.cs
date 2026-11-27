@@ -32,6 +32,7 @@ public class BeautyStyleDialogTests
     {
         public int EditItemId { get; set; }
         public bool HasChanges { get; set; }
+        public bool HasStyleChanges { get; set; }
         public bool IsEditItemAdded { get; set; }
         public bool IsEditItemColorChanged { get; set; }
         public bool IsDragging { get; set; }
@@ -276,6 +277,73 @@ public class BeautyStyleDialogTests
         Assert.That(r.C.Closing, Is.False, "answer 1 does nothing");
         r.Boxes[3].Callback(0, r.Boxes[3]);
         Assert.That(r.C.Closing, Is.True, "the code box ends the dialog on ok");
+    }
+
+    [Test]
+    public void EscWithoutAStyleChangeLeavesAtOnceAndRestoresTheWornSlot()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Shop(kind: 2));
+        r.Cu.HasChanges = true;          // the shop's test (FUN_140cd2a00) says changed, the style dialog's (FUN_140cd2c20) does not
+        Assert.That(r.C.EscapeKey(), Is.True);
+        Assert.That(r.Boxes, Is.Empty, "no change: no ask");
+        Assert.That(r.Cu.Calls, Is.EqualTo(new[] { "restore3" }), "FUN_140f08220 restores the slot of shop kind 2");
+        Assert.That(r.C.Closing, Is.True);
+    }
+
+    [Test]
+    public void EscWithAStyleChangeAsksAndOkLeaves()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Shop(kind: 1));
+        r.Cu.HasStyleChanges = true;
+        var common = MessageBoxData.CommonByKey;
+        MessageBoxData.CommonByKey = k => "#" + k;
+        try
+        {
+            Assert.That(r.C.EscapeKey(), Is.True);
+            Assert.That(r.Boxes, Has.Count.EqualTo(1));
+            Assert.That((r.Boxes[0].Btn0, r.Boxes[0].Btn1), Is.EqualTo((MessageBoxData.Common(0x475), MessageBoxData.Common(0x476))), "button preset 2: ok / cancel");
+            Assert.That(r.Boxes[0].Btn0, Is.Not.EqualTo(MessageBoxData.Common(0x477)).And.Not.Empty, "not the yes / no of the box type");
+        }
+        finally { MessageBoxData.CommonByKey = common; }
+        var box = r.Boxes[0];
+        Assert.That(box.Msg, Is.EqualTo(r.C.Model.Tables.Common(0x271)).And.Not.Empty);
+        Assert.That(r.C.Closing, Is.False, "the ask leaves the dialog open");
+        Assert.That(box.Callback(1, box), Is.True);
+        Assert.That((r.C.Closing, r.Cu.Calls.Count), Is.EqualTo((false, 0)), "cancel: nothing");
+        Assert.That(box.Callback(0, box), Is.True);
+        Assert.That(r.Cu.Calls, Is.EqualTo(new[] { "restore1" }));
+        Assert.That(r.C.Closing, Is.True);
+    }
+
+    [Test]
+    public void ShopModeTwoAndTheCloseButtonFollowTheSamePath()
+    {
+        var r = new Rig();
+        var p = Rig.Shop(kind: 1);
+        p.ShopMode = 2;
+        r.C.OnPacket(p);
+        r.Cu.HasStyleChanges = true;
+        Assert.That(r.C.OnCallback("OnClickClose", System.Array.Empty<object>()), Is.True);
+        Assert.That(r.Boxes, Is.Empty, "shop mode 2 leaves without the ask");
+        Assert.That(r.C.Closing, Is.True);
+
+        var q = new Rig();
+        q.C.OnPacket(Rig.Shop(kind: 1));
+        q.Cu.HasStyleChanges = true;
+        Assert.That(q.C.OnCallback("OnClickClose", System.Array.Empty<object>()), Is.True);
+        Assert.That(q.Boxes, Has.Count.EqualTo(1), "the close button asks as Esc does");
+    }
+
+    [Test]
+    public void WithoutACustomizeEscIsTakenAndNothingHappens()
+    {
+        var r = new Rig();
+        r.C.Customize = null;
+        Assert.That(r.C.EscapeKey(), Is.True, "vfunc_13 returns 1 after FUN_140f082d0");
+        Assert.That(r.Boxes, Is.Empty);
+        Assert.That(r.C.Closing, Is.False, "FUN_140f082d0 returns at once without m_198");
     }
 
     [Test]

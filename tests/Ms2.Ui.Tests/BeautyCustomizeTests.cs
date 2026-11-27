@@ -63,6 +63,22 @@ public class BeautyCustomizeTests
     }
 
     [Test]
+    public void AnAddedStyleEqualToACopyIsNoStyleChange()
+    {
+        var a = Worn((100, 1, EquipSlot.HR));
+        var c = new BeautyCustomize(a);
+        a.Equip(new EquipItem { Id = 100, Uid = 50, Slot = EquipSlot.HR });   // a saved style of the same hair, its own uid
+        c.SelectUid(50);
+        Assert.That(c.IsEditItemAdded, Is.True);
+        Assert.That(c.HasChanges, Is.True, "FUN_140cd2a00 counts every added uid");
+        Assert.That(c.HasStyleChanges, Is.False, "FUN_140cd2c20: IsSameUid finds the copy of the same id and slot");
+        a.Equip(new EquipItem { Id = 101, Uid = 51, Slot = EquipSlot.HR });
+        c.SelectUid(51);
+        Assert.That(c.HasStyleChanges, Is.True, "another hair is a change");
+        Assert.That(new BeautyCustomize(Worn((100, 1, EquipSlot.HR))).HasStyleChanges, Is.False, "nothing changed");
+    }
+
+    [Test]
     public void ADyedWornItemIsModifiedAndItsFlagIsTheColourBit()
     {
         var a = Worn((100, 1, EquipSlot.HR));
