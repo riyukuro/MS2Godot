@@ -327,16 +327,29 @@ public partial class AlphaRenderCheck : Node
             || tn.Mesh != nz.Mesh || tn.MaterialOverride is not ShaderMaterial tnm || tnm.Shader.Code.Contains("#define BLEND"))
             fails.Add("no opaque shadow-only twin of the blended mesh without the z write");
 
-        // the twin's opacity is the base map's alpha alone (NiDirectionalShadowWriteMaterial.cpp:192-229): a blended mesh at
-        // material alpha 0.3 still casts a full shadow, cut only by the base map
+        // ShadowCullingProcess (@0x141753590) drops a blended mesh whose material alpha is not 1: at material alpha 0.3 it
+        // casts nothing, no twin
         var faint = Mesh(Quad("blend_faint", 0), 0xED);
         faint.MaterialAlpha = 0.3f;
         var fr = Model("caster_faint", main, null, faint);
-        var ft = fr.GetNode("Model/" + ModelBuilder.SkeletonName).GetNode<MeshInstance3D>("blend_faint").GetNodeOrNull<MeshInstance3D>("blend_faint_shadow");
-        if (ft?.MaterialOverride is not ShaderMaterial ftm) fails.Add("no shadow twin of the faint blended mesh");
-        else if (ftm.GetShaderParameter(ShaderParam.MatAlpha).AsSingle() != 1f || ftm.GetShaderParameter(ShaderParam.AlphaAnimCount).AsInt32() != 0
-                 || ftm.GetShaderParameter(ShaderParam.VcOpacity).AsBool())
-            fails.Add($"shadow twin keeps the colour pass's opacity terms (mat_alpha {ftm.GetShaderParameter(ShaderParam.MatAlpha)})");
+        var fmi = fr.GetNode("Model/" + ModelBuilder.SkeletonName).GetNode<MeshInstance3D>("blend_faint");
+        if (fmi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off || fmi.GetNodeOrNull("blend_faint_shadow") != null)
+            fails.Add("the blended mesh at material alpha 0.3 still casts");
+        // the twin's opacity is the base map's alpha alone (NiDirectionalShadowWriteMaterial.cpp:192-229): a blended mesh at
+        // material alpha 1, faint through its alpha controller and vertex alpha, casts a full shadow, cut only by the base map
+        var dim = Mesh(Quad("blend_dim", 0, vertexAlpha: 0.3f), 0xED);
+        dim.VertexColorFlags = 0x28;
+        dim.AlphaAnim = new AlphaAnim { Start = 0, Stop = 1, KeyType = 1, Times = new[] { 0f, 1f }, Values = new[] { 0.3f, 0.3f } };
+        var dr = Model("caster_dim", main, null, dim);
+        var dmi = dr.GetNode("Model/" + ModelBuilder.SkeletonName).GetNode<MeshInstance3D>("blend_dim");
+        var dt = dmi.GetNodeOrNull<MeshInstance3D>("blend_dim_shadow");
+        if (dmi.Mesh?.SurfaceGetMaterial(0) is not ShaderMaterial dsm || dsm.GetShaderParameter(ShaderParam.AlphaAnimCount).AsInt32() != 2
+            || !dsm.GetShaderParameter(ShaderParam.VcOpacity).AsBool())
+            fails.Add("the dim blended mesh's colour pass lacks its alpha controller or vertex alpha");
+        if (dt?.MaterialOverride is not ShaderMaterial dtm) fails.Add("no shadow twin of the dim blended mesh");
+        else if (dtm.GetShaderParameter(ShaderParam.MatAlpha).AsSingle() != 1f || dtm.GetShaderParameter(ShaderParam.AlphaAnimCount).AsInt32() != 0
+                 || dtm.GetShaderParameter(ShaderParam.VcOpacity).AsBool())
+            fails.Add($"shadow twin keeps the colour pass's opacity terms (alpha anim keys {dtm.GetShaderParameter(ShaderParam.AlphaAnimCount)})");
 
         for (int i = 0; i < 4; i++) await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         Color Px(SubViewport vp) => vp.GetTexture().GetImage().GetPixel(Size / 2, Size / 2);
