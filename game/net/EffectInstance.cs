@@ -27,7 +27,9 @@ public sealed partial class EffectInstance : Node3D
 {
     sealed class MeshState
     {
-        public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
+        public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat;
+        public ShaderMaterial Glow;                              // its glow-mask twin's material (GlowTwin), or null; per-frame parameters go to both
+        public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
         public bool NotFinite;                                   // hidden for a non-finite world transform (Place)
         public string BaseKey; public TexMap BaseMap, GlowMap, DetailMap, NormalMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the drawn maps
         public TexTransform BaseT, GlowT, DetailT, NormalT;       // working transforms the uv controllers write each frame
@@ -513,6 +515,84 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
 
     static bool BlendOn(int alphaFlags) => alphaFlags >= 0 && (alphaFlags & 1) != 0;
 
+    // The glow mask an effect mesh draws into the glow target (GlowPass), the client's MS2GlowMaterial over the same mesh:
+    // rgb = the glow map's alpha, times the detail map's alpha with a detail map (HandleGlowColor @0x1427761b0), lerped
+    // to the height fog colour by the height fog share (MS2GlowMaterial_ps_3_0_DX9.cache @0x8c / @0x327; the depth fog is
+    // off); alpha = the base map's alpha times the material (or vertex) alpha, without the detail alpha the colour pass's
+    // MS2StandardMaterial takes. The healing pillar's column and ring masks read so in the client's capture: PS 0x3c9ac3f0
+    // `oC0.w = Base.a * v0.w; oC0.rgb = lerp(c0, Detail.a * Glow.a, fog)` and PS 0x3c9dcc30 `oC0.rgb = Glow.a`. The draw
+    // keeps the colour pass's blend, z and cull states and samplers (MS2MaterialSwapProcessor swaps the material only).
+    // No depth fog and no lights; unshaded, the target keeps the value as written (field_glow).
+    static readonly string MaskCode = @"shader_type spatial;
+render_mode unshaded, MESHSTATE, MASKBLEND;
+uniform sampler2D tex : repeat_enable, filter_linear_mipmap;
+uniform bool has_tex = true;
+uniform sampler2D glow_tex : repeat_enable, filter_linear_mipmap;
+uniform sampler2D detail_tex : repeat_enable, filter_linear_mipmap;
+uniform bool has_detail = false;
+uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
+uniform bool detail_uv2 = false;
+uniform int detail_clamp = 0;
+uniform vec3 base_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
+uniform vec3 glow_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 glow_r1 = vec3(0.0, 1.0, 0.0);
+uniform bool base_uv2 = false;
+uniform bool glow_uv2 = false;
+uniform int base_clamp = 0;
+uniform int glow_clamp = 0;
+uniform int base_filter = 1;
+uniform int glow_filter = 1;
+uniform int detail_filter = 1;
+uniform float alpha = 1.0;
+uniform bool vc_opacity = false;
+global uniform vec3 ms2_hfog_color;
+global uniform vec3 ms2_hfog;
+varying vec3 fog_world;
+MORPHDECL
+void vertex() { MORPHVERT fog_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+MAPDECL
+void fragment() {
+    float g = map_tex(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1), glow_clamp, glow_filter).a;
+    if (has_detail) g *= map_tex(detail_tex, map_uv(detail_uv2 ? UV2 : UV, detail_r0, detail_r1), detail_clamp, detail_filter).a;
+    float hf = ms2_hfog.z * (1.0 - clamp((fog_world.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
+    ALBEDO = mix(vec3(g), ms2_hfog_color, hf);
+    MASKALPHA
+}";
+    static readonly Dictionary<string, Shader> maskShaders = new();
+
+    // the mask shader for a mesh's render modes: blend_mix with the opacity for a SRCALPHA / INVSRCALPHA mesh, no blend for an opaque one
+    static Shader MaskShader(ModelMesh m, bool mirrored, int morphTargets)
+    {
+        bool blend = BlendOn(m.AlphaFlags);
+        string state = RenderModes(m, mirrored), key = state + (blend ? " mix" : " opaque") + (morphTargets > 0 ? " morph" + morphTargets : "");
+        if (!maskShaders.TryGetValue(key, out var sh))
+            maskShaders[key] = sh = new Shader { Code = WithMorph(MaskCode.Replace("MAPDECL", MapDecl), morphTargets).Replace("MESHSTATE", state)
+                .Replace(", MASKBLEND", blend ? ", blend_mix" : "")
+                .Replace("MASKALPHA", blend ? "ALPHA = clamp((has_tex ? map_tex(tex, map_uv(base_uv2 ? UV2 : UV, base_r0, base_r1), base_clamp, base_filter).a : 1.0) * (vc_opacity ? COLOR.a : alpha), 0.0, 1.0);" : "") };
+        return sh;
+    }
+
+    /// <summary>An effect mesh with a glow map joins the glow pass as a field mesh does (ModelBuilder.AddGlowTwin): a twin
+    /// under its node on the glow layer, drawing the glow mask (MaskCode) with the colour pass's maps, transforms and opacity.
+    /// The meshes are the client's glow-click ones (EffectMesh.GlowMask); the particle systems are its other case and never
+    /// join.</summary>
+    void GlowTwin(MeshState ms)
+    {
+        var m = ms.Def.Mesh;
+        if (!GlowPass.Wanted || !ms.Def.GlowMask || mb.Texture(m.Textures["glow"]) == null) return;
+        var gm = new ShaderMaterial { Shader = MaskShader(m, false, ms.MorphTargets), RenderPriority = ms.Mat.RenderPriority };
+        foreach (var u in gm.Shader.GetShaderUniformList())
+        {
+            var name = u.AsGodotDictionary()["name"].AsStringName();
+            var v = ms.Mat.GetShaderParameter(name);
+            if (v.VariantType != Variant.Type.Nil) gm.SetShaderParameter(name, v);
+        }
+        ms.Glow = gm;
+        ms.Node.AddChild(new MeshInstance3D { Mesh = ms.Node.Mesh, MaterialOverride = gm, Name = ms.Node.Name + "_glow", Layers = GlowPass.Bit, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+    }
+
     static readonly string[] MorphTerms = { "morph_w.x * CUSTOM0.xyz", "morph_w.y * CUSTOM1.xyz", "morph_w.z * CUSTOM2.xyz", "morph_w.w * CUSTOM3.xyz" };
 
     // NiMorphingKernel (NiMorphingKernel.cpp:30-40) for relative targets: target 0 (VERTEX) plus each weighted offset
@@ -554,6 +634,7 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
             ms.Static = !Dyn(em.Node);
             ms.Node.Visible = !scene.Nodes[em.Node].Culled;
             z.AddChild(ms.Node);
+            GlowTwin(ms);
             meshes.Add(ms);
         }
         foreach (var d in scene.Systems)
@@ -844,7 +925,11 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
         if (m == mirrored) return;
         mirrored = m;
         foreach (var ms in meshes)
-            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
+            if (ms.Def.Mesh.Cull != FaceCull.None)
+            {
+                ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
+                if (ms.Glow != null) ms.Glow.Shader = MaskShader(ms.Def.Mesh, mirrored, ms.MorphTargets);
+            }
         // and the clones made so far (a later one takes mirrored as it is made, BuildMeshState); a shared material is set
         // once per clone, to the same shader
         foreach (var ps in systems)
@@ -1013,7 +1098,7 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
         else
         {
             if (d.Colors.Count > 0) Shade(ms, t, false);
-            if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
+            if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) { ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); ms.Glow?.SetShaderParameter(FxParam.Alpha, a); } }
         }
         if (d.Uv.Count > 0) AnimateUv(ms, t, started);
         if (ms.Morph != null) SetMorphWeights(ms, t, false);
@@ -1024,7 +1109,7 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
                                            : (int)Math.Floor((lt - d.Flip.Ctl.Start) / Math.Max(d.Flip.Ctl.Stop - d.Flip.Ctl.Start, 1e-6) * ms.Flip.Length);
             idx = Math.Clamp(idx, 0, ms.Flip.Length - 1);
             var tex = ms.Flip[idx];
-            if (tex != null && tex != ms.LastTex) { ms.LastTex = tex; ms.Mat.SetShaderParameter(FxParam.Tex, ms.FlipV[idx]); }
+            if (tex != null && tex != ms.LastTex) { ms.LastTex = tex; ms.Mat.SetShaderParameter(FxParam.Tex, ms.FlipV[idx]); ms.Glow?.SetShaderParameter(FxParam.Tex, ms.FlipV[idx]); }
         }
     }
 
@@ -1074,7 +1159,7 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
         w.Clear();
         ms.Morph.WeightsAt(t, w[..ms.MorphTargets]);
         var v = new Vector4(w[0], w[1], w[2], w[3]);
-        if (force || v != ms.LastW) ms.Mat.SetShaderParameter(FxParam.MorphW, ms.LastW = v);
+        if (force || v != ms.LastW) { ms.Mat.SetShaderParameter(FxParam.MorphW, ms.LastW = v); ms.Glow?.SetShaderParameter(FxParam.MorphW, v); }
     }
 
     // a map's texture transform as the shader's two rows (identity without one), map 0 base, 1 glow, 2 detail or 3 normal; a row is set only
@@ -1084,8 +1169,16 @@ vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
         Vector3 a = new(1, 0, 0), b = new(0, 1, 0);
         if (tt != null) { var r = ms.Rows; tt.Rows(r); a = new(r[0], r[1], r[2]); b = new(r[3], r[4], r[5]); }
         int k = map * 2;
-        if (force || a != ms.LastRows[k]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR0 : map == 1 ? FxParam.GlowR0 : map == 2 ? FxParam.DetailR0 : FxParam.NormalR0, ms.LastRows[k] = a);
-        if (force || b != ms.LastRows[k + 1]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR1 : map == 1 ? FxParam.GlowR1 : map == 2 ? FxParam.DetailR1 : FxParam.NormalR1, ms.LastRows[k + 1] = b);
+        if (force || a != ms.LastRows[k])
+        {
+            var p = map == 0 ? FxParam.BaseR0 : map == 1 ? FxParam.GlowR0 : map == 2 ? FxParam.DetailR0 : FxParam.NormalR0;
+            ms.Mat.SetShaderParameter(p, ms.LastRows[k] = a); ms.Glow?.SetShaderParameter(p, a);
+        }
+        if (force || b != ms.LastRows[k + 1])
+        {
+            var p = map == 0 ? FxParam.BaseR1 : map == 1 ? FxParam.GlowR1 : map == 2 ? FxParam.DetailR1 : FxParam.NormalR1;
+            ms.Mat.SetShaderParameter(p, ms.LastRows[k + 1] = b); ms.Glow?.SetShaderParameter(p, b);
+        }
     }
 
     // a map's uv set and clamp mode. The map reads its own uv set (TEXCOORD_MASK; NiStandardMaterialDescriptor.cpp:1006,

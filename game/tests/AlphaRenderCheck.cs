@@ -126,13 +126,15 @@ public partial class AlphaRenderCheck : Node
         cases.Add((name, vp, check));
     }
 
-    /// <summary>One mesh played by the effect runtime (EffectInstance), blended (0xED) at the material alpha, in a new
-    /// viewport; the camera sits at file (0,0,10) looking down file -z.</summary>
-    void Effect(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u)
+    /// <summary>One mesh played by the effect runtime (EffectInstance), blended (<paramref name="alphaFlags"/>, 0xED) at the
+    /// material alpha, in a new viewport drawing the layers <paramref name="mask"/>; the camera sits at file (0,0,10) looking
+    /// down file -z.</summary>
+    void Effect(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u, int alphaFlags = 0xED, bool detailOpacity = false)
     {
-        m.AlphaFlags = 0xED; m.MaterialAlpha = alpha;
+        m.AlphaFlags = alphaFlags; m.MaterialAlpha = alpha;
         var sc = new EffectScene { Duration = 10 };
         sc.Nodes.Add(new EffectNode { Name = "n" });
+        if (detailOpacity) m.Material = "MS2StandardMaterial";   // the material whose detail alpha is the opacity (EffectMesh.DetailOpacity)
         sc.Meshes.Add(new EffectMesh { Mesh = m, Node = 0 });
         var vp = View(mask);
         var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
@@ -194,6 +196,9 @@ public partial class AlphaRenderCheck : Node
         // ModelBuilder reads textures from the packs; the glow cases preload theirs into its cache (no game data here)
         var cache = (Dictionary<string, Texture2D>)typeof(ModelBuilder).GetField("textures", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(mb);
         cache["glow.dds"] = white;
+        var halfImg = Image.CreateEmpty(4, 4, false, Image.Format.Rgba8);
+        halfImg.Fill(new Color(1, 1, 1, 128 / 255f));
+        cache["half.dds"] = ImageTexture.CreateFromImage(halfImg);
         GlowPass.Wanted = true;
         RenderingServer.GlobalShaderParameterSet("ms2_hfog", Vector3.Zero);
 
@@ -342,6 +347,20 @@ public partial class AlphaRenderCheck : Node
         Effect("fx_map_trilerp_clamped", Grey(0.5f, "clamped trilerp map reads its mip levels"), Mapped(Quad("q", 0), 2, 0), 1f);
         Effect("fx_map_bilerp", Grey(1f, "bilerp map reads the top level"), Mapped(Quad("q", 0), 1, 3), 1f);
         Effect("fx_map_nearest", Grey(1f, "nearest map reads the top level"), Mapped(Quad("q", 0), 0, 3), 1f);
+        // An effect mesh with a glow map draws its glow mask into the glow target as the field's meshes do (MS2GlowMaterial):
+        // rgb the glow map's alpha times the detail map's alpha, alpha the base (here none) times the material alpha.
+        ModelMesh Glowing(ModelMesh q, string detail = null)
+        {
+            q.Textures["glow"] = "glow.dds";
+            if (detail != null) q.Textures["detail"] = detail;
+            return q;
+        }
+        Effect("fx_glow_mask", Grey(0.5f, "effect glow mask at material alpha 0.5"), Glowing(Quad("q", 0)), 0.5f, glow);
+        Effect("fx_glow_mask_opaque", Grey(1f, "unblended effect glow mask"), Glowing(Quad("q", 0)), 0.25f, glow, alphaFlags: 0);
+        // the detail map's alpha 0.5 scales the mask's colour, not its opacity as it does the colour pass's (0.25 if both)
+        Effect("fx_glow_mask_detail", Grey(0.5f, "effect glow mask times the detail alpha 0.5"), Glowing(Quad("q", 0), "half.dds"), 1f, glow, detailOpacity: true);
+        // an additive (SRCALPHA / ONE) mesh is not a glow-click mesh: nothing in the glow target
+        Effect("fx_glow_mask_additive", Grey(0f, "additive effect mesh adds no glow mask"), Glowing(Quad("q", 0)), 1f, glow, alphaFlags: 0x100D);
         Particle("fx_part_map_trilerp", Grey(0.5f, "particle trilerp map reads its mip levels"), Mapped(Quad("q", 0), 2, 3), 1f, setup: SmallMapped);
         Particle("fx_part_map_bilerp", Grey(1f, "particle bilerp map reads the top level"), Mapped(Quad("q", 0), 1, 0), 1f, setup: SmallMapped);
 

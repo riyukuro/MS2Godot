@@ -139,6 +139,13 @@ public sealed class EffectMesh
     /// mask and not through this.</summary>
     public bool DetailOpacity => ModelData.IsStandardMaterial(ActiveMaterial);
 
+    /// <summary>The block draws its glow mask into the glow target: it has a glow map and does not blend, or blends SRCALPHA /
+    /// INVSRCALPHA (NiAlphaProperty 6 / 7), the client's glow-click rule for a mesh (FUN_1414cffc0,
+    /// ms2materialswapprocessor.cpp:158-170; FUN_141567260, unit_141567000.cpp:158-168), as the field's (ModelBuilder.GlowMaterial).
+    /// STILL-OPEN: a block drawn through an _HO technique (<see cref="Ho"/>) is left out here.</summary>
+    public bool GlowMask => Ho == null && Mesh != null && Mesh.Textures.ContainsKey("glow")
+        && (Mesh.AlphaFlags < 0 || (Mesh.AlphaFlags & 1) == 0 || (((Mesh.AlphaFlags >> 1) & 15) == 6 && ((Mesh.AlphaFlags >> 5) & 15) == 7));
+
     /// <summary>The material's emissive and specular colours at effect time t (NiMaterialColorController keys applied,
     /// Target 3 emissive, 2 specular; else the NiMaterialProperty's): the MATERIALEMISSIVE and MATERIALSPECULAR constants
     /// a technique of <see cref="Ho"/> reads (NiD3DShaderConstantMap.cpp:2165-2201). Their alpha is the material alpha,
