@@ -144,6 +144,21 @@ public partial class AlphaRenderCheck : Node
         cases.Add((name, vp, check));
     }
 
+    /// <summary>Several meshes played by one effect (each with its own blend, opacity and depth flags already set), in a new
+    /// viewport on layer 1; the camera as in <see cref="Effect"/>.</summary>
+    void EffectStack(string name, Func<Color, string> check, params ModelMesh[] meshes)
+    {
+        var sc = new EffectScene { Duration = 10 };
+        sc.Nodes.Add(new EffectNode { Name = "n" });
+        foreach (var m in meshes) sc.Meshes.Add(new EffectMesh { Mesh = m, Node = 0 });
+        var vp = View(1u);
+        var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
+        vp.AddChild(fx);
+        fx.FileSpace = Transform3D.Identity;
+        vp.GetNode<Camera3D>("Cam").GlobalTransform = fx.GetChild<Node3D>(0).GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 0, 10));
+        cases.Add((name, vp, check));
+    }
+
     /// <summary>One still particle at the effect's origin, shaded by <paramref name="m"/> as the system's material (blended
     /// 0xED at the material alpha), in a new viewport; the camera as in <see cref="Effect"/>.</summary>
     void Particle(string name, Func<Color, string> check, ModelMesh m, float alpha, uint mask = 1u, Action<ParticleSystemDef> setup = null, bool mirrored = false)
@@ -186,6 +201,15 @@ public partial class AlphaRenderCheck : Node
 
     Func<Color, string> Grey(float want, string what) => c => Near(L(c), new Vector3(want, want, want), what);
     Func<Color, string> Rgb(float r, float g, float b, string what) => c => Near(L(c), new Vector3(r, g, b), what);
+    /// <summary>A known gap: the client's value passes (the gap is closed); our recorded value passes and prints a GAP line
+    /// (STILL-OPEN); anything else fails.</summary>
+    Func<Color, string> Gap(float client, float ours, string what) => c =>
+    {
+        if (Near(L(c), new Vector3(client, client, client), what) == null) return null;
+        var err = Near(L(c), new Vector3(ours, ours, ours), what);
+        if (err == null) GD.Print($"alpha_render: GAP {what}: got {L(c)}, the client's {client} (STILL-OPEN)");
+        return err;
+    };
 
     public override async void _Ready()
     {
@@ -326,6 +350,16 @@ public partial class AlphaRenderCheck : Node
         // so is the opacity the blend takes: material alpha 1.5 (the crystal ring's controller peak) gives emissive
         // (0.4, 0.2, 0.3) over black as it is, not weighed by 1.5 to (0.6, 0.3, 0.45)
         Effect("fx_opacity_saturated", Rgb(0.4f, 0.2f, 0.3f, "effect emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
+        // the saturation is per draw (the shader clamps its own colour and opacity), not per blend: two additive (SRCALPHA /
+        // ONE) layers of 0.8 and then a black SRCALPHA / INVSRCALPHA layer at 0.5. The client's 8-bit target saturates each
+        // blend's result, min(1.6, 1) = 1, then 1 * 0.5 = 0.5; the float scene target keeps 1.6, then 0.8 (STILL-OPEN: an
+        // 8-bit or clamped scene target)
+        {
+            var add1 = Emit(Quad("add1", 0), 0.8f, 0.8f, 0.8f); add1.AlphaFlags = 0x100D; add1.ZFlags = 1; add1.MaterialAlpha = 1f;
+            var add2 = Emit(Quad("add2", 0.5f), 0.8f, 0.8f, 0.8f); add2.AlphaFlags = 0x100D; add2.ZFlags = 1; add2.MaterialAlpha = 1f;
+            var black = Emit(Quad("black", 1f), 0, 0, 0); black.AlphaFlags = 0xED; black.ZFlags = 1; black.MaterialAlpha = 0.5f;
+            EffectStack("fx_stack_saturated", Gap(0.5f, 0.8f, "two additive 0.8 layers under a black layer at alpha 0.5"), add1, add2, black);
+        }
         // MINOR 4: the particle quads draw through the same standard material (SoftParticlesMaterial) into the same target
         Particle("fx_part_saturated", Grey(0.5f, "particle emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
         Particle("fx_part_opacity_saturated", Rgb(0.4f, 0.2f, 0.3f, "particle emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);

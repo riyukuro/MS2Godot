@@ -45,12 +45,12 @@ public class MapFilterTests
         var count = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var example = new Dictionary<string, string>();
         var bad = new List<string>();
-        int nifs = 0;
+        int nifs = 0, skipped = 0;
         foreach (var entry in packs.List(Archive).Where(e => e.EndsWith(".nif", StringComparison.Ordinal)))
         {
             EffectScene sc;
             try { sc = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, entry))); }
-            catch (Exception) { continue; }
+            catch (Exception) { skipped++; continue; }
             nifs++;
             var items = sc.Meshes.Select(m => ("mesh", m)).Concat(sc.Systems.Select(s => ("system", s.Material)));
             foreach (var (kind, em) in items)
@@ -62,7 +62,7 @@ public class MapFilterTests
                     example.TryAdd(k, $"{entry} {em.Mesh.Name} {slot}");
                 }
         }
-        TestContext.Out.WriteLine($"{env}: {nifs} nifs");
+        TestContext.Out.WriteLine($"{env}: {nifs} nifs, {skipped} skipped (do not load)");
         foreach (var (k, c) in count) TestContext.Out.WriteLine($"  {k}: {c} (e.g. {example[k]})");
         Assert.That(nifs, Is.GreaterThan(1000));
         Assert.That(bad, Is.Empty, string.Join("\n", bad.Take(20)));

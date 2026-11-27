@@ -174,7 +174,9 @@ void fragment() {
     // postprocessingservice.cpp:1519-1556) hard-codes D3DFMT_A8R8G8B8 for it (CreateOffscreenTarget @0x1416a3bb0; FUN_1416ac3b0,
     // :2056, binds it in LinkEffects); a float format only holds the post steps' copy of it (CopyTargetToTexture @0x1416abb30).
     // So the colour, after the depth fog, and the opacity the blend takes are saturated: a colour above 1 at a low opacity
-    // lifts what is behind it evenly instead of tinting it with its hue.
+    // lifts what is behind it evenly instead of tinting it with its hue. This saturates per draw, not per blend: the 8-bit
+    // target also saturates each blend's result, so an additive stack above 1 under a later mix layer reads brighter here
+    // (STILL-OPEN: an 8-bit or clamped scene target; alpha_render fx_stack_saturated records the gap).
     FOG = vec4(0.0);
     ALBEDO = clamp(mix(ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS) * k, ms2_fog_color * k, fog_share), 0.0, 1.0);
     ALPHA = clamp(a, 0.0, 1.0);
@@ -576,8 +578,10 @@ void fragment() {
 
     /// <summary>An effect mesh with a glow map joins the glow pass as a field mesh does (ModelBuilder.AddGlowTwin): a twin
     /// under its node on the glow layer, drawing the glow mask (MaskCode) with the colour pass's maps, transforms and opacity.
-    /// The meshes are the client's glow-click ones (EffectMesh.GlowMask); the particle systems are its other case and never
-    /// join.</summary>
+    /// The meshes are the client's glow-click ones (EffectMesh.GlowMask). The particle systems never join: the client's
+    /// NiPSParticleSystem::LoadBinary sets NiAVObject flag 0x400 on every system it streams (exe 0x141e9b64e), and the
+    /// glow-click predicate turns 0x400 objects away first (FUN_1414cffc0 through FUN_14098dfc0,
+    /// ms2materialswapprocessor.cpp:158-170).</summary>
     void GlowTwin(MeshState ms)
     {
         var m = ms.Def.Mesh;

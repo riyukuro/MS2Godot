@@ -46,7 +46,10 @@ public class EffectGlowMaskTests
     }
 
     /// <summary>Every glow-mapped mesh of every effect nif on both data sets, counted by whether it draws a mask, is left out
-    /// for its blend, or draws through an _HO technique (STILL-OPEN: no mask here).</summary>
+    /// for its blend, or draws through an _HO technique (STILL-OPEN: no mask here). Also counted: the alpha-tested
+    /// (NiAlphaProperty 0x200) masked meshes, whose mask draws no alpha test (as their colour pass, which tests only on _HO),
+    /// and the glow-mapped particle systems that would pass the blend rule; the client never swaps a system (its
+    /// LoadBinary sets flag 0x400, which the predicate turns away), so they draw no mask. Nifs that do not load are counted.</summary>
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
     public void EveryGlowMappedEffectMesh(string env)
@@ -57,12 +60,12 @@ public class EffectGlowMaskTests
         var spec = new NifSpec(NifEnv.NifXml());
         var count = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var example = new Dictionary<string, string>();
-        int nifs = 0;
+        int nifs = 0, skipped = 0, alphaTested = 0, systems = 0, systemsBlendPass = 0;
         foreach (var entry in packs.List(Archive).Where(e => e.EndsWith(".nif", StringComparison.Ordinal)))
         {
             EffectScene sc;
             try { sc = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, entry))); }
-            catch (Exception) { continue; }
+            catch (Exception) { skipped++; continue; }
             nifs++;
             foreach (var em in sc.Meshes.Where(m => m.Mesh.Textures.ContainsKey("glow")))
             {
@@ -71,10 +74,18 @@ public class EffectGlowMaskTests
                 Assert.That(em.GlowMask, Is.EqualTo(em.Ho == null && (f < 0 || (f & 1) == 0 || ((f >> 1) & 15) == 6 && ((f >> 5) & 15) == 7)), entry);
                 count[k] = count.GetValueOrDefault(k) + 1;
                 example.TryAdd(k, $"{entry} {em.Mesh.Name}");
+                if (em.GlowMask && f >= 0 && (f & 0x200) != 0) { alphaTested++; example.TryAdd("alpha-tested", $"{entry} {em.Mesh.Name}"); }
+            }
+            foreach (var ps in sc.Systems.Where(s => s.Material?.Mesh != null && s.Material.Mesh.Textures.ContainsKey("glow")))
+            {
+                systems++;
+                if (ps.Material.Ho == null && ps.Material.GlowMask) { systemsBlendPass++; example.TryAdd("system", $"{entry} {ps.Name}"); }
             }
         }
-        TestContext.Out.WriteLine($"{env}: {nifs} nifs");
+        TestContext.Out.WriteLine($"{env}: {nifs} nifs, {skipped} skipped (do not load)");
         foreach (var (k, c) in count) TestContext.Out.WriteLine($"  {k}: {c} (e.g. {example[k]})");
+        TestContext.Out.WriteLine($"  masked and alpha-tested (mask draws no alpha test): {alphaTested}{(alphaTested > 0 ? $" (e.g. {example["alpha-tested"]})" : "")}");
+        TestContext.Out.WriteLine($"  glow-mapped particle systems: {systems}, passing the blend rule: {systemsBlendPass}{(systemsBlendPass > 0 ? $" (e.g. {example["system"]})" : "")}; none draws a mask (flag 0x400)");
         Assert.That(nifs, Is.GreaterThan(1000));
         Assert.That(count.GetValueOrDefault("mask"), Is.GreaterThan(0));
     }
