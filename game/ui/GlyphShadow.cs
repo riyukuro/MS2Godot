@@ -209,6 +209,7 @@ public partial class GlyphShadow : Node2D
     }
 
     static readonly List<Page> pages = new();
+    static Page lastPage;   // the page the last raster went into, tried first
     const int MaxPages = 16;
 
     /// <summary>
@@ -308,9 +309,14 @@ public partial class GlyphShadow : Node2D
         }
         int px = 0, py = 0;
         Page page = null;
-        // one empty texel between slots, so the scaled draw's filter reads no neighbour
-        for (int i = 0; i < pages.Count; i++)
-            if (pages[i].Place(W + 1, H + 1, out px, out py)) { page = pages[i]; break; }
+        // one empty texel between slots, so the scaled draw's filter reads no neighbour. The page the last raster went
+        // into goes first: a field's new glyphs then share one page (one texture, so one batch), where first fit could
+        // send glyphs of different heights to different pages and switch the texture glyph by glyph. The others follow
+        // before a new page, so a page with room is not left behind.
+        if (lastPage != null && lastPage.Place(W + 1, H + 1, out px, out py)) page = lastPage;
+        else
+            for (int i = 0; i < pages.Count; i++)
+                if (pages[i] != lastPage && pages[i].Place(W + 1, H + 1, out px, out py)) { page = pages[i]; break; }
         if (page == null)
         {
             if (pages.Count >= MaxPages)
@@ -324,6 +330,7 @@ public partial class GlyphShadow : Node2D
             pages.Add(page);
             page.Place(W + 1, H + 1, out px, out py);
         }
+        lastPage = page;
         page.Write(px, py, W, H, data);
         return new Entry(page.Texture, new Rect2(px, py, W, H), origin, new Vector2(W, H));
     }
