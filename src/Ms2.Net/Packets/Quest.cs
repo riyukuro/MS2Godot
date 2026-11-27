@@ -144,6 +144,13 @@ public sealed class QuestBook {
     /// CloseQuestDialogs (@0x1416d37c0, questmanager_2.cpp:988 and :2303), which asks the quest tracker for a rebuild
     /// (UIQuestGuideDialog FUN_141aacf20).</summary>
     public event Action Reloaded;
+    /// <summary>
+    /// The client's CQuest object for this quest is freed or replaced without a RemoveQuest: an entry of the mode 0x16 list
+    /// (CreateQuestByType then AddQuest, whose SetAt replaces the old object, questmanager_2.cpp:959-981 and :843-856), or a
+    /// quest that RemoveQuestsByTypeAndState drops for modes 0x1f / 0x20. Per-object state (a story quest's m_7c) goes with it;
+    /// other quests keep theirs.
+    /// </summary>
+    public event Action<int> Dropped;
 
     /// <summary>Per-quest table data the client reads from the quest XML: basic questType, basic repeatable, require groupID.</summary>
     public readonly record struct QuestInfoRow(int Type, int Repeatable, int GroupId);
@@ -153,7 +160,12 @@ public sealed class QuestBook {
     public void Apply(QuestMessage m) {
         switch (m) {
             case QuestMessage.Reset x: quests.Clear(); pinned.Clear(); Group = x.Group; RefreshCount = x.RefreshCount; Changed?.Invoke(0); break;
-            case QuestMessage.Load x: foreach (var q in x.Quests) quests[q.Id] = q; Changed?.Invoke(0); Reloaded?.Invoke(); break;
+            case QuestMessage.Load x:
+                foreach (var q in x.Quests) quests[q.Id] = q;
+                Changed?.Invoke(0);
+                foreach (var q in x.Quests) Dropped?.Invoke(q.Id);
+                Reloaded?.Invoke();
+                break;
             case QuestMessage.Pinned x: foreach (int id in x.Ids) pinned.Add(id); Changed?.Invoke(0); break;
             case QuestMessage.Start x: quests[x.Id] = new QuestRecord { Id = x.Id, State = 1, StartTime = x.StartTime, Tracked = x.Tracked, Progress = x.Progress.ToArray() }; Changed?.Invoke(x.Id); Started?.Invoke(x.Id); break;
             case QuestMessage.Update x:
@@ -174,12 +186,15 @@ public sealed class QuestBook {
                 var set = x.Weekly ? weekly : daily; set.Clear(); foreach (int id in x.Ids) set.Add(id);
                 // OnQuest modes 0x1f/0x20 with the drop byte set: RemoveQuestsByTypeAndState(9, 2 daily / 3 weekly, skipGrouped 1)
                 // (0x1416d38a0) removes every quest whose questType is 9 and repeatable equals the state, unless it has a require groupID.
+                List<int> dropped = null;
                 if (x.Drop && QuestInfo != null) {
                     int state = x.Weekly ? 3 : 2;
                     foreach (int id in quests.Keys.ToList())
-                        if (QuestInfo(id) is { } row && row.Type == 9 && row.Repeatable == state && row.GroupId == 0) quests.Remove(id);
+                        if (QuestInfo(id) is { } row && row.Type == 9 && row.Repeatable == state && row.GroupId == 0 && quests.Remove(id))
+                            (dropped ??= new List<int>()).Add(id);
                 }
                 Changed?.Invoke(0);
+                if (dropped != null) foreach (int id in dropped) Dropped?.Invoke(id);
                 if (x.Drop) Reloaded?.Invoke();
                 break; }
             case QuestMessage.Error x: ErrorReceived?.Invoke(x.Code); break;

@@ -153,10 +153,8 @@ public sealed class QuestDispatchBoxes
         if (Data(id) is { } d && QuestCommon.IsStory(d.Type) && d.DispatchType == kind) pending[id] = kind;
     }
 
-    /// <summary>The record is gone (RemoveQuest, the list rebuilt): its m_7c with it.</summary>
+    /// <summary>The quest's object is gone (RemoveQuest, or replaced or dropped by a list): its m_7c with it.</summary>
     public void OnRemoved(int id) => pending.Remove(id);
-
-    public void Clear() => pending.Clear();
 
     /// <summary>FUN_140d73960 on every quest, once a second; <paramref name="inGame"/> is the sub-scene 0x620001d check.</summary>
     public int Tick(bool inGame)

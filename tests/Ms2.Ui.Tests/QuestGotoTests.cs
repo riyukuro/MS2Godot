@@ -225,12 +225,38 @@ public class QuestGotoTests
             Assert.That(g.Handle(n, 3), Is.True, n);
         Assert.That(g.Handle("onTrace", 3), Is.False);
     }
+
+    [Test]
+    public void TheGuideRaisesGotoForItsSixNamesWithTheFirstArgument()
+    {
+        // UIQuestEventListener vfunc_28 (uiquesteventlistener.cpp:509-553): PopUInt of the first argument, the movie call is not taken
+        var guide = new QuestGuideController();
+        var got = new List<(string, int)>();
+        guide.Goto += (n, id) => got.Add((n, id));
+        var names = new[] { "onMoveField", "onMoveDungeon", "onMoveReEntry", "onClickDispatch", "onClickPartyFind", "onClickPartyFindCancel" };
+        foreach (var n in names) Assert.That(guide.OnCallback(n, new object[] { 3.0 }), Is.False, n);
+        Assert.That(got, Is.EqualTo(names.Select(n => (n, 3)).ToList()));
+        got.Clear();
+        Assert.That(guide.OnCallback("onMoveField", Array.Empty<object>()), Is.False);
+        foreach (var n in new[] { "onClose", "onTrace", "onLinkQuestDialog", "onGotoNpc" }) guide.OnCallback(n, new object[] { 3.0 });
+        Assert.That(got, Is.Empty, "no argument, or a name that is not a go-to");
+
+        // the HUD hands the event to QuestGotoRequests.Handle: the guide's "onMoveField" sends SendQuestMode12
+        var d = new QuestData { Id = 3, GotoNpcEnable = 1, GotoNpcField = 20, CompleteNpc = 5 };
+        var (g, st, sent, _) = Rig(d);
+        st.Map[3] = Rec(3, 1, true);
+        guide.Goto += (n, id) => g.Handle(n, id);
+        guide.OnCallback("onMoveField", new object[] { 3.0 });
+        Assert.That(sent.Select(Bytes), Is.EqualTo(new[] { new byte[] { 0xC, 3, 0, 0, 0 } }));
+    }
 }
 
 /// <summary>
 /// Every quest of MS2_DATA (KMS2_DEV) and of MS2_GMS2_DATA (GMS2) with a gotoNpc, a gotoDungeon (room or gotoInstanceID) or a
 /// dispatch: in the record the client's rule asks for, the button is built and its press sends the request, or the dispatch
-/// box is built with the client's text. The expected outcome is the client's rule written out here.
+/// box is built with the client's text. The expected outcome is the client's rule written out here, both ways: each go-to
+/// button is also checked hidden in every record and input the client hides it in (pvpinfo.cpp:238-300, questmanager_1.cpp:245-260,
+/// questdata.cpp:222-240), and re-entry is checked over every quest, shown only on the useReEntryHiddenMap ones.
 /// </summary>
 [NonParallelizable]
 public class QuestGotoDataSweepTests
@@ -245,6 +271,8 @@ public class QuestGotoDataSweepTests
         public long CharacterId => 1;
         public bool NpcFieldOpen(int npcId, int fieldId) => true;
     }
+
+    static byte[] Bytes(IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
 
     [TestCase("MS2_DATA", "KR")]
     [TestCase("MS2_GMS2_DATA", "NA")]
@@ -273,6 +301,25 @@ public class QuestGotoDataSweepTests
         var ids = new SortedDictionary<string, List<int>>();
         void Add(string k, int id) { if (!ids.TryGetValue(k, out var l)) ids[k] = l = new List<int>(); l.Add(id); }
 
+        void Reset(int field)
+        {
+            live.FieldId = field;
+            live.ServiceType = live.FieldKind = live.InstanceId = 0;
+            live.Flag1439f4a7c = true; live.LocalPlayerAlive = true; live.HasFieldData = true;
+        }
+        // The button in the quest log's list against its press: both agree, and both match what the client rule gives.
+        void Expect(int id, string button, Func<int, bool> press, Type request, bool shown, string why)
+        {
+            sent.Clear();
+            var b = QuestCommon.Buttons(quests.Quest(id), st.Rec, live, meta, st, rooms);
+            bool listed = b != null && b.Contains(button);
+            bool pressed = press(id);
+            bool sentOne = sent.Count == 1 && sent[0].GetType() == request;
+            if (listed != shown || pressed != shown || sentOne != shown || (!shown && sent.Count != 0))
+                fail.Add($"{id} {button} {why}: client {(shown ? "shows" : "hides")} it, list {listed} press {pressed} sent {sent.Count}");
+        }
+        QuestRecord R(int id, int state, bool complete) => new(id, state, 0, 0, 0, complete, false);
+
         foreach (var d in quests.Quests.OrderBy(q => q.Id))
         {
             int id = d.Id;
@@ -291,6 +338,36 @@ public class QuestGotoDataSweepTests
                 else if (b == null || !b.Contains("gotoNpc") || !g.GotoNpc(id) || sent.Count != 1 || sent[0] is not QuestGotoNpcRequest { QuestId: var q } || q != id)
                     fail.Add($"{id} gotoNpc to {d.GotoNpcField}");
                 else if (tables.MapName(d.GotoNpcField) == null) fail.Add($"{id} gotoNpc field {d.GotoNpcField} has no map name");
+                // hidden: not complete (:247); standing in the target (:257) or in a field of the complete npc (:253-255)
+                Reset(here);
+                st.Rec = R(id, 1, false);
+                Expect(id, "gotoNpc", g.GotoNpc, typeof(QuestGotoNpcRequest), false, "incomplete");
+                st.Rec = R(id, 2, false);
+                Expect(id, "gotoNpc", g.GotoNpc, typeof(QuestGotoNpcRequest), false, "not started or done, incomplete");
+                st.Rec = R(id, 1, true);
+                if (d.GotoNpcField != 0)
+                {
+                    Reset(d.GotoNpcField);
+                    Expect(id, "gotoNpc", g.GotoNpc, typeof(QuestGotoNpcRequest), false, "in the target field");
+                }
+                if (npcFields.Count > 0)
+                {
+                    Add("gotoNpc with a complete npc field (hidden there)", id);
+                    Reset(npcFields[0]);
+                    Expect(id, "gotoNpc", g.GotoNpc, typeof(QuestGotoNpcRequest), false, $"in the complete npc's field {npcFields[0]}");
+                }
+                Reset(here);
+                live.FieldExists = f => f != here;
+                Expect(id, "gotoNpc", g.GotoNpc, typeof(QuestGotoNpcRequest), false, "in a field without field data (:240)");
+                live.FieldExists = _ => true;
+            }
+            else if (d.GotoNpcField != 0)
+            {
+                // gotoNpc off (m_300.m_0 == 0, :245) with a target: hidden even when complete and away
+                Add("gotoNpc field without the enable (hidden)", id);
+                Reset(2000062);
+                st.Rec = R(id, 1, true);
+                Expect(id, "gotoNpc", g.GotoNpc, typeof(QuestGotoNpcRequest), false, "not enabled");
             }
             if (d.GotoDungeonRoom != 0 || d.GotoDungeonField != 0)
             {
@@ -305,6 +382,77 @@ public class QuestGotoDataSweepTests
                 else if (d.GotoDungeonRoom != 0 && rooms.GetRoom(d.GotoDungeonRoom) == null) Add("gotoDungeon room not in the room table (client hides it, pvpinfo.cpp:277)", id);
                 else if (b == null || !b.Contains("gotoDungeon") || !g.GotoDungeon(id) || sent.Count != 1 || sent[0] is not QuestGotoDungeonRequest { QuestId: var q } || q != id)
                     fail.Add($"{id} gotoDungeon room {d.GotoDungeonRoom} instance {d.GotoDungeonField} state {kind}");
+                var room = d.GotoDungeonRoom != 0 ? rooms.GetRoom(d.GotoDungeonRoom) : null;
+                bool roomOk = d.GotoDungeonRoom == 0 || room != null;
+                // every record against the client's state table (:281-294): 1 active and incomplete, 2 complete, 3 active
+                foreach (var (state, complete) in new[] { (1, false), (1, true), (2, true), (2, false), (0, false) })
+                {
+                    bool want = roomOk && kind switch { 1 => state == 1 && !complete, 2 => complete, 3 => state == 1, _ => false };
+                    Reset(2000062);
+                    if (room != null && Array.IndexOf(room.FieldIds, 2000062) >= 0) break;
+                    st.Rec = R(id, state, complete);
+                    Expect(id, "gotoDungeon", g.GotoDungeon, typeof(QuestGotoDungeonRequest), want, $"state {kind}, record {state}/{complete}");
+                }
+                if (kind is >= 1 and <= 3 && roomOk)
+                {
+                    st.Rec = kind == 2 ? R(id, 1, true) : R(id, 1, false);
+                    if (room != null && room.FieldIds.Length > 0)
+                    {
+                        Reset(room.FieldIds[0]);
+                        Expect(id, "gotoDungeon", g.GotoDungeon, typeof(QuestGotoDungeonRequest), false, $"in the room's field {room.FieldIds[0]} (:279)");
+                    }
+                    // FUN_140930b70 is asked only with a room (questmanager_1.cpp:251)
+                    Reset(2000062);
+                    live.ServiceType = 2;
+                    Expect(id, "gotoDungeon", g.GotoDungeon, typeof(QuestGotoDungeonRequest), room == null, "service type 2");
+                    Reset(2000062);
+                    live.FieldKind = 1;
+                    Expect(id, "gotoDungeon", g.GotoDungeon, typeof(QuestGotoDungeonRequest), room == null, "field kind 1");
+                    if (d.GotoDungeonField != 0)
+                    {
+                        Reset(2000062);
+                        live.InstanceId = d.GotoDungeonField;
+                        Expect(id, "gotoDungeon", g.GotoDungeon, typeof(QuestGotoDungeonRequest), false, "inside the instance (DAT_143ab2880, :252)");
+                    }
+                }
+            }
+            // re-entry over every quest (questdata.cpp:222-240 then FUN_1409312f0): useReEntryHiddenMap, active, a first field
+            // that is not here, a channel, service type 0, alive, field data
+            int first = d.Fields.Length == 0 ? 0 : (int)d.Fields[0];
+            if (d.UseReEntryHiddenMap || first != 0)
+            {
+                int away = 2000062;
+                while (away == first) away++;
+                bool can = d.UseReEntryHiddenMap && first != 0;
+                if (d.UseReEntryHiddenMap) Add(first != 0 ? "gotoReEntry" : "gotoReEntry without a first field (client hides it)", id);
+                st.Rec = R(id, 1, false);
+                Reset(away);
+                Expect(id, "gotoReEntry", g.GotoReEntry, typeof(QuestGotoReEntryRequest), can, d.UseReEntryHiddenMap ? "active, away" : "no useReEntryHiddenMap");
+                if (can)
+                {
+                    if (sent.Count == 1 && Bytes(sent[0]) is var bytes && !bytes.SequenceEqual(new byte[] { 0x13 }.Concat(BitConverter.GetBytes(id))))
+                        fail.Add($"{id} gotoReEntry bytes {Convert.ToHexString(bytes)}");
+                    st.Rec = R(id, 1, true);
+                    Expect(id, "gotoReEntry", g.GotoReEntry, typeof(QuestGotoReEntryRequest), true, "active and complete");
+                    st.Rec = R(id, 2, true);
+                    Expect(id, "gotoReEntry", g.GotoReEntry, typeof(QuestGotoReEntryRequest), false, "done");
+                    st.Rec = R(id, 0, false);
+                    Expect(id, "gotoReEntry", g.GotoReEntry, typeof(QuestGotoReEntryRequest), false, "not started");
+                    st.Rec = R(id, 1, false);
+                    Reset(first);
+                    Expect(id, "gotoReEntry", g.GotoReEntry, typeof(QuestGotoReEntryRequest), false, "in the first field");
+                    foreach (var (why, set) in new (string, Action)[]
+                             {
+                                 ("no channel", () => live.Flag1439f4a7c = false), ("service type 1", () => live.ServiceType = 1),
+                                 ("dead", () => live.LocalPlayerAlive = false), ("no field data", () => live.HasFieldData = false),
+                             })
+                    {
+                        Reset(away);
+                        set();
+                        Expect(id, "gotoReEntry", g.GotoReEntry, typeof(QuestGotoReEntryRequest), false, why);
+                    }
+                }
+                Reset(2000062);
             }
             if (d.DispatchType != 0)
             {
@@ -328,7 +476,7 @@ public class QuestGotoDataSweepTests
 
         foreach (var (k, l) in ids) TestContext.Out.WriteLine($"{env} {k}: {l.Count}: {string.Join(' ', l)}");
         foreach (var f in fail) TestContext.Out.WriteLine($"{env} FAIL {f}");
-        Assert.That(ids.ContainsKey("gotoDungeon") && ids.ContainsKey("gotoNpc"), Is.True, "the data has go-to quests");
+        Assert.That(ids.ContainsKey("gotoDungeon") && ids.ContainsKey("gotoNpc") && ids.ContainsKey("gotoReEntry"), Is.True, "the data has go-to quests");
         Assert.That(fail, Is.Empty);
     }
 }

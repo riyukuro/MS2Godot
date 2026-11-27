@@ -90,7 +90,10 @@ public sealed record RoomDungeonLobbyRequest(byte Lobby) : IOutPacket {
 }
 
 /// <summary>CQuestManager::FUN_1416cf980(quest, 0) @0x1416cf980 (questmanager_2.cpp:1500), the quest window's party find: Party u8 0x20,
-/// u8 Unk_ClubBuffTypeOf(room group type), i32 1, i32 room id, bool false.</summary>
+/// u8 Unk_ClubBuffTypeOf(room group type), i32 1, i32 room id, bool false. The body is the dungeon finder's
+/// <see cref="PartyDungeonMatchRequest"/> with one room.
+/// STILL-OPEN (GMS2): the layout is the KMS client's. No GMS2 exe counterpart is cited yet; the upstream server names Party 0x20
+/// Unknown and has no handler, so the GMS2 leg sends the KMS bytes unchecked.</summary>
 public sealed record PartyDungeonQuestFindRequest(byte ClubBuffType, int RoomId) : IOutPacket {
     public Outbound Op => Outbound.Party;
     public void Write(ByteWriter w) { w.WriteByte(0x20); w.WriteByte(ClubBuffType); w.WriteInt(1); w.WriteInt(RoomId); w.WriteBool(false); }

@@ -103,19 +103,20 @@ public partial class HudScene
                     removed = d.OnRemoved;
         // OnQuest mode 5 with result 0 is RemoveQuest too (questmanager_2.cpp:1047-1050): the quest's m_7c goes with it
         Action<int, int> result = (id, code) => { if (code == 0) d.OnRemoved(id); };
-        Action reloaded = d.Clear;
+        // a replaced or dropped object (the mode 0x16 list, the daily / weekly drop) loses its m_7c; other quests keep theirs
+        Action<int> dropped = d.OnRemoved;
         live.Quests.Started += started;
         live.Quests.Rewarded += rewarded;
         live.Quests.Removed += removed;
         live.Quests.ResultReceived += result;
-        live.Quests.Reloaded += reloaded;
+        live.Quests.Dropped += dropped;
         unwatchQuestDispatch = () =>
         {
             live.Quests.Started -= started;
             live.Quests.Rewarded -= rewarded;
             live.Quests.Removed -= removed;
             live.Quests.ResultReceived -= result;
-            live.Quests.Reloaded -= reloaded;
+            live.Quests.Dropped -= dropped;
         };
     }
 

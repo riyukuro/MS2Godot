@@ -55,13 +55,20 @@ public class QuestPacketTests {
         var table = new System.Collections.Generic.Dictionary<int, QuestBook.QuestInfoRow> {
             [1] = new(9, 2, 0), [2] = new(9, 3, 0), [3] = new(9, 2, 5), [4] = new(4, 2, 0) };
         book.QuestInfo = id => table.TryGetValue(id, out var r) ? r : null;
+        var dropped = new System.Collections.Generic.List<int>();
+        book.Dropped += dropped.Add;
         book.Apply(new QuestMessage.Load(new[] { 1, 2, 3, 4, 5 }.Select(i => new QuestRecord { Id = i, State = 1 }).ToList()));
+        Assert.That(dropped, Is.EqualTo(new[] { 1, 2, 3, 4, 5 }), "mode 0x16: AddQuest replaces each listed object");
+        dropped.Clear();
         book.Apply(new QuestMessage.Counts(false, false, new[] { 7 }));      // no drop byte: nothing removed
         Assert.That(book.All.Count, Is.EqualTo(5));
+        Assert.That(dropped, Is.Empty);
         book.Apply(new QuestMessage.Counts(false, true, new[] { 7 }));
         Assert.That(book.All.Select(q => q.Id).OrderBy(i => i), Is.EqualTo(new[] { 2, 3, 4, 5 }));
+        Assert.That(dropped, Is.EqualTo(new[] { 1 }), "only the removed quest's object goes");
         book.Apply(new QuestMessage.Counts(true, true, new int[0]));         // weekly: state 3
         Assert.That(book.All.Select(q => q.Id).OrderBy(i => i), Is.EqualTo(new[] { 3, 4, 5 }));
+        Assert.That(dropped, Is.EqualTo(new[] { 1, 2 }));
     }
 
     static void Record(ByteWriter w, int id, int state, params int[] progress) {
