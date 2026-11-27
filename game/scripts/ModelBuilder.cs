@@ -14,6 +14,9 @@ public sealed class ModelBuilder
     public const string ModelArchive = "Resource/Model/Character";
     public const string TextureArchive = "Resource/Model/Textures";
     public const string SkeletonName = "Skeleton";
+    /// <summary>The meta <see cref="Build"/> puts on each mesh node: the index of its ModelMesh in ModelData.Meshes (a node's
+    /// name is not unique and Godot rewrites some characters in it).</summary>
+    public static readonly StringName MeshIndexMeta = "mesh_index";
 
     readonly NifSpec spec;
     public NifSpec Spec => spec;
@@ -192,9 +195,11 @@ public sealed class ModelBuilder
         foreach (var b in md.Bones) skel.AddBone(b.Name);
         SetRests(skel, md);
 
-        foreach (var m in md.Meshes)
+        for (int mesh = 0; mesh < md.Meshes.Count; mesh++)
         {
+            var m = md.Meshes[mesh];
             var mi = new MeshInstance3D { Name = m.Name, Mesh = SharedMesh(m) };
+            mi.SetMeta(MeshIndexMeta, mesh);
             // a "NoShadow"-tagged subtree never gets the caster mark (ModelMesh.NoShadow)
             if (m.NoShadow) mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             var skin = m.Skinned ? SkinOf(md, m) : null;

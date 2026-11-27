@@ -51,6 +51,13 @@ public sealed class ModelMesh
     /// <summary>Skinned meshes: the mesh node's transform relative to the scene root, which places <see cref="Bound"/> (the
     /// model bound is in the mesh's own space; its world bound is the mesh's world transform times it, NiBound::Update).</summary>
     public Xform BoundToRoot = Xform.Identity;
+    /// <summary>Skinned meshes: the mesh node's own local transform (relative to its parent in the file), which it keeps when
+    /// the client hangs it elsewhere (a kfm item's self mesh, CKfmModel::vfunc_12, kfmmodel.cpp:533-537).</summary>
+    public Xform SkinMeshLocal = Xform.Identity;
+    /// <summary>Skinned meshes: the skin's "Skeleton Transform" (m_kRootBoneParentToSkinTransform), the root bone's parent
+    /// (the scene root) to skin space. Hardware skinning draws a vertex at the mesh's world times it times the bone's pose
+    /// relative to the scene root (NiSkinningMeshModifier.cpp:891-908, GetWorldToSkinTransform in the .inl:58-64).</summary>
+    public Xform SkinTransform = Xform.Identity;
     /// <summary>Skinned meshes whose NiSkinningMeshModifier has RECOMPUTE_BOUNDS (flag 0x2): each skin bone's index and its
     /// "Bone Bounds" entry (centre xyz, radius) in the skin's bone order, else null. The client then rebuilds the model bound
     /// every update from the bones' world transforms (NiSkinningMeshModifier.cpp:913-916, UpdateModelBounds :1036-1056).</summary>
@@ -1385,6 +1392,8 @@ public sealed class ModelData
                 var meshToRoot = (boneOf.TryGetValue(mpar, out var mpb) ? md.Bones[mpb].World : Xform.Identity).Compose(XformOf(b));
                 mesh.BoundToRoot = meshToRoot;
                 mesh.PickToRoot = meshToRoot;
+                mesh.SkinMeshLocal = XformOf(b);
+                mesh.SkinTransform = XformOf(sk.Struct("Skeleton Transform"));
                 if ((sk.IntOr("Flags", 0) & 2) != 0)
                 {
                     var bb = sk.Structs("Bone Bounds");

@@ -17,7 +17,9 @@ namespace Ms2Godot.Tests;
 /// <item>the crown (11300000, capAttach on both data sets) worn over the starter hair sits on the hair: its centre is inside
 /// the hair's bounds grown by the crown's half size, and above the head bone;</item>
 /// <item>the hair changed (Reapply of the HR slot alone) moves the crown with it onto the new hair;</item>
-/// <item>the crown taken off and put on again lands where it was.</item>
+/// <item>the crown taken off and put on again lands where it was;</item>
+/// <item>worn while the body holds idle_a's first frame, the crown sits on the hair as posed and where it sat on the head
+/// at rest (the pick reads the current pose, as FUN_141424d00 skins the hair before it picks).</item>
 /// </list>
 /// Positions are the drawn vertices in the skeleton's space (skinned ones through the Godot skin and pose).
 /// Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
@@ -82,8 +84,34 @@ public partial class CapPlaceCheck : Node3D
         equip.Reapply(v, start.Append(cap));
         await Settle();
         var again = OnHair(fails, skel, hair.Id, "put on again");
+        int head = skel.FindBone("Bip01 Head");
+        Vector3? restOnHead = head >= 0 && again is { } ag ? skel.GetBoneGlobalPose(head).AffineInverse() * ag : null;
         if (first is { } f && again is { } g && f.DistanceTo(g) > 0.01f)
             fails.Add($"put on again: the crown is at {g}, first worn at {f}");
+
+        // the pick reads the pose the body stands in when the cap is worn: the client runs the hair's mesh modifiers
+        // (skinning) before it picks (FUN_141424d00), and SkeletonPositions reads the skeleton's current pose. Held at
+        // idle_a's first frame, the crown worn again sits on the hair as posed there, and keeps its place on the head.
+        var player = v.GetNode<AnimationPlayer>("Model/AnimationPlayer");
+        player.GetAnimationLibrary("").AddAnimation("idle", ModelBuilder.BuildAnimation(builder.LoadKf($"{bodyDir}/idle_a.kf"), md));
+        player.Play("idle");
+        player.Seek(0, true);
+        player.Pause();
+        equip.Reapply(v, start);
+        await Settle();
+        equip.Reapply(v, start.Append(cap));
+        await Settle();
+        var posed = OnHair(fails, skel, hair.Id, "worn in idle_a at 0 s");
+        if (restOnHead is { } r && posed is { } q)
+        {
+            // the crown in the head bone's space at rest and posed: the hair is skinned to the head, so the pick on the
+            // posed hair lands where it did on the rest hair (a pick on the rest hair while posed would leave it behind)
+            var onHead = skel.GetBoneGlobalPose(head).AffineInverse() * q;
+            GD.Print($"cap place posed: crown on the head bone at {onHead}, at rest {r}");
+            if (onHead.DistanceTo(r) > 0.5f) fails.Add($"worn in idle_a at 0 s: the crown is at {onHead} on the head bone, at rest {r}");
+            if (skel.GetBoneGlobalPose(head).Origin.DistanceTo(skel.GetBoneGlobalRest(head).Origin) < 0.01f)
+                fails.Add("idle_a at 0 s leaves the head bone at its rest: the posed case checks nothing");
+        }
         v.Free();
     }
 
@@ -113,7 +141,7 @@ public partial class CapPlaceCheck : Node3D
         skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>()
             .Where(m => !m.IsQueuedForDeletion() && m.Visible && Under(m, skel, $"eq{id}_")).ToList();
 
-    static bool Under(Node n, Node top, string prefix)
+    internal static bool Under(Node n, Node top, string prefix)
     {
         for (; n != null && n != top; n = n.GetParent())
             if (n.Name.ToString().StartsWith(prefix, StringComparison.Ordinal)) return true;
@@ -121,7 +149,7 @@ public partial class CapPlaceCheck : Node3D
     }
 
     /// <summary>The bounds of the meshes' drawn vertices in the skeleton's space.</summary>
-    static Aabb? Bounds(Skeleton3D skel, List<MeshInstance3D> meshes)
+    internal static Aabb? Bounds(Skeleton3D skel, List<MeshInstance3D> meshes)
     {
         Aabb? box = null;
         var toSkel = skel.GlobalTransform.AffineInverse();

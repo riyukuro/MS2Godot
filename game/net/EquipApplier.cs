@@ -110,6 +110,9 @@ public sealed class EquipApplier
 
     Ms2.Ui.Skills.WeaponActionTable WeaponActions => shared.WeaponActions ??= Ms2.Ui.Skills.WeaponActionTable.Load(packs);
 
+    /// <summary>The ItemModel an item wears (its row's tool itemPreset redirect followed), null when it has none.</summary>
+    public XElement WornModel(int itemId) => FindItem(itemId);
+
     XElement FindModel(int id)
     {
         int prefix = id / 100000;
@@ -216,11 +219,44 @@ public sealed class EquipApplier
     /// A node a worn model's self node (a root of the model, GetRoots @equipmodel.cpp:906) places: the node's transform on its
     /// attach node is <c>Prefix * Local * Rel</c>, where Prefix is the target node's offset and the dummy (the attach node),
     /// Local the root's own local transform and Rel the node relative to the root. Nodes of one root share its Key.
+    /// A kfm model's self node is a bone of the model's own skeleton (<see cref="Bones"/>, <see cref="Bone"/> &gt;= 0, parentless
+    /// there, AttachKfm): its "transform" is the bone's rest and pose, in the space of that skeleton, which stands at the
+    /// attach node (CKfmModel::vfunc_12 hangs the self node under the attach node, kfmmodel.cpp:518-544, and GetRoots returns
+    /// it, equipmodel.cpp:906). A kfm model's skinned self mesh moves the built model's root node, which holds its skeleton
+    /// (Rel = Skeleton Transform with the Model node's turn undone, AttachKfm).
     /// </summary>
     sealed class SelfRoot
     {
         public string Key; public Node3D Node; public Transform3D Prefix, Local, Rel;
+        public Skeleton3D Bones; public int Bone = -1;
     }
+
+    /// <summary>A root's transform on its attach node: the node's local transform, or the self bone's pose.</summary>
+    static Transform3D LocalOf(SelfRoot r) => r.Bone >= 0 ? r.Bones.GetBonePose(r.Bone) : r.Node.Transform;
+
+    /// <summary>Sets a root's transform on its attach node (a self bone's rest and pose together, as AttachKfm sets them).</summary>
+    static void SetLocal(SelfRoot r, Transform3D t)
+    {
+        if (r.Bone < 0) { r.Node.Transform = t; return; }
+        r.Bones.SetBoneRest(r.Bone, t);
+        r.Bones.SetBonePosePosition(r.Bone, t.Origin);
+        r.Bones.SetBonePoseRotation(r.Bone, t.Basis.GetRotationQuaternion());
+        r.Bones.SetBonePoseScale(r.Bone, t.Basis.Scale);
+    }
+
+    /// <summary>The space a root's transform is in (its parent node's, or its skeleton's), in <paramref name="skel"/>'s space.</summary>
+    static Transform3D ParentInSkeleton(SelfRoot r, Skeleton3D skel) => InSkeleton(r.Bone >= 0 ? r.Bones : r.Node.GetParent(), skel);
+
+    /// <summary>What the last cap placement of a look did, for the cap census: the cap's root groups, how many the pick moved
+    /// onto the hair and how many fell back to the capTransform, whether the hair had no mesh to pick and a capTransform.</summary>
+    public sealed class CapPlacement
+    {
+        public int Roots, Hits, Fallbacks;
+        public bool HairEmpty, HairTransform;
+    }
+
+    /// <summary>The last cap placement of an applied character; null when its cap was not placed (no capAttach cap, no hair).</summary>
+    public CapPlacement CapOf(Node3D visual) => looks.TryGetValue(visual, out var l) ? l.Cap : null;
 
     /// <summary>What a built character keeps so one slot can change without rebuilding the body.</summary>
     sealed class BuiltLook
@@ -230,6 +266,7 @@ public sealed class EquipApplier
         public List<MeshInstance3D> BodyNodes; public Dictionary<MeshInstance3D, bool> BodyShown;
         public readonly Dictionary<EquipSlot, Part> Parts = new();
         public Dictionary<EquipSlot, WornEquips.SlotKey> Keys = new();
+        public CapPlacement Cap;
     }
     readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, BuiltLook> looks = new();
 
@@ -323,11 +360,13 @@ public sealed class EquipApplier
     /// </summary>
     void PlaceCap(BuiltLook look)
     {
+        look.Cap = null;
         if (!look.Parts.TryGetValue(EquipSlot.CP, out var cap) || cap.CapScale == null) return;
         if (!look.Parts.TryGetValue(EquipSlot.HR, out var hair) || hair.CapScale is not { } fScale) return;
         if (!CapAttach(FindItem(cap.Item.Id)?.Element("customize"))) return;
         var capTransform = CapTransformOf(FindItem(hair.Item.Id)?.Element("customize"));
         var roots = cap.Roots.Where(r => GodotObject.IsInstanceValid(r.Node)).GroupBy(r => r.Key).ToList();
+        var done = look.Cap = new CapPlacement { Roots = roots.Count, HairTransform = capTransform != null };
         if (capTransform is { } ct)
         {
             var k = CapLocal(fScale, ct.Rot, ct.Pos);
@@ -338,21 +377,28 @@ public sealed class EquipApplier
                     k.Basis = ModelBuilder.ToGodot(new Xform(new Vec3(0, 0, 0), DummyWorld.EulerXyz(a[9], a[10], a[11]), fScale)).Basis;
                 if (a[6] != 0 || a[7] != 0 || a[8] != 0) k.Origin = new Vector3(a[6], a[7], a[8]);
             }
-            foreach (var g in roots) foreach (var r in g) r.Node.Transform = r.Prefix * k * r.Rel;
+            foreach (var g in roots) foreach (var r in g) SetLocal(r, r.Prefix * k * r.Rel);
         }
         foreach (var g in roots)
         {
             var first = g.First();
-            var onAttach = InSkeleton(first.Node.GetParent(), look.Skel) * first.Prefix;
-            var world = onAttach * first.Prefix.AffineInverse() * first.Node.Transform * first.Rel.AffineInverse();
+            var onAttach = ParentInSkeleton(first, look.Skel) * first.Prefix;
+            var world = onAttach * first.Prefix.AffineInverse() * LocalOf(first) * first.Rel.AffineInverse();
             var dir = world.Basis.Orthonormalized() * new Vector3(0, 0, -1);
             var origin = world.Origin - dir * 400f;
             Transform3D? local = null;
             if (PickMeshes(hair, look.Skel, origin, dir, out var hit, out bool empty))
+            {
                 local = onAttach.AffineInverse() * new Transform3D(world.Basis, hit);
+                done.Hits++;
+            }
             else if (!empty)
+            {
                 local = capTransform is { } ct2 ? CapLocal(fScale, ct2.Rot, ct2.Pos) : new Transform3D(Basis.Identity.Scaled(new Vector3(fScale, fScale, fScale)), Vector3.Zero);
-            if (local is { } l) foreach (var r in g) r.Node.Transform = r.Prefix * l * r.Rel;
+                done.Fallbacks++;
+            }
+            done.HairEmpty |= empty;
+            if (local is { } l) foreach (var r in g) SetLocal(r, r.Prefix * l * r.Rel);
         }
     }
 
@@ -1147,17 +1193,44 @@ public sealed class EquipApplier
         // the self nodes: the outermost nodes whose name starts with selfnode (Point01, not its child "Point01 NonAccum")
         bool Self(int b) => selfName != null && md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal);
         bool Under(int b) { for (int u = md.Bones[b].Parent; u >= 0; u = md.Bones[u].Parent) if (Self(u)) return true; return false; }
+        int selfBones = 0;
         for (int b = 0; b < md.Bones.Count; b++)
         {
             if (!Self(b) || Under(b)) continue;
+            selfBones++;
             // the self node hangs under the attach node (CKfmModel::vfunc_12, kfmmodel.cpp:518-544) keeping its local
             // transform, or takes the hair data's (pony, FUN_141440bc0)
             var x = targetLocal * dummy * (xf ?? ModelBuilder.ToGodot(md.Bones[b].Rest));
             ps.SetBoneParent(b, -1);
-            ps.SetBoneRest(b, x);
-            ps.SetBonePosePosition(b, x.Origin);
-            ps.SetBonePoseRotation(b, x.Basis.GetRotationQuaternion());
-            ps.SetBonePoseScale(b, x.Basis.Scale);
+            var sr = new SelfRoot { Key = "bone:" + md.Bones[b].Name, Node = ps, Bones = ps, Bone = b, Prefix = targetLocal * dummy, Local = ModelBuilder.ToGodot(md.Bones[b].Rest), Rel = Transform3D.Identity };
+            SetLocal(sr, x);
+            // the self node is one of the model's roots (GetRoots, equipmodel.cpp:906), which the cap placement moves
+            // (FUN_1411e5c10, equipment.cpp:2794-2917); a pony part's node takes the hair data's transform instead
+            if (!pony) part.Roots.Add(sr);
+        }
+        // a self node that is a skinned mesh (CP of most kfm caps: FUN_141422110 collects any node named like selfnode,
+        // itemugcmesh.cpp:295-320, meshes included) hangs under the attach node keeping its local transform as well
+        // (vfunc_12, kfmmodel.cpp:533-537), while its bones stay under the model's own scene root. Hardware skinning draws
+        // it at the mesh's world times the skin's Skeleton Transform times each bone's pose relative to that scene root
+        // (NiSkinningMeshModifier.cpp:891-908, NiCalculateBoneMatricesKernel.cpp:43-50), so the mesh's local carries the
+        // whole skin. A skinned mesh in Godot draws where its skeleton is, so the built model's root node takes that place:
+        // attach node * mesh local * Skeleton Transform, undoing the Model node's own turn and root local.
+        // STILL-OPEN: a model with self bones as well as a skinned self mesh, or with two skinned self meshes whose local and
+        // Skeleton Transform differ, would need a skeleton per mesh; none of the capAttach caps has either (the census).
+        var selfMesh = selfName != null && selfBones == 0
+            ? md.Meshes.FirstOrDefault(m => m.Skinned && m.FileName != null && m.FileName.StartsWith(selfName, StringComparison.Ordinal))
+            : null;
+        if (selfMesh != null)
+        {
+            var model = root.GetNode<Node3D>("Model");
+            var sr = new SelfRoot
+            {
+                Key = "mesh:" + selfMesh.Name, Node = root, Prefix = targetLocal * dummy, Local = ModelBuilder.ToGodot(selfMesh.SkinMeshLocal),
+                Rel = ModelBuilder.ToGodot(selfMesh.SkinTransform) * model.Transform.AffineInverse(),
+            };
+            SetLocal(sr, sr.Prefix * (xf ?? sr.Local) * sr.Rel);
+            // one of the model's roots (GetRoots, equipmodel.cpp:906), as a self bone is; a pony part's takes the hair data's
+            if (!pony) part.Roots.Add(sr);
         }
         // CKfmModel::vfunc_6 (kfmmodel.cpp:403-408) plays the model's Idle_A once it has loaded
         if (kfmSeqs.ByName("Idle_A") is { } idle)
@@ -1178,9 +1251,10 @@ public sealed class EquipApplier
         }
         var made = root.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
         foreach (var mi in made) mi.SetMeta("mesh", mi.Name.ToString());
-        // ModelBuilder.Build names each mesh node after its ModelMesh
+        // ModelBuilder.Build marks each mesh node with its ModelMesh's index (names repeat, and Godot rewrites some)
         foreach (var mi in made)
-            if (md.Meshes.FirstOrDefault(x => x.Name == mi.Name.ToString()) is { } mm) part.Picks.Add((mi, mm));
+            if (mi.HasMeta(ModelBuilder.MeshIndexMeta) && (int)mi.GetMeta(ModelBuilder.MeshIndexMeta) is int k && k >= 0 && k < md.Meshes.Count)
+                part.Picks.Add((mi, md.Meshes[k]));
         return made;
     }
 
