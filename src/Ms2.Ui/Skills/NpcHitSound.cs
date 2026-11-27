@@ -13,12 +13,13 @@ public enum HitOwner { None, Npc, Pc }
 public static class NpcHitSound
 {
     /// <summary>
-    /// The owner's object kind (WorldService::FUN_141bd19d0, worldservice_1.cpp:6296, GetObjectKind :6304): 0 when the id
-    /// finds nothing, 1 for the own PC (MyPC::vfunc_58, mypc.cpp:1247), 3 for another PC or an npc (PCBase::vfunc_58,
-    /// pcbase.cpp:1092). STILL-OPEN: kind 2 (no PC or npc returns it) is not produced here.
+    /// The owner's object kind (WorldService::FUN_141bd19d0, worldservice_1.cpp:6296, GetObjectKind :6304;
+    /// <see cref="CombatVoice.ObjectKind"/>): 0 when the id finds nothing, 1 for the own PC, 3 for another PC, 5 for an npc
+    /// and 6 for a boss npc (CNpc::vfunc_58, unit_14108e1e0_npcactorandvibrate.cpp:655).
+    /// STILL-OPEN: kind 2 (no PC or npc returns it) is not produced here.
     /// </summary>
-    public static int Relation(HitOwner owner, bool byLocalPlayer) =>
-        owner == HitOwner.None ? 0 : byLocalPlayer ? 1 : 3;
+    public static int Relation(HitOwner owner, bool byLocalPlayer, bool ownerBoss = false) =>
+        CombatVoice.ObjectKind(owner, byLocalPlayer, ownerBoss);
 
     /// <summary>
     /// CDamageRecord::GetAttackMaterial (@0x14175ad50, skillrecord.cpp:580): 1 when the owner is not in the field; an npc's

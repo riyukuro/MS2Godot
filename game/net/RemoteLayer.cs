@@ -1059,6 +1059,7 @@ public sealed partial class RemoteLayer : Node3D
                                 Ms2.Ui.Skills.NpcHitSound.RecordAttack(dmg.Damage, RegionSkillOf, attackOf));
                             // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                             if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
+                            PlayRecordSounds(dmg.Damage, t, owner, byLocal);
                         }
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);

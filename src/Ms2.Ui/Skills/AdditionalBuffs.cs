@@ -139,6 +139,9 @@ public sealed class AdditionalBuffList
 
     public IReadOnlyCollection<AdditionalBuff> Buffs => map.Values;
 
+    /// <summary>FUN_14096fc80 @0x14096fc80 (additionalcli_2.cpp:336): the entry of the key (the effect's object id), null for none.</summary>
+    public AdditionalBuff Find(int key) => map.GetValueOrDefault(key);
+
     /// <summary>
     /// FUN_140970020 @0x140970020 (additionalcli_2.cpp:383) through FUN_14096fe60 with bAll clear: an enabled effect of the id,
     /// at the level unless it is 0, whose overlap count passes <see cref="CompareOverlapCount"/> unless the count is 0.

@@ -61,6 +61,11 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Defensive invincible&gt; (m_nInvincible +0x29c, additionalactionadditional.cpp:1256): AdditionalCliList::FUN_140972a00
     /// (additionalcli_2.cpp:1075) takes the list's GetInvincible from it.</summary>
     public int Invincible;
+    /// <summary>&lt;DotDamage soundMaterial&gt; (m_dotDamage.m_nSoundMaterial +0x18, additionalactionadditional.cpp:1284,
+    /// additionalactionadditional.h:351-364; GMS2's DotDamageProperty): the attack material of the hit sound a dot tick of this
+    /// effect plays on its target (PC::vfunc_34, pc.cpp:990-998; CNpc::vfunc_34, unit_14108e1e0_npcactorandvibrate.cpp:1908);
+    /// 0 for none.</summary>
+    public int DotSoundMaterial;
     /// <summary>&lt;SpecialEffect type probability values&gt; (m_specialEffect, :1349-1353; Clear @0x140192c40 makes the
     /// probability 1): the kind CSpecialEffectFunctionManager runs (4 CSEReduceSkillGroupCooltime), the chance against
     /// FUN_140768090's roll and the values' attributes (SpecialEffectProperty::Parse @0x140192ce0, CXmlData::ParseValues
@@ -143,6 +148,7 @@ public sealed class AdditionalLevelData
             lv.OverlapKeep = OverlapKeepEffects.Load(motion.Element("OverlapKeepEffectProperty"));
         }
         if (e.Element("Defensive") is { } defensive) lv.Invincible = Xml.Int(defensive, "invincible");
+        if (e.Element("DotDamage") is { } dot) lv.DotSoundMaterial = Xml.Int(dot, "soundMaterial");
         if (e.Element("InvokeEffect") is { } invoke)
         {
             lv.InvokeSkillId = Xml.UInt(invoke, "skillID");

@@ -670,10 +670,11 @@ public sealed class NpcLayer
     /// - Then, all three: a living npc whose current hp stat is 0 (FUN_141670a00(4), PCBase m_unk_1c0[2][4], pcbase.cpp:1967)
     ///   dies with its dead sound (vfunc_125(1), :1890-1892), whatever the hit's total.
     /// True when the shake armed.
-    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera,
-    /// MyPC::FUN_14152e240 for a boss, the dot's hit sound (vfunc_34 plays its buff level's dotDamage soundMaterial, :1927-1935;
-    /// the buff tables are not read here), the knockback record, the hit basis,
-    /// the cast's MakeDeadPhysXActor, the boss kill voices, the dps meter and vfunc_113) is not ported here.
+    /// - A boss the own player's cast took health from goes in MyPC's set (FUN_14152e240, :1871), and the killing record
+    ///   plays the boss's kill voice (:1889-1902, <see cref="PlayBossDeathVoice"/>); a dot's hit sound (vfunc_34, :1927-1935)
+    ///   is RemoteLayer's (PlayRecordSounds).
+    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera, the knockback record, the hit basis,
+    /// the cast's MakeDeadPhysXActor, the dps meter and vfunc_113) is not ported here.
     /// </summary>
     public bool Hit(int id, NpcHitKind kind, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.HitOwner owner,
         Ms2.Ui.Skills.SkillAttackDamage attack)
@@ -683,10 +684,12 @@ public sealed class NpcLayer
         bool cast = kind == NpcHitKind.Cast;
         if (kind != NpcHitKind.Dot && totalDamage < 0) PlayNpcEffect(i, row, row?.DamageEffect);
         if (cast && row != null && totalDamage < 0 && byLocalPlayer) i.Boost.Add(Now, row.DamagedColorScale, DamagedBoostDuration, DamagedBoostAccumRatio);
+        if (cast && row != null && totalDamage < 0 && byLocalPlayer && row.IsBoss) bossHits.Add(id);   // MyPC::FUN_14152e240 (:1871)
         bool armed = cast && row != null
             && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
         if (row != null && totalDamage < 0 && (kind == NpcHitKind.Splash || (cast && !byLocalPlayer))) PlayHitSound(i, row, byLocalPlayer, owner, attack);
         if (!i.Dead && i.HpCur == 0) Die(id, true);
+        if (i.HpCur == 0) PlayBossDeathVoice(id, i, row, owner, byLocalPlayer);
         return armed;
     }
 
@@ -721,6 +724,32 @@ public sealed class NpcLayer
     }
 
     Ms2.Formats.World.ClientConstants constants;
+
+    /// <summary>The bosses the own PC's cast hit took health from (MyPC m_set15f8), for <see cref="PlayBossDeathVoice"/>.</summary>
+    readonly Ms2.Ui.Skills.BossHits bossHits = new();
+
+    /// <summary>The npc's row, null for no such npc or an id the table lacks.</summary>
+    public NpcRow RowOf(int id) => inst.TryGetValue(id, out var i) ? table.Find(i.NpcId) : null;
+
+    /// <summary>
+    /// The voice of a boss's death by a record, played for the own PC (CNpc::vfunc_33 :1889-1902, the same in vfunc_34 and
+    /// vfunc_35; <see cref="Ms2.Ui.Skills.CombatVoice.BossDeathVoice"/>): Boss_EndKill for the own PC's record, else Boss_Kill
+    /// when the own PC is alive, within BossKillSoundRange of the boss and hit it before. The distance is the own player's
+    /// place to the boss's (the boss's focus distance, GameObject m_unk_bc). It runs for the first record that finds the hp at
+    /// 0 (<see cref="Ms2.Ui.Skills.BossHits.FirstKill"/>), as an hp 0 stat packet may have run <see cref="Die"/> before it.
+    /// </summary>
+    void PlayBossDeathVoice(int id, Inst i, NpcRow row, Ms2.Ui.Skills.HitOwner owner, bool byLocalPlayer)
+    {
+        var live = LiveSession.Instance;
+        if (row == null || !row.IsBoss || live == null || i.Root == null || Viewer?.Invoke() is not { } player || !bossHits.FirstKill(id)) return;
+        constants ??= Ms2Godot.World.FieldContents.Constants(packs);
+        int type = Ms2.Ui.Skills.CombatVoice.BossDeathVoice(true, Ms2.Ui.Skills.CombatVoice.ObjectKind(owner, byLocalPlayer, false),
+            !live.Me.Dead, player.DistanceTo(i.Root.GlobalPosition), Ms2.Ui.Skills.CombatVoice.BossKillRange(constants), bossHits.Contains(id));
+        if (LiveSession.LiveCheck) GD.Print($"audio: boss death voice {id}: type {type}, hit by the own PC {bossHits.Contains(id)}");
+        if (type != 0)
+            FieldAudio.Instance?.PlayEventVoice(type, live.Me.User.Gender, live.Me.User.JobCode, true,
+                Ms2.Audio.SoundMusicEffectState.CasterMyPc, player, player);
+    }
 
     /// <summary>The own player's place, FUN_1411a5110's view distance origin for the hit sound; none when null.</summary>
     public Func<Vector3?> Viewer;

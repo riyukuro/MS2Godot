@@ -51,7 +51,7 @@ public class AdditionalCacheTests
                     && n.IndexOf('/', AdditionalTable.Gms2Folder.Length) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
                     if (uint.TryParse(Path.GetFileNameWithoutExtension(n), out var id)) ids.Add(id);
             Assert.That(ids.Count, Is.GreaterThan(1000));
-            int levels = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0, keeps = 0, overlapKeeps = 0;
+            int levels = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0, keeps = 0, overlapKeeps = 0, dotSounds = 0;
             foreach (var id in ids.Append(0u).Append(99999999u))
             {
                 var a = xml.Additional.GetAdditional(id);
@@ -80,6 +80,8 @@ public class AdditionalCacheTests
                     if (la.SpecialAbilities != null) specials++;
                     Assert.That((lb.StartEffect, lb.KeepEffect, lb.StopEffect, lb.InvokeEffect, lb.IgnoreOptimalHideStartEffect, lb.InvokeEvent),
                         Is.EqualTo((la.StartEffect, la.KeepEffect, la.StopEffect, la.InvokeEffect, la.IgnoreOptimalHideStartEffect, la.InvokeEvent)), $"effect {id} level {lv} motion effects");
+                    Assert.That(lb.DotSoundMaterial, Is.EqualTo(la.DotSoundMaterial), $"effect {id} level {lv} dot sound material");
+                    if (la.DotSoundMaterial != 0) dotSounds++;
                     Assert.That(lb.OverlapKeep == null, Is.EqualTo(la.OverlapKeep == null), $"effect {id} level {lv} overlap keep");
                     if (la.OverlapKeep != null)
                     {
@@ -99,6 +101,8 @@ public class AdditionalCacheTests
             Assert.That(overlaps, Is.GreaterThan(0), "levels with a max buff count");
             TestContext.Progress.WriteLine($"additional cache: {keeps} levels with a keep effect, {overlapKeeps} with overlap keep effects");
             Assert.That(keeps, Is.GreaterThan(1000), "levels with a keep effect");
+            TestContext.Progress.WriteLine($"additional cache: {dotSounds} levels with a dot sound material");
+            Assert.That(dotSounds, Is.GreaterThan(0), "levels with a dot sound material");
         }
         finally
         {

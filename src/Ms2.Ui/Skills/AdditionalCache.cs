@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 14;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities; 13: MaxBuffCount, Stun, StunAnimation; 14: the motion effects, InvokeEvent, OverlapKeep
+    public const int Version = 15;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities; 13: MaxBuffCount, Stun, StunAnimation; 14: the motion effects, InvokeEvent, OverlapKeep; 15: DotSoundMaterial
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -156,6 +156,7 @@ public sealed class AdditionalCache
             w.Write(l.StartEffect); w.Write(l.KeepEffect); w.Write(l.StopEffect); w.Write(l.InvokeEffect);
             w.Write(l.IgnoreOptimalHideStartEffect);
             w.Write(l.InvokeEvent);
+            w.Write(l.DotSoundMaterial);
             w.Write(l.OverlapKeep != null);
             if (l.OverlapKeep != null) { WriteRows(w, l.OverlapKeep.Start); WriteRows(w, l.OverlapKeep.Keep); WriteRows(w, l.OverlapKeep.End); }
         }
@@ -302,6 +303,7 @@ public sealed class AdditionalCache
                 SpecialAbilities = ReadAbilities(r), Parent = d,
                 StartEffect = r.ReadString(), KeepEffect = r.ReadString(), StopEffect = r.ReadString(), InvokeEffect = r.ReadString(),
                 IgnoreOptimalHideStartEffect = r.ReadBoolean(), InvokeEvent = r.ReadInt32(),
+                DotSoundMaterial = r.ReadInt32(),
             };
             if (r.ReadBoolean()) l.OverlapKeep = new OverlapKeepEffects(ReadRows(r), ReadRows(r), ReadRows(r));
             d.Levels.Add(l);

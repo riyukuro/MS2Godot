@@ -44,7 +44,8 @@ public class NpcHitSoundTests
         Assert.That(NpcHitSound.Relation(HitOwner.None, false), Is.EqualTo(0));
         Assert.That(NpcHitSound.Relation(HitOwner.Pc, true), Is.EqualTo(1));
         Assert.That(NpcHitSound.Relation(HitOwner.Pc, false), Is.EqualTo(3));
-        Assert.That(NpcHitSound.Relation(HitOwner.Npc, false), Is.EqualTo(3));
+        Assert.That(NpcHitSound.Relation(HitOwner.Npc, false), Is.EqualTo(5), "CNpc::vfunc_58: an npc is 5, not another PC's 3");
+        Assert.That(NpcHitSound.Relation(HitOwner.Npc, false, ownerBoss: true), Is.EqualTo(6));
     }
 
     [Test]
