@@ -123,6 +123,17 @@ public abstract record PartyMessage(int Mode) {
     /// <summary>Unk_LockedIntMap::Read (unit_140268010_sharedstatemap.cpp:85): i32 count of { i32 key, u8 value }. Not kept.</summary>
     static void SkipCounters(ByteReader r) { int n = r.ReadInt(); for (int i = 0; i < n; i++) { r.ReadInt(); r.ReadByte(); } }
 
+    /// <summary>Unk_LockedIntMap::Read (unit_140268010_sharedstatemap.cpp:85) of a member's counters: i32 count of { i32 key (the dungeon room id),
+    /// u8 value (the room's enter state) }; a later entry of a key replaces the earlier one (the map's SetAt).</summary>
+    internal static IReadOnlyDictionary<int, int> ReadCounters(ByteReader r) {
+        int n = r.ReadInt();
+        if (n <= 0) return NoCounters;
+        var map = new Dictionary<int, int>(n);
+        for (int i = 0; i < n; i++) { int key = r.ReadInt(); map[key] = r.ReadByte(); }
+        return map;
+    }
+    internal static readonly IReadOnlyDictionary<int, int> NoCounters = new Dictionary<int, int>();
+
     /// <summary>Reads one party packet. Every mode this reader decodes ends with ExpectEnd, so a layout the client reads differently
     /// shows up as a PacketLayoutException; the modes it does not decode (PartyOtherMode) are returned without reading their body.</summary>
     public static PartyMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
@@ -137,7 +148,7 @@ public abstract record PartyMessage(int Mode) {
         int mode = r.ReadByte();
         switch (mode) {
             case 0: { int result = r.ReadByte(); return new PartyResult(result, r.ReadUnicodeString()); }   // OnPartyResultMessage @0x14162f030 (partymanager.cpp:1370)
-            case 0xe: { long id = r.ReadLong(); SkipCounters(r); return new PartyMemberCounters(id); }       // OnPartyMemberCounters @0x14162e240
+            case 0xe: { long id = r.ReadLong(); return new PartyMemberCounters(id) { Counters = ReadCounters(r) }; }       // OnPartyMemberCounters @0x14162e240
             case 0x12: { long id = r.ReadLong(); return new PartyMemberResult(id, r.ReadByte()); }          // FUN_14162e3d0 @0x14162e3d0
             case 0x14: return new PartyNotice(r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString());   // OnPartyNotice @0x14162e5d0
             case 0x15: { var text = StringIdText.Read(r); return new PartyNoticeWithSound(text, r.ReadUnicodeString()); }   // OnPartyNoticeWithSound @0x14162e730
@@ -150,7 +161,7 @@ public abstract record PartyMessage(int Mode) {
             case 0x37: { bool registered = r.ReadBool(); return new PartySurvivalSquadRegister(registered, r.ReadBool()); }   // OnPartySurvivalSquadRegister @0x141630790
             case 0x38: return new PartyDungeonRoomCreate(r.ReadInt());                                     // OnPartyDungeonRoomCreate @0x141630a60
             case 0x19: { bool matching = r.ReadBool(); return new PartyMatchDungeonChange(matching, r.ReadInt()); }   // OnPartyMatchDungeonChange @0x14162e820
-            case 2: { var u = PartyUser.Read(r, profile); SkipCounters(r); return new PartyJoin(u); }            // OnPartyMemberJoin
+            case 2: { var u = PartyUser.Read(r, profile); return new PartyJoin(u) { Counters = ReadCounters(r) }; }            // OnPartyMemberJoin
             case 3: return new PartyLeave(r.ReadLong(), r.ReadBool());                                    // OnPartyMemberLeave
             case 4: return new PartyKick(r.ReadLong());                                                    // OnPartyMemberKick
             case 5: return new PartyOnline(PartyUser.Read(r, profile));                                             // OnPartyMemberOnline
@@ -182,11 +193,16 @@ public abstract record PartyMessage(int Mode) {
         }
     }
 
-    internal static void WriteCounters(ByteWriter w) => w.WriteInt(0);
+    internal static void WriteCounters(ByteWriter w, IReadOnlyDictionary<int, int> counters = null) {
+        w.WriteInt(counters?.Count ?? 0);
+        if (counters != null) foreach (var (key, value) in counters) { w.WriteInt(key); w.WriteByte((byte) value); }
+    }
 }
 
 public sealed record PartyJoin(PartyUser User) : PartyMessage(2) {
-    public byte[] Write() { var w = new ByteWriter(); w.WriteByte(2); User.Write(w); WriteCounters(w); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+    /// <summary>The joined member's counters (CPartyMember::counters, read after the record at partymanager.cpp:1003).</summary>
+    public IReadOnlyDictionary<int, int> Counters { get; init; } = NoCounters;
+    public byte[] Write() { var w = new ByteWriter(); w.WriteByte(2); User.Write(w); WriteCounters(w, Counters); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
 }
 public sealed record PartyLeave(long CharacterId, bool Disband) : PartyMessage(3);
 public sealed record PartyKick(long CharacterId) : PartyMessage(4);
@@ -264,8 +280,11 @@ public sealed class PartyVote {
 
 /// <summary>Mode 0, OnPartyResultMessage @0x14162f030: u8 result, the name the notice formats.</summary>
 public sealed record PartyResult(int Result, string Name) : PartyMessage(0);
-/// <summary>Mode 0xe, OnPartyMemberCounters: i64 member, then the counter map (not kept).</summary>
-public sealed record PartyMemberCounters(long CharacterId) : PartyMessage(0xe);
+/// <summary>Mode 0xe, OnPartyMemberCounters @0x14162e240 (partymanager.cpp:1234): i64 member, then the counter map the member takes (SetCounters).</summary>
+public sealed record PartyMemberCounters(long CharacterId) : PartyMessage(0xe) {
+    public IReadOnlyDictionary<int, int> Counters { get; init; } = NoCounters;
+    public byte[] Write() { var w = new ByteWriter(); w.WriteByte(0xe); w.WriteLong(CharacterId); WriteCounters(w, Counters); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+}
 /// <summary>Mode 0x12, FUN_14162e3d0: i64 member, u8 result (non zero = string id 0x327, 0 = 0x326).</summary>
 public sealed record PartyMemberResult(long CharacterId, int Result) : PartyMessage(0x12);
 /// <summary>Mode 0x14, OnPartyNotice: three unicode strings (text key, sound, argument).</summary>
@@ -306,8 +325,10 @@ public sealed record PartyChatNote(int CommonId, string Name) : PartyNote;
 /// 0x14 of the new id), when the party's matching dungeon changed to another one.</summary>
 public sealed record PartyDungeonChangeNote(int DungeonId) : PartyNote;
 
-/// <summary>One member of mode 9: the offline flag, the record (its counters are read past).</summary>
-public sealed record PartyInfoMember(bool Offline, PartyUser User);
+/// <summary>One member of mode 9: the offline flag, the record and its counters.</summary>
+public sealed record PartyInfoMember(bool Offline, PartyUser User) {
+    public IReadOnlyDictionary<int, int> Counters { get; init; } = PartyMessage.NoCounters;
+}
 
 /// <summary>
 /// Mode 9, OnPartyInfo (partymanager.cpp:1104): bool announce, i32 party id, i64 leader id, u8 count (at most 10 read) of
@@ -332,8 +353,7 @@ public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadO
         for (int i = 0; i < count && i < 10; i++) {
             bool offline = r.ReadBool();
             var u = PartyUser.Read(r, profile);
-            int n = r.ReadInt(); for (int k = 0; k < n; k++) { r.ReadInt(); r.ReadByte(); }
-            members.Add(new PartyInfoMember(offline, u));
+            members.Add(new PartyInfoMember(offline, u) { Counters = ReadCounters(r) });
         }
         bool matchmaking = r.ReadBool();
         int dungeon = r.ReadInt();
@@ -347,7 +367,7 @@ public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadO
     public byte[] Write() {
         var w = new ByteWriter();
         w.WriteByte(9); w.WriteBool(Announce); w.WriteInt(PartyId); w.WriteLong(LeaderId); w.WriteByte((byte) Members.Count);
-        foreach (var m in Members) { w.WriteBool(m.Offline); m.User.Write(w); WriteCounters(w); }
+        foreach (var m in Members) { w.WriteBool(m.Offline); m.User.Write(w); WriteCounters(w, m.Counters); }
         w.WriteBool(Matchmaking); w.WriteInt(DungeonId); w.WriteByte((byte) SearchBits); w.WriteBool(SurvivalSquad);
         w.WriteByte((byte) (Recruit != null ? 1 : 0)); Recruit?.Write(w);
         return w.Buffer.AsSpan(0, w.Length).ToArray();
@@ -361,6 +381,10 @@ public sealed class PartyMember {
     public bool Leader;         // SetLeader
     public int ReadyState;      // SetReadyState: the ready check's 1 waiting, 2 ready, 3 not ready (0 none)
     public int Index;           // SetIndex
+    /// <summary>counters (CPartyMember, partymember.cpp:81 SetCounters): the member's room id to enter state map, from modes 2, 9 and 0xe.</summary>
+    public IReadOnlyDictionary<int, int> Counters = PartyMessage.NoCounters;
+    /// <summary>Unk_LockedIntMap::Get (@0x140268570): the value of a key, 0 without it.</summary>
+    public int Counter(int key) => Counters.TryGetValue(key, out int v) ? v : 0;
     public long CharacterId => User.CharacterId;
 
     /// <summary>FUN_141637c40 (:115): 0 offline, 2 when m_184 is set, else 1.</summary>
@@ -516,7 +540,7 @@ public sealed partial class PartyBook {
                 PartyId = info.PartyId; LeaderId = info.LeaderId;
                 members.Clear();
                 foreach (var m in info.Members) {
-                    members.Add(new PartyMember { User = m.User, Offline = m.Offline, Index = members.Count, Leader = m.User.CharacterId == info.LeaderId });
+                    members.Add(new PartyMember { User = m.User, Offline = m.Offline, Counters = m.Counters, Index = members.Count, Leader = m.User.CharacterId == info.LeaderId });
                     BattleRecords?.AddPartyMemberRecord(m.User.CharacterId);    // :1125
                 }
                 Matchmaking = info.Matchmaking; DungeonId = info.DungeonId;
@@ -531,7 +555,7 @@ public sealed partial class PartyBook {
                 break;
             case PartyJoin join: {                          // :996
                 if (members.Count == MaxMembers) return;
-                var m = new PartyMember { User = join.User, Index = members.Count };
+                var m = new PartyMember { User = join.User, Counters = join.Counters, Index = members.Count };
                 members.Add(m);
                 if (windowOpen) MemberAdded?.Invoke(m); else Opened?.Invoke();
                 BattleRecords?.AddPartyMemberRecord(m.CharacterId);             // :1013
@@ -605,6 +629,9 @@ public sealed partial class PartyBook {
                 Note(0x323, m.User.Name);
                 break;
             }
+            case PartyMemberCounters counters:              // :1234
+                if (Find(counters.CharacterId) is { } counted) counted.Counters = counters.Counters;
+                break;
             case PartyMemberUpdate up: {                    // :1215
                 var m = Find(up.CharacterId);
                 if (m == null) return;

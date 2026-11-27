@@ -302,6 +302,25 @@ public class DungeonControlCenterTests
         Assert.That(e.C.CanEnterDungeonRoom(solo[0]), Is.True, "alone, only the player's state counts");
     }
 
+    [Test]
+    public void AMembersCountersFromThePartyPacketsDecideWhetherThePartyMayEnter()
+    {
+        // the HUD feeds MemberClearState from the party book's members (CPartyMember::counters.Get, partymanager.cpp:566)
+        var book = new PartyBook();
+        var e = Make(load: false, level: 90, book: book);
+        uint room = e.C.GetRecommendedRooms()[0].Id;
+        PartyUser U(long id) => new() { AccountId = 100 + id, CharacterId = id, Name = "n" + id, MapId = 2000001, Level = 90, Channel = 1, GearScore = 900 };
+        book.Apply(new PartyInfo(false, 9, 1, new[] { new PartyInfoMember(false, U(1)), new PartyInfoMember(false, U(2)) }, false, 0), 1, false);
+        e.C.ClearState = _ => 0;
+        e.C.MemberClearState = (member, id) => book.Find(member)?.Counter((int)id);
+        Assert.That(e.C.CanEnterDungeonRoom(room), Is.True, "no counters yet");
+        book.Apply(new PartyMemberCounters(2) { Counters = new Dictionary<int, int> { [(int)room] = 10 } }, 1, true);
+        Assert.That(e.C.CanEnterDungeonRoom(room), Is.False, "a member's counter of 10 refuses the room for the party");
+        Assert.That(e.C.CanEnterDungeonRoom(room + 1), Is.True);
+        book.Apply(new PartyMemberCounters(2) { Counters = new Dictionary<int, int> { [(int)room] = 9 } }, 1, true);
+        Assert.That(e.C.CanEnterDungeonRoom(room), Is.True);
+    }
+
     static PartyBook PartyOf(params (int Level, int GearScore)[] members)
     {
         var book = new PartyBook();

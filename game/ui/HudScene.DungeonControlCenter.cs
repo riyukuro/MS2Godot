@@ -75,6 +75,7 @@ public partial class HudScene
             LocalPlayer = () => hudModel.HasLocalPlayer ? ((ushort, uint)?)((ushort)hudModel.Player.Level, (uint)(live?.Me.User?.GearScore ?? 0)) : null,
             SelfCharacterId = () => live?.CharacterId ?? PartyFixture.SelfCharacterId,
             ClearState = id => live?.DungeonEnterStateOf((int)id),                              // CMyCharacter::GetDungeonEnterState
+            MemberClearState = (member, id) => live?.Party.Find(member)?.Counter((int)id),      // CPartyMember::counters.Get
             ServerTime = () => live?.ServerTime ?? System.DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             TogglePartySearch = TogglePartySearch,
             OpenSetting = _ => GD.Print("dungeon finder: dialog 0x4f86 is not in this HUD"),

@@ -124,6 +124,7 @@ public partial class HudScene
         c.Hooks.SelfCharacterId = () => live?.CharacterId ?? PartyFixture.SelfCharacterId;
         c.Hooks.IsVip = () => live == null ? null : live.Me.PremiumTime > live.ServerTime;              // PC::IsVip
         c.Hooks.ClearState = id => live?.DungeonEnterStateOf((int)id);                                  // CMyCharacter::GetDungeonEnterState
+        c.Hooks.MemberClearState = (member, id) => live?.Party.Find(member)?.Counter((int)id);          // CPartyMember::counters.Get
         if (live != null) c.Hooks.AchieveName = id => AchieveTextsFor(live.Achieves).Name(id);
         if (prime != null && !prime(c)) return;
         var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
