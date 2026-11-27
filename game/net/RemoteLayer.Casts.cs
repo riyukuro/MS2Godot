@@ -95,7 +95,7 @@ public sealed partial class RemoteLayer
             {
                 var st = skillMotions.StateMove(skillId);
                 var move = new CastMove(motion.MoveType, motion.KeyMove, motion.MoveDistance, motion.MoveAngle,
-                    st.MoveType, st.MovingInMovekey, st.MagicControl, dir);
+                    st.MoveType, st.MovingInMovekey, st.MagicControl, dir, motion.IgnoreCollisionGroups);
                 // FUN_141673ce0 before the state is entered: the record list replaced unless the uid and motion are there
                 remoteMagics.BeginCast(actorId, castUid, motionIndex);
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,

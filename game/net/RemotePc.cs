@@ -204,9 +204,10 @@ public sealed partial class RemotePc : IRemotePc
     /// PCBase::vfunc_68 (@0x14166e100, pcbase.cpp:1763-1823): standing still on an entity with no fall time takes no
     /// velocity; else GameObjectController's velocity part (the jump curve, or gravity g t dt + g dt^2 / 2 with the
     /// horizontal velocity only when the fall timer runs and the state's move is zero, the local player's Integrate),
-    /// with the horizontal part dropped outside StateWalk / StateFall / StateJump; then the controller's move.
+    /// with the horizontal part dropped outside StateWalk / StateFall / StateJump; then the controller's move without the
+    /// groups of <paramref name="exclude"/> (nFlags, the skill motion's ignoreCollisionGroups).
     /// </summary>
-    public void Move(System.Numerics.Vector3 moveMs2, float dt)
+    public void Move(System.Numerics.Vector3 moveMs2, float dt, uint exclude)
     {
         var move = G(moveMs2);
         bool zero = move == Vector3.Zero;
@@ -241,7 +242,7 @@ public sealed partial class RemotePc : IRemotePc
             if (Ms2.Ui.PlatformCarry.SetsAtOnce(c)) Body.GlobalPosition += g;
             else disp += g;
         }
-        if (disp != Vector3.Zero) ControllerMove(disp, dt);
+        if (disp != Vector3.Zero) ControllerMove(disp, dt, exclude);
     }
 
     /// <summary>

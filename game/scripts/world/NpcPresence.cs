@@ -24,7 +24,7 @@ public sealed partial class NpcPresence : CanvasLayer, IMovieLayer
     const float HideDistance = 1500, OpaqueDistance = 700;
 
     /// <summary>CNpc::vfunc_126: the body's PhysX collision group, 4 (5 with capsule ignore, which gets no body here).</summary>
-    const int NpcGroup = 4;
+    public const int NpcGroup = 4;
 
     sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; }
 
@@ -188,13 +188,35 @@ public sealed partial class NpcPresence : CanvasLayer, IMovieLayer
 
     void AddBody(FieldNpcs.Placed n)
     {
-        float radius = Math.Max(1, n.Row.CapsuleRadius), height = Math.Max(2 * radius, n.Row.CapsuleHeight);
-        var body = new StaticBody3D { Name = "Capsule", CollisionLayer = Movement.MoveConfig.NpcLayer };   // group 4
-        body.SetMeta(FieldBuilder.GroupMeta, NpcGroup);
-        body.SetMeta(Movement.MoveConfig.ControllerMeta, true);   // the npc body is a GameObjectController (CNpc m_unk_150)
-        body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = radius, Height = height }, Position = new Vector3(0, height / 2, 0) });
-        n.Root.AddChild(body);
+        n.Root.AddChild(CapsuleBody(n.Row, NpcGroup));
         Bodies++;
+    }
+
+    /// <summary>The PhysX group CNpc::vfunc_126 (@0x1410916a0) gives the npc's controller: 4 for a live npc
+    /// (<paramref name="alive"/>, its a: m_unk_15c == 0 at the spawn, :541) without the row's capsule ignore, else 5, which
+    /// the PC's 0x399 sweep leaves out.</summary>
+    public static int ControllerGroup(bool alive, bool capsuleIgnore) => alive && !capsuleIgnore ? NpcGroup : DeadGroup;
+    /// <summary>The group of a dead npc's controller (StateDeadNPC::vfunc_4, statedead.cpp:248) and of vfunc_126's else.</summary>
+    public const int DeadGroup = 5;
+
+    /// <summary>The npc's controller (CNpc m_unk_150, a GameObjectController): the capsule of the row's capsule radius and
+    /// height (FUN_141670d50, unit_14108e1e0_npcactorandvibrate.cpp:2101), standing on the feet, on the layer of
+    /// <paramref name="group"/>.</summary>
+    public static StaticBody3D CapsuleBody(NpcRow row, int group)
+    {
+        float radius = Math.Max(1, row.CapsuleRadius), height = Math.Max(2 * radius, row.CapsuleHeight);
+        var body = new StaticBody3D { Name = "Capsule" };
+        SetGroup(body, group);
+        body.SetMeta(Movement.MoveConfig.ControllerMeta, true);
+        body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = radius, Height = height }, Position = new Vector3(0, height / 2, 0) });
+        return body;
+    }
+
+    /// <summary>GameObjectController::SetCollisionGroup on <see cref="CapsuleBody"/>: its layer and group meta.</summary>
+    public static void SetGroup(StaticBody3D body, int group)
+    {
+        body.CollisionLayer = 1u << group;
+        body.SetMeta(FieldBuilder.GroupMeta, group);
     }
 
     void AddTag(FieldNpcs.Placed n, UiMovie movie, Color color)

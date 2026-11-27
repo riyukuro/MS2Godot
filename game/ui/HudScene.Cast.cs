@@ -12,7 +12,7 @@ public partial class HudScene
     Ms2.Formats.World.SkillTable castMotions;      // the motion effects, the table the replayed casts read
 
     /// <summary>What the own skill state's motion controller reads (the remote casts' CastMove, RemoteLayer.Casts): the motion's
-    /// movetype, keyMove, movedistance and moveangle, the skill's stateAttr, and the record's m_kStart
+    /// movetype, keyMove, movedistance, moveangle and ignoreCollisionGroups, the skill's stateAttr, and the record's m_kStart
     /// (<paramref name="dir"/>, MS2 axes). Zero motion data without the motion row.</summary>
     Ms2.Net.Replay.CastMove OwnCastMove(int skillId, int level, int motionIndex, System.Numerics.Vector3 dir)
     {
@@ -21,7 +21,8 @@ public partial class HudScene
         var m = castMotions.Motion(skillId, level, motionIndex);
         return m == null
             ? new Ms2.Net.Replay.CastMove(0, 0, 0, 0, st.MoveType, st.MovingInMovekey, st.MagicControl, dir)
-            : new Ms2.Net.Replay.CastMove(m.MoveType, m.KeyMove, m.MoveDistance, m.MoveAngle, st.MoveType, st.MovingInMovekey, st.MagicControl, dir);
+            : new Ms2.Net.Replay.CastMove(m.MoveType, m.KeyMove, m.MoveDistance, m.MoveAngle, st.MoveType, st.MovingInMovekey, st.MagicControl, dir,
+                m.IgnoreCollisionGroups);
     }
     // StateSkill's record and m_nAttack for the own cast whose sequence plays, the sequence, and the next point's text key time
     CastRecord ownCast;

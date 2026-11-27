@@ -41,6 +41,11 @@ public partial class Player : ISkillMotionOwner
         return true;
     }
 
+    /// <summary>The groups the skill state's moves leave out: the record's motion m_nIgnoreCollisionGroups, which
+    /// FUN_1417edc20 hands both of its vfunc_68 calls (stateskill.cpp:2862-2874); 20 (groups 2 and 4) lets a rush pass
+    /// the PCs and the npcs. 0 with magicControl (m_n10 0x3c), where the state makes no move.</summary>
+    uint SkillIgnoreGroups => SkillSequencePlaying() && !skillMotion.NoMove ? skillMotion.Move.IgnoreCollisionGroups : 0;
+
     /// <summary>The own cast's skill state holds the walk, jump and click-move input: the state moves by its motion and, for a
     /// moveType 2 / 3 skill, the input it reads itself (<see cref="SkillMotionMove"/>, stateskill.cpp:2855-2874). Asked
     /// each frame, so the sequence's end (<see cref="SkillSequenceEnding"/>) is seen in the frame it comes.</summary>
@@ -51,7 +56,7 @@ public partial class Player : ISkillMotionOwner
     /// moveType 2 / 3 skill with move time left, <paramref name="rawInput"/> (the held move or click input, as the walk
     /// state reads it) at the owner's speed. Zero without a playing cast or with magicControl (m_n10 0x3c).
     /// STILL-OPEN: the client hands the two moves to vfunc_68 one after the other (each with its gravity step and
-    /// collision); here they are one sweep. The hit pause (feature 0xca) and the ignored collision groups are not ported.</summary>
+    /// collision); here they are one sweep. The hit pause (feature 0xca) is not ported.</summary>
     Vector3 SkillMotionMove(Vector2 rawInput, float dt)
     {
         if (!SkillSequencePlaying()) return Vector3.Zero;

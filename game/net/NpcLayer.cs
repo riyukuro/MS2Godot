@@ -35,6 +35,7 @@ public sealed class NpcLayer
         public int OwnerActor, OwnerEffectId;     // m_nEC0: the pc the effect sits on (a boss block's owner actor); m_nEC4: the kept effect
         public Node3D OwnerNode;                  // the pc node the kept effect hangs on
         public Node3D ModelNode;                  // the body's Model node (the hp bar's Eff_UI anchor), null on a placeholder
+        public StaticBody3D Capsule;              // m_unk_150: the controller capsule, group 4 alive, 5 dead or capsule-ignored
         public string Kfm;                        // m_strED8: the kfm the actor loads (the row's, or NpcNotice mode 2's)
         public int RideOwner;                     // m_nF20: the actor the npc rides on (NpcRide mode 1, a boss's FieldAddNpc), 0 for none
         public long AccumDamage;                  // m_nEE0: the accumulated damage (NpcRide mode 0, FieldAddNpc's damaged hp bar tag)
@@ -250,6 +251,11 @@ public sealed class NpcLayer
         }
         i.VisualBase = i.Visual.Position;
         i.Height = row.CapsuleHeight * i.ScaleAc;
+        // CNpc's load makes the controller (FUN_141670d50, unit_14108e1e0_npcactorandvibrate.cpp:2101); the spawn's
+        // vfunc_126(m_unk_15c == 0, 0) (:541) puts it in group 4, or 5 with the row's capsule ignore. The PC's sweep
+        // (0x399) stops at group 4 unless the move leaves it out (a skill motion's ignoreCollisionGroups)
+        i.Capsule = World.NpcPresence.CapsuleBody(row, World.NpcPresence.ControllerGroup(true, row.CapsuleIgnore));
+        root.AddChild(i.Capsule);
         parent.AddChild(root);
         root.Position = i.Target;
         Tags?.AddNpc(root, i.Placeholder ? null : i.Visual, row);
@@ -993,6 +999,7 @@ public sealed class NpcLayer
     /// sequence plays nothing (PlayAnimation finds no sequence) and counts in <see cref="NoDeathSequence"/>.
     /// With <paramref name="show"/> the npc's dead effect plays before the sound (FUN_141098fb0(0), :2134; <see cref="PlayNpcEffect"/>).
     /// A boss leaves the field's boss music tracker (:2150, RemoveCombatBgmTracker).
+    /// The npc's controller goes to group 5 (StateDeadNPC::vfunc_4, statedead.cpp:248), out of the PC's sweep.
     /// STILL-OPEN: FUN_141099ab0, the corpse box (m_corpse) and the corpse effect are not ported.
     /// </summary>
     public void Die(int id, bool show)
@@ -1008,6 +1015,7 @@ public sealed class NpcLayer
         if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
         BossGone(id, i);
         if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
+        if (i.Capsule != null) World.NpcPresence.SetGroup(i.Capsule, World.NpcPresence.DeadGroup);
         if (i.Model == null) return;
         var seq = row == null ? null : i.Model.Kfm.ByName(row.DeadSequence(show, i.DeadAction));
         var a = seq == null ? null : Anim(i.Model, seq.Id);

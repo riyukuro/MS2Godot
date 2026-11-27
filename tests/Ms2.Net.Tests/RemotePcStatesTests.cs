@@ -31,7 +31,9 @@ public class RemotePcStatesTests {
         public void StopJump() { Jumping = false; fallTime = 0; fallRunning = false; }
         public void StartJump(float height, Vector3 dir, float speed) { v0 = MathF.Sqrt(2f * 2f * height * -Gravity); jumpT = 0; jumpH = 0; Jumping = true; kVel = dir * speed; }
         public void SetVelocity(Vector3 v) => kVel = v;
-        public void Move(Vector3 move, float dt) {
+        public readonly List<(Vector3 move, uint exclude)> Moves = new();   // each vfunc_68 with its nFlags
+        public void Move(Vector3 move, float dt, uint exclude) {
+            Moves.Add((move, exclude));
             var d = move;
             if (Jumping) {
                 jumpT += dt;
@@ -777,6 +779,26 @@ public class RemotePcStatesTests {
         sm.SkillSync(0f, new Vector2(0, 1), false, false);
         Run(sm, 1f);
         Assert.That(b.Position, Is.EqualTo(Vector3.Zero));
+    }
+
+    [Test] public void BothSkillMovesLeaveOutTheMotionsIgnoredGroups() {
+        // FUN_1417edc20 (stateskill.cpp:2862-2874): the motion's m_nIgnoreCollisionGroups is vfunc_68's nFlags for the
+        // controller's displacement and for the moveType 2 / 3 input step; the other states pass none (heavy gunner
+        // JetBoots 10600081 has ignoreCollisionGroups 20: groups 2 and 4, the PCs and the npcs)
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        Assert.That(b.Moves.TrueForAll(m => m.exclude == 0), "walk / idle moves exclude nothing");
+        sm.Cast(10200001, false, Vector3.Zero, 0f, move: new CastMove(2, 0, 0, 0, 2, false, false, default, 20));
+        sm.SkillSync(0f, new Vector2(0, 1), false, false);
+        b.Moves.Clear();
+        sm.Update(1 / 60f);
+        Assert.That(b.Moves.Count, Is.EqualTo(2), "the motion step and the input step");
+        Assert.That(b.Moves.ConvertAll(m => m.exclude), Is.EqualTo(new List<uint> { 20, 20 }));
+        sm.Cast(10200001, false, Vector3.Zero, 0f, move: new CastMove(2, 0, 0, 0, 2, false, false, default));
+        b.Moves.Clear();
+        sm.Update(1 / 60f);
+        Assert.That(b.Moves.TrueForAll(m => m.exclude == 0), "a motion without ignored groups excludes nothing");
     }
 
     [Test] public void TheInputMoveReadsItsDirectionAfterTheMotionStepTurnedThePc() {

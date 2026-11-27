@@ -521,7 +521,7 @@ public partial class Player : CharacterBody3D
         {
             if (hasInput && State != MoveState.Dash) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
             var before = GlobalPosition;
-            Integrate(dt, skill ? SkillMotionMove(skillInput, dt) : Vector3.Zero);
+            Integrate(dt, skill ? SkillMotionMove(skillInput, dt) : Vector3.Zero, skill ? SkillIgnoreGroups : 0);
             if (State == MoveState.Dash) DashAfterMove(before, dt);
         }
         else wallHit = false;
@@ -731,8 +731,9 @@ public partial class Player : CharacterBody3D
     }
 
     /// <summary>The frame's controller move; <paramref name="skillMove"/> is the own cast's motion (<see cref="SkillMotionMove"/>),
-    /// added to the sweep.</summary>
-    void Integrate(float dt, Vector3 skillMove)
+    /// added to the sweep, and <paramref name="exclude"/> the groups the move leaves out (vfunc_68's nFlags: the skill
+    /// motion's ignoreCollisionGroups, <see cref="SkillIgnoreGroups"/>).</summary>
+    void Integrate(float dt, Vector3 skillMove, uint exclude = 0)
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
         if (State is MoveState.Idle or MoveState.Land or MoveState.Dead or MoveState.Hit or MoveState.FallDamage) v = Vector3.Zero;
@@ -777,7 +778,7 @@ public partial class Player : CharacterBody3D
         var delta = v * dt + skillMove + push;
         delta += Carry(ref pushed);
         // :1822: the controller moves only when the frame's move is not ZERO; a still frame keeps the last move's flags
-        var firstHit = delta == Vector3.Zero ? nxHit : MoveStep(delta, dt);
+        var firstHit = delta == Vector3.Zero ? nxHit : MoveStep(delta, dt, exclude);
         if (pushed && delta != Vector3.Zero) syncPushed = true;   // vfunc_68: a zone that acted, on a frame that moves, calls vfunc_110 (pcbase.cpp:1772-1775, 1820-1823)
 
         // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)
@@ -831,10 +832,12 @@ public partial class Player : CharacterBody3D
     /// the box's x or y sides, or above its top, take the frame's move back on those axes (WorldService::FUN_141bd36f0
     /// @0x141bd36f0, worldservice_1.cpp:7072-7083: there is no test against the floor, and the up/down part is dropped while
     /// the move goes down) with one more controller move. A mount moves the same body, as the client's Ridee is a PCBase.
+    /// Both moves leave out <paramref name="exclude"/> (nFlags, :1820 and :1853).
+    /// STILL-OPEN: nFlags also takes the buffs' groups (GetIgnoreCollisionGroups, AdditionalCliList, :1771); not ported.
     /// </summary>
-    NxController.Hit MoveStep(Vector3 delta, float dt = 0)
+    NxController.Hit MoveStep(Vector3 delta, float dt = 0, uint exclude = 0)
     {
-        ControllerMove(delta, dt);
+        ControllerMove(delta, dt, exclude);
         var first = nxHit;
         var p = GlobalPosition;                                                     // field axes: x, -z, y
         float fx = p.X, fy = -p.Z, fz = p.Y;
@@ -845,7 +848,7 @@ public partial class Player : CharacterBody3D
         if (mask.Y != 0 && delta.Y < 0) mask.Y = 0;
         if (mask == Vector3.Zero) return first;
         var slide = -delta * mask;
-        if (slide != Vector3.Zero) ControllerMove(slide);
+        if (slide != Vector3.Zero) ControllerMove(slide, 0, exclude);
         return first;
     }
 

@@ -27,9 +27,10 @@ public interface IRemotePc : ISkillMotionOwner
     /// <summary>GameObjectController::SetKVelocity (units/s).</summary>
     void SetVelocity(Vector3 v);
     /// <summary>PCBase::vfunc_68's controller part (pcbase.cpp:1763-1862): gravity, the move and the world box, by
-    /// <paramref name="move"/> (units) over <paramref name="dt"/> seconds; the turn toward the target yaw is
+    /// <paramref name="move"/> (units) over <paramref name="dt"/> seconds, leaving the groups of <paramref name="exclude"/>
+    /// (nFlags, :1820 and :1853) out of the controller's moves; the turn toward the target yaw is
     /// <see cref="RemotePcStates"/>'s.</summary>
-    void Move(Vector3 move, float dt);
+    void Move(Vector3 move, float dt, uint exclude);
     /// <summary>StateLand::vfunc_4 (stateland.cpp:83-93): the ray from 30 above the feet, 50 down, puts a hit entity in the
     /// hit report, then vfunc_93(true) refreshes the stored ground material.</summary>
     void LandRefresh();
@@ -97,9 +98,11 @@ public interface IRemotePc : ISkillMotionOwner
 /// What the motion controller of a cast reads: the motion's SkillMotionData (movetype m_eMoveType, keyMove m_fAC,
 /// movedistance m_fB8, moveangle), the skill's stateAttr moveType (m_nMoveType) and movingInMovekey, magicControl's
 /// enable != 0, and the record's m_kStart (the SkillUse / SkillSync packet's direction, MS2 axes).
+/// <see cref="IgnoreCollisionGroups"/> is the motion's m_nIgnoreCollisionGroups, the groups StateSkill::FUN_1417edc20
+/// (stateskill.cpp:2862-2874) leaves out of both of its controller moves (vfunc_68's nFlags).
 /// </summary>
 public readonly record struct CastMove(int MotionMoveType, float KeyMove, float MoveDistance, float MoveAngle,
-    int SkillMoveType, bool MovingInMovekey, bool MagicControl, Vector3 Direction);
+    int SkillMoveType, bool MovingInMovekey, bool MagicControl, Vector3 Direction, uint IgnoreCollisionGroups = 0);
 
 /// <summary>The held actor's class as StateHold tests it (GetClassID).</summary>
 public enum HoldKind
@@ -1346,27 +1349,29 @@ public sealed class RemotePcStates
     /// a skill of stateAttr moveType 2 or 3 the move input at the PC's speed through vfunc_68 again, unless a
     /// movingInMovekey skill's record has no time left. The controller's displacement is in meters (PhysX units); here
     /// in units (x100), as the walk moves.
-    /// STILL-OPEN: the hit pause (feature 0xca: m_f80 grows and nothing moves), the motion's ignoreCollisionGroups and
-    /// vfunc_6 flags for vfunc_68, and the lift test of the linear and move controllers are not ported.
+    /// Both moves leave out the motion's ignoreCollisionGroups (nIgnoreGroups, :2862-2865).
+    /// STILL-OPEN: the hit pause (feature 0xca: m_f80 grows and nothing moves), the vfunc_6 flags for vfunc_68, and the
+    /// lift test of the linear and move controllers are not ported.
     /// </summary>
     void SkillMotion(float dt)
     {
         if (skillMotion.NoMove) return;
         bool input = skillMotion.TakesInput;
         skillMotion.Step(pc, dt, MoveDirection());
-        MoveBy(skillMotion.Displacement, dt);
+        uint ignore = skillMotion.Move.IgnoreCollisionGroups;
+        MoveBy(skillMotion.Displacement, dt, ignore);
         // CalcMoveDirectionNoYaw after the controller's vfunc_68 (stateskill.cpp:2866-2869), whose turn toward the target
         // yaw a camera mode 0xe direction reads
-        if (input) MoveBy(MoveDirection() * (EffectiveSpeed * dt), dt);
+        if (input) MoveBy(MoveDirection() * (EffectiveSpeed * dt), dt, ignore);
     }
 
     /// <summary>The cast's move time (m_fDuration, m_fElapsed, for tests).</summary>
     public float CastDuration => skillMotion.Duration;
     public float CastElapsed => skillMotion.Elapsed;
 
-    void MoveBy(Vector3 move, float dt)
+    void MoveBy(Vector3 move, float dt, uint exclude = 0)
     {
-        pc.Move(move, dt);
+        pc.Move(move, dt, exclude);
         // PCBase::vfunc_68 (@0x14166e100, pcbase.cpp:1864-1869): skipped for a non-target PC while the viewer's camera
         // (CameraMgr::IsLocalTargetMode) is in local-target mode.
         // STILL-OPEN: viewer camera local-target mode is not ported yet, so TurnTowardTargetYaw always runs.

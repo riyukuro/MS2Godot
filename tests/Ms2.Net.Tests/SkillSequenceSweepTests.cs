@@ -200,7 +200,7 @@ public class SkillSequenceSweepTests
         public void StopJump() { }
         public void StartJump(float height, Vector3 dir, float speed) { }
         public void SetVelocity(Vector3 v) { }
-        public void Move(Vector3 move, float dt) => Position += move;
+        public void Move(Vector3 move, float dt, uint exclude) => Position += move;
         public void LandRefresh() { }
         public void RefreshGround() { }
         public void PlayEffects(string action) { }
