@@ -677,7 +677,7 @@ public sealed class NpcLayer
     /// the cast's MakeDeadPhysXActor, the dps meter and vfunc_113) is not ported here.
     /// </summary>
     public bool Hit(int id, NpcHitKind kind, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.HitOwner owner,
-        Ms2.Ui.Skills.SkillAttackDamage attack)
+        Ms2.Ui.Skills.SkillAttackDamage attack, bool ownerBoss = false)
     {
         if (!inst.TryGetValue(id, out var i)) return false;
         var row = table.Find(i.NpcId);
@@ -687,7 +687,7 @@ public sealed class NpcLayer
         if (cast && row != null && totalDamage < 0 && byLocalPlayer && row.IsBoss) bossHits.Add(id);   // MyPC::FUN_14152e240 (:1871)
         bool armed = cast && row != null
             && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
-        if (row != null && totalDamage < 0 && (kind == NpcHitKind.Splash || (cast && !byLocalPlayer))) PlayHitSound(i, row, byLocalPlayer, owner, attack);
+        if (row != null && totalDamage < 0 && (kind == NpcHitKind.Splash || (cast && !byLocalPlayer))) PlayHitSound(i, row, byLocalPlayer, owner, attack, ownerBoss);
         if (!i.Dead && i.HpCur == 0) Die(id, true);
         if (i.HpCur == 0) PlayBossDeathVoice(id, i, row, owner, byLocalPlayer);
         return armed;
@@ -711,15 +711,17 @@ public sealed class NpcLayer
     /// The hit sound of a record on the npc: CEffectService::PlayHitSound(GetAttackMaterial(), m_nDefenceMaterial, the owner's
     /// object kind, vfunc_18(), the relation's volume) (:1876-1879, :1979-1982; <see cref="Ms2.Ui.Skills.NpcHitSound"/>).
     /// Nothing plays when the attack's material cannot be told (<see cref="Ms2.Ui.Skills.NpcHitSound.AttackMaterial"/>).
+    /// A boss owner's kind is 6 (CNpc::vfunc_58, unit_14108e1e0_npcactorandvibrate.cpp:655), another npc's 5.
     /// </summary>
-    void PlayHitSound(Inst i, NpcRow row, bool byLocalPlayer, Ms2.Ui.Skills.HitOwner owner, Ms2.Ui.Skills.SkillAttackDamage attack)
+    void PlayHitSound(Inst i, NpcRow row, bool byLocalPlayer, Ms2.Ui.Skills.HitOwner owner, Ms2.Ui.Skills.SkillAttackDamage attack,
+        bool ownerBoss)
     {
         int material = Ms2.Ui.Skills.NpcHitSound.AttackMaterial(owner, attack);
         if (material < 0 || i.Root == null) return;
-        int relation = Ms2.Ui.Skills.NpcHitSound.Relation(owner, byLocalPlayer);
+        int relation = Ms2.Ui.Skills.NpcHitSound.Relation(owner, byLocalPlayer, ownerBoss);
         constants ??= Ms2Godot.World.FieldContents.Constants(packs);
         float volume = Ms2.Ui.Skills.NpcHitSound.Volume(relation, constants);
-        HitSoundPlayed?.Invoke(i.NpcId, material, row.DefenceMaterial, volume);
+        HitSoundPlayed?.Invoke(i.NpcId, material, row.DefenceMaterial, relation, volume);
         FieldAudio.Instance?.PlayHitSound(material, row.DefenceMaterial, relation, i.Root.GlobalPosition, volume, Viewer?.Invoke(), hitSoundRand);
     }
 
@@ -754,8 +756,8 @@ public sealed class NpcLayer
     /// <summary>The own player's place, FUN_1411a5110's view distance origin for the hit sound; none when null.</summary>
     public Func<Vector3?> Viewer;
 
-    /// <summary>The npc id, attack material, defence material and volume of each hit sound asked for (for the checks).</summary>
-    public Action<int, int, int, float> HitSoundPlayed;
+    /// <summary>The npc id, attack material, defence material, relation and volume of each hit sound asked for (for the checks).</summary>
+    public Action<int, int, int, int, float> HitSoundPlayed;
 
     /// <summary>The npc id and effect xml of each damage or dead effect played (for the checks).</summary>
     public Action<int, string> EffectPlayed;

@@ -120,14 +120,15 @@ public partial class NpcDeadCheck : Node3D
         // by anyone; the attack's material by the owner (1 for none, an npc's attack's, nothing when it cannot be told), the
         // row's defence material, the relation's volume (the data's VolumePcToNpc, read with atof, for none and for another
         // (0.3 on these tables, 0.5 only without the key), before FieldAudio's VolumeOtherPc; VolumeMyPcToNpc for the own player)
-        var sounds = new System.Collections.Generic.List<(int npc, int atk, int def, float vol)>();
-        npcs.HitSoundPlayed = (n, a, d, v) => sounds.Add((n, a, d, v));
+        var sounds = new System.Collections.Generic.List<(int npc, int atk, int def, int rel, float vol)>();
+        npcs.HitSoundPlayed = (n, a, d, r, v) => sounds.Add((n, a, d, r, v));
         var soundRow = table.Find(npcId);
         if (soundRow != null)
         {
             npcs.Add(new NpcAddedEvent(0, WithHp(40, 100)));
             npcs.Hit(40, NpcHitKind.Cast, -10, true, HitOwner.None, null);
             npcs.Hit(40, NpcHitKind.Cast, -10, false, HitOwner.Npc, SkillAttackDamage.None);
+            npcs.Hit(40, NpcHitKind.Cast, -10, false, HitOwner.Npc, SkillAttackDamage.None, ownerBoss: true);
             npcs.Hit(40, NpcHitKind.Cast, 0, false, HitOwner.Npc, SkillAttackDamage.None);
             npcs.Hit(40, NpcHitKind.Cast, -10, false, HitOwner.Pc, null);
             npcs.Hit(40, NpcHitKind.Dot, -10, false, HitOwner.None, null);
@@ -137,10 +138,11 @@ public partial class NpcDeadCheck : Node3D
             var constants = Ms2Godot.World.FieldContents.Constants(packs);
             float npcVol = NpcHitSound.Volume(CombatVoice.ObjectKind(HitOwner.Npc, false, false), constants);
             float noneVol = NpcHitSound.Volume(CombatVoice.ObjectKind(HitOwner.None, false, false), constants);
-            Check(sounds.Count == 2 && sounds[0].npc == soundRow.Id && sounds[0].atk == 0 && sounds[0].def == def
-                    && Mathf.IsEqualApprox(sounds[0].vol, npcVol) && sounds[1].atk == 1 && sounds[1].def == def
-                    && Mathf.IsEqualApprox(sounds[1].vol, noneVol),
-                $"hit sounds [{string.Join(", ", sounds)}], not an npc owner's cast at {npcVol} and an ownerless splash at {noneVol}");
+            Check(sounds.Count == 3 && sounds[0].npc == soundRow.Id && sounds[0].atk == 0 && sounds[0].def == def && sounds[0].rel == 5
+                    && Mathf.IsEqualApprox(sounds[0].vol, npcVol) && sounds[1].atk == 0 && sounds[1].def == def && sounds[1].rel == 6
+                    && Mathf.IsEqualApprox(sounds[1].vol, npcVol) && sounds[2].atk == 1 && sounds[2].def == def && sounds[2].rel == 0
+                    && Mathf.IsEqualApprox(sounds[2].vol, noneVol),
+                $"hit sounds [{string.Join(", ", sounds)}], not an npc owner's cast (relation 5) and a boss owner's (6) at {npcVol} and an ownerless splash (0) at {noneVol}");
         }
         GD.Print($"npc dead: npc {npcId}, deaths {npcs.Deaths}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);

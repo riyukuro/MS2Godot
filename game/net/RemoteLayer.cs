@@ -1053,6 +1053,7 @@ public sealed partial class RemoteLayer : Node3D
                     // material, its own object kind) counts as nothing here
                     var owner = byLocal || users.ContainsKey(dmg.Damage.OwnerId) ? Ms2.Ui.Skills.HitOwner.Pc
                         : npcs.Contains(dmg.Damage.OwnerId) ? Ms2.Ui.Skills.HitOwner.Npc : Ms2.Ui.Skills.HitOwner.None;
+                    bool ownerBoss = owner == Ms2.Ui.Skills.HitOwner.Npc && npcs.CasterKind(dmg.Damage.OwnerId) == Ms2.Audio.SoundMusicEffectState.CasterBoss;
                     if (dmg.Damage.Mode == 1) ReactToHits(dmg.Damage);
                     if (dmg.Damage.Mode != 1 || Ms2.Ui.Hud.DamageNumbers.HasDamage(dmg.Damage, SkillDamage))
                     {
@@ -1072,10 +1073,10 @@ public sealed partial class RemoteLayer : Node3D
                             var kind = cast ? NpcHitKind.Cast : dmg.Damage.Mode == 3 ? NpcHitKind.Dot : NpcHitKind.Splash;
                             attackOf ??= (s, l, m, a) => SkillDamage?.Get(s, l, m, a);
                             npcs.Hit(t.TargetId, kind, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal, owner,
-                                Ms2.Ui.Skills.NpcHitSound.RecordAttack(dmg.Damage, RegionSkillOf, attackOf));
+                                Ms2.Ui.Skills.NpcHitSound.RecordAttack(dmg.Damage, RegionSkillOf, attackOf), ownerBoss);
                             // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                             if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
-                            PlayRecordSounds(dmg.Damage, t, owner, byLocal);
+                            PlayRecordSounds(dmg.Damage, t, owner, byLocal, ownerBoss);
                         }
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);

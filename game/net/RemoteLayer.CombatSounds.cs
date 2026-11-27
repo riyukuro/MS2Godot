@@ -24,14 +24,14 @@ public partial class RemoteLayer
     /// STILL-OPEN: the dead flag is the one the dead user / user state packets set, and the server sends the killing record
     /// before its DeadUser, so the killing record finds the PC alive and plays no death voice.
     /// </summary>
-    void PlayRecordSounds(Ms2.Net.Packets.SkillDamage d, Ms2.Net.Packets.HitTarget t, HitOwner owner, bool byLocal)
+    void PlayRecordSounds(Ms2.Net.Packets.SkillDamage d, Ms2.Net.Packets.HitTarget t, HitOwner owner, bool byLocal, bool ownerBoss)
     {
         var audio = FieldAudio.Instance;
         if (audio == null || t.TargetId == 0) return;
         bool self = t.TargetId == Tracker.SelfObjectId;
         Remote target = null;
         if (!self && !users.TryGetValue(t.TargetId, out target) && !npcs.Has(t.TargetId)) return;
-        int ownerKind = CombatVoice.ObjectKind(owner, byLocal, owner == HitOwner.Npc && npcs.CasterKind(d.OwnerId) == Ms2.Audio.SoundMusicEffectState.CasterBoss);
+        int ownerKind = CombatVoice.ObjectKind(owner, byLocal, ownerBoss);
         var constants = World.FieldContents.Constants(packs);
         var dotBuffs = d.Mode == 3 ? BuffsOf(t.TargetId) : null;
         var dotBuff = d.Mode != 3 ? null : self ? OwnEntry(d.BuffId) : dotBuffs?.Find(d.BuffId);
