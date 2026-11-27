@@ -167,6 +167,7 @@ namespace Ms2.Avm2.Flash
             rt.AutoClass = AutoClass;
             rt.OnBeforeConstruct += BeforeConstruct;
             Stage = (AsStage)rt.GetClass("flash.display.Stage").Construct();
+            if (TestClock?.Invoke(this) is { } c) Clock = c;
         }
 
         AsClass AutoClass(string pkg, string local)
@@ -1606,6 +1607,14 @@ namespace Ms2.Avm2.Flash
         /// one also restarts the movie clock at its current reading, as if the movie started then.
         /// </summary>
         public Func<double> Clock { get => clock; set { clock = value; startTickMs = (long)Math.Floor(value()); } }
+
+        /// <summary>
+        /// For a test host whose runs must give the same frames every time: the clock each new Player starts on, else null for
+        /// the real clock (the client's, and the game's). A suite that drives movies by <see cref="Tick"/> sets the movie's
+        /// frame clock here (<see cref="Runtime.TimerMs"/>), so getTimer and the double click follow the ticks it runs, as
+        /// getTimer did before it read real time. Set once before any Player is made; never by the game.
+        /// </summary>
+        public static Func<Player, Func<double>> TestClock;
 
         /// <summary>
         /// getTimer: GlobalObjectCPP::getTimer (@0x142428d70, sfr_as3_04.cpp:2943) gives (SInt32)MovieImpl::GetASTimerMs

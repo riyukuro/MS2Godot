@@ -23,6 +23,23 @@ public class GetTimerTests
     static int GetTimer(Runtime rt) => (int)Rt.ToNumber(((AsFunction)rt.GetGlobal("flash.utils.getTimer")).Call(null, Array.Empty<object>()));
 
     [Test]
+    public void ATestClockFollowsTheTicksAndTheGameClockDoesNot()
+    {
+        try
+        {
+            Player.TestClock = pl => () => pl.RT.TimerMs;
+            var (rt, p) = Empty();
+            for (int i = 0; i < 3; i++) p.Tick();
+            Assert.That(GetTimer(rt), Is.EqualTo(100), "a test host's frame clock: 3 ticks at 30 fps");
+        }
+        finally { Player.TestClock = null; }
+        var (rt2, p2) = Empty();
+        p2.Clock = () => 0;                     // stands for real time that has not moved
+        for (int i = 0; i < 3; i++) p2.Tick();
+        Assert.That(GetTimer(rt2), Is.EqualTo(0), "without the test clock, ticks do not move getTimer");
+    }
+
+    [Test]
     public void GetTimerIsRealTimeWhenTicksAreDropped()
     {
         var (rt, p) = Empty();
