@@ -30,6 +30,15 @@ public partial class RemoteLayer
         return npcs.RootOf(objectId);
     }
 
+    /// <summary>The own list's entries a remove took before the queued records read ahead of it (<see cref="QueuedBuffRemovals"/>).</summary>
+    readonly QueuedBuffRemovals ownRemovals = new();
+
+    /// <summary>OnBuff mode 1 for the own PC, before its list takes it: the entry it held stays found by the queued records.</summary>
+    internal void OwnBuffRemoving(int key, AdditionalBuff held) => ownRemovals.Removed(key, held);
+
+    /// <summary>The own PC's entry of a key as a queued record sees it, in packet order.</summary>
+    AdditionalBuff OwnEntry(int key) => ownRemovals.Find(LiveSession.Instance?.OwnBuffList, key);
+
     /// <summary>The AdditionalCliList of an object id: the own player's (the HUD's), another player's or an npc's; null for none.</summary>
     public AdditionalBuffList BuffsOf(int objectId)
     {

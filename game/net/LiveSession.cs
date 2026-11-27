@@ -2398,7 +2398,12 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Buff))
             {
                 var b = BuffPacket.Read(p.Reader());
-                if (b.OwnerObjectId == selfObject) { LastOwnBuff = b; OwnBuff(b); }
+                if (b.OwnerObjectId == selfObject)
+                {
+                    LastOwnBuff = b;
+                    if (b.Mode == BuffPacket.Remove) remote?.OwnBuffRemoving(b.Key, OwnBuffList?.Find(b.Key));
+                    OwnBuff(b);
+                }
             }
             else if (game.Is(p, Inbound.ExpUp))
             {

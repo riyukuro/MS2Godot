@@ -15,6 +15,8 @@ public partial class RemoteLayer
     ///   is dead (IsDead), its death voice (PC::FUN_141653740, <see cref="CombatVoice.PcDeathVoice"/>);
     /// - on an npc, a dot's hit sound (<see cref="CombatVoice.NpcDotSound"/>, on the npc's defenceMaterial).
     /// A dot's buff is the target's list entry of the packet's buff id (CDotDamageRecord m_nEffectLevel, FUN_14096fc80).
+    /// The own PC's is looked up in packet order (<see cref="QueuedBuffRemovals"/>): a remove read after the record does not hide it.
+    /// STILL-OPEN: the dot tick's invoke effects on the own PC (PlayHitInvokeEffects) still read the list as it is now.
     /// STILL-OPEN: a server that writes the dot's tick count there, not the buff's key, finds another entry or none.
     /// STILL-OPEN: a cast's or splash's hit sound needs its total below 0 (the client's sign for health taken, PC::vfunc_33
     /// pc.cpp:923 GetTotalDamage() &lt; 0, CDamageRecord::AddDamage skillrecord.cpp:554 storing the raw amounts); the server
@@ -32,7 +34,7 @@ public partial class RemoteLayer
         int ownerKind = CombatVoice.ObjectKind(owner, byLocal, owner == HitOwner.Npc && npcs.CasterKind(d.OwnerId) == Ms2.Audio.SoundMusicEffectState.CasterBoss);
         var constants = World.FieldContents.Constants(packs);
         var dotBuffs = d.Mode == 3 ? BuffsOf(t.TargetId) : null;
-        var dotBuff = dotBuffs?.Find(d.BuffId);
+        var dotBuff = d.Mode != 3 ? null : self ? OwnEntry(d.BuffId) : dotBuffs?.Find(d.BuffId);
         int dotMaterial = dotBuff?.LevelData?.DotSoundMaterial ?? 0;
         if (d.Mode == 3 && dotMaterial == 0 && LiveSession.LiveCheck)
             GD.Print($"audio: dot {t.TargetId} buff key {d.BuffId}: list {(dotBuffs == null ? "none" : string.Join(" ", System.Linq.Enumerable.Select(dotBuffs.Buffs, b => $"{b.Key}:{b.Id}")))}, entry {(dotBuff == null ? "none" : $"{dotBuff.Id} level {dotBuff.Level} data {dotBuff.LevelData != null}")}");

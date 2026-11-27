@@ -686,3 +686,31 @@ public sealed class AdditionalBuffList
         if (b.LevelData.ShowIcon(IsUpperTargetId(b.CasterId))) Strip?.UpdateBuffEffect(b);
     }
 }
+
+/// <summary>
+/// The own PC's entries that a remove packet (OnBuff mode 1) took from its list while the damage records read before that packet
+/// still wait in the field's event queue. The client handles both in packet order, so a dot's last tick read before the remove
+/// still finds its entry (CDotDamageRecord m_nEffectLevel through FUN_14096fc80, PC::vfunc_34 pc.cpp:990-998). Here the own list
+/// takes the remove at once and the records later, when the queue drains, so the entry is kept until the remove's own queued
+/// event drains.
+/// </summary>
+public sealed class QueuedBuffRemovals
+{
+    readonly Dictionary<int, AdditionalBuff> leaving = new();
+
+    /// <summary>A remove of <paramref name="key"/> taken by the list, with the entry it held then (null for none).</summary>
+    public void Removed(int key, AdditionalBuff entry)
+    {
+        if (entry != null) leaving[key] = entry;
+        else leaving.Remove(key);
+    }
+
+    /// <summary>The remove of <paramref name="key"/> reached in the queue: the records after it see the list alone.</summary>
+    public void Drained(int key) => leaving.Remove(key);
+
+    /// <summary>The entry of <paramref name="key"/> a queued record sees: the list's, else the one a later remove took.</summary>
+    public AdditionalBuff Find(AdditionalBuffList list, int key) => list?.Find(key) ?? leaving.GetValueOrDefault(key);
+
+    public int Count => leaving.Count;
+    public void Clear() => leaving.Clear();
+}

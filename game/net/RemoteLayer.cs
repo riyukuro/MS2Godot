@@ -1083,8 +1083,9 @@ public sealed partial class RemoteLayer : Node3D
                     OnRemoteMagics(dmg.Damage);
                     break;
                 case UserBuffEvent ub:
-                    // OnBuff for another player or an npc (FUN_141bd1200 finds both)
-                    if (users.TryGetValue(ub.Buff.OwnerObjectId, out var rb)) rb.Buffs.Apply(ub.Buff);
+                    // OnBuff for another player or an npc (FUN_141bd1200 finds both); the own PC's list took it at once
+                    if (ub.Buff.OwnerObjectId == Tracker.SelfObjectId) { if (ub.Buff.Mode == Ms2.Net.Packets.BuffPacket.Remove) ownRemovals.Drained(ub.Buff.Key); }
+                    else if (users.TryGetValue(ub.Buff.OwnerObjectId, out var rb)) rb.Buffs.Apply(ub.Buff);
                     else if (npcBuffs.TryGetValue(ub.Buff.OwnerObjectId, out var nb)) nb.Apply(ub.Buff);
                     break;
                 case SkillUsedEvent used: OnSkillUse(used.Use); break;
