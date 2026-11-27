@@ -20,7 +20,9 @@ namespace Ms2.Ui.Hud;
 /// UpdateDirectionalLight @0x141bc51d0, worldservice_1.cpp:4362-4437, called from the world update at :9736). Neither light
 /// class overrides the unapply (vfunc_5 stays FieldProperty's empty @0x1403808d0, fieldpropertycli.h:12-22), so a remove or a
 /// clear only drops the record and stops a running fade: the light keeps the colour it has.
-/// STILL-OPEN: the other kinds' effects (gravity, music concert, hide and lock of the own player, user tag symbol,
+/// Kind 3 hides the own player while it is registered (<see cref="HideMyPCApplied"/>): a list or an add applies it, and a
+/// remove or a clear unapplies it (RemoveFieldProperty and ClearFieldProperties call vfunc_5, worldservice_1.cpp:5354-5378).
+/// STILL-OPEN: the other kinds' effects (gravity, music concert, lock of the own player, user tag symbol,
 /// the local camera, photo studio); the sight range's war fog and npc visibility (FUN_141bd6810's rest); the weather's world
 /// effect (CEffectService::FUN_1411a7e80).
 /// </summary>
@@ -52,22 +54,46 @@ public sealed class FieldProperties
         switch (m)
         {
             case FieldPropertyMessage.List l:
-                foreach (var p in l.Properties) { ApplyLight(p); byKind[p.Kind] = p; if (p.Kind == 5) UserTagSymbolApplied?.Invoke(); }   // vfunc_4, then SetAt (worldservice_1.cpp:5336-5337)
+                foreach (var p in l.Properties) { ApplyOne(p); byKind[p.Kind] = p; }   // vfunc_4, then SetAt (worldservice_1.cpp:5336-5337)
                 break;
             case FieldPropertyMessage.Add a:
-                ApplyLight(a.Property);
+                ApplyOne(a.Property);
                 byKind[a.Property.Kind] = a.Property;
-                if (a.Property.Kind == 5) UserTagSymbolApplied?.Invoke();
                 break;
             case FieldPropertyMessage.Remove r:
+                // RemoveFieldProperty (@0x141bca9b0): a kind not registered does nothing; else vfunc_5, then RemoveKey
+                if (!byKind.TryGetValue(r.Kind, out var old)) break;
+                Unapply(old);
                 byKind.Remove(r.Kind);
                 fades.Remove(r.Kind);
                 break;
         }
     }
 
-    /// <summary>A new field: none of the old field's properties stays, and the lights are the new field's.</summary>
-    public void Clear() { byKind.Clear(); fades.Clear(); lights = null; }
+    /// <summary>A record's vfunc_4, for the kinds the port applies.</summary>
+    void ApplyOne(FieldProperty p)
+    {
+        ApplyLight(p);
+        if (p.Kind == 5) UserTagSymbolApplied?.Invoke();
+        if (p is FieldProperty.HideMyPC) HideMyPCApplied?.Invoke(true);
+    }
+
+    /// <summary>A record's vfunc_5, for the kinds the port unapplies (the lights and kind 5 keep FieldProperty's empty one).</summary>
+    void Unapply(FieldProperty p)
+    {
+        if (p is FieldProperty.HideMyPC) HideMyPCApplied?.Invoke(false);
+    }
+
+    /// <summary>A new field (ClearFieldProperties @0x141bcaa80): each registered property is unapplied, then none of the old
+    /// field's properties stays, and the lights are the new field's.</summary>
+    public void Clear()
+    {
+        foreach (var p in byKind.Values.ToArray()) Unapply(p);
+        byKind.Clear(); fades.Clear(); lights = null;
+    }
+
+    /// <summary>Kind 3 is registered: the own player is hidden for it.</summary>
+    public bool HidesMyPC => Find(3) is FieldProperty.HideMyPC;
 
     /// <summary>Kinds 8 and 9's apply: a record with the flag starts a fade from the light's colour now (m_bCached, m_fCached 0
     /// and the old colour read back, fieldpropertycli.cpp:208-213 and :228-233); one without sets the colour. The directional
@@ -114,6 +140,11 @@ public sealed class FieldProperties
     /// <summary>Kind 5's apply (FieldPropertyUserTagSymbolCli::vfunc_4, fieldpropertycli.cpp:193-194: WorldService::FUN_141bcabf0
     /// refreshes every player's name tag entity). It has no remove, so a removed kind 5 refreshes nothing.</summary>
     public event Action UserTagSymbolApplied;
+
+    /// <summary>Kind 3 (FieldPropertyHideMyPCCli): true on its apply (vfunc_4 @0x140b27700: the local player, when there is one,
+    /// AddHideReason(1), and its ridee too), false on its unapply (vfunc_5 @0x140b27790: RemoveHideReason(1) on both;
+    /// fieldpropertycli.cpp:146-171). The third call there passes the local player again, so it changes nothing.</summary>
+    public event Action<bool> HideMyPCApplied;
 }
 
 /// <summary>

@@ -98,9 +98,7 @@ public partial class Player
     /// <summary>PCBase::AddHideReason (@0x14166ca20) / RemoveHideReason (@0x14166ca80): nothing when the bit already has that
     /// value, else ApplyHideReasons (@0x14166cb30): vfunc_23(1) while any reason is set, vfunc_23(0) when none is. Its
     /// re-show of the ridee for reason 2 alone is the port's already: the rider's visual does not carry the mount. The
-    /// simple shadow follows: SetShadowVisible(false) while hidden, (true) when shown (pcbase.cpp:1188-1203).
-    /// STILL-OPEN: reason 1 has no setter yet (FieldPropertyHideMyPCCli::vfunc_4, fieldpropertycli.cpp:148-160), so
-    /// vfunc_120's pass of it to the ridee (pcbase.cpp:3334-3335) is not ported.</summary>
+    /// simple shadow follows: SetShadowVisible(false) while hidden, (true) when shown (pcbase.cpp:1188-1203).</summary>
     public void SetHideReason(int reason, bool on)
     {
         int bit = 1 << reason;
@@ -112,6 +110,20 @@ public partial class Player
 
     /// <summary>The hide reason of a hideRider mount (pcbase.cpp:3331-3333).</summary>
     public const int HideReasonRide = 2;
+
+    /// <summary>PCBase::FUN_14166cb00 (@0x14166cb00): the hide reason's bit is set.</summary>
+    public bool HasHideReason(int reason) => (hideReasons & (1 << reason)) != 0;
+
+    /// <summary>The hide reason of the field's HideMyPC property (field property 3).</summary>
+    public const int HideReasonField = 1;
+
+    /// <summary>FieldPropertyHideMyPCCli::vfunc_4 (@0x140b27700) / vfunc_5 (@0x140b27790), fieldpropertycli.cpp:146-171, on
+    /// the local player: AddHideReason(1) or RemoveHideReason(1), then the same on its ridee when it rides.</summary>
+    public void SetHideMyPC(bool on)
+    {
+        SetHideReason(HideReasonField, on);
+        Mount?.SetHidden(on);
+    }
 
     /// <summary>StateDead::vfunc_3 (statedead.cpp): vfunc_68(zero, t), gravity only; StateRevival: the sequence's end.</summary>
     void DeathUpdate()

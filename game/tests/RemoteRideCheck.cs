@@ -625,6 +625,7 @@ public partial class RemoteRideCheck : Node3D
         if (!ownRiding || !ownAfter || !ownMountOk)
             fails.Add($"own ride shadow {rideId}: off riding {ownRiding}, shown after {ownAfter}; mount's {ownMount?.Radius} of {scale}");
         GD.Print($"remote ride: ride shadow {rideId}: rider's off riding, mount's {mount?.Radius} wide (row {scale}); a dead rider keeps its own");
+        HideMyPC(pc);   // at this shadow level: the own pc's and its mount's simple shadows are both there
     }
 
     /// <summary>hideRider: PCBase::vfunc_120 hides the rider of such a row (AddHideReason(2), the body's vfunc_23(1)) and
@@ -660,6 +661,50 @@ public partial class RemoteRideCheck : Node3D
         bool oOff = pc.Visual.Visible;
         if (oOn || !mountShown || !oSwap || !oOff) fails.Add($"own hideRider: shown riding {oOn} (mount {mountShown}), plain after swap {oSwap}, after {oOff}");
         GD.Print($"remote ride: hideRider {hide.Data.Id} hides the rider ({!rOn}, own {!oOn}), shown after ride off ({rOff}, own {oOff}); plain {plain.Data.Id} shown");
+    }
+
+    /// <summary>Field property 3 through LiveSession's 0xCA path, on both protocols (the Maple2 server's visible_my_pc sends an add
+    /// of kind 3 to hide and a remove of it to show): FieldPropertyHideMyPCCli::vfunc_4 / vfunc_5 (fieldpropertycli.cpp:146-171)
+    /// add and remove hide reason 1 on the local player and its ridee; ApplyHideReasons hides the body and turns its simple
+    /// shadow off (pcbase.cpp:1188-1203); a rider that has the reason gets on with its ridee hidden (pcbase.cpp:3334-3335);
+    /// a remove of a kind not registered does nothing, and ClearFieldProperties (a field leave) unapplies it.</summary>
+    void HideMyPC(Player pc)
+    {
+        const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var own = pc.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode) ?? BlobShadow.Add(pc, 100f, 3f);
+        foreach (var profile in new[] { Ms2.Net.ProtocolProfile.Kms2525, Ms2.Net.ProtocolProfile.Gms2 })
+        {
+            var plain = FirstMount(x => !x.Data.HideRider);   // a new ridee each pass: ride off frees the visual
+            if (plain == null) { fails.Add("hide my pc: no mount without hideRider"); return; }
+            var ls = new LiveSession();
+            typeof(LiveSession).GetField("player", Private).SetValue(ls, pc);
+            void Recv(string hex) => ls.FieldProperties.Apply(FieldPropertyMessage.Read(new Maple2.PacketLib.Tools.ByteReader(Convert.FromHexString(hex)), profile));
+            string at = profile.IsGms2 ? "GMS2" : "KMS";
+            bool Shown() => pc.Visual.Visible && !own.Off && !pc.IsHidden;
+            Recv("0203");
+            bool removeNothing = Shown();
+            Recv("0103");
+            bool hidden = !pc.Visual.Visible && own.Off && pc.HasHideReason(Player.HideReasonField);
+            Recv("0203");
+            bool back = Shown();
+            Recv("0001000000" + "03");
+            bool listHidden = !pc.Visual.Visible && own.Off;
+            pc.RideOn(plain);
+            var ms = plain.Visual.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode);
+            bool mountHidden = plain.Hidden && !plain.Visual.Visible && ms is { Off: true };
+            Recv("0203");
+            bool mountBack = !plain.Hidden && plain.Visual.Visible && ms is { Off: false } && pc.Visual.Visible;
+            Recv("0103");
+            bool mountHiddenRiding = plain.Hidden && !plain.Visual.Visible && !pc.Visual.Visible;
+            ls.FieldProperties.Clear();
+            bool cleared = !plain.Hidden && plain.Visual.Visible && pc.Visual.Visible && !pc.IsHidden;
+            pc.RideOff();
+            ls.Free();
+            if (!removeNothing || !hidden || !back || !listHidden || !mountHidden || !mountBack || !mountHiddenRiding || !cleared)
+                fails.Add($"hide my pc {at}: remove unregistered {removeNothing}, hidden {hidden}, back {back}, list {listHidden}, mount on hidden {mountHidden}, "
+                    + $"mount back {mountBack}, add riding {mountHiddenRiding}, field leave {cleared}");
+            else GD.Print($"remote ride: hide my pc {at}: kind 3 hides the own pc, its shadow and its mount {plain.Data.Id}; its remove and a field leave show them");
+        }
     }
 
     /// <summary>The own pc's ride off through LiveSession's ResponseRide (mode 1, the own object id): PCBase::vfunc_121 plays

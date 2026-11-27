@@ -25,6 +25,22 @@ public sealed class Mount
     public bool SeatDummy;
     /// <summary>Ridee m_nIdleFx: the row's loopEffect kept at the mount while it is in (ridee.cpp:527-534, :402-406).</summary>
     public readonly Ms2.Ui.RideeLoopEffect LoopFx = new();
+
+    /// <summary>The ridee's hide reasons (its PCBase m_unk_c08): only reason 1, the field's HideMyPC, reaches a ridee, from the
+    /// property's apply (fieldpropertycli.cpp:146-155) or from the rider getting on while it has it (PCBase::vfunc_120,
+    /// pcbase.cpp:3334-3335).</summary>
+    public bool Hidden { get; private set; }
+
+    /// <summary>PCBase::AddHideReason(1) / RemoveHideReason(1) on the ridee: nothing when it already is so, else
+    /// ApplyHideReasons (pcbase.cpp:1188-1203): its body hidden and its simple shadow off, or both back.</summary>
+    public void SetHidden(bool on)
+    {
+        if (Hidden == on) return;
+        Hidden = on;
+        if (Visual == null) return;
+        Visual.Visible = !on;
+        FieldShadows.SetShadowVisible(Visual, !on);
+    }
     Node3D model;
     public string Current = "";
     Dictionary<string, string> actions = NoActions;
@@ -391,6 +407,7 @@ public partial class Player
         baseSpeed = RideSpeed();
         Enter(MoveState.Idle);
         if (m.Data.HideRider) SetHideReason(HideReasonRide, true);   // PCBase::vfunc_120 (pcbase.cpp:3331-3333)
+        if (HasHideReason(HideReasonField)) m.SetHidden(true);       // :3334-3335: a hidden rider's ridee is hidden too
         // Ridee::vfunc_12 (ridee.cpp:527-534): the row's loopEffect at the ridee, kept as m_nIdleFx
         object fx = RideEffectScope?.Invoke();
         m.LoopFx.Start(m.Data.LoopEffect, fx, path => KeepRideEffect?.Invoke(path, m.Visual) ?? 0, StopRideEffect);

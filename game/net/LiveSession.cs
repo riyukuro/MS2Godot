@@ -177,6 +177,7 @@ public partial class LiveSession : Node
         fieldEntry.CubeServiceCleared += ResetCubeService;   // FUN_1410b76a0 at each field teardown (worldservice_1.cpp:10015)
         Party.BattleRecords = BattleRecords;
         FieldProperties.UserTagSymbolApplied += () => remote?.RefreshFieldSymbols();   // FieldPropertyUserTagSymbolCli::vfunc_4
+        FieldProperties.HideMyPCApplied += OnHideMyPC;   // FieldPropertyHideMyPCCli::vfunc_4 / vfunc_5
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
         BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
@@ -2229,9 +2230,19 @@ public partial class LiveSession : Node
         if (LogPackets) GD.Print($"live: {(ride ? "RideSync" : "UserSync")} sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
     }
 
+    /// <summary>Field property 3's apply or unapply on the local player (GetLocalPlayer null: nothing, fieldpropertycli.cpp:149).</summary>
+    void OnHideMyPC(bool on)
+    {
+        if (player != null && IsInstanceValid(player)) player.SetHideMyPC(on);
+        if (LiveCheck) GD.Print($"live: hide my pc {(on ? "on" : "off")}, own player {(player != null ? (player.HasHideReason(Player.HideReasonField) ? "hidden" : "shown") : "none")}");
+    }
+
     void BindPlayer(Player found)
     {
         player = found;
+        // the Maple2 server sends the field's property list after the own FieldAddUser, so the client's local player is there
+        // when kind 3 applies (fieldpropertycli.cpp:149); ours is built after the field, so a kind 3 that came first applies now
+        if (FieldProperties.HidesMyPC) OnHideMyPC(true);
         InitOwnSkillSets();      // the new MyPC's CSkillSystem::Init
         player.Live = true;
         player.WalkRecordByAge = game?.Profile.IsGms2 ?? false;   // the recorded GMS2 client's walk cadence, see Player.WalkRecordByAge
