@@ -7,7 +7,7 @@ namespace Ms2Godot.Net;
 /// The dungeon room records (0x1A, CSceneStateGame::OnRoomDungeon @0x141737360 -> DungeonRecordManagerCli::OnPacket @0x140b20be0,
 /// dungeonrecordcli.cpp:203). The record and rank reward tables and the boost state are kept as the client keeps them; the reward
 /// notices of kinds 1 to 3 and the three "united reward" errors (0x1F to 0x21) are shown as system notices.
-/// <para>STILL-OPEN: the closing photo dialog, the dialog OnOpenDialog opens (0x4ef9) and the other errors are read and not applied
+/// <para>STILL-OPEN: the closing photo dialog and the other errors are read and not applied
 /// (the errors go through the party manager's keyed notice, FUN_140d73ff0, whose body is not recovered); notice kind 4 formats a
 /// string table entry (FUN_141811980) not ported; the game menu's refresh after an added record has no caller.</para>
 /// </summary>
@@ -54,6 +54,12 @@ public partial class LiveSession
     /// <summary>UIDungeonLobby::OnRoomPacket (@0x140e17930): the server's DungeonWaiting packet, the lobby's room and size.</summary>
     public event Action<Ms2.Net.Packets.DungeonWaiting> DungeonWaitingReceived;
 
+    /// <summary>UIDungeonRewardDialog::OnPacket (@0x140e22130): the server's DungeonReward packet.</summary>
+    public event Action<Ms2.Net.Packets.DungeonRewardPacket> DungeonRewardReceived;
+
+    /// <summary>DungeonRecordManagerCli::OnOpenDialog (@0x140b21190, dungeonrecordcli.cpp:306): OpenDialog(0x4ef9) with no body.</summary>
+    public event Action DungeonRewardOpenRequested;
+
     void OnRoomDungeon(RoomDungeonReply m)
     {
         ApplyRoomDungeon(m);
@@ -98,8 +104,10 @@ public partial class LiveSession
                 else ReadNotApplied("RoomDungeonError", m.Error);
                 break;
             }
-            case RoomDungeonKind.ClosingPhoto:
             case RoomDungeonKind.OpenDialog:
+                DungeonRewardOpenRequested?.Invoke();
+                break;
+            case RoomDungeonKind.ClosingPhoto:
                 ReadNotApplied("RoomDungeon", m.Mode);
                 break;
             default:

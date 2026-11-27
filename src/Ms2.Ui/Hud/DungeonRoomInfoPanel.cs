@@ -537,16 +537,8 @@ public sealed class DungeonRoomInfoPanel
 
     // ---- rewards ----
 
-    /// <summary>GetWeeklyRewardCountText (@0x140e14d70): "" without a record, else "{count} / {max}" and the extra reward event's count.</summary>
-    internal string WeeklyRewardCountText(uint id)
-    {
-        var r = Records.Peek(id);
-        if (r == null) return "";
-        string text = $"{Records.BonusRewardCountNow(r)} / {Records.MaxCount(r)}";
-        uint? ev = Records.ExtraRewardEventCount(id);
-        if (ev != null) text += " " + F("s_dungeonRoom_event_reward_count", Records.ExtraCountNow(r), (int) ev.Value);
-        return text;
-    }
+    /// <summary>GetWeeklyRewardCountText (@0x140e14d70): <see cref="DungeonRecordBook.WeeklyRewardCountText"/> with the s_dungeonRoom_event_reward_count text.</summary>
+    internal string WeeklyRewardCountText(uint id) => Records.WeeklyRewardCountText(id, Common("s_dungeonRoom_event_reward_count"));
 
     /// <summary>GetDailyRewardCountText (@0x140e14fd0): "{clears today} / {SubRewardCount}", "" without a record or room.</summary>
     internal string DailyRewardCountText(uint id)

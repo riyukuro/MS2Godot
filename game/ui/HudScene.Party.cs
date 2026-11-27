@@ -109,6 +109,8 @@ public partial class HudScene
         Action<Ms2.Net.Packets.DungeonMatchError> matchError = notices.OnDungeonMatchError;
         if (live != null) live.DungeonMatchErrorReceived += matchError;    // OnDungeonMatchError (uidungeonhelper.cpp:333)
         if (live != null) live.DungeonWaitingReceived += OnDungeonWaiting;                  // UIDungeonLobby::OnRoomPacket (uidungeonlobby.cpp:68)
+        if (live != null) live.DungeonRewardReceived += OnDungeonReward;                    // UIDungeonRewardDialog::OnPacket (uidungeonrewarddialog.cpp:386)
+        if (live != null) live.DungeonRewardOpenRequested += OnDungeonRewardOpenRequested;    // DungeonRecordManagerCli::OnOpenDialog (dungeonrecordcli.cpp:306)
         // UIMessenger::HandlePartyLink (:2302): the chat lines' party links
         ChatLog.PartyLinks = new PartyLinks
         {
@@ -153,7 +155,7 @@ public partial class HudScene
             book.Opened -= opened; book.Closed -= closed; book.MemberAdded -= added; book.MemberRemoved -= removed;
             book.MemberUpdated -= updated; book.MembersRefreshed -= refreshed; book.ChiefChanged -= chief; book.Applied -= applied;
             book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded; book.Noted -= noted;
-            if (live != null) { live.PartyWindowOpen = () => false; live.DungeonMatchErrorReceived -= matchError; live.DungeonWaitingReceived -= OnDungeonWaiting; }
+            if (live != null) { live.PartyWindowOpen = () => false; live.DungeonMatchErrorReceived -= matchError; live.DungeonWaitingReceived -= OnDungeonWaiting; live.DungeonRewardReceived -= OnDungeonReward; live.DungeonRewardOpenRequested -= OnDungeonRewardOpenRequested; }
             ChatLog.PartyLinks = null;
         };
         if (book.IsInParty) OpenParty();

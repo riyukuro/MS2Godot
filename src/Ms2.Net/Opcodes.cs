@@ -65,6 +65,7 @@ public enum Inbound : ushort {
     ItemDismantle = 0x96,   // RecvOp ItemDismantle (commonfiles/opcodes.h:158): CItemBreakManager::OnItemDismantlePacket
     SystemShop = 0xA1,      // RecvOp SystemShop (commonfiles/opcodes.h:169): CSceneStateGame::OnSystemShop
     GlobalFactor = 0xD6,
+    DungeonReward = 0x1B,   // RecvOp DungeonReward (registered at uidungeonrewarddialog.cpp:295): UIDungeonRewardDialog::OnPacket @0x140e22130
     UserSync = 0x1C,
     UserChat = 0x1D,
     UserChatItemLink = 0x1E,

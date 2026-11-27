@@ -88,6 +88,21 @@ public sealed class DungeonRecordBook
     /// <summary>Unk_DungeonTimedValue::Get (@0x14031c2b0): 0 once the time has reached the expiry.</summary>
     static int Timed(int value, long expire, long now) => now >= expire ? 0 : value;
 
+    /// <summary>
+    /// GetWeeklyRewardCountText (@0x140e14d70): "" without a record, else "{count} / {max}" and, while the extra reward event runs for
+    /// the room, the event's count formatted with <paramref name="eventCountFormat"/> (s_dungeonRoom_event_reward_count: this
+    /// record's extra count, the event's count).
+    /// </summary>
+    public string WeeklyRewardCountText(uint id, string eventCountFormat)
+    {
+        var r = Peek(id);
+        if (r == null) return "";
+        string text = $"{BonusRewardCountNow(r)} / {MaxCount(r)}";
+        uint? ev = ExtraRewardEventCount(id);
+        if (ev != null) text += " " + Ms2.Quest.ClientFormat.Format(eventCountFormat ?? "", ExtraCountNow(r), (int) ev.Value);
+        return text;
+    }
+
     /// <summary>GetBonusRewardCount (@0x14031b9a0): the union clears, 0 once now >= m_expire.</summary>
     public static int BonusRewardCount(DungeonRoomRecord r, long now) => now >= r.UnionCooldown ? 0 : r.UnionClears;
 

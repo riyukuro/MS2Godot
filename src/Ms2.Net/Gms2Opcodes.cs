@@ -69,6 +69,7 @@ static class Gms2Opcodes {
         [Inbound.ItemDismantle] = 0x98,
         [Inbound.SystemShop] = 0xA3,
         [Inbound.GlobalFactor] = 0xD8,
+        [Inbound.DungeonReward] = 0x1B,
         [Inbound.UserSync] = 0x1C,
         [Inbound.UserChat] = 0x1D,
         [Inbound.Notice] = 0x73,

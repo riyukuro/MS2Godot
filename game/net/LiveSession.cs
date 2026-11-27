@@ -3086,6 +3086,12 @@ public partial class LiveSession : Node
                 GD.Print($"live: dungeon waiting room {dw.RoomId} size {dw.Size}");
                 DungeonWaitingReceived?.Invoke(dw);
             }
+            else if (game.Is(p, Inbound.DungeonReward))
+            {
+                var dr = Ms2.Net.Packets.DungeonRewardPacket.Read(p.Reader());   // UIDungeonRewardDialog::OnPacket (uidungeonrewarddialog.cpp:386)
+                GD.Print($"live: dungeon reward mode {dr.Mode} win {dr.Win} room {dr.RoomId} meso {dr.Main.GetMeso()} exp {dr.Main.GetExp()} items {dr.Main.Items.Count}");
+                DungeonRewardReceived?.Invoke(dr);
+            }
             else if (game.Is(p, Inbound.RoomDungeon))
                 OnRoomDungeon(Ms2.Net.Packets.RoomDungeonReply.Read(p.Reader(), game.Profile));   // OnRoomDungeon (scenestategame.cpp:4531)
             else if (game.Is(p, Inbound.WorldShareInfo))
