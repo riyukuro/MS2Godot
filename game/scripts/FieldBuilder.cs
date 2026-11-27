@@ -548,16 +548,12 @@ public sealed class FieldBuilder
     public static string GroundMaterial(Node owner) =>
         owner != null && owner.HasMeta(GroundMeta) ? (string)owner.GetMeta(GroundMeta) : null;
 
-    // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset) standing on the
-    // entity position, turned by the Z rotation only; scale is ignored
+    // CubeMapInformationService::GeneratePhysX (Ms2.Ui.FieldCollision.GeneratedBox)
     BoxShape3D GeneratePhysXBox(FieldEntity e, out Transform3D at)
     {
-        var d = e.Vector("GeneratePhysXDimension");
-        var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
-        var p = e.Position;
-        at = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
-                             new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2));
-        return BoxOf(size);
+        var (c, d, rotZ) = Ms2.Ui.FieldCollision.GeneratedBox(e);
+        at = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)rotZ)), new Vector3((float)c.X, (float)c.Y, (float)c.Z));
+        return BoxOf(new Vector3((float)d.X, (float)d.Y, (float)d.Z));
     }
 
     // boxes of one size share one shape resource: a field has thousands of boxes of a few sizes, and every shape is a
@@ -677,10 +673,12 @@ public sealed class FieldBuilder
                     if (!fluid) npcGround.Add(generated, generatedAt);
                 }
 
-                var llid = e.Get("NifAsset");
-                if (llid == null || !llid.StartsWith("urn:llid:")) continue;
-                var me = Model(llid);
-                if (me == null) continue;
+                // an entity with no NIF model has nothing to draw: one with no NifAsset llid (a trigger mesh with a
+                // ProxyNifAsset only) or one whose llid does not load. The GeneratePhysX box needs no NIF
+                // (FieldCollision.GeneratesBox), so such an entity still gets its box below
+                var llid = Ms2.Ui.FieldCollision.NifLlid(e);
+                var me = llid != null ? Model(llid) : null;
+                if (me == null && !Ms2.Ui.FieldCollision.GeneratesBox(e)) continue;
                 // a field breakable's NIF PhysX meshes never reach the scene (BreakableObjects.NifPhysX: no PhysXProp model);
                 // its only collision is the NxCollision box that follows the marker (world/FieldBreakables). Kept here, a
                 // moving platform's mesh would stay at rest under the box and stop the ride.
@@ -689,34 +687,37 @@ public sealed class FieldBuilder
                 // breakable floor missing from it changes nothing live; an offline npc walk that samples npcGround on one of
                 // these floors would fall through it.
                 bool nifPhysX = Ms2.Ui.BreakableObjects.NifPhysX(e);
-                if (isMesh && !fluid && generated == null && nifPhysX)
+                if (me != null && isMesh && !fluid && generated == null && nifPhysX)
                     foreach (var shape in me.Collision) npcGround.Add(shape, xf);
 
-                // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes; a model that
-                // plays through the effect runtime (PlaysAsEffect) runs them there, so a skinned EffectMesh map model, which
-                // stays on the prop path, runs them here
-                var (ea, ee) = assets.Resolve(llid);
-                // a portal's entity is built whatever its load IsVisible: its CPortal shows and hides it (Ms2.Ui.PortalDraws)
-                bool portal = e.HasMixin("Portal");
-                bool asEffect = ea != null && ee != null && (portal ? e.IsEffectModel(ea, me.Data) : e.PlaysAsEffect(ea, me.Data));
-                if (portal && !asEffect) PortalsNotFollowing++;
-                bool shown = e.Bool("IsVisible", true) || stateShown.Contains(e);
-                if (me.Particles != null && shown && !asEffect)
+                if (me != null)
                 {
-                    if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
-                    else ParticleEntities.Add((e, me.Particles));
-                }
-                if (asEffect) { EffectEntities.Add((e, ea, ee)); playedAsEffect.Add(e); }
-                else if (shown && me.Elsewhere)
-                {
-                    DrawnElsewhere.Add(e);
-                    if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(e);
-                    if (LightOff(e, me) is var off and not 0) LightOffElsewhere[e] = off;
-                }
-                else if (shown)
-                {
-                    Group(groups, llid, e, me, notReceiving.Contains(e));
-                    grouped = true;            // counted when its group is placed
+                    // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes; a model that
+                    // plays through the effect runtime (PlaysAsEffect) runs them there, so a skinned EffectMesh map model, which
+                    // stays on the prop path, runs them here
+                    var (ea, ee) = assets.Resolve(llid);
+                    // a portal's entity is built whatever its load IsVisible: its CPortal shows and hides it (Ms2.Ui.PortalDraws)
+                    bool portal = e.HasMixin("Portal");
+                    bool asEffect = ea != null && ee != null && (portal ? e.IsEffectModel(ea, me.Data) : e.PlaysAsEffect(ea, me.Data));
+                    if (portal && !asEffect) PortalsNotFollowing++;
+                    bool shown = e.Bool("IsVisible", true) || stateShown.Contains(e);
+                    if (me.Particles != null && shown && !asEffect)
+                    {
+                        if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
+                        else ParticleEntities.Add((e, me.Particles));
+                    }
+                    if (asEffect) { EffectEntities.Add((e, ea, ee)); playedAsEffect.Add(e); }
+                    else if (shown && me.Elsewhere)
+                    {
+                        DrawnElsewhere.Add(e);
+                        if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(e);
+                        if (LightOff(e, me) is var off and not 0) LightOffElsewhere[e] = off;
+                    }
+                    else if (shown)
+                    {
+                        Group(groups, llid, e, me, notReceiving.Contains(e));
+                        grouped = true;            // counted when its group is placed
+                    }
                 }
 
                 // DisableCollision (0x7e5f4195, DisableCollision by its uses): the client keeps the entity's actors but
@@ -777,8 +778,9 @@ public sealed class FieldBuilder
                     }
                     return tc.Body;
                 }
-                if ((generate || !nifPhysX) && me.Collision.Count > 0) SkippedNifMeshes++;
-                else if (me.Collision.Count > 0)
+                int nifShapes = me?.Collision.Count ?? 0;
+                if ((generate || !nifPhysX) && nifShapes > 0) SkippedNifMeshes++;
+                else if (nifShapes > 0)
                 {
                     // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props), every shape in the entity's
                     // PropCollisionGroup (ecrPhysX PropService::SetCollisionGroup, PropService.cpp:1471-1499)
@@ -797,7 +799,7 @@ public sealed class FieldBuilder
                 // FUN_1410cf160 (cubemapinformationservice_3.cpp:4026-4052) runs FUN_1410c5570, the GeneratePhysX box, for
                 // an MS2CubeProp and for any other MS2PhysXProp (0xc9cd2193; MS2CubeProp contains it), but not for an
                 // MS2SalePost (0xf01a7608), which it tests first
-                if (generate && !e.HasMixin("MS2SalePost") && (e.HasMixin("MS2CubeProp") || e.HasMixin("MS2PhysXProp")))
+                if (Ms2.Ui.FieldCollision.GeneratesBox(e))
                 {
                     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
                     // standing on the entity position, turned by the Z rotation only; scale is ignored.

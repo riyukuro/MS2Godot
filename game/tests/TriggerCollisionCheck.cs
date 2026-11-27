@@ -24,8 +24,13 @@ namespace Ms2Godot.Tests;
 /// </summary>
 public partial class TriggerCollisionCheck : Node
 {
-    const int FieldId = 2000347;
-    const int FirstId = 6001, LastId = 6010;
+    // MS2_CHECK_FIELD / MS2_CHECK_IDS ("first-last") pick another field: 02000390 holds its spawn platform on trigger
+    // meshes 1001-1006, which have no NIF, only the GeneratePhysX box
+    static readonly int FieldId = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_CHECK_FIELD"), out int f) ? f : 2000347;
+    static readonly (int First, int Last) Ids = System.Environment.GetEnvironmentVariable("MS2_CHECK_IDS") is { } r
+        && r.Split('-') is [var a, var b] && int.TryParse(a, out int x) && int.TryParse(b, out int y) ? (x, y) : (6001, 6010);
+    static int FirstId => Ids.First;
+    static int LastId => Ids.Last;
     const float Above = 40f;        // the drop starts this far over the shown mesh's top
     const float Step = -5f;         // per move
     const int Moves = 40;           // 200 down: past the hidden mesh, stopped by the shown one
@@ -112,7 +117,11 @@ public partial class TriggerCollisionCheck : Node
             ray.From = at + new Vector3(0, 300, 0);
             ray.To = at - new Vector3(0, 300, 0);
             var hit = space.IntersectRay(ray);
-            if (hit.Count > 0) tops.Add((id, (Vector3)hit["position"]));
+            if (hit.Count == 0) continue;
+            var top = (Vector3)hit["position"];
+            // a hit at the ray's start: the ray starts inside the collider, a wall taller than the probe (02000390's
+            // 1002-1006, 15000 high), not a floor to stand on
+            if (top.Y < ray.From.Y - 1f) tops.Add((id, top));
         }
         if (tops.Count == 0) { fails.Add("no trigger mesh has a collider under its origin"); return; }
 
@@ -129,8 +138,11 @@ public partial class TriggerCollisionCheck : Node
             if (Mathf.Abs(shown[i] - top) < 3f) stood++;
             if (hidden[i] < top - 20f) fell++;
         }
-        GD.Print($"trigger collision check: {tops.Count} meshes of {probes.Count} with a collider under the origin, {applied} events; " +
+        GD.Print($"trigger collision check: {tops.Count} meshes of {probes.Count} with a floor under the origin, {applied} events; " +
                  $"shown: {stood} stood on top; hidden: {fell} fell past (first: top {tops[0].Top.Y:F1}, hidden feet {hidden[0]:F1}, shown feet {shown[0]:F1})");
+        if (stood != tops.Count || fell != tops.Count)
+            for (int i = 0; i < tops.Count; i++)
+                fails.Add($"mesh {tops[i].Id}: top {tops[i].Top}, shown feet {shown[i]:F1}, hidden feet {hidden[i]:F1}");
         if (stood != tops.Count) fails.Add($"shown: {tops.Count - stood} of {tops.Count} did not stand on the mesh");
         if (fell != tops.Count) fails.Add($"hidden: {tops.Count - fell} of {tops.Count} stood on the hidden mesh");
     }
