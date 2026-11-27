@@ -68,6 +68,22 @@ public abstract class UiController
     /// uiservice.cpp:1001). The ctors that set it override this.</summary>
     public virtual bool NotClosable => false;
 
+    /// <summary>UIDialog IsFlagSet(2): <c>CloseClosableDialogs</c> skips the dialog (uiservice.cpp:1503). Only UIDPSDialog's ctor sets it
+    /// (uidpsdialog.cpp:66), so every other dialog is closed by the leave of the game scene.</summary>
+    public virtual bool KeptAtSceneLeave => false;
+
+    /// <summary>
+    /// One dialog's turn in CUIService::CloseClosableDialogs (@0x141adc050, uiservice.cpp:1496): a dialog with flag 2 is skipped, an open one
+    /// (vfunc_55 is 0) is closed with vfunc_68 (the close at once, without its tween). UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218)
+    /// reaches it through FUN_141ada610(0x620001d) (uiservice.cpp:1141) when the field's scene leaves. Returns whether it closed.
+    /// </summary>
+    public bool CloseAtSceneLeave()
+    {
+        if (KeptAtSceneLeave || IsClosed) return false;
+        Close();
+        return true;
+    }
+
     /// <summary>vfunc_64 (uidialog.cpp:550): minimized (m_6c). Only the group messenger windows minimize.</summary>
     public virtual bool Minimized => false;
 

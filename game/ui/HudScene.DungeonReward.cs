@@ -16,31 +16,24 @@ public partial class HudScene
     DungeonRewardDialogController dungeonReward;
     MovieDialog dungeonRewardMovie;
 
-    /// <summary>The client's dialog object keeps the state a mode 2 packet stored until the next packet or an unload resets it.</summary>
-    DungeonRewardDialogController dungeonRewardStored;
+    /// <summary>The dialog object's state and what a packet and OnOpenDialog do with it (<see cref="DungeonRewardWindow"/>).</summary>
+    DungeonRewardWindow dungeonRewardWindow;
 
     bool DungeonRewardOpen => dungeonReward != null && !dungeonReward.IsClosed;
 
-    /// <summary>OnPacket (@0x140e22130, :386): close an open window, reset, then the mode's state and open.</summary>
-    void OnDungeonReward(DungeonRewardPacket packet)
+    DungeonRewardWindow RewardWindow() => dungeonRewardWindow ??= new DungeonRewardWindow
     {
-        CloseDungeonReward();
-        menuModel ??= NewModel();
-        var c = NewDungeonReward();
-        dungeonRewardStored = null;
-        if (!c.OnPacket(packet)) { if (packet.Mode == 2) dungeonRewardStored = c; return; }   // mode 2 stores only
-        OpenDungeonReward(c);
-    }
+        Create = () => { menuModel ??= NewModel(); return NewDungeonReward(); },
+        Open = OpenDungeonReward,
+        IsOpen = () => DungeonRewardOpen,
+        CloseWindow = CloseDungeonReward,
+    };
+
+    /// <summary>OnPacket (@0x140e22130, :386): close an open window, reset, then the mode's state and open.</summary>
+    void OnDungeonReward(DungeonRewardPacket packet) => RewardWindow().OnPacket(packet);
 
     /// <summary>OnOpenDialog (@0x140b21190): OpenDialog(0x4ef9) with the state the last packet stored (reset after a close).</summary>
-    void OnDungeonRewardOpenRequested()
-    {
-        if (DungeonRewardOpen) return;
-        menuModel ??= NewModel();
-        var c = dungeonRewardStored ?? NewDungeonReward();
-        dungeonRewardStored = null;
-        OpenDungeonReward(c);
-    }
+    void OnDungeonRewardOpenRequested() => RewardWindow().OnOpenRequested();
 
     DungeonRewardDialogController NewDungeonReward()
     {
@@ -60,10 +53,10 @@ public partial class HudScene
     }
 
     /// <summary>FUN_141924680 (uidialog.cpp:445): the window opens unless there is no local player.</summary>
-    void OpenDungeonReward(DungeonRewardDialogController c)
+    bool OpenDungeonReward(DungeonRewardDialogController c)
     {
-        if (!hudModel.HasLocalPlayer) return;
-        if (GuideRefusesOpen("DungeonReward")) return;
+        if (!hudModel.HasLocalPlayer) return false;
+        if (GuideRefusesOpen("DungeonReward")) return false;
         var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
@@ -74,6 +67,7 @@ public partial class HudScene
         dungeonReward = c; dungeonRewardMovie = m;
         GD.Print($"dungeon reward: type {c.Type} win={c.Win} load={m.Loaded}");
         uiRoot.AddChild(m);
+        return true;
     }
 
     void CloseDungeonReward()
@@ -84,6 +78,18 @@ public partial class HudScene
             dungeonRewardMovie.Host.Unload(); dungeonRewardMovie.QueueFree(); dungeonRewardMovie = null;
         }
         dungeonReward = null;
+    }
+
+    /// <summary>
+    /// The field's scene leave: UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218) runs FUN_141ada610(0x620001d), which calls
+    /// CloseClosableDialogs (@0x141adc050, uiservice.cpp:1496) and closes every open dialog without flag 2. The reward dialog has no
+    /// handler of its own and its ctor sets no flag (uidungeonrewarddialog.cpp:293), so an open window is closed; the close is
+    /// vfunc_68, which sends nothing (the leave-after-reward request is RequestClose's). The state a mode 2 packet stored stays (only
+    /// vfunc_26 resets it). STILL-OPEN: FUN_141ada610 runs only when the scene's open flag (FUN_141ad9e50) was set; it is taken as set.
+    /// </summary>
+    void CloseDungeonRewardOnLeave()
+    {
+        if (DungeonRewardOpen && dungeonReward.CloseAtSceneLeave()) CloseDungeonReward();
     }
 
     /// <summary>vfunc_72 (@0x140e21bd0), per frame.</summary>

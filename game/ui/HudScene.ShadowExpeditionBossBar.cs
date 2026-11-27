@@ -9,7 +9,8 @@ namespace Ms2Godot.Ui;
 /// The shadow expedition boss bar, UIShadowExpeditionBossBar (0x4f0e, movie uishadowexpeditionbossbar; uishadowexpeditionbossbar.cpp), and
 /// its packet listener FieldGameScoreBoardCli (opcode ShadowExpedition, <see cref="FieldGameScoreBoard"/>). The listener finds the dialog
 /// (FindObject), gives it the points and the title and opens it (FUN_141924680, uidialog.cpp:445) when it is not open.
-/// STILL-OPEN: what closes the bar at a field change is not traced (it is closed at the field swap here); where the client creates the
+/// The field's scene leave closes it (UISceneGame::vfunc_49 -> CloseClosableDialogs, uiservice.cpp:1496: the ctor sets flag 1, not flag 2).
+/// STILL-OPEN: where the client creates the
 /// instance FindObject returns is not traced, the bar is made when the first packet asks for it.
 /// </summary>
 public partial class HudScene
