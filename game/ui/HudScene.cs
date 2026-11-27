@@ -261,6 +261,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPartyDps = null;
         unwatchDungeonRoom?.Invoke();
         unwatchDungeonRoom = null;
+        unwatchDungeonControlCenter?.Invoke();
+        unwatchDungeonControlCenter = null;
         unwatchAchieves?.Invoke();
         unwatchAchieves = null;
         unwatchFame?.Invoke();

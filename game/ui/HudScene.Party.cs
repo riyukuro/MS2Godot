@@ -106,7 +106,8 @@ public partial class HudScene
             InviteLine = name => { ChatLog.AddInvitePartyLine(name); return true; },    // FindMessengerBrowser(0x4e61) is always up here
             DungeonName = id => tables.FieldEnteranceName(id),
         };
-        if (live != null) live.DungeonMatchErrorReceived += notices.OnDungeonMatchError;    // OnDungeonMatchError (uidungeonhelper.cpp:333)
+        Action<Ms2.Net.Packets.DungeonMatchError> matchError = notices.OnDungeonMatchError;
+        if (live != null) live.DungeonMatchErrorReceived += matchError;    // OnDungeonMatchError (uidungeonhelper.cpp:333)
         // UIMessenger::HandlePartyLink (:2302): the chat lines' party links
         ChatLog.PartyLinks = new PartyLinks
         {
@@ -151,7 +152,7 @@ public partial class HudScene
             book.Opened -= opened; book.Closed -= closed; book.MemberAdded -= added; book.MemberRemoved -= removed;
             book.MemberUpdated -= updated; book.MembersRefreshed -= refreshed; book.ChiefChanged -= chief; book.Applied -= applied;
             book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded; book.Noted -= noted;
-            if (live != null) live.PartyWindowOpen = () => false;
+            if (live != null) { live.PartyWindowOpen = () => false; live.DungeonMatchErrorReceived -= matchError; }
             ChatLog.PartyLinks = null;
         };
         if (book.IsInParty) OpenParty();
