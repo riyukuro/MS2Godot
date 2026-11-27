@@ -82,30 +82,46 @@ public sealed partial class PortraitView : Node
             skeleton = copy.GetNode<Skeleton3D>($"Model/{ModelBuilder.SkeletonName}");
             head = skeleton.FindBone("Bip01 Head");
             if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
-            OwnLights(copy);
+            OwnLights(copy, PortraitLightDir);
             return head >= 0;
         }
         catch (Exception ex) { GD.PushWarning("portrait: " + ex.Message); return false; }
     }
 
+    /// <summary>The world direction UIPortrait::vfunc_14's directional light travels (uiportrait.cpp:129-142): it sets no
+    /// rotation, and an NiDirectionalLight's world direction is its rotation's first column, (1, 0, 0) from the constructor
+    /// (NiDirectionalLight.cpp:25, 34). Gamebryo's (x, y, z) is Godot's (x, z, -y).
+    /// STILL-OPEN: the light is fixed in the portrait's world, so how it falls on the model follows the copy's rotation there;
+    /// the copy here stands unrotated (facing the client's -y).</summary>
+    internal static readonly Vector3 PortraitLightDir = new(1f, 0f, 0f);
+
+    /// <summary>The world direction UIModelView::vfunc_14's directional light travels (uimodelview.cpp:292-316, the paper
+    /// doll and the mount portrait): SetRotate(MakeXRotation(11.5) * MakeYRotation(68.9) * MakeZRotation(180)), whose first
+    /// column (Foundation/efd/Win32/Matrix3_Win32.cpp:76-125) is (-0.360, -0.186, -0.914) in Gamebryo's (x, y, z), Godot's
+    /// (x, z, -y). Both views hold the model in that world's frame.</summary>
+    internal static readonly Vector3 ModelViewLightDir = new Vector3(-0.3600f, -0.9142f, 0.1860f).Normalized();
+
     /// <summary>
     /// UIPortrait::vfunc_14 lights the copy with its own pair, both dimmed by the 0.9 CreatePortrait passes: a directional
     /// light with diffuse and specular (1, 1, 1) and ambient (0, 0, 0), and an ambient light with ambient (1, 1, 1).
-    /// vfunc_11 attaches only these two to the copy's roots, so no field light reaches it. The light's direction needs
-    /// nothing here: SetSunDirection(camera direction) is what character_lit already takes from the camera that draws it.
+    /// vfunc_11 attaches only these two to the copy's roots, so no field light reaches it. The character light (types 1-3)
+    /// takes its direction from the camera (SetSunDirection(camera direction) sets only the character light's constants,
+    /// unit_14107ac30_tcreatecharinfo.cpp:264-284); types 0 and NiStandardMaterial meshes take the directional light's own
+    /// world direction, <paramref name="sunDir"/> (<see cref="PortraitLightDir"/>, <see cref="ModelViewLightDir"/>).
     /// </summary>
-    internal static void OwnLights(Node n)
+    internal static void OwnLights(Node n, Vector3 sunDir)
     {
         const float dim = LightDimmer;
         if (n is GeometryInstance3D g && UsesCharacterShader(g))
         {
             g.SetInstanceShaderParameter("own_lights", 1f);
+            g.SetInstanceShaderParameter("own_sun_dir", sunDir);
             g.SetInstanceShaderParameter("own_ambient", new Vector3(dim, dim, dim));
             g.SetInstanceShaderParameter("own_sun_color", new Vector3(dim, dim, dim));
             g.SetInstanceShaderParameter("own_sun_ambient", Vector3.Zero);
             g.SetInstanceShaderParameter("own_sun_specular", new Vector3(dim, dim, dim));
         }
-        foreach (var c in n.GetChildren()) OwnLights(c);
+        foreach (var c in n.GetChildren()) OwnLights(c, sunDir);
     }
 
     static bool UsesCharacterShader(GeometryInstance3D g)

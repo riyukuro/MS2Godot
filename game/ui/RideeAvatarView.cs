@@ -68,7 +68,7 @@ public sealed partial class RideeAvatarView : Node
             // model's front (client -y) to +x, where every row's faceCamera eye is
             model.Basis = new Basis(Vector3.Up, -Mathf.DegToRad(RideeAvatar.PreviewAngle(RideeAvatar.PreviewKind))).Scaled(model.Scale);
             v.view.AddChild(model);
-            PortraitView.OwnLights(model);
+            PortraitView.OwnLights(model, PortraitView.ModelViewLightDir);
             var (_, halfH) = RideeAvatar.Frustum(size.X, size.Y);
             var camera = new Camera3D
             {

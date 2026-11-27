@@ -988,8 +988,11 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.FresnelBoost, m.ExtraFloats.GetValueOrDefault("FresnelBoost", 5f));
         sm.SetShaderParameter(ShaderParam.FresnelExponent, m.ExtraFloats.GetValueOrDefault("FresnelExponent", 4f));
         sm.SetShaderParameter(ShaderParam.ColorBoost, m.ExtraFloats.GetValueOrDefault("ColorBoost", 1f));
-        sm.SetShaderParameter(ShaderParam.Skin, IsSkinMaterial(m));
-        sm.SetShaderParameter(ShaderParam.StandardLight, IsStandardLightMaterial(m));
+        // the material the mesh draws with: MS2AlphaBoostMaterial where the client swaps it (ModelMesh.ActiveMaterial)
+        var active = m.ActiveMaterial;
+        sm.SetShaderParameter(ShaderParam.Skin, active == "MS2CharacterSkinMaterial");
+        sm.SetShaderParameter(ShaderParam.LightForm, LightForm(m));
+        sm.SetShaderParameter(ShaderParam.CharacterAlphaBoost, m.AlphaBoost);
         // normal map and specular (on with an enabled NiSpecularProperty; the gloss map scales it; hair adds the
         // anisotropic term from its tangent map, custom map 1)
         var normal = m.Tangents != null && m.Textures.TryGetValue("normal", out var nn) ? Texture(nn) : null;
@@ -1001,19 +1004,21 @@ public sealed class ModelBuilder
         var gloss = m.Textures.TryGetValue("gloss", out var gn) ? Texture(gn) : null;
         sm.SetShaderParameter(ShaderParam.HasGloss, gloss != null);
         if (gloss != null) sm.SetShaderParameter(ShaderParam.GlossTex, gloss);
-        var hair = m.Material == "MS2CharacterHairMaterial" && m.Tangents != null && m.Textures.TryGetValue("shader1", out var hn) ? Texture(hn) : null;
+        var hair = active == "MS2CharacterHairMaterial" && m.Tangents != null && m.Textures.TryGetValue("shader1", out var hn) ? Texture(hn) : null;
         sm.SetShaderParameter(ShaderParam.HasHair, hair != null);
         if (hair != null) sm.SetShaderParameter(ShaderParam.HairTex, hair);
         // MS2StandardMaterial (and its alpha-boost name) adds the glow map's colour after lighting
         // (HandleMS2PostLightTextureApplication, ms2standardmaterial.cpp:1542-1555; NiStandardMaterial::HandleGlowMap:
         // TEXTURE_RGB_APPLY_ADD of the glow rgb), scaled by the GlowModifier attribute when the mesh has one (:252-257,
-        // HandleGlowModifier :1353-1363)
-        var glow = m.Material is "MS2StandardMaterial" or "MS2AlphaBoostMaterial" && m.Textures.TryGetValue("glow", out var gwn) ? Texture(gwn) : null;
+        // HandleGlowModifier :1353-1363). The renderer's default NiStandardMaterial (no material name) adds it unscaled
+        // (NiStandardMaterial.cpp:4816-4824).
+        bool standardGlow = active is "MS2StandardMaterial" or "MS2AlphaBoostMaterial";
+        var glow = (standardGlow || active == null) && m.Textures.TryGetValue("glow", out var gwn) ? Texture(gwn) : null;
         sm.SetShaderParameter(ShaderParam.HasGlow, glow != null);
         if (glow != null)
         {
             sm.SetShaderParameter(ShaderParam.GlowTex, glow);
-            sm.SetShaderParameter(ShaderParam.GlowScale, m.ExtraFloats.GetValueOrDefault("GlowModifier", 1f));
+            sm.SetShaderParameter(ShaderParam.GlowScale, standardGlow ? m.ExtraFloats.GetValueOrDefault("GlowModifier", 1f) : 1f);
         }
         sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
         sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
@@ -1021,18 +1026,17 @@ public sealed class ModelBuilder
         return sm;
     }
 
-    /// <summary>Meshes the client gives the player's skin colours (its skin colour walk only touches this material).</summary>
-    public static bool IsSkinMaterial(ModelMesh m) => m.Material == "MS2CharacterSkinMaterial";
-
     /// <summary>
-    /// Whether a character-path mesh is lit in the standard form (character_lit's standard_light): its NIF names a material
-    /// of type 0 (<see cref="ModelData.IsStandardLightMaterial"/>). A render object takes its material by the name it stores
-    /// (<see cref="ModelData.StandardMaterialNames"/>), so the map actors (mostly MS2StandardMaterial) and the npc and item
-    /// meshes that name it are lit as the field's meshes are, not with the character light.
-    /// STILL-OPEN: names the client builds as other material classes (MS2GlassMaterial and the effect materials) and meshes
-    /// with no material name (NiStandardMaterial, Gamebryo's own light) keep the character form.
+    /// character_lit's light_form for a character-path mesh (<see cref="ModelData.LightForm"/>) by the material it draws
+    /// with (<see cref="ModelMesh.ActiveMaterial"/>). A render object takes its material by the name it stores
+    /// (<see cref="ModelData.StandardMaterialNames"/>), and PrepareLoadedNif swaps the ones with an opacity above 1 to
+    /// MS2AlphaBoostMaterial (<see cref="ModelData.AlphaBoost"/>): type 0 meshes (most of the map actors, and the npc and
+    /// item meshes that name it) are lit as the field's meshes are, meshes with no material name by NiStandardMaterial,
+    /// types 1-3 by the character light.
+    /// STILL-OPEN: the _HO technique names (EffectUVDistortionMask*_HO on 49 actor meshes) and the other material classes
+    /// (MS2GlassMaterial, ...) keep the character form.
     /// </summary>
-    public static bool IsStandardLightMaterial(ModelMesh m) => ModelData.IsStandardLightMaterial(m.Material);
+    public static int LightForm(ModelMesh m) => ModelData.LightForm(m.ActiveMaterial);
 
     readonly Dictionary<string, Texture2DArray> flipArrays = new();
 

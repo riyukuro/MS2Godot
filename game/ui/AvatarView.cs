@@ -109,7 +109,7 @@ public sealed partial class AvatarView : Node
         copy = visual;
         view.AddChild(copy);
         if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
-        PortraitView.OwnLights(copy);
+        PortraitView.OwnLights(copy, PortraitView.ModelViewLightDir);
         pivot = PivotHeight(copy);
     }
 
