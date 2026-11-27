@@ -210,7 +210,8 @@ public sealed partial class RemotePc : IRemotePc
     {
         var move = G(moveMs2);
         bool zero = move == Vector3.Zero;
-        bool noVelocity = OnGround && !fallTimerRunning && hitOwner != 0 && zero;
+        // :1778-1780: no collider change this world update (FUN_141bc9a80) either, the same flag the own player reads
+        bool noVelocity = OnGround && !fallTimerRunning && !SceneChange.Read() && hitOwner != 0 && zero;
         var disp = move;
         if (!noVelocity)
         {

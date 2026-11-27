@@ -746,7 +746,7 @@ public partial class Player : CharacterBody3D
         // :1778-1780: on the ground (IsOnGround: Down, not jumping, not on a lift), the fall timer at 0, no collider change
         // this world update (FUN_141bc9a80), an entity in the hit report and no move of its own: the step is skipped, so a
         // body standing still makes no controller move at all and its flags stay as they were.
-        bool changed = SceneChange.ReadAndClear();
+        bool changed = SceneChange.Read();
         bool still = !lifted && Grounded && !jumping && !lift.Active && airTime == 0f && !changed && hitOwner != 0
                      && v == Vector3.Zero && skillMove == Vector3.Zero;
         if (still) { }
