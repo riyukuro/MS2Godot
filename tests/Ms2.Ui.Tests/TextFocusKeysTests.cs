@@ -130,7 +130,7 @@ public class TextFocusKeysTests
         var packs = TestData.Packs(d);
         var stage = new UiStage();
         Gate(stage);
-        int movies = 0, fields = 0, exempt = 0, refused = 0, offStageFields = 0;
+        int movies = 0, fields = 0, exempt = 0, refused = 0, offStageFields = 0, lateFields = 0;
         var bad = new List<string>();
         var names = new List<string>();
         foreach (var key in packs.List("Resource/Gfx").Where(n => n.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase))
@@ -149,10 +149,15 @@ public class TextFocusKeysTests
             var inputs = new List<AsTextField>();
             void Walk(AsDisplayObject o)
             {
-                if (o is AsTextField t && t.type == "input") inputs.Add(t);
+                if (o is AsTextField t && t.type == "input" && !inputs.Contains(t)) inputs.Add(t);
                 if (o is AsContainer c) foreach (var ch in c.Children.ToArray()) Walk(ch);
             }
             Walk(p.Stage);
+            // fields a movie makes after its start (a timer, a load that finishes later): a second read after more ticks
+            int atStart = inputs.Count;
+            try { for (int i = 0; i < 110; i++) p.Tick(); } catch (Exception) { }
+            Walk(p.Stage);
+            lateFields += inputs.Count - atStart;
             if (inputs.Count == 0) continue;
             movies++;
             names.Add($"{key}:{inputs.Count}");
@@ -176,7 +181,7 @@ public class TextFocusKeysTests
                 if (!onStage || !offStage || !released) bad.Add($"{key}/{tf.name}: stage={onStage} off={offStage} released={released}");
             }
         }
-        TestContext.Out.WriteLine($"movies with an input field: {movies}, focused: {fields} (password/IME-off exempt {exempt}), focus refused: {refused}, not on the stage at start: {offStageFields}");
+        TestContext.Out.WriteLine($"movies with an input field: {movies}, focused: {fields} (password/IME-off exempt {exempt}), focus refused: {refused}, not on the stage at start: {offStageFields}, made after the first 10 ticks: {lateFields}");
         TestContext.Out.WriteLine(string.Join(" ", names));
         Assert.That(bad, Is.Empty);
         Assert.That(movies, Is.GreaterThan(5), "the sweep found the movies");
