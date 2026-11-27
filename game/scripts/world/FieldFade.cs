@@ -23,8 +23,13 @@ namespace Ms2Godot.World;
 ///
 /// The instanced entity leaves its instancing while it fades (0xa0b6b179 set when HardwareInstancingService::FUN_1413d6f40
 /// holds, cleared on release): here its copy in the shared MultiMesh is hidden and the entity draws alone with the
-/// faded material (<see cref="ModelBuilder.FadeMaterial"/>). Not modelled: the sorting of the faded entities
-/// (SortEntities), AlphaShellComposite::MarkScene, the shadow and glow of a faded entity; the frustum test uses the entity's
+/// faded material (<see cref="ModelBuilder.FadeMaterial"/>), after a depth-only pass of its own (<see cref="ModelBuilder.FadeShell"/>:
+/// Apply marks the entity into an alpha shell group of its own, AlphaShellComposite::MarkScene). The client sorts each
+/// shell group among the transparent draws by its distance (AlphaShellComposite::Update, CompareAlpha); here each held
+/// entity gets its own pair of render priorities above every other transparent draw (priority 0), the farthest the lowest
+/// (<see cref="Sort"/>), so the depth pass of one draws right before its colour and a faded entity behind another shows
+/// through it. Not modelled: the sorting of the faded entities (SortEntities), a transparent draw nearer than a faded
+/// entity (it draws before the faded one here), the order kept for the 300 ms between tests, the shadow and glow of a faded entity; the frustum test uses the entity's
 /// merged mesh box for its NiBound.
 ///
 /// Only a mesh whose active material is an MS2StandardMaterial is faded (Apply, bgtransparencymgr.cpp:517-520: the
@@ -83,6 +88,8 @@ public partial class FieldFade : Node
     {
         public float Alpha;
         public ulong Start;
+        /// <summary>The element's place in <see cref="Sort"/> (-1: not placed yet).</summary>
+        public int Rank = -1;
         /// <summary>The fade-out's end value is set (<see cref="UpdateFadeOut"/>).</summary>
         public bool Settled;
         public bool Running(ulong now) => now - Start < FadeMs;
@@ -96,16 +103,18 @@ public partial class FieldFade : Node
     sealed class Part
     {
         public FieldBuilder.FadeDraw draw; public Transform3D xf; public MultiMeshInstance3D node; public ShaderMaterial mat;
+        /// <summary>The depth-only first pass the draw shows (<see cref="ModelBuilder.FadeShell"/>), <see cref="mat"/> its next pass.</summary>
+        public ShaderMaterial shell;
         public MeshInstance3D prop;
         public ModelMesh model;
         public int TestRef;
-        public void SetFade(float a) => ModelBuilder.SetFade(mat, model, a, ref TestRef);
+        public void SetFade(float a) => ModelBuilder.SetFade(mat, shell, model, a, ref TestRef);
 
         /// <summary>The faded draw goes: the copy is freed, or the prop mesh's override is taken off.</summary>
         public void Free()
         {
             if (draw != null) node.QueueFree();
-            else if (GodotObject.IsInstanceValid(prop) && prop.MaterialOverride == mat) prop.MaterialOverride = null;
+            else if (GodotObject.IsInstanceValid(prop) && prop.MaterialOverride == shell) prop.MaterialOverride = null;
         }
     }
 
@@ -357,6 +366,35 @@ public partial class FieldFade : Node
             if (RayHits(t, a, da) || RayHits(t, b, db)) Add(hit, t);
         }
         Apply(hit, now);
+        Sort(eye);
+    }
+
+    readonly List<(float Dist, Element El)> sorted = new();
+
+    /// <summary>
+    /// Each held entity's draw order among the transparent draws: the farthest from the eye first, as CompareAlpha draws the
+    /// largest key first. Element k (from the farthest) draws its depth passes at render priority 1 + 2k and its colour
+    /// at 2 + 2k (Godot's limit 127 holds 63 apart; more share the last pair).
+    /// </summary>
+    void Sort(Vector3 eye)
+    {
+        sorted.Clear();
+        foreach (var (t, el) in fadeOut) sorted.Add((t.Centre.DistanceSquaredTo(eye), el));
+        foreach (var (t, el) in fadeIn) sorted.Add((t.Centre.DistanceSquaredTo(eye), el));
+        if (sorted.Count == 0) return;
+        sorted.Sort((x, y) => y.Dist.CompareTo(x.Dist));
+        for (int k = 0; k < sorted.Count; k++)
+        {
+            var el = sorted[k].El;
+            int rank = Math.Min(k, 62);
+            if (el.Rank == rank) continue;
+            el.Rank = rank;
+            foreach (var p in el.Parts)
+            {
+                p.shell.RenderPriority = 1 + 2 * rank;
+                p.mat.RenderPriority = 2 + 2 * rank;
+            }
+        }
     }
 
     void Add(HashSet<Target> hit, Target t)
@@ -440,6 +478,7 @@ public partial class FieldFade : Node
         if (e == null || !byEntity.TryGetValue(e, out var t)) return;
         if (t.PropEntities != null && props != null && PropsBuilt(t)) Refresh(t);
         Apply(new HashSet<Target> { t }, Time.GetTicksMsec());
+        if (camera() is { } cam && cam.IsInsideTree()) Sort(cam.GlobalPosition);
     }
 
     /// <summary>For the headless check: whether the pick of the entity's draws (RayHits) meets the ray.</summary>
@@ -458,12 +497,13 @@ public partial class FieldFade : Node
         return el == null ? Array.Empty<FieldBuilder.FadeDraw>() : el.Parts.Where(p => p.draw != null).Select(p => p.draw).ToList();
     }
 
-    /// <summary>For the headless check: the prop meshes a fade of the entity holds, with their fade material (none: not fading).</summary>
+    /// <summary>For the headless check: the prop meshes a fade of the entity holds, with the material they draw, the depth pass
+    /// before the fade material (none: not fading).</summary>
     internal IReadOnlyList<(MeshInstance3D Node, ShaderMaterial Material)> FadingProps(FieldEntity e)
     {
         if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<(MeshInstance3D, ShaderMaterial)>();
         var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
-        return el == null ? Array.Empty<(MeshInstance3D, ShaderMaterial)>() : el.Parts.Where(p => p.prop != null).Select(p => (p.prop, p.mat)).ToList();
+        return el == null ? Array.Empty<(MeshInstance3D, ShaderMaterial)>() : el.Parts.Where(p => p.prop != null).Select(p => (p.prop, p.shell)).ToList();
     }
 
     /// <summary>For the headless check: the fade material and model of every part a fade of the entity holds.</summary>
@@ -472,6 +512,21 @@ public partial class FieldFade : Node
         if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<(ShaderMaterial, ModelMesh)>();
         var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
         return el == null ? Array.Empty<(ShaderMaterial, ModelMesh)>() : el.Parts.Select(p => (p.mat, p.model)).ToList();
+    }
+
+    /// <summary>For the headless check: the material every part a fade of the entity holds draws (its first pass) and its fade material.</summary>
+    internal IReadOnlyList<(Material Drawn, ShaderMaterial Fade)> FadePasses(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<(Material, ShaderMaterial)>();
+        var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
+        return el == null ? Array.Empty<(Material, ShaderMaterial)>() : el.Parts.Select(p => (p.prop != null ? p.prop.MaterialOverride : p.node.MaterialOverride, p.mat)).ToList();
+    }
+
+    /// <summary>For the headless check: when the entity's fade (out, or back in) started, on the tick clock.</summary>
+    internal ulong? StartOf(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return null;
+        return fadeOut.TryGetValue(t, out var a) ? a.Start : fadeIn.TryGetValue(t, out a) ? a.Start : null;
     }
 
     /// <summary>For the headless check: whether the entity is a fade target, and its test sphere (radius below 0: nothing drawn).</summary>
@@ -533,16 +588,17 @@ public partial class FieldFade : Node
                 var colour = (ShaderMaterial)mesh.SurfaceGetMaterial(0);
                 if (colour.NextPass is ShaderMaterial next && colour.Shader != next.Shader) colour = next;   // a fluid shell's colour pass
                 var mat = ModelBuilder.FadeMaterial(colour, d.Mesh);
+                var shell = ModelBuilder.FadeShell(mat, d.Mesh);
                 var xf = d.Mm.GetInstanceTransform(d.Index);
                 var one = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, Mesh = mesh, InstanceCount = 1 };
                 one.SetInstanceTransform(0, xf);
                 one.SetInstanceColor(0, d.Mm.GetInstanceColor(d.Index));
-                var node = new MultiMeshInstance3D { Name = "fade", Multimesh = one, MaterialOverride = mat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                var node = new MultiMeshInstance3D { Name = "fade", Multimesh = one, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 if (d.NotReceiving) node.SetInstanceShaderParameter(ReceiveParam, 0f);   // the copy's own draw takes no shadow (FieldBuilder)
                 if (d.LightOff != 0) node.SetInstanceShaderParameter(LightOffParam, (float)d.LightOff);   // nor the lights its draw does not take
                 d.Parent.AddChild(node);
                 d.Mm.SetInstanceTransform(d.Index, new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), xf.Origin));
-                var part = new Part { draw = d, xf = xf, node = node, mat = mat, model = d.Mesh, TestRef = d.Mesh.AlphaThreshold };
+                var part = new Part { draw = d, xf = xf, node = node, mat = mat, shell = shell, model = d.Mesh, TestRef = d.Mesh.AlphaThreshold };
                 part.SetFade(1f);
                 el.Parts.Add(part);
             }
@@ -555,8 +611,9 @@ public partial class FieldFade : Node
                     if (node.Mesh?.SurfaceGetMaterial(0) is not ShaderMaterial colour) continue;
                     if (colour.NextPass is ShaderMaterial next && colour.Shader != next.Shader) colour = next;
                     var mat = ModelBuilder.FadeMaterial(colour, pk.M.Mesh);
-                    node.MaterialOverride = mat;
-                    var part = new Part { prop = node, mat = mat, model = pk.M.Mesh, TestRef = pk.M.Mesh.AlphaThreshold };
+                    var shell = ModelBuilder.FadeShell(mat, pk.M.Mesh);
+                    node.MaterialOverride = shell;
+                    var part = new Part { prop = node, mat = mat, shell = shell, model = pk.M.Mesh, TestRef = pk.M.Mesh.AlphaThreshold };
                     part.SetFade(1f);
                     el.Parts.Add(part);
                 }

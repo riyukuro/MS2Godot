@@ -729,6 +729,32 @@ public sealed class ModelBuilder
     }
 
     /// <summary>
+    /// The first pass of a faded mesh: BGTransparencyMgr::Apply marks the faded entity's scene into an alpha shell group of
+    /// its own (AlphaShellComposite::MarkScene(pRoot, false), bgtransparencymgr.cpp:509: each call takes the next mark,
+    /// alphacomponent.cpp:277-297), so as a fluid shell (<see cref="MakeFluidShell"/>) it draws depth only first (blend
+    /// ZERO / ONE, z write, LESSEQUAL) and then again with <paramref name="fade"/>'s own blend: only the nearest faded surface
+    /// of each pixel gets colour. The client's capture of the 02000110 tree shows the same two passes while it fades
+    /// (captures/02000110_450_1650_4350_treefade). The depth pass is the SHELL form with FADE, so it takes the
+    /// faded alpha test as the colour pass does; <see cref="SetFade"/> on the colour pass with <c>shell</c> sets both.
+    /// </summary>
+    public static ShaderMaterial FadeShell(ShaderMaterial fade, ModelMesh m)
+    {
+        var shell = (ShaderMaterial)fade.Duplicate();
+        shell.Shader = FieldVariant("#define BLEND\n#define FADE\n#define SHELL\n", CullDefine(m));
+        shell.NextPass = fade;
+        return shell;
+    }
+
+    /// <summary>The faded alpha of <see cref="SetFade(ShaderMaterial, ModelMesh, float, ref int)"/> on the colour pass and
+    /// on its depth pass (<see cref="FadeShell"/>).</summary>
+    public static void SetFade(ShaderMaterial fade, ShaderMaterial shell, ModelMesh m, float alpha, ref int testRef)
+    {
+        SetFade(fade, m, alpha, ref testRef);
+        shell.SetShaderParameter(ShaderParam.FadeAlpha, m.MaterialAlpha * alpha);
+        if (m.AlphaTestOn) shell.SetShaderParameter(ShaderParam.AlphaRef, testRef / 255f);
+    }
+
+    /// <summary>
     /// TransparencyStandardMaterial::vfunc_4 (0x141860bf0): the material alpha becomes the mesh's own NiMaterialProperty
     /// alpha (1 without one) times the fade, and when the NiAlphaProperty tests alpha (flag 0x200) its reference becomes
     /// (int)(fade * reference) &amp; 0xff. The reference is read back from the live NiAlphaProperty, the clone that

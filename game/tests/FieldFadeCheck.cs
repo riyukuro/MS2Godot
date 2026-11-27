@@ -16,7 +16,12 @@ namespace Ms2Godot.Tests;
 /// <item>the animated models world/FieldProps draws are faded too, skinned (the he_fi_nature_reed_a02 reeds on 52000094_qd)
 /// and rigid (the clockwork on 02000161_bf): the 300 ms test with a camera and feet on either side of one takes it, its
 /// meshes draw the fade material at the floor, and a test that misses it fades it back in and gives each mesh its own
-/// material again.</item>
+/// material again;</item>
+/// <item>a faded part draws as the client's capture of the 02000110 tree shows (captures/02000110_450_1650_4350_treefade):
+/// a depth-only pass first (AlphaShellComposite::MarkScene, ModelBuilder.FadeShell) with the fade material as its next pass,
+/// each held entity in its own pair of render priorities, the farther one first;</item>
+/// <item>the fade back in, 250 ms after it starts, is at 250 / 300 = 5/6, the 0.8333 of the capture's fade-in frame
+/// (UpdateFadeIn, Timer::GetRatio).</item>
 /// </list>
 /// Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
 /// </summary>
@@ -75,6 +80,28 @@ public partial class FieldFadeCheck : Node
             }
     }
 
+    /// <summary>Every part of the entity's fade drawn as a depth pass with its fade material next, above the plain transparent draws.</summary>
+    void TwoPass(Built b, FieldEntity e, string what)
+    {
+        foreach (var (drawn, fade) in b.Fade.FadePasses(e))
+        {
+            if (drawn is not ShaderMaterial shell || shell == fade || !shell.Shader.Code.Contains("#define SHELL\n"))
+            { fails.Add($"{what}: a faded part draws {(drawn == fade ? "its fade material" : drawn?.GetType().Name ?? "nothing")} without a depth pass first"); return; }
+            if (shell.NextPass != fade) { fails.Add($"{what}: a faded part's depth pass is not followed by its fade material"); return; }
+            if (!(0 < shell.RenderPriority && shell.RenderPriority < fade.RenderPriority))
+            { fails.Add($"{what}: a faded part's passes draw at priorities {shell.RenderPriority} / {fade.RenderPriority}, not after the transparent draws, depth first"); return; }
+        }
+    }
+
+    /// <summary>The far entity's colour pass draws before the near one's depth pass.</summary>
+    void Order(Built b, FieldEntity far, FieldEntity near)
+    {
+        var f = b.Fade.FadePasses(far); var n = b.Fade.FadePasses(near);
+        if (f.Count == 0 || n.Count == 0) { fails.Add("order: an entity of the pair is not held"); return; }
+        int fMax = f.Max(x => x.Fade.RenderPriority), nMin = n.Min(x => x.Drawn.RenderPriority);
+        if (fMax >= nMin) fails.Add($"order: {far.Name} (far) draws its colour at {fMax}, not before {near.Name} (near) from {nMin}");
+    }
+
     void Settle()
     {
         var b = BuildField("02000110_bf");
@@ -88,7 +115,29 @@ public partial class FieldFadeCheck : Node
             // no frame between the Apply and the step: the 300 ms are over at the first one
             b.Fade.StepTo(Time.GetTicksMsec() + Past);
             AtFloor(b, e, $"settle: {e.Name} stepped first after its timer ran out");
+            TwoPass(b, e, $"settle: {e.Name}");
             if (++n == 40) break;
+        }
+        // two held at once (the second's Apply sends the first back in): each in its own priorities, the farther first
+        var two = b.Fb.FadeDraws.Where(kv => kv.Value.Any(d => ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial))).Select(kv => kv.Key).Take(2).ToList();
+        if (two.Count == 2)
+        {
+            var c0 = b.Fade.TargetBound(two[0]).Value.Centre; var c1 = b.Fade.TargetBound(two[1]).Value.Centre;
+            cam.Position = c1 + (c1 - c0).Normalized() * 500f;   // two[0] the farther
+            b.Fade.FadeOutNow(two[0]);
+            b.Fade.FadeOutNow(two[1]);
+            Order(b, two[0], two[1]);
+            TwoPass(b, two[0], $"order: {two[0].Name} fading back in");
+            // the fade back in, 250 ms on: 5/6
+            if (b.Fade.StartOf(two[0]) is { } start)
+            {
+                b.Fade.StepTo(start + 250);
+                foreach (var (mat, mesh) in b.Fade.FadeMaterials(two[0]))
+                    if (Math.Abs(Alpha(mat) - mesh.MaterialAlpha * 5f / 6f) > 1e-4f)
+                    { fails.Add($"fade-in: {two[0].Name} at {Alpha(mat):0.####} 250 ms on, not 5/6"); break; }
+            }
+            else fails.Add($"fade-in: {two[0].Name} is not held after the next fade's Apply");
+            cam.Position = Vector3.Zero;
         }
         GD.Print($"field fade check: settle {n} fade targets on 02000110_bf");
         if (n == 0) fails.Add("settle: no fade target with a standard material on 02000110_bf");
@@ -144,9 +193,10 @@ public partial class FieldFadeCheck : Node
             var fading = b.Fade.FadingProps(e);
             if (fading.Count == 0) { fails.Add($"{kind}: {xblock} {e.Name}: the test between camera and feet did not take it"); feet = null; break; }
             foreach (var (node, mat) in fading)
-                if (node.MaterialOverride != mat) fails.Add($"{kind}: {e.Name}: a faded mesh does not draw its fade material");
+                if (node.MaterialOverride != mat) fails.Add($"{kind}: {e.Name}: a faded mesh does not draw its faded passes");
             b.Fade.StepTo(Time.GetTicksMsec() + Past);
             AtFloor(b, e, $"{kind}: {e.Name}");
+            TwoPass(b, e, $"{kind}: {e.Name}");
             // the camera turned away: the next test takes nothing, the fade goes back in and ends
             feet = bd.Centre + Vector3.Up * 100000f;
             cam.LookAtFromPosition(eye + Vector3.Up * 200000f, eye + Vector3.Up * 300000f, Vector3.Forward);
