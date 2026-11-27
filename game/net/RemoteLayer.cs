@@ -798,7 +798,6 @@ public sealed partial class RemoteLayer : Node3D
         r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf) { Effects = BuffEffects, ServerTick = BuffTick, Balloon = BalloonOf(r.ObjectId) };
         r.Death.BuffsDisableRevival = () => r.Buffs.IsDisableRevivalHere;
         r.Death.Revival.Apply(u);   // OnAddUser (scenestategame.cpp:11280-11281): the confirm end tick and count, the flag
-        foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b) with { FromList = true });   // DecodeListPacket's m_b40
         // OnAddUser (scenestategame.cpp:11189-11192): the new PC's PC::vfunc_135 before its model, after the dead flag (a dead
         // pc gets no mode); its StateFall is the spawn's own. PC::vfunc_12 (pc.cpp:844-855) on the model: the waiting craft is
         // made and the AddUser i32 is held.
@@ -980,6 +979,7 @@ public sealed partial class RemoteLayer : Node3D
                     // (PCBase::vfunc_10 -> vfunc_120(GetRideOnAction()), pcbase.cpp:921)
                     if (add.User.Ride != null) Ms2.Ui.RidePassengers.Load(add.User.Passengers, added.Passengers);
                     RideOn(added, add.User.Ride);
+                    AddUserBuffs(added, add.User);
                     PcShown?.Invoke(Shown(added));
                     if (LiveSession.LiveCheck) GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;

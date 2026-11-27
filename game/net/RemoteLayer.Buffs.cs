@@ -67,6 +67,16 @@ public partial class RemoteLayer
 
     static readonly NodePath ModelPath = "Model";
 
+    /// <summary>OnAddUser's DecodeListPacket (scenestategame.cpp:11278): the new PC's list entries, marked as the entry list's
+    /// (m_b40), so they play no start effect. The client reads them after OnObjectCreated (:11214) has made and registered the
+    /// PC, so the list's balloon (PC::vfunc_84) and keep effects find the PC: they run once the PC is in <c>users</c>, with its
+    /// anchor and ride set. (An npc's list is read before its OnObjectCreated, :3559 and :3580, but our npc layer has the npc
+    /// by then: <see cref="AddNpcBuffs"/>.)</summary>
+    void AddUserBuffs(Remote r, Ms2.Net.Packets.FieldAddUser u)
+    {
+        foreach (var b in u.Buffs) r.Buffs.Apply(Ms2.Net.Packets.BuffPacket.FromAdd(b) with { FromList = true });
+    }
+
     /// <summary>OnFieldAddNpc's DecodeListPacket: a new list for the npc, its entries marked as the entry list's (m_b40), so they
     /// play no start effect. A list the id had is cleared first (the old npc's ~AdditionalCliList ClearAll).</summary>
     void AddNpcBuffs(Ms2.Net.Packets.FieldAddNpc n)
