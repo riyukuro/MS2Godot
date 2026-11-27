@@ -667,13 +667,15 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         (outgoingSegments, cueSegments) = (cueSegments, outgoingSegments);
         cueSegments.Clear();
 
-        DecodeAndPlaySegment(gen, cue, startSeg, startClip, cue.CrossfadeMs);
+        DecodeAndPlaySegment(gen, cue, startSeg, startClip, cue.CrossfadeMs, promptUsec: Time.GetTicksUsec());
         return true;
     }
 
     /// <param name="advance">The active voice's own next segment (an EndOfSegment advance): if it cannot be decoded, the
     /// voice ends there and frees its slot, as one with nothing to follow. A cue's first segment leaves the slots alone.</param>
-    void DecodeAndPlaySegment(int gen, MusicCue cue, MusicSegment seg, SoundClip clip, int crossfadeMs, bool advance = false)
+    /// <param name="promptUsec">The engine ticks of the cue's prompt, for its first segment: the play logs how long after it the
+    /// voice started.</param>
+    void DecodeAndPlaySegment(int gen, MusicCue cue, MusicSegment seg, SoundClip clip, int crossfadeMs, bool advance = false, ulong promptUsec = 0)
     {
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
         System.Threading.Tasks.Task.Run(() =>
@@ -692,9 +694,13 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                 var wav = Stream(pcm, data, selfLoop);
                 decodedSegments.Enqueue(() =>
                 {
-                    if (!playbackGuard.AcceptDecode(gen)) return;
+                    if (!playbackGuard.AcceptDecode(gen))
+                    {
+                        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id}: decoded after a newer cue, dropped");
+                        return;
+                    }
                     cueSegments[seg.Id] = (clip, pcm, wav);
-                    PlaySegment(cue, seg, crossfadeMs);
+                    PlaySegment(cue, seg, crossfadeMs, promptUsec);
                 });
             }
         });
@@ -729,7 +735,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         });
     }
 
-    void PlaySegment(MusicCue cue, MusicSegment seg, int crossfadeMs)
+    void PlaySegment(MusicCue cue, MusicSegment seg, int crossfadeMs, ulong promptUsec = 0)
     {
         if (seg == null || !cueSegments.TryGetValue(seg.Id, out var entry)) return;
         // the active voice is busy while it plays or its next segment is on the way; its end with nothing to follow
@@ -763,8 +769,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         ApplyPlayerGains();
         if (!selfLoop) Chain(inSlot);
         player.Play();
-        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id} -> {entry.Clip.Name} ({entry.Pcm.Seconds:F1} s, {entry.Pcm.Rate} Hz, {entry.Pcm.Channels} ch, loop={selfLoop}, xfade={crossfadeMs} ms, fading={isCrossfading}), playing={player.Playing}");
+        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id} -> {entry.Clip.Name} ({entry.Pcm.Seconds:F1} s, {entry.Pcm.Rate} Hz, {entry.Pcm.Channels} ch, loop={selfLoop}, xfade={crossfadeMs} ms, fading={isCrossfading}), playing={player.Playing}{StartDelay(promptUsec)}");
     }
+
+    /// <summary>", started N ms after the prompt" for a cue's first segment, else empty.</summary>
+    static string StartDelay(ulong promptUsec) =>
+        promptUsec == 0 ? "" : $", started {(Time.GetTicksUsec() - promptUsec) / 1000.0:F1} ms after the prompt";
 
     void Chain(int slot)
     {
