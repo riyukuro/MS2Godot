@@ -2923,6 +2923,79 @@ public partial class LiveSession
                 finally { book.Notice -= Noticed; }
                 continue;
             }
+            if (step.StartsWith("rscroll"))      // the Change Attributes scroll steps: rscrolluse:<scroll id>, rscrollput:<gear id>[:<rarity>], rscrollconfirm[:<pick>] (boxes answered yes), rscrollclose
+            {
+                string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
+                long Count(int id) { long n = 0; foreach (var e in live.Items.All) if (e.Id == id) n += e.Amount; return n; }
+                long UidOf(int id) { foreach (var e in live.Items.All) if (e.Id == id) return e.Uid; return 0; }
+                string State() { var s = hud.ItemRemakeScrollStateScripted(); return $"open={s.Open} state={s.State} target={s.Target} option={s.Option} options={s.Options} input={s.Input}"; }
+                var seen = new System.Collections.Generic.List<string>();
+                void Seen(Ms2.Net.Packets.ChangeAttributesScrollPacket p, Maple2.PacketLib.Tools.ByteReader _) => seen.Add($"type {p.Type} uid {p.Uid} flag {p.Flag} code {p.Code}");
+                live.ChangeAttributesScrollReceived += Seen;
+                try
+                {
+                    switch (step[..(step.Contains(':') ? step.IndexOf(':') : step.Length)])
+                    {
+                        case "rscrolluse":      // the scroll given when missing and double clicked in the bag: the server's type 0 opens the window
+                        {
+                            int id = int.Parse(arg);
+                            if (Count(id) == 0) { hud.SubmitChatLine($"/item {id} --amount 2"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                            long n0 = Count(id), uid = UidOf(id);
+                            string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                            GD.Print($"live: combat rscroll use {id} ({slot}, {n0} held): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                            await until(() => hud.ItemRemakeScrollOpenScripted(), 60 * 5); await frames(90);
+                            GD.Print($"live: combat rscroll window: {State()} packets=[{string.Join("; ", seen)}]");
+                            Check($"rscroll {id}: the window is open, the scroll kept ({n0} -> {Count(id)})", hud.ItemRemakeScrollOpenScripted() && Count(id) == n0);
+                            Shot($"rscroll_open_{id}.png");
+                            break;
+                        }
+                        case "rscrollput":      // the gear given when missing and dropped on the window's item slot
+                        {
+                            var parts = arg.Split(':');
+                            int id = int.Parse(parts[0]);
+                            string rarity = parts.Length > 1 ? " --rarity " + int.Parse(parts[1]) : "";
+                            if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}{rarity}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                            long uid = UidOf(id);
+                            Check($"gear {id} is in the bag ({uid})", uid != 0);
+                            if (uid == 0) break;
+                            GD.Print($"live: combat rscroll put {id} ({uid}): {(hud.ItemRemakeScrollDropScripted(uid) ? "dropped" : "no window")}");
+                            await frames(60 * 2);
+                            GD.Print($"live: combat rscroll window: {State()}");
+                            Shot($"rscroll_put_{id}.png");
+                            break;
+                        }
+                        case "rscrollconfirm":  // the confirm button (the pick for the new roll's step), the boxes it asks answered yes
+                        {
+                            var s0 = hud.ItemRemakeScrollStateScripted();
+                            int pick = arg.Length > 0 ? int.Parse(arg) : 0;
+                            GD.Print($"live: combat rscroll confirm in state {s0.State} pick {pick}: {(hud.ItemRemakeScrollConfirmScripted(pick) ? "raised" : "no window")}");
+                            await frames(60);
+                            for (int i = 0; i < 3 && hud.ShownBoxScripted() is { } box; i++)
+                            {
+                                GD.Print($"live: combat rscroll box \"{box.Msg}\": {(hud.BagBoxAnswerScripted(box, 0, box.Extra ?? "") ? "answered yes" : "no box")}");
+                                await frames(60);
+                            }
+                            await until(() => seen.Count > 0 || hud.ItemRemakeScrollStateScripted().State != s0.State, 60 * 10); await frames(60 * 3);
+                            GD.Print($"live: combat rscroll window: {State()} packets=[{string.Join("; ", seen)}]");
+                            Shot($"rscroll_confirm_{s0.State}.png");
+                            break;
+                        }
+                        case "rscrollclose":
+                            hud.ItemRemakeScrollCloseScripted(); await frames(60);
+                            for (int i = 0; i < 2 && hud.ShownBoxScripted() is { } box; i++)
+                            {
+                                GD.Print($"live: combat rscroll close box \"{box.Msg}\": {(hud.BagBoxAnswerScripted(box, 0, box.Extra ?? "") ? "answered yes" : "no box")}");
+                                await frames(60);
+                            }
+                            Check("the scroll remake window closed", !hud.ItemRemakeScrollStateScripted().Open);
+                            Shot("rscroll_close.png");
+                            break;
+                        default: GD.Print($"live: combat: unknown step {step}"); break;
+                    }
+                }
+                finally { live.ChangeAttributesScrollReceived -= Seen; }
+                continue;
+            }
             if (step.StartsWith("remake"))      // the Change Attributes steps: remakeopen, remakeput:<gear id>[:<rarity>[:give]], remakepress[:<row to lock>] (none: -1, no lock), remakeapply:new|keep, remakeclose
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";

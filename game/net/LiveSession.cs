@@ -1127,6 +1127,10 @@ public partial class LiveSession : Node
     public event Action<ChangeAttributesPacket, Maple2.PacketLib.Tools.ByteReader> ChangeAttributesReceived;
     /// <summary>The Change Attributes window's sends (SendOp ChangeAttributes); live only.</summary>
     public void SendChangeAttributes(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
+    /// <summary>The Change Attributes scroll window's packets (RecvOp ChangeAttributesScroll), the item body left in the reader.</summary>
+    public event Action<ChangeAttributesScrollPacket, Maple2.PacketLib.Tools.ByteReader> ChangeAttributesScrollReceived;
+    /// <summary>The Change Attributes scroll window's sends (SendOp ChangeAttributesScroll); live only.</summary>
+    public void SendChangeAttributesScroll(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>The merge dialogs' sends (ItemMerge 0x3F, UIItemMergeOptionDialog / UIItemMergeRevertDialog); live only.</summary>
     public void SendItemMerge(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>RequestItemBox (0x1A, UIItemMultiOpenBoxDialog::vfunc_15 @0x140c3f8a0).</summary>
@@ -2594,6 +2598,13 @@ public partial class LiveSession : Node
                 var ca = ChangeAttributesPacket.Read(cr);   // UIItemRemakeOptionDialog::vfunc_79 (@0x14129daa0)
                 GD.Print($"live: change attributes kind {ca.Kind}");
                 ChangeAttributesReceived?.Invoke(ca, cr);
+            }
+            else if (game.Is(p, Inbound.ChangeAttributesScroll))
+            {
+                var sr = p.Reader();
+                var cs = ChangeAttributesScrollPacket.Read(sr);   // UIItemRemakeScrollDialog::FUN_140f59230 (@0x140f59230)
+                GD.Print($"live: change attributes scroll type {cs.Type}");
+                ChangeAttributesScrollReceived?.Invoke(cs, sr);
             }
             else if (game.Is(p, Inbound.ItemDismantle))
             {

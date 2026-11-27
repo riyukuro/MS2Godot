@@ -143,6 +143,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchPcInfo();
         WatchItemMerge();
         WatchItemRemake();
+        WatchItemRemakeScroll();
         // the portal and interact actions' notices & casting bar, the channel notices
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
@@ -303,6 +304,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchItemMerge = null;
         unwatchItemRemake?.Invoke();
         unwatchItemRemake = null;
+        unwatchItemRemakeScroll?.Invoke();
+        unwatchItemRemakeScroll = null;
         unwatchPrestige?.Invoke();
         unwatchPrestige = null;
         unwatchCouple?.Invoke();
@@ -2153,6 +2156,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemGetOptionKeys(k)) return true;
         if (ItemBreakKeys(k)) return true;
         if (ItemRemakeKeys(k)) return true;
+        if (ItemRemakeScrollKeys(k)) return true;
         if (EnchantScrollKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
@@ -3828,6 +3832,8 @@ public partial class HudScene : Node, IUiStageHost
         Action<long, int> equipAnswered = (uid, result) => Ms2Godot.Net.LiveSession.Instance?.AutoEquip.OnBindEquipAnswered(uid, result);
         Func<long, int, bool> gem = (uid, slot) => myInfo?.ConfirmBindGemEquip(uid, slot) ?? false;
         boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem; boxes.BindEquipAnswered = equipAnswered;
+        Func<int, long, long, bool> bindPet = ItemRemakeScrollBindPet;     // HandleRemakeOptionScrollBindPetButton
+        boxes.RemakeOptionScrollBindPet = bindPet;
         Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);
         boxes.LearnEmotion = learnEmotion;
         Action<long> learnSkill = uid => inventory?.ConfirmLearnSkill(uid);     // HandleLearnSkillButton
@@ -3867,6 +3873,7 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
             if (boxes.BindEquipAnswered == equipAnswered) boxes.BindEquipAnswered = null;
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
+            if (boxes.RemakeOptionScrollBindPet == bindPet) boxes.RemakeOptionScrollBindPet = null;
             if (boxes.LearnEmotion == learnEmotion) boxes.LearnEmotion = null;
             if (boxes.UseFunctionItem == useFunctionItem) boxes.UseFunctionItem = null;
             if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
