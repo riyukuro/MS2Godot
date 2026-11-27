@@ -14,8 +14,8 @@ namespace Ms2Godot.Tests;
 /// character path, with its glow twin and its Attached step) or GlowMaterial (the field glow), draws them in a SubViewport
 /// of its own over black, and compares the centre pixel with the value the client's opacity gives:
 /// the NiAlphaController alpha, the vertex alpha (EMISSIVE + LIGHTING_E, AMB_DIFF + E_A_D), the test on the opacity, ONE / ONE
-/// unweighted, the z write of a blended mesh, DRAW_BOTH, the blink's node alpha (NodeFade), MS2AlphaBoostMaterial's saturated output, the glow pass's opacity, the closest-point alpha sort, and an
-/// effect mesh's unsaturated colour (EffectInstance). Each view converts through Ms2Bloom.GammaOut(), as the game's views without
+/// unweighted, the z write of a blended mesh, DRAW_BOTH, the blink's node alpha (NodeFade), MS2AlphaBoostMaterial's saturated output, the glow pass's opacity, the closest-point alpha sort, an
+/// effect mesh's unsaturated colour (EffectInstance), and an effect map's filter mode (mip levels or the top level). Each view converts through Ms2Bloom.GammaOut(), as the game's views without
 /// bloom do.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -58,6 +58,30 @@ public partial class AlphaRenderCheck : Node
     }
 
     static ModelMesh Emit(ModelMesh m, float r, float g, float b) { m.Emissive = new[] { r, g, b }; return m; }
+
+    /// <summary>The quad with uvs 0..1 and mips.dds as its base map through <paramref name="filter"/> and
+    /// <paramref name="clamp"/> (TexMap).</summary>
+    static ModelMesh Mapped(ModelMesh m, int filter, int clamp)
+    {
+        m.Uvs = new float[] { 0, 0, 1, 0, 1, 1, 0, 1 };
+        m.Textures["base"] = "mips.dds";
+        m.Maps["base"] = new TexMap { File = "mips.dds", Filter = filter, Clamp = clamp };
+        return m;
+    }
+
+    /// <summary>The particle system's texture mips.dds, its particle size 2 (a few pixels: several mip levels down).</summary>
+    static void SmallMapped(ParticleSystemDef d) { d.Texture = "mips.dds"; d.Emitters[0].Size = 2; }
+
+    /// <summary>A 256 x 256 texture with its mip levels: the top level white, every other level 0.5 grey, all opaque.</summary>
+    static ImageTexture MipTexture()
+    {
+        int n = 0;
+        for (int w = 256; w >= 1; w >>= 1) n += w * w * 4;
+        var data = new byte[n];
+        for (int i = 0; i < n; i += 4) data[i] = data[i + 1] = data[i + 2] = i < 256 * 256 * 4 ? (byte)255 : (byte)128;
+        for (int i = 3; i < n; i += 4) data[i] = 255;
+        return ImageTexture.CreateFromImage(Image.CreateFromData(256, 256, true, Image.Format.Rgba8, data));
+    }
 
     SubViewport View(uint mask)
     {
@@ -309,6 +333,17 @@ public partial class AlphaRenderCheck : Node
         Particle("fx_part_fixed_front_mirrored", Grey(0f, "mirrored fixed-normal quad is culled"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, setup: FixedNormal(1), mirrored: true);
         Particle("fx_part_fixed_back_mirrored", Grey(0.5f, "mirrored fixed-normal quad with the normal away draws"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, setup: FixedNormal(-1), mirrored: true);
         Particle("fx_part_facing_mirrored", Grey(0.5f, "mirrored facing quad draws"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f, mirrored: true);
+
+        // An effect map's filter mode (TexMap.Filter): a 256 texture whose top level is white and whose other mip levels
+        // are 0.5, drawn over a few pixels (at least 3 levels down): TRILERP reads the lower levels, wrapped or clamped;
+        // BILERP and NEAREST read the top level only
+        cache["mips.dds"] = MipTexture();
+        Effect("fx_map_trilerp", Grey(0.5f, "trilerp map reads its mip levels"), Mapped(Quad("q", 0), 2, 3), 1f);
+        Effect("fx_map_trilerp_clamped", Grey(0.5f, "clamped trilerp map reads its mip levels"), Mapped(Quad("q", 0), 2, 0), 1f);
+        Effect("fx_map_bilerp", Grey(1f, "bilerp map reads the top level"), Mapped(Quad("q", 0), 1, 3), 1f);
+        Effect("fx_map_nearest", Grey(1f, "nearest map reads the top level"), Mapped(Quad("q", 0), 0, 3), 1f);
+        Particle("fx_part_map_trilerp", Grey(0.5f, "particle trilerp map reads its mip levels"), Mapped(Quad("q", 0), 2, 3), 1f, setup: SmallMapped);
+        Particle("fx_part_map_bilerp", Grey(1f, "particle bilerp map reads the top level"), Mapped(Quad("q", 0), 1, 0), 1f, setup: SmallMapped);
 
         // MS2AlphaBoostMaterial (rgb *= opacity where it is above 1, HandleMS2FinalPixelOutputs ms2standardmaterial.cpp:774-790)
         // into the client's A8R8G8B8 scene target (CreateRenderTargetSurface @0x1416a3cd0): the boosted output saturates

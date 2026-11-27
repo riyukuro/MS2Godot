@@ -201,7 +201,7 @@ public sealed class ModelMesh
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, decal0, shaderN
-    public Dictionary<string, TexMap> Maps = new();       // the same keys: each map's uv set, clamp mode and static transform
+    public Dictionary<string, TexMap> Maps = new();       // the same keys: each map's uv set, clamp and filter modes and static transform
     public string FlipSlot;               // texture slot an NiFlipController cycles (base, dark, ...), or null
     public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
     public float FlipPeriod;
@@ -325,6 +325,11 @@ public sealed class TexMap
     public string File;
     public int UvSet;
     public int Clamp = 3;
+    /// <summary>The map's filter mode (NiTexturingProperty::FilterMode, its flags' bits 8-11; FILTER_BILERP when the map
+    /// sets none, NiTexturingProperty::Map::Map, NiTexturingProperty.cpp:903-911): the renderer samples the map through
+    /// it (NiDX9FragmentShader::SetupTextures, NiDX9FragmentShader.cpp:487; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2266-2286):
+    /// 0 NEAREST (point, no mip levels), 1 BILERP (linear, no mip levels), 2 TRILERP (linear between the mip levels).</summary>
+    public int Filter = 1;
     public TexTransform Transform;
     public int ShaderIndex = -1;
     public bool ClampS => Clamp is 0 or 1;
@@ -701,15 +706,15 @@ public sealed class ModelData
         return o;
     }
 
-    /// <summary>The maps of the mesh's NiTexturingProperty, keyed as TexturesOf: file, uv set, clamp mode, static transform.</summary>
+    /// <summary>The maps of the mesh's NiTexturingProperty, keyed as TexturesOf: file, uv set, clamp mode, filter mode, static transform.</summary>
     internal static Dictionary<string, TexMap> MapsOf(NifFile nif, int mi)
     {
         var B = nif.Blocks;
         var o = new Dictionary<string, TexMap>();
         TexMap Map(NifStruct d)
         {
-            long src = d.Int("Source"), flags = d.IntOr("Flags", 0x3000);
-            var m = new TexMap { File = src >= 0 ? nif.StrField(B[(int)src], "File Name") : null, UvSet = (int)(flags & 0xFF), Clamp = (int)((flags >> 12) & 3) };
+            long src = d.Int("Source"), flags = d.IntOr("Flags", 0x3100);
+            var m = new TexMap { File = src >= 0 ? nif.StrField(B[(int)src], "File Name") : null, UvSet = (int)(flags & 0xFF), Clamp = (int)((flags >> 12) & 3), Filter = (int)((flags >> 8) & 0xF) };
             if (d.IntOr("Has Texture Transform", 0) != 0)
             {
                 var tr = d.Struct("Translation"); var sc = d.Struct("Scale"); var ce = d.Struct("Center");

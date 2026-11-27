@@ -8,7 +8,7 @@ static class FxParam
 {
     public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", NoFog = "no_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
-        BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
+        BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp", BaseFilter = "base_filter", GlowFilter = "glow_filter", DetailFilter = "detail_filter",
         HasDetail = "has_detail", DetailOpacity = "detail_opacity", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
         Ambient = "mat_ambient", MatDiffuse = "mat_diffuse", LightForm = "light_form", LitNormals = "lit_normals", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity", MorphW = "morph_w",
         AlphaBoost = "alpha_boost", NormalTex = "normal_tex", NormalR0 = "normal_r0", NormalR1 = "normal_r1", GlossTex = "gloss_tex",
@@ -101,11 +101,11 @@ public sealed partial class EffectInstance : Node3D
     // Textures and colours are taken raw (no source_color): the colour buffer holds gamma values (field_lit.gdshader).
     static readonly string MeshCode = @"shader_type spatial;
 render_mode unshaded, MESHSTATE, BLEND;
-uniform sampler2D tex : repeat_enable, filter_linear;
+uniform sampler2D tex : repeat_enable, filter_linear_mipmap;
 uniform bool has_tex = true;
-uniform sampler2D glow_tex : repeat_enable, filter_linear;
+uniform sampler2D glow_tex : repeat_enable, filter_linear_mipmap;
 uniform bool has_glow = false;
-uniform sampler2D detail_tex : repeat_enable, filter_linear;
+uniform sampler2D detail_tex : repeat_enable, filter_linear_mipmap;
 uniform bool has_detail = false;
 uniform bool detail_opacity = false;
 uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
@@ -122,6 +122,9 @@ uniform bool base_uv2 = false;
 uniform bool glow_uv2 = false;
 uniform int base_clamp = 0;
 uniform int glow_clamp = 0;
+uniform int base_filter = 1;
+uniform int glow_filter = 1;
+uniform int detail_filter = 1;
 uniform float alpha = 1.0;
 uniform vec4 tint = vec4(1.0);
 // the terms the vertex colour (COLOR) stands in for: EffectMesh.VertexColors
@@ -134,22 +137,14 @@ FOGDECL
 LIGHTDECL
 MORPHDECL
 void vertex() { MORPHVERT FOGVERT vec3 la, ld; light_vert(lit_normals ? normalize(mat3(MODEL_MATRIX) * NORMAL) : vec3(0.0), la, ld); light_amb = la; light_dif = ld; }
-// a map's uv: its texture transform's rows, then the clamp mode (bit 0 S, bit 1 T) as CLAMP addressing: the samplers
-// have no mipmaps, so holding the coordinate half a texel inside the edge is what clamped addressing reads
-vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
-    vec2 o = vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0)));
-    vec2 h = 0.5 / vec2(max(size, ivec2(1)));
-    if ((cl & 1) != 0) o.x = clamp(o.x, h.x, 1.0 - h.x);
-    if ((cl & 2) != 0) o.y = clamp(o.y, h.y, 1.0 - h.y);
-    return o;
-}
+MAPDECL
 void fragment() {
-    vec4 t = has_tex ? texture(tex, map_uv(base_uv2 ? UV2 : UV, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
+    vec4 t = has_tex ? map_tex(tex, map_uv(base_uv2 ? UV2 : UV, base_r0, base_r1), base_clamp, base_filter) : vec4(1.0);
     // the detail map multiplies the base colour by twice its colour, and under an MS2StandardMaterial the opacity by its
     // alpha (detail_opacity: EffectMesh.DetailOpacity; MS2StandardMaterial::HandleDetailMap, ms2standardmaterial.cpp:681-694,
     // its opacity at :342-343); the default NiStandardMaterial takes the colour only (NiStandardMaterial.cpp:4765-4774)
     if (has_detail) {
-        vec4 d = texture(detail_tex, map_uv(detail_uv2 ? UV2 : UV, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0)));
+        vec4 d = map_tex(detail_tex, map_uv(detail_uv2 ? UV2 : UV, detail_r0, detail_r1), detail_clamp, detail_filter);
         t.rgb *= d.rgb * 2.0;
         if (detail_opacity) t.a *= d.a;
     }
@@ -166,7 +161,7 @@ void fragment() {
     if (vc_amb) coef += COLOR.rgb * light_amb;
     vec3 col = t.rgb * coef;
     // a glow map adds its colour whatever the material colour is
-    if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
+    if (has_glow) col += map_tex(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1), glow_clamp, glow_filter).rgb;
     // The opacity: an opacity above 1 (the 02020120 crystals' material alpha 1.2, their ring's controller peak 1.5) only
     // counts through MS2AlphaBoostMaterial; the target saturates the opacity the blend takes
     float a = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
@@ -184,23 +179,26 @@ void fragment() {
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, PARTCULL, depth_draw_never, BLEND;
-uniform sampler2D tex : repeat_enable, filter_linear;
+uniform sampler2D tex : repeat_enable, filter_linear_mipmap;
 uniform bool has_tex = true;
 uniform vec2 frames = vec2(1.0, 1.0);
 uniform vec3 base_r0 = vec3(1.0, 0.0, 0.0);
 uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
 uniform int base_clamp = 0;
-uniform sampler2D detail_tex : repeat_enable, filter_linear;
+uniform int base_filter = 1;
+uniform sampler2D detail_tex : repeat_enable, filter_linear_mipmap;
 uniform bool has_detail = false;
 uniform bool detail_opacity = false;
 uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
 uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
 uniform int detail_clamp = 0;
-uniform sampler2D glow_tex : repeat_enable, filter_linear;
+uniform int detail_filter = 1;
+uniform sampler2D glow_tex : repeat_enable, filter_linear_mipmap;
 uniform bool has_glow = false;
 uniform vec3 glow_r0 = vec3(1.0, 0.0, 0.0);
 uniform vec3 glow_r1 = vec3(0.0, 1.0, 0.0);
 uniform int glow_clamp = 0;
+uniform int glow_filter = 1;
 uniform vec3 mat_ambient = vec3(0.0);
 global uniform vec3 ms2_ambient;
 uniform float alpha = 1.0;
@@ -216,23 +214,17 @@ LIGHTDECL
 // the quad's normal is its x axis cross its y axis (AlignedQuad.Quad: the aligned normal; a facing quad's camera right
 // cross up, the facing generator's normal, NiPSFacingQuadGenerator.cpp:340-341)
 void vertex() { cell = INSTANCE_CUSTOM.xy; FOGVERT vec3 la, ld; light_vert(normalize(cross(MODEL_MATRIX[0].xyz, MODEL_MATRIX[1].xyz)), la, ld); light_amb = la; light_dif = ld; }
-vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
-    vec2 o = vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0)));
-    vec2 h = 0.5 / vec2(max(size, ivec2(1)));
-    if ((cl & 1) != 0) o.x = clamp(o.x, h.x, 1.0 - h.x);
-    if ((cl & 2) != 0) o.y = clamp(o.y, h.y, 1.0 - h.y);
-    return o;
-}
+MAPDECL
 void fragment() {
-    // the quad's texture coordinate (the flipbook cell's), then each map's own transform and clamp mode as the mesh
-    // shader's map_uv; the detail map multiplies the colour by twice its colour, and under an MS2StandardMaterial the
+    // the quad's texture coordinate (the flipbook cell's), then each map's own transform, clamp and filter modes as
+    // the mesh shader's (MapDecl); the detail map multiplies the colour by twice its colour, and under an MS2StandardMaterial the
     // opacity by its alpha (detail_opacity: ParticleSystemDef.DetailOpacity; MS2StandardMaterial::HandleDetailMap,
     // ms2standardmaterial.cpp:681-694, :342-343; NiStandardMaterial::HandleDetailMap, NiStandardMaterial.cpp:4765-4774,
     // takes the colour only)
     vec2 uv = UV / frames + cell;
-    vec4 t = has_tex ? texture(tex, map_uv(uv, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
+    vec4 t = has_tex ? map_tex(tex, map_uv(uv, base_r0, base_r1), base_clamp, base_filter) : vec4(1.0);
     if (has_detail) {
-        vec4 d = texture(detail_tex, map_uv(uv, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0)));
+        vec4 d = map_tex(detail_tex, map_uv(uv, detail_r0, detail_r1), detail_clamp, detail_filter);
         t.rgb *= d.rgb * 2.0;
         if (detail_opacity) t.a *= d.a;
     }
@@ -249,7 +241,7 @@ void fragment() {
     vec3 col = t.rgb * coef;
     // the glow map adds its colour after the lighting (NiStandardMaterial::HandlePostLightTextureApplication,
     // NiStandardMaterial.cpp:5617-5700, HandleGlowMap :4816-4824), as the mesh shader's
-    if (has_glow) col += texture(glow_tex, map_uv(uv, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
+    if (has_glow) col += map_tex(glow_tex, map_uv(uv, glow_r0, glow_r1), glow_clamp, glow_filter).rgb;
     float a = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
     float k = alpha_boost && a > 1.0 ? a : 1.0;     // MS2AlphaBoostMaterial, as the mesh shader's
     // the 8-bit target saturates the fogged colour and the opacity (SceneTargetOut, in the mesh shader)
@@ -437,9 +429,35 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     else dif = ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl);
 }";
 
+    // A map's sample (MAPDECL): its texture transform's rows (map_uv), then the clamp mode (bit 0 S, bit 1 T) as CLAMP
+    // addressing and the filter mode (TexMap.Filter) as the sampler states the client sets from it
+    // (NiDX9FragmentShader::SetupTextures, NiDX9FragmentShader.cpp:487; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2266-2286):
+    // NEAREST (0) point and BILERP (1) linear read the top level only, TRILERP (2) blends the two mip levels the footprint
+    // falls between. A clamped axis holds the coordinate half a texel of the level read inside the edge, which is what
+    // CLAMP addressing reads; a wrapped trilinear map takes the sampler as it is.
+    const string MapDecl = @"vec2 map_uv(vec2 uv, vec3 r0, vec3 r1) { return vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0))); }
+vec2 map_hold(vec2 o, int cl, ivec2 size) {
+    vec2 h = 0.5 / vec2(max(size, ivec2(1)));
+    if ((cl & 1) != 0) o.x = clamp(o.x, h.x, 1.0 - h.x);
+    if ((cl & 2) != 0) o.y = clamp(o.y, h.y, 1.0 - h.y);
+    return o;
+}
+vec4 map_tex(sampler2D s, vec2 o, int cl, int fl) {
+    if (fl == 0) {
+        vec2 n = vec2(max(textureSize(s, 0), ivec2(1)));
+        return textureLod(s, (floor(map_hold(o, cl, textureSize(s, 0)) * n) + 0.5) / n, 0.0);
+    }
+    if (fl == 1) return textureLod(s, map_hold(o, cl, textureSize(s, 0)), 0.0);
+    if (cl == 0) return texture(s, o);
+    float l = textureQueryLod(s, o).x, l0 = floor(l);
+    vec4 c = textureLod(s, map_hold(o, cl, textureSize(s, int(l0))), l0);
+    return l > l0 ? mix(c, textureLod(s, map_hold(o, cl, textureSize(s, int(l0) + 1)), l0 + 1.0), l - l0) : c;
+}";
+
     // FogDecl / FogVert in place of the FOGDECL / FOGVERT marks: the height fog goes into the colour, the depth fog
-    // through FOG (as character_lit; the colour buffer holds gamma values); LightDecl in place of LIGHTDECL
-    static string WithFog(string code) => code.Replace("FOGDECL", FogDecl).Replace("FOGVERT", FogVert).Replace("LIGHTDECL", LightDecl);
+    // through FOG (as character_lit; the colour buffer holds gamma values); LightDecl in place of LIGHTDECL, MapDecl in
+    // place of MAPDECL
+    static string WithFog(string code) => code.Replace("FOGDECL", FogDecl).Replace("FOGVERT", FogVert).Replace("LIGHTDECL", LightDecl).Replace("MAPDECL", MapDecl);
 
     // the engine's bAdditive for the height fog: an NiAlphaProperty whose dest blend is ONE, blending on or not
     // (NiStandardMaterial.cpp:690-692)
@@ -573,12 +591,12 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 var glowMap = pm.Maps.GetValueOrDefault("glow");
                 var gtex = glowMap?.File != null ? mb.Texture(glowMap.File) : null;
                 if (gtex == null) glowMap = null;
-                else { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gtex); mat.SetShaderParameter(FxParam.GlowClamp, (glowMap.ClampS ? 1 : 0) | (glowMap.ClampT ? 2 : 0)); }
+                else { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gtex); MapModes(mat, glowMap, FxParam.GlowClamp, FxParam.GlowFilter); }
                 var dtex = detailMap?.File != null ? mb.Texture(detailMap.File) : null;
                 if (dtex == null) detailMap = null;
                 else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); if (d.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true); }
-                if (baseMap != null) mat.SetShaderParameter(FxParam.BaseClamp, (baseMap.ClampS ? 1 : 0) | (baseMap.ClampT ? 2 : 0));
-                if (detailMap != null) mat.SetShaderParameter(FxParam.DetailClamp, (detailMap.ClampS ? 1 : 0) | (detailMap.ClampT ? 2 : 0));
+                if (baseMap != null) MapModes(mat, baseMap, FxParam.BaseClamp, FxParam.BaseFilter);
+                if (detailMap != null) MapModes(mat, detailMap, FxParam.DetailClamp, FxParam.DetailFilter);
                 // The quads are drawn through the material the system block names (most name MS2StandardMaterial), or the
                 // renderer's default NiStandardMaterial when it names none (NiRenderer::NiRenderer, NiRenderer.cpp:49-54; nothing in
                 // the client calls SetDefaultMaterial; ParticleSystemDef.DetailOpacity), or MS2AlphaBoostMaterial in their place
@@ -664,9 +682,9 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 if (em.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true);
                 ms.DetailMap = m.Maps.GetValueOrDefault("detail");
             }
-            MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
-            MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
-            MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp);
+            MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp, FxParam.BaseFilter);
+            MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp, FxParam.GlowFilter);
+            MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp, FxParam.DetailFilter);
             SetRows(ms, ms.BaseMap?.Transform, 0, true);
             SetRows(ms, ms.GlowMap?.Transform, 1, true);
             SetRows(ms, ms.DetailMap?.Transform, 2, true);
@@ -1073,11 +1091,18 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     // a map's uv set and clamp mode. The map reads its own uv set (TEXCOORD_MASK; NiStandardMaterialDescriptor.cpp:1006,
     // the glow map's index from FindUVSetIndexForTextureEnum, ms2standardmaterial.cpp:1544): set 1 is the mesh's
     // TEXCOORD1 as UV2; a mesh without one reads set 0. STILL-OPEN: what D3D reads for a set the mesh does not have.
-    static void MapSetup(ShaderMaterial mat, TexMap map, ModelMesh m, StringName uv2, StringName clamp)
+    static void MapSetup(ShaderMaterial mat, TexMap map, ModelMesh m, StringName uv2, StringName clamp, StringName filter)
     {
         if (map == null) return;
         mat.SetShaderParameter(uv2, map.UvSet == 1 && m.Uvs1 != null);
+        MapModes(mat, map, clamp, filter);
+    }
+
+    // a map's clamp and filter modes (MapDecl)
+    static void MapModes(ShaderMaterial mat, TexMap map, StringName clamp, StringName filter)
+    {
         mat.SetShaderParameter(clamp, (map.ClampS ? 1 : 0) | (map.ClampT ? 2 : 0));
+        mat.SetShaderParameter(filter, map.Filter);
     }
 
     /// <summary>The gravity, bomb and drag forces on this step, in the effect's space (see Step).</summary>
