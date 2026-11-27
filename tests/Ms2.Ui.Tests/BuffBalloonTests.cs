@@ -134,6 +134,7 @@ public class BuffBalloonTests
         Assert.That(c.BalloonOf(pc), Is.SameAs(e));
         Assert.That(c.ClipsMade, Is.EqualTo(1));
         Assert.That(Rt.ToBoolean(h.Get(e.Clip, "visible")), Is.False, "a new clip starts hidden");
+        h.Player.Tick();                         // the new clip's render validation
 
         var list = new AdditionalBuffList(BalloonLevel) { UpperTargetId = 5, Balloon = () => c.BalloonOf(pc) };
         list.Apply(Add(10, 1, 1, 1000));
@@ -186,6 +187,7 @@ public class BuffBalloonTests
         var a = new BuffBalloonController.Actor { ObjectId = 7 };
         var b = new BuffBalloonController.Actor { ObjectId = 8 };
         var e = c.BalloonOf(a);
+        h.Player.Tick();
         e.Show(10, "a.png", 1000);
         c.Process(_ => (500f, 400f, 0f));
         Assert.That(Rt.ToBoolean(h.Get(e.Clip, "visible")), Is.True);
@@ -208,6 +210,7 @@ public class BuffBalloonTests
         var c = new BuffBalloonController { CameraReady = () => ready };
         var h = Load(c);
         var e = c.BalloonOf(new BuffBalloonController.Actor { ObjectId = 7 });
+        h.Player.Tick();
         e.Show(10, "a.png", 1000);
         Assert.That((e.Active, e.Held), Is.EqualTo((false, true)));
         c.Process(_ => (500f, 400f, 0f));
@@ -217,5 +220,33 @@ public class BuffBalloonTests
         e.Show(11, "b.png", 1000);
         c.Process(_ => (500f, 400f, 0f));
         Assert.That((e.Opens, e.Opened), Is.EqualTo((1, "b.png")));
+    }
+
+    [Test]
+    public void ANewClipOpensAfterItsValidationSoItsIconIs40()
+    {
+        // BuffBalloon.configUI sets m_imgwidth / m_imgheight to 40 over PopupImageProfile's 50; the img:// load completes in the
+        // next advance, before its render event, so a clip opened before its first validation got a 50 px picture
+        var c = new BuffBalloonController();
+        var h = Load(c);
+        h.Player.ImageSize = _ => (32, 32);
+        var e = c.BalloonOf(new BuffBalloonController.Actor { ObjectId = 7 });
+        e.Show(10, "a.png", 1000);
+        c.Process(_ => (500f, 400f, 0f));
+        Assert.That(e.Opens, Is.EqualTo(0), "not opened before the clip's validation");
+        Assert.That(Rt.ToBoolean(h.Get(e.Clip, "visible")), Is.False);
+        h.Player.Tick();
+        c.Process(_ => (500f, 400f, 0f));
+        Assert.That(e.Opens, Is.EqualTo(1));
+        h.Player.Tick();
+        h.Player.Tick();
+        // Common.loadImage: the imgLoader is m_icon's child, its loaded picture the loader's child
+        var icon = h.Get(e.Clip, "m_icon");
+        Assert.That(Rt.ToNumber(h.Get(icon, "numChildren")), Is.EqualTo(1));
+        var loader = h.Invoke(icon, "getChildAt", 0.0);
+        var content = Rt.ToNumber(h.Get(loader, "numChildren")) > 0 ? h.Invoke(loader, "getChildAt", 0.0) : null;
+        Assert.That(Rt.IsNullish(content), Is.False, "the icon loaded");
+        Assert.That((Rt.ToNumber(h.Get(content, "width")), Rt.ToNumber(h.Get(content, "height"))), Is.EqualTo((40.0, 40.0)));
+        Assert.That(h.RT.Errors, Is.Empty);
     }
 }

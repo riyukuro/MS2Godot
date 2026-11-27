@@ -75,6 +75,8 @@ public sealed class BuffBalloonController : UiController
         public int Opens;
         public float X, Y;           // the clip's place, stage units
         public bool Placed;
+        /// <summary>The clip's first render validation (CLIK UIComponent.initialized: configUI has run) has been seen.</summary>
+        public bool Validated;
 
         public bool TimerRunning(long now) => now < TimerEnd;
 
@@ -287,9 +289,25 @@ public sealed class BuffBalloonController : UiController
                 continue;
             }
             if (e.Hidden) SetHidden(e, false);
-            if (e.Reopen) Open(e);
+            if (e.Reopen && Validated(e)) Open(e);
             Place(e, pt.Value);
         }
+    }
+
+    /// <summary>
+    /// Whether the clip has had its first render validation (UIComponent.validateNow: configUI, where BuffBalloon sets
+    /// m_imgwidth / m_imgheight to 40 over PopupImageProfile's 50). The client loads without a task manager (the
+    /// ThreadedTaskManager is never set, gfxmanager.cpp:1051), so open's img:// load completes in the next MovieImpl::Advance's
+    /// ProcessLoadQueue (sfr_as3_18.cpp:8314), before that Advance's render event; the client's icon is 40 px (captured), so
+    /// its clip has been validated by then. Here a clip made this frame waits for that validation before its open, else
+    /// loadCompleteProfile sizes the picture to 50.
+    /// STILL-OPEN: the client step that puts an Advance between the clip's createEntity and its open (the order of the
+    /// packet / world tick against CUIService::OnTick, uiservice.cpp:1938) is not read.
+    /// </summary>
+    bool Validated(Entity e)
+    {
+        if (!e.Validated && e.Clip != null) e.Validated = Ms2.Avm2.Rt.ToBoolean(Host.Get(e.Clip, "initialized"));
+        return e.Validated;
     }
 
     /// <summary>
