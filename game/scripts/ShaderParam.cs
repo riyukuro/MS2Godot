@@ -74,6 +74,7 @@ static class ShaderParam
         LightForm = "light_form",
         AlphaBoost = "alpha_boost",   // character_lit and field_lit: MS2AlphaBoostMaterial
         NoFog = "no_fog",             // character_lit and field_lit: the client's fog-off subtrees (ModelMesh.NoFog)
+        HeightFog = "height_fog",     // character_lit: HEIGHTFOG off on an own dest-ONE alpha property
         VcolorAmbDiff = "vcolor_amb_diff",
         VcEmissive = "vc_emissive",
         VcDiffuse = "vc_diffuse",

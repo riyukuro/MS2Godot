@@ -105,6 +105,9 @@ uniform bool alpha_boost = false;   // MS2AlphaBoostMaterial (header)
 // the client's fog-off subtrees (ModelMesh.NoFog: a "nofog" tag, flag 0x400 or an additive alpha property; FUN_141567b60
 // @0x141567b60): no depth fog. The height fog keeps its own switch.
 uniform bool no_fog = false;
+// NiStandardMaterial::GenerateDescriptor's HEIGHTFOG (NiStandardMaterial.cpp:687-697): off when the mesh's own alpha
+// property has dest blend ONE, blending on or not (ModelBuilder sets it; the effects' height_fog is the same rule)
+uniform bool height_fog = true;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gloss_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D hair_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -328,10 +331,10 @@ void fragment() {
 		c = c * chaos_dimmer + chaos_color * (max(0.0, -dot(rim_dir, n)) * cf);
 	}
 	// Fog after the composite of diffuse and specular, before the alpha (MS2StandardMaterial::HandleMS2FinalPixelOutputs,
-	// ms2standardmaterial.cpp:774-776): first the height fog, as field_lit's (the character materials take their
-	// descriptor from NiStandardMaterial::GenerateDescriptor too, so HEIGHTFOG is on unless additive), then the depth fog
-	// (ms2_fog.gdshaderinc). Both only through a field camera (FOG_LAYER); the UI views draw neither.
-	if ((CAMERA_VISIBLE_LAYERS & FOG_LAYER) != 0u) {
+	// ms2standardmaterial.cpp:774-776): first the height fog, as field_lit's (MS2StandardMaterial::GenerateDescriptor,
+	// ms2standardmaterial.cpp:242, calls NiStandardMaterial's first, so HEIGHTFOG is off on a dest-ONE mesh: height_fog),
+	// then the depth fog (ms2_fog.gdshaderinc). Both only through a field camera (FOG_LAYER); the UI views draw neither.
+	if ((CAMERA_VISIBLE_LAYERS & FOG_LAYER) != 0u && height_fog) {
 		float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
 		c = mix(c, ms2_hfog_color, hf);
 	}

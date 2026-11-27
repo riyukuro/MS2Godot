@@ -1029,6 +1029,9 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.LightForm, LightForm(m));
         sm.SetShaderParameter(ShaderParam.AlphaBoost, m.AlphaBoost);
         sm.SetShaderParameter(ShaderParam.NoFog, m.NoFog);
+        // the engine's bAdditive: the mesh's own NiAlphaProperty with dest blend ONE, blending on or not
+        // (NiStandardMaterial.cpp:690-692; NifModel reads only the mesh's own properties into AlphaFlags)
+        if (m.AlphaFlags >= 0 && m.BlendDst == 0) sm.SetShaderParameter(ShaderParam.HeightFog, false);
         // normal map and specular (on with an enabled NiSpecularProperty; the gloss map scales it; hair adds the
         // anisotropic term from its tangent map, custom map 1)
         var normal = m.Tangents != null && m.Textures.TryGetValue("normal", out var nn) ? Texture(nn) : null;

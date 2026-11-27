@@ -56,14 +56,16 @@ public partial class LightFormRenderCheck : Node
     }
 
     /// <summary>Builds the mesh as one model in a new viewport over black, the camera 10 in front of the quad. With
-    /// <paramref name="fog"/> the camera carries the field's fog layer (1 << 20) and the environment has a dense white fog.</summary>
-    Node3D Model(string name, Func<Color, string> check, ModelMesh mesh, Vector3? camPos = null, bool fog = false)
+    /// <paramref name="fog"/> the camera carries the field's fog layer (1 << 20) and the environment has a dense white fog.
+    /// <paramref name="at"/> moves the model and the camera together.</summary>
+    Node3D Model(string name, Func<Color, string> check, ModelMesh mesh, Vector3? camPos = null, bool fog = false, Vector3 at = default)
     {
         var md = new ModelData { RootLocal = Xform.Identity };
         md.Meshes.Add(mesh);
         var vp = new SubViewport { Size = new Vector2I(Size, Size), OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
         var env = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
-        if (fog) { env.FogEnabled = true; env.FogLightColor = Colors.White; env.FogDensity = 1f; }
+        // FogSkyAffect 0 keeps the background black, so an additive case reads only its own colour
+        if (fog) { env.FogEnabled = true; env.FogLightColor = Colors.White; env.FogDensity = 1f; env.FogSkyAffect = 0f; }
         vp.AddChild(new WorldEnvironment { Environment = env });
         AddChild(vp);
         var cam = new Camera3D { Name = "Cam", Current = true, Fov = Fov, Compositor = Ms2Bloom.GammaOut() };   // the game's gamma conversion for views without bloom
@@ -71,7 +73,8 @@ public partial class LightFormRenderCheck : Node
         vp.AddChild(cam);
         var root = mb.Build(md, name);
         vp.AddChild(root);
-        cam.LookAtFromPosition(camPos ?? new Vector3(0, 0, 10), Vector3.Zero, Vector3.Up);
+        root.Position = at;
+        cam.LookAtFromPosition(at + (camPos ?? new Vector3(0, 0, 10)), at, Vector3.Up);
         cases.Add((name, vp, check));
         return root;
     }
@@ -126,7 +129,9 @@ public partial class LightFormRenderCheck : Node
         RenderingServer.GlobalShaderParameterSet("ms2_sun_specular", new Vector3(SunSpecular, SunSpecular, SunSpecular));
         RenderingServer.GlobalShaderParameterSet("ms2_ambient", Vector3.Zero);
         RenderingServer.GlobalShaderParameterSet("ms2_light_count", 0f);
-        RenderingServer.GlobalShaderParameterSet("ms2_hfog", Vector3.Zero);
+        // the height fog: white, full below y = -101 and none above -100, so only the height fog cases (at y = -200) take it
+        RenderingServer.GlobalShaderParameterSet("ms2_hfog", new Vector3(-100, -101, 1));
+        RenderingServer.GlobalShaderParameterSet("ms2_hfog_color", Vector3.One);
         // the depth fog for the fog-layer cases: near 0, far 20, the quad 10 away, so a share of 0.5 to black
         RenderingServer.GlobalShaderParameterSet("ms2_fog", new Vector4(0, 20, 0, 0));
         RenderingServer.GlobalShaderParameterSet("ms2_fog_color", Vector3.Zero);
@@ -180,6 +185,23 @@ public partial class LightFormRenderCheck : Node
         var fogged = Quad("MS2CharacterMaterial", ambient: 0, emissive: 1.6f);
         fogged.Diffuse = new float[] { 0, 0, 0 };
         Model("type1_fog_then_saturate", Grey(0.8f, "the depth fog before the saturate, no environment fog"), fogged, fog: true);
+
+        // the height fog before the depth fog, and none on a mesh whose own alpha property has dest blend ONE
+        // (NiStandardMaterial::GenerateDescriptor, NiStandardMaterial.cpp:687-697: bAdditive reads the dest factor only, not
+        // the blend bit). Emissive 0.5 quads in the full height fog through a field camera (the depth fog half to black):
+        // the opaque one is white, then 0.5; SRCALPHA / ONE (flags 0xD) and an unblended alpha property with dest ONE (0xC)
+        // keep their 0.5, then 0.25
+        var below = new Vector3(0, -200, 0);
+        ModelMesh HfogQuad(int alphaFlags)
+        {
+            var m = Quad("MS2CharacterMaterial", ambient: 0, emissive: 0.5f);
+            m.Diffuse = new float[] { 0, 0, 0 };
+            m.AlphaFlags = alphaFlags;
+            return m;
+        }
+        Model("hfog_opaque", Grey(0.5f, "the height fog on an opaque character mesh"), HfogQuad(-1), fog: true, at: below);
+        Model("hfog_add", Grey(0.25f, "no height fog on a SRCALPHA / ONE character mesh"), HfogQuad(0xD), fog: true, at: below);
+        Model("hfog_dest_one_unblended", Grey(0.25f, "no height fog on an unblended dest-ONE alpha property"), HfogQuad(0xC), fog: true, at: below);
 
         // MS2AlphaBoostMaterial: a blended MS2CharacterMaterial mesh at material alpha 1.5 draws as type 0 times 1.5, saturated
         // into the 8-bit target with its opacity (CreateRenderTargetSurface @0x1416a3cd0), so over black it reads type 0 * 1.5
