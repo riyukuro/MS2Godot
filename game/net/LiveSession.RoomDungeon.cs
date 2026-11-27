@@ -51,6 +51,9 @@ public partial class LiveSession
     /// <summary>OnDungeonMatchError (@0x140e146f0): the match error of the server's DungeonMatch packet.</summary>
     public event Action<Ms2.Net.Packets.DungeonMatchError> DungeonMatchErrorReceived;
 
+    /// <summary>UIDungeonLobby::OnRoomPacket (@0x140e17930): the server's DungeonWaiting packet, the lobby's room and size.</summary>
+    public event Action<Ms2.Net.Packets.DungeonWaiting> DungeonWaitingReceived;
+
     void OnRoomDungeon(RoomDungeonReply m)
     {
         ApplyRoomDungeon(m);

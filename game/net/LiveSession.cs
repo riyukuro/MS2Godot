@@ -3080,6 +3080,12 @@ public partial class LiveSession : Node
                 var dm = Ms2.Net.Packets.DungeonMatchError.Read(p.Reader());   // OnDungeonMatch (scenestategame.cpp:5184): mode 0 only
                 if (dm != null) { GD.Print($"live: dungeon match error {dm.Error} ({dm.Param}, {dm.Name})"); DungeonMatchErrorReceived?.Invoke(dm); }
             }
+            else if (game.Is(p, Inbound.DungeonWaiting))
+            {
+                var dw = Ms2.Net.Packets.DungeonWaiting.Read(p.Reader());   // UIDungeonLobby::OnRoomPacket (uidungeonlobby.cpp:68)
+                GD.Print($"live: dungeon waiting room {dw.RoomId} size {dw.Size}");
+                DungeonWaitingReceived?.Invoke(dw);
+            }
             else if (game.Is(p, Inbound.RoomDungeon))
                 OnRoomDungeon(Ms2.Net.Packets.RoomDungeonReply.Read(p.Reader(), game.Profile));   // OnRoomDungeon (scenestategame.cpp:4531)
             else if (game.Is(p, Inbound.WorldShareInfo))
@@ -4412,6 +4418,14 @@ public partial class LiveSession : Node
                     string cmd = "/dungeon " + step[8..];
                     sent = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(cmd);
                     GD.Print($"live: move {n}: {cmd} {(sent ? "sent" : "no chat window")}, {live.Migrations} GameToGame move(s) so far");
+                }
+                else if (step.StartsWith("roomentry:"))
+                {
+                    // "roomentry:<room>": the room window's enter request (RoomDungeon 2, UIDungeonRoomInfo::RequestEntry @0x1412b6250), solo
+                    // and without portal or ticket: the route a server without the dungeon chat command takes into a lobby
+                    live.SendParty(new Ms2.Net.Packets.RoomDungeonEntryRequest(uint.Parse(step[10..]), false, 0, false));
+                    GD.Print($"live: move {n}: room entry {step[10..]} sent");
+                    sent = true;
                 }
                 else if (step == "finder" && tree.CurrentScene is Ui.HudScene fh)
                 {
