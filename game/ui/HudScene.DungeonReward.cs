@@ -48,6 +48,7 @@ public partial class HudScene
                 else GD.Print($"dungeon reward: offline, not sent: {p}");
             },
             HasLocalPlayer = () => hudModel.HasLocalPlayer,
+            GetStage = () => Ms2Godot.Net.LiveSession.Instance?.Stage,
             NowMs = () => (long)Time.GetTicksMsec(),
         };
     }

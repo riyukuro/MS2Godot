@@ -16,8 +16,9 @@ namespace Ms2.Ui.Hud;
 /// OnLoadComplete (@0x140e21090, :104) binds the close and the party leave buttons, fills the avatar's name and job, the meso and exp texts,
 /// the reward items bag and, by the packet's kind, the clear time, the guild reward and the title (FUN_140e22d70); after 500 ms the bonus
 /// effects start and 1000 ms later the totals include the bonus reward (vfunc_72 @0x140e21bd0, <see cref="Tick"/>).
+/// With a stage whose missions have a maximum score (the local character's RoomStageDungeonCli, <see cref="GetStage"/>) the rank part is shown:
+/// the gauge, the rank and the mission labels (FUN_140e24060 @0x140e24060, CreateMissionLabels @0x140e25dc0) and the three clips sit at the places of FUN_140e24c50(true).
 /// STILL-OPEN: the character's render target (CreateAvatar @0x140e25420, loadRenderTarget @0x140e25540, the win pose at vfunc_25 @0x140e21dc0);
-/// the rank gauge and the mission labels (FUN_140e24060 @0x140e24060, CreateMissionLabels @0x140e25dc0) which need RoomStageDungeonCli;
 /// the massive event panel 20044 (FindMassiveEvent) and its restore at close (vfunc_67 @0x140e21b30); the win sound (PlaySystemSound with the
 /// string at DAT_143ac5988); CQuestManager::MarkField180 at close; the minigame frames beyond their label and setRound call.
 /// </summary>
@@ -51,6 +52,8 @@ public sealed class DungeonRewardDialogController : UiController
     public DungeonRecordBook Records = new();
     /// <summary>The local player exists (WorldService::GetLocalPlayer): CreateAvatar and SetCharacterInfo do nothing without it.</summary>
     public Func<bool> HasLocalPlayer = () => true;
+    /// <summary>GetMyCharacter()->GetStage() (CMyCharacter::GetStage): the stage the dungeon packets keep, null without one.</summary>
+    public Func<RoomStageDungeonCli> GetStage = () => null;
 
     // ---- the state ResetState (@0x140e25610) clears ----
 
@@ -73,6 +76,8 @@ public sealed class DungeonRewardDialogController : UiController
 
     DungeonRewardPacket last;
     object rewardInfo, titleClip, closeButton, leaveButton;
+    object rankInfo;                      // m_1a0: the rank clip's m_rankInfo
+    readonly List<object> labels = new(); // m_labels: the mission label clips, kept until the window unloads (vfunc_26)
     long timer1 = -1, timer2 = -1;       // m_timer1 and m_timer2 (a stop time, -1 = not running)
     readonly List<string> bagSlots = new();
 
@@ -81,7 +86,7 @@ public sealed class DungeonRewardDialogController : UiController
     {
         Type = 0; Win = true; Party = false; Room = null; Seconds = 0; BestScore = 0; RunScore = 0; Round = 0; Stage = 0;
         Main = new(); Bonus = new(); Tip = ""; last = null;
-        rewardInfo = titleClip = closeButton = leaveButton = null;
+        rewardInfo = rankInfo = titleClip = closeButton = leaveButton = null; labels.Clear();
         timer1 = timer2 = -1;
     }
 
@@ -158,14 +163,16 @@ public sealed class DungeonRewardDialogController : UiController
     /// OnLoadComplete (@0x140e21090, :104): UIDialog's; the reward clip m_rewardAni's m_rewardInfo and the rank clip's m_rankInfo; the close
     /// and party leave buttons of m_buttonArea (the client throws a SwfLoad error for a missing one), the close label "leave" for a room that
     /// leaves after the reward, the party leave button hidden; the title; the timers reset; the character's name and job
-    /// (SetCharacterInfo), the texts and the bag (FUN_140e22820) and the kind's own layout. The mission rank part is STILL-OPEN, so the three
-    /// clips sit at the positions FUN_140e24c50(false) gives.
+    /// (SetCharacterInfo), the texts and the bag (FUN_140e22820) and the kind's own layout; last the mission rank part of a stage with a
+    /// maximum score (:317-333: FUN_140e24060 then FUN_140e24c50(true), else FUN_140e24c50(false)).
     /// </summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
         var reward = Host.Child("m_rewardAni");
         rewardInfo = reward == null ? null : Host.Child("m_rewardInfo", reward);
+        var rankClip = Host.Child("m_rankAni");
+        rankInfo = rankClip == null ? null : Host.Child("m_rankInfo", rankClip);
         var buttons = Host.Child("m_buttonArea");
         if (buttons != null)
         {
@@ -187,7 +194,9 @@ public sealed class DungeonRewardDialogController : UiController
             case 2: UpdateMinigameStage(); break;
             case 3: case 4: SetFrame(rewardInfo, "_minigame"); break;          // ShowMinigame @0x140e25050, FUN_140e250e0 @0x140e250e0
         }
-        PlaceClips(false);                                                        // FUN_140e24c50(false): no mission rank (STILL-OPEN)
+        var stage = GetStage();
+        if (stage != null && stage.MaxScore > 0) { ShowMissionRank(stage); PlaceClips(true); }
+        else PlaceClips(false);
     }
 
     void Bind(object button, Action onClick)
@@ -212,6 +221,82 @@ public sealed class DungeonRewardDialogController : UiController
         {
             Host.SetVisible(rank, false);
             SetPos(avatar, 714, 242); SetPos(reward, 1126, 242);
+        }
+    }
+
+    /// <summary>The first label's top and the step between labels (CreateMissionLabels @0x140e25dc0, :738).</summary>
+    public const int LabelTop = 0x115, LabelStep = 0x24;
+    /// <summary>The gauge's full width in pixels (FUN_140e24060: 294) and the effect's offset from its end.</summary>
+    public const int GaugeWidth = 294, EffectBack = 10;
+    public const string MissionLabelClass = "UIDungeonRewardDialog_MissionLabel";
+
+    /// <summary>
+    /// FUN_140e24060 (@0x140e24060, uidungeonrewarddialog.cpp:424): the stage's rank part. The gauge's mask is cur/max (0..1) of 294 pixels
+    /// wide and its effect sits at the mask's end; the rank clips go to the rank's frame label (GetRankName), the S effects the ranks from 4, the SA effect from 3
+    /// and the new record effect when the packet's best score is below this run's; the total "cur/max"; one label per mission with its
+    /// name and "score/max", labels beyond the missions hidden.
+    /// </summary>
+    void ShowMissionRank(RoomStageDungeonCli stage)
+    {
+        if (rankInfo == null) return;
+        int cur = stage.Score, max = stage.MaxScore, rank = stage.Rank;
+        string rankName = RankName(rank);
+        var gauge = Host.Child("m_rankGauge", rankInfo);
+        if (gauge != null)
+        {
+            float ratio = (float)cur / max;
+            if (ratio < 0f) ratio = 0f;
+            if (ratio > 1f) ratio = 1f;
+            int width = (int)(GaugeWidth * ratio);
+            var mask = Host.Child("m_mask", gauge);
+            if (mask != null) Host.Set(mask, "width", width);
+            var eff = Host.Child("m_eff", gauge);
+            if (eff != null && mask != null) Host.Set(eff, "x", width + Rt.ToNumber(Host.Get(mask, "x")) - EffectBack);
+        }
+        var movie = Host.Child("m_rankMovie", rankInfo);
+        if (movie != null)
+        {
+            SetFrame(Host.Child("m_rank", movie), rankName);
+            SetFrame(Host.Child("m_rankEffect", movie), rankName);
+            var s1 = Host.Child("m_RankSEffect1", movie);
+            var s2 = Host.Child("m_RankSEffect2", movie);
+            if (s1 != null && s2 != null) { Host.SetVisible(s1, rank >= 4); Host.SetVisible(s2, rank >= 4); }
+            var sa = Host.Child("m_rankSAEffect", movie);
+            if (sa != null) Host.SetVisible(sa, rank >= 3);
+            var record = Host.Child("m_effNewRecord", movie);
+            if (record != null) Host.SetVisible(record, BestScore < RunScore);
+        }
+        SetText(Host.Child("m_missionScoreTotal", rankInfo), cur + "/" + max);
+        var entries = stage.Missions;
+        CreateMissionLabels(entries.Count);
+        for (int i = 0; i < labels.Count; i++)
+        {
+            var label = labels[i];
+            if (label == null) continue;
+            if (i >= entries.Count) { Host.SetVisible(label, false); continue; }
+            var name = Host.Child("m_missionName", label);
+            var score = Host.Child("m_missionScore", label);
+            if (name == null || score == null) continue;
+            SetText(name, Tables.DungeonMissionName(entries[i].Id));
+            SetText(score, entries[i].Score + "/" + entries[i].MaxScore);
+        }
+    }
+
+    /// <summary>GetRankName (@0x14031c9d0, dungeonroom.cpp:272): the rank clips' frame label, "rank_unknown" below 0, else "rank{n}".</summary>
+    public static string RankName(int rank) => rank < 0 ? "rank_unknown" : "rank" + rank.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>CreateMissionLabels (@0x140e25dc0, :738): up to the count, one clip of the label class each at (0, i * 0x24 + 0x115), added to the rank clip.</summary>
+    void CreateMissionLabels(int count)
+    {
+        if (labels.Count > count || rankInfo == null) return;
+        for (int i = labels.Count; i < count; i++)
+        {
+            object clip = null;
+            Host.RT.Guard("mission label", () => clip = Host.RT.Construct(Host.RT.GetClass(MissionLabelClass), Array.Empty<object>()));
+            if (clip == null) { Host.RT.NoteMissing("dungeon reward: " + MissionLabelClass); return; }
+            Host.Invoke(rankInfo, "addChild", clip);
+            SetPos(clip, 0, i * LabelStep + LabelTop);
+            labels.Add(clip);
         }
     }
 
@@ -411,6 +496,7 @@ public sealed class DungeonRewardDialogController : UiController
     public override void Close()
     {
         base.Close();
+        labels.Clear();                                                   // vfunc_26 (@0x140e21050): m_labels.clear(), then ResetState
         ReleaseBag();
     }
 
