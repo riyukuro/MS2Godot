@@ -1256,7 +1256,7 @@ public sealed partial class RemoteLayer : Node3D
         }
         TickBuffEffects();
         TickRemoteMagics(now);
-        LiveSession.Instance?.Breakables.Update(now);
+        LiveSession.Instance?.Breakables.Update(now, unchecked((int)tick));   // the markers' Update(GetTickCountMs2()) (worldservice_1.cpp:9650-9655): the fades and the move cycles
         LiveSession.Instance?.Vibrates.Update(tick);   // the world tick's vibrators (worldservice_1.cpp:9243-9250)
         if (TombTags.Count > 0) { RunVibrateTags(); RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);

@@ -20,8 +20,10 @@ namespace Ms2.Ui;
 /// dead effect to play; the tag pass (<see cref="Hud.TombTagPass.RunMarkers"/>) reads the hittable and idle rules.</para>
 /// <para>The physics box (<see cref="Marker.HasBox"/>, <see cref="BoxChanged"/>): MakeNxBoxController in states 2 (so at the
 /// attach) and 6, ReleasePhysicsActor in 3 and 4.</para>
-/// STILL-OPEN: the shadow and the move cycle (Update's moveDirection/moveDistance, synced by the sync values, and the
-/// kinematic box it moves) per marker. The reader of the cube map's list (+0x1a0) is not found.
+/// <para>The move cycle (<see cref="Marker.Step"/>, <see cref="Moved"/>): a marker with a move time and distance runs
+/// Update's wait, go, wait, back cycle on the server tick, offset and frozen by the sync values.</para>
+/// STILL-OPEN: the shadow; the props' re-read on a dirty entity (Update's FUN_140adf9d0, which would also take the moved
+/// position as the new base). The reader of the cube map's list (+0x1a0) is not found.
 /// </summary>
 public sealed class BreakableObjects
 {
@@ -29,7 +31,10 @@ public sealed class BreakableObjects
     {
         public string Name { get; internal set; }
         public int State { get; internal set; }
-        public int SyncA { get; internal set; }
+        /// <summary>m_nSyncA/B/C (FUN_140adeaa0, breakableobject.cpp:349-354): the ctor sets 1, 0, 0 (:137-139), so a marker
+        /// the server never names runs its cycle from the field load. A = 0 stops the cycle at the cycle time C once the
+        /// time passes it; B is added to the cycle time.</summary>
+        public int SyncA { get; internal set; } = 1;
         public int SyncB { get; internal set; }
         public int SyncC { get; internal set; }
         /// <summary>The field entity (m_spEntity); null for a marker added by name only.</summary>
@@ -163,6 +168,123 @@ public sealed class BreakableObjects
         }
 
         internal bool Fading => fadeEnd >= 0;
+
+        /// <summary>m_ptMoveDir: property 0x0c10618b ("moveDirection"), unitized (breakableobject.cpp:596, :604).</summary>
+        public Vec3 MoveDir { get; internal set; }
+        /// <summary>m_fMoveDelay: property 0x1994cfe8 ("moveTimeOffset"), seconds added to the cycle time (:597).</summary>
+        public float MoveDelay { get; internal set; }
+        /// <summary>m_fMoveTime: property 0xf6068266 ("moveDuration"), the seconds one way takes (:600).</summary>
+        public float MoveTime { get; internal set; }
+        /// <summary>m_afWait[0] / m_afWait[1]: properties 0x000bd4a6 ("moveStopDurationS") and 0x000bd4bc
+        /// ("moveStopDurationE"), the seconds it waits at the start and at the end (:601-602).</summary>
+        public float WaitStart { get; internal set; }
+        public float WaitEnd { get; internal set; }
+        /// <summary>m_nMoveMode: property 0x76ba4184 ("moveRoundType") (:619). 1: the cycle ends at the end wait (it jumps
+        /// back to the start); 2: it turns 180 degrees about z at the end and on the way back; other: back without the turn.</summary>
+        public int MoveMode { get; internal set; }
+        /// <summary>m_fSpeed: property 0x83d0f1ba ("moveDistance") over the move time, when that is above zero (:605-606).</summary>
+        public float Speed { get; internal set; }
+        /// <summary>m_ptPosBase / m_ptRotBase: the position and rotation the props gave (:620-621).</summary>
+        public Vec3 PosBase { get; internal set; }
+        public Vec3 RotBase { get; internal set; }
+        /// <summary>m_nPhase: 0 until the first move frame, then 1 (start wait), 2 (going), 3 (end wait, and the way back
+        /// entered from it) or 4 (the way back entered from any other phase: Update tests phase != 3 there).</summary>
+        public int Phase { get; private set; }
+        /// <summary>m_ptVelocity: the last frame's move direction (the unitized position change), zero on a frame it did
+        /// not move.</summary>
+        public Vec3 Velocity { get; private set; }
+        int phaseTime, phaseStart;
+
+        /// <summary>Update moves it: 0 &lt; m_fMoveTime and m_fSpeed != 0 (breakableobject.cpp:376).</summary>
+        public bool Moves => 0f < MoveTime && Speed != 0f;
+
+        /// <summary>FUN_14028d260: seconds to milliseconds, truncated (commonutil.cpp:610), read as int.</summary>
+        static int Ms(float s) => (int)(long)(s * 1000f);
+        /// <summary>FUN_14028d280: milliseconds to seconds (commonutil.cpp:616).</summary>
+        static float Sec(uint ms) => (float)ms * 0.001f;
+
+        /// <summary>SetPhase (@0x140ae06a0, breakableobject.cpp:718-723): the phase's server time and local start.</summary>
+        void SetPhase(int phase, int now, int serverTick)
+        {
+            phaseTime = serverTick;
+            phaseStart = now;
+            Phase = phase;
+        }
+
+        /// <summary>
+        /// CBreakableObject::Update's move (@0x140adeaf0, breakableobject.cpp:362-423), in the client's float and unsigned
+        /// math. <paramref name="now"/> is the local tick (GetTickCountMs2) and <paramref name="serverTick"/> is
+        /// GetServerTickAt(now). The cycle time is the server time of the phase's start plus the local time since, plus the
+        /// delay and SyncB; with SyncA 0 the place is SyncC's once the time passes it. The cycle is: start wait, go, end wait,
+        /// back (mode 1: no back). Only states 2, 5 and 6 move. Returns whether the position or rotation changed
+        /// (SetPosition and SetRotation change only a different, finite value, :538-560).
+        /// </summary>
+        internal bool Step(int now, int serverTick)
+        {
+            Velocity = default;
+            if (!Moves || !(State is 2 or 5 or 6)) return false;
+            unchecked
+            {
+                if (Phase == 0) { phaseTime = serverTick; phaseStart = now; }
+                uint time = (uint)(phaseTime + (now - phaseStart) + Ms(MoveDelay) + SyncB);
+                uint wait0 = (uint)Ms(WaitStart);
+                uint go = wait0 + (uint)Ms(MoveTime);
+                uint wait1 = go + (uint)Ms(WaitEnd);
+                uint back = wait1 + (uint)Ms(MoveTime);
+                uint cycle = MoveMode == 1 ? wait1 : back;
+                if (cycle == 0) return false;   // the client divides by it; no data has a cycle under 1 ms
+                uint pos = time % cycle;
+                if (SyncA == 0 && (uint)SyncC < time) pos = (uint)SyncC % cycle;
+                Vec3 rot;
+                if (pos <= wait0)
+                {
+                    pos = 0;
+                    rot = RotBase;
+                    if (Phase != 1) SetPhase(1, now, serverTick);
+                }
+                else if (pos <= go)
+                {
+                    pos -= wait0;
+                    rot = RotBase;
+                    if (Phase != 2) SetPhase(2, now, serverTick);
+                }
+                else if (pos <= wait1)
+                {
+                    pos = (uint)Ms(MoveTime);
+                    rot = MoveMode == 2 ? Turned() : Rotation;
+                    if (Phase != 3) SetPhase(3, now, serverTick);
+                }
+                else
+                {
+                    pos = cycle - pos;
+                    rot = MoveMode == 2 ? Turned() : Rotation;
+                    if (Phase != 3) SetPhase(4, now, serverTick);
+                }
+                bool changed = false;
+                if (rot != Rotation && Finite(rot)) { Rotation = rot; changed = true; }
+                var old = Position;
+                // m_ptMoveDir * m_fSpeed * FUN_14028d280(nPos): the point times the speed, then times the seconds
+                float sec = Sec(pos);
+                var p = new Vec3((float)PosBase.X + (float)MoveDir.X * Speed * sec,
+                    (float)PosBase.Y + (float)MoveDir.Y * Speed * sec, (float)PosBase.Z + (float)MoveDir.Z * Speed * sec);
+                if (p != old && Finite(p)) { Position = p; changed = true; }
+                Velocity = Unitize(Position - old);
+                return changed;
+            }
+        }
+
+        Vec3 Turned() => new((float)RotBase.X, (float)RotBase.Y, (float)RotBase.Z + 180f);
+
+        static bool Finite(Vec3 v) => double.IsFinite(v.X) && double.IsFinite(v.Y) && double.IsFinite(v.Z);
+
+        /// <summary>efd::Point3::Unitize: divided by the length when it is above 1e-6, else zero.</summary>
+        internal static Vec3 Unitize(Vec3 v)
+        {
+            float x = (float)v.X, y = (float)v.Y, z = (float)v.Z;
+            float len = MathF.Sqrt(x * x + y * y + z * z);
+            if (len > 1e-6f) return new(x / len, y / len, z / len);
+            return default;
+        }
     }
 
     /// <summary>The model every field breakable has: net hash 0xd3b04f05 (worldservice_1.cpp:6760).</summary>
@@ -184,6 +306,7 @@ public sealed class BreakableObjects
     {
         // a marker's name is lowercase (vfunc_1's ToLower), as FindMarkerByName looks it up
         var m = new Marker { Name = name.ToLowerInvariant(), State = state };
+        if (markers.TryGetValue(m.Name, out var was)) moving.Remove(was);
         markers[m.Name] = m;
         sortedDirty = true;
         return m;
@@ -197,7 +320,16 @@ public sealed class BreakableObjects
 
     readonly List<Marker> sorted = new();
     readonly List<Marker> fading = new();
+    readonly List<Marker> moving = new();
     bool sortedDirty;
+
+    /// <summary>A marker's position or rotation changed by its move cycle (<see cref="Marker.Step"/>): the draw, the box and
+    /// what stands on it follow.</summary>
+    public Action<Marker> Moved;
+
+    /// <summary>The markers whose props make them move (<see cref="Marker.Moves"/>), in attach order; the others cost
+    /// nothing per frame.</summary>
+    public IReadOnlyList<Marker> Moving => moving;
 
     /// <summary>
     /// The markers as WorldService m_4b0 iterates them: a CRBMap keyed by the lowercase name, so in ordinal name order.
@@ -218,11 +350,26 @@ public sealed class BreakableObjects
         }
     }
 
-    /// <summary>The frame's clock: the hides whose 500 ms fade ran out clear IsVisible (FUN_140ae07d0's timer in Update).
-    /// No loop over the markers: only the fading ones are kept.</summary>
-    public void Update(long nowMs)
+    /// <summary>The frame's clock without a server tick: the fades only.</summary>
+    public void Update(long nowMs) => Update(nowMs, null);
+
+    /// <summary>
+    /// WorldService's per-frame marker loop (worldservice_1.cpp:9650-9655): CBreakableObject::Update(GetTickCountMs2()) for
+    /// each marker. Here only the moving ones run the move cycle (<see cref="Marker.Step"/>, with
+    /// <paramref name="serverTick"/> as GetServerTickAt(now)), and the hides whose 500 ms fade ran out clear IsVisible
+    /// (FUN_140ae07d0's timer). A marker that does not move or fade is not visited.
+    /// </summary>
+    public void Update(long nowMs, int serverTick) => Update(nowMs, (int?)serverTick);
+
+    void Update(long nowMs, int? serverTick)
     {
         NowMs = nowMs;
+        if (serverTick is int tick)
+        {
+            int now = unchecked((int)nowMs);
+            for (int i = 0; i < moving.Count; i++)
+                if (moving[i].Step(now, tick)) Moved?.Invoke(moving[i]);
+        }
         for (int i = fading.Count - 1; i >= 0; i--)
         {
             var m = fading[i];
@@ -278,8 +425,18 @@ public sealed class BreakableObjects
                 ReviveAnims = string.IsNullOrEmpty(revive) ? Array.Empty<string>() : revive.Split(',', StringSplitOptions.RemoveEmptyEntries),
                 DeadEffect = e.Get("reactionEffectXml"),
                 Physics = e.Bool("NxCollision"), Group = (int)e.Number("PropCollisionGroup"),
+                MoveDelay = (float)e.Number("moveTimeOffset"), MoveTime = (float)e.Number("moveDuration"),
+                WaitStart = (float)e.Number("moveStopDurationS"), WaitEnd = (float)e.Number("moveStopDurationE"),
+                MoveMode = (int)e.Number("moveRoundType"),
             };
+            var dir = e.Vector("moveDirection");
+            m.MoveDir = Marker.Unitize(new((float)dir.X, (float)dir.Y, (float)dir.Z));
+            if (0f < m.MoveTime) m.Speed = (float)e.Number("moveDistance") / m.MoveTime;
+            m.Position = m.PosBase = new((float)m.Position.X, (float)m.Position.Y, (float)m.Position.Z);
+            m.Rotation = m.RotBase = new((float)m.Rotation.X, (float)m.Rotation.Y, (float)m.Rotation.Z);
+            if (markers.TryGetValue(m.Name, out var was)) moving.Remove(was);
             markers[m.Name] = m;
+            if (m.Moves) moving.Add(m);
             SetState(m, 2);   // its MakeNxBoxController makes the box
             n++;
         }
@@ -300,6 +457,7 @@ public sealed class BreakableObjects
     {
         markers.Clear();
         fading.Clear();
+        moving.Clear();
         sortedDirty = true;
         held.Clear();
         Holding = true;

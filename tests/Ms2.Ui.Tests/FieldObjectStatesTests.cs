@@ -467,6 +467,206 @@ public class FieldObjectStatesTests
         Assert.That(sent, Is.EqualTo(2));
     }
 
+    /// <summary>A moving NIF breakable with the props of the gratings in 52000120: 150 up in 1 s, a 1 s start wait, a 5 s
+    /// end wait, round type 2.</summary>
+    internal static FieldEntity Platform(string id, string round = "2", string dir = "0, 0, 1", string dist = "150",
+        string dur = "1", string waitS = "1", string waitE = "5", string offset = null)
+    {
+        var raw = new XEntity { Id = id, ModelName = "MS2BreakableNIF", Name = id };
+        raw.Props["Position"] = "100, 200, 300";
+        raw.Props["Rotation"] = "0, 0, 270";
+        raw.Props["moveDirection"] = dir;
+        raw.Props["moveDistance"] = dist;
+        raw.Props["moveDuration"] = dur;
+        raw.Props["moveStopDurationS"] = waitS;
+        raw.Props["moveStopDurationE"] = waitE;
+        raw.Props["moveRoundType"] = round;
+        if (offset != null) raw.Props["moveTimeOffset"] = offset;
+        var flat = new FlatModel { Name = "MS2BreakableNIF" };
+        flat.Mixins.Add("MS2Breakable");
+        return new FieldEntity { Raw = raw, Flat = flat };
+    }
+
+    static (BreakableObjects, BreakableObjects.Marker) OnePlatform(FieldEntity e)
+    {
+        var b = new BreakableObjects();
+        b.AttachField(new[] { e });
+        return (b, b.Find(e.Raw.Id));
+    }
+
+    [Test]
+    public void APlatformRunsTheStartWaitTheWayUpTheEndWaitAndTheWayBack()
+    {
+        // CBreakableObject::Update (breakableobject.cpp:376-423): wait0 1000, go 2000, wait1 7000, back 8000 = the cycle
+        var (b, m) = OnePlatform(Platform("p"));
+        Assert.That(b.Moving, Is.EqualTo(new[] { m }));
+        var seen = new List<(int t, double z, double rz, int phase)>();
+        foreach (int t in new[] { 0, 500, 1000, 1500, 2000, 3000, 7000, 7500, 8000, 9500 })
+        {
+            b.Update(t, t);
+            seen.Add((t, m.Position.Z, m.Rotation.Z, m.Phase));
+        }
+        Assert.That(seen, Is.EqualTo(new[]
+        {
+            (0, 300.0, 270.0, 1), (500, 300.0, 270.0, 1), (1000, 300.0, 270.0, 1), (1500, 375.0, 270.0, 2),
+            (2000, 450.0, 270.0, 2), (3000, 450.0, 450.0, 3), (7000, 450.0, 450.0, 3), (7500, 375.0, 450.0, 3),
+            (8000, 300.0, 270.0, 1), (9500, 375.0, 270.0, 2),
+        }));
+        Assert.That((m.Position.X, m.Position.Y, m.PosBase.Z, m.RotBase.Z), Is.EqualTo((100.0, 200.0, 300.0, 270.0)));
+    }
+
+    [Test]
+    public void TheCycleStartsAtTheServerTickAndThenRunsOnTheLocalClock()
+    {
+        // m_nPhaseTime = GetServerTickAt(now) at the first frame and at each phase change; the time adds now - m_nPhaseStart
+        var (b, m) = OnePlatform(Platform("p"));
+        b.Update(100000, 1500);
+        Assert.That(m.Position.Z, Is.EqualTo(375.0));
+        b.Update(100250, 0);   // the server tick is read only at a phase change
+        Assert.That(m.Position.Z, Is.EqualTo(412.5));
+        b.Update(100700, 15500);   // 2200: the end wait begins, its phase time is this tick
+        Assert.That((m.Position.Z, m.Phase), Is.EqualTo((450.0, 3)));
+        b.Update(100800, 0);   // (15500 + 100) % 8000 = 7600: the way back, 400 ms from the base
+        Assert.That((m.Position.Z, m.Phase), Is.EqualTo((360.0, 3)));
+    }
+
+    [Test]
+    public void TheVelocityIsTheUnitizedStepAndZeroWhileItWaits()
+    {
+        var (b, m) = OnePlatform(Platform("p"));
+        b.Update(1200, 1200);
+        b.Update(1300, 1300);
+        Assert.That(m.Velocity, Is.EqualTo(new Vec3(0, 0, 1)));
+        b.Update(3000, 3000);
+        b.Update(3100, 3100);
+        Assert.That(m.Velocity, Is.EqualTo(default(Vec3)));
+        b.Update(7500, 7500);
+        b.Update(7600, 7600);
+        Assert.That(m.Velocity, Is.EqualTo(new Vec3(0, 0, -1)));
+    }
+
+    [Test]
+    public void SyncBOffsetsTheCycleAndSyncAZeroHoldsItAtSyncC()
+    {
+        // FUN_140adeaa0 stores the packet's a, b, c; the time adds m_nSyncB; with m_nSyncA 0 the place is m_nSyncC % cycle once
+        // the time passes m_nSyncC
+        var (b, m) = OnePlatform(Platform("p"));
+        b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry("p", 2, 1, 1500, 0) }));
+        b.Update(0, 0);
+        Assert.That(m.Position.Z, Is.EqualTo(375.0));
+
+        (b, m) = OnePlatform(Platform("q"));
+        b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry("q", 2, 0, 0, 1250) }));
+        b.Update(1100, 1100);
+        Assert.That(m.Position.Z, Is.EqualTo(315.0).Within(1e-3));
+        b.Update(5000, 5000);
+        Assert.That(m.Position.Z, Is.EqualTo(337.5));
+        b.Update(9000, 9000);
+        Assert.That(m.Position.Z, Is.EqualTo(337.5));
+    }
+
+    [Test]
+    public void AFieldMarkerStartsWithSyncAOneSoItRunsWithoutAPacket()
+    {
+        var (b, m) = OnePlatform(Platform("p"));
+        Assert.That(m.SyncA, Is.EqualTo(1));
+        b.Update(5000, 5000);
+        Assert.That(m.Position.Z, Is.EqualTo(450.0));
+    }
+
+    [Test]
+    public void RoundTypeOneEndsAtTheEndWaitAndJumpsBack()
+    {
+        var (b, m) = OnePlatform(Platform("p", round: "1"));
+        b.Update(6999, 6999);
+        Assert.That((m.Position.Z, m.Rotation.Z), Is.EqualTo((450.0, 270.0)));
+        b.Update(7000, 7000);
+        Assert.That((m.Position.Z, m.Phase), Is.EqualTo((300.0, 1)));
+    }
+
+    [Test]
+    public void OnlyRoundTypeTwoTurnsAndTheWayBackFromAnotherPhaseIsPhaseFour()
+    {
+        var (b, m) = OnePlatform(Platform("p", round: "0"));
+        b.Update(7500, 7500);
+        Assert.That((m.Position.Z, m.Rotation.Z, m.Phase), Is.EqualTo((375.0, 270.0, 4)));
+        b.Update(7600, 7600);
+        Assert.That(m.Phase, Is.EqualTo(4));
+
+        (b, m) = OnePlatform(Platform("q"));
+        b.Update(6900, 6900);
+        b.Update(7500, 7500);
+        Assert.That((m.Rotation.Z, m.Phase), Is.EqualTo((450.0, 3)));
+    }
+
+    [Test]
+    public void TheMoveTimeOffsetAddsToTheCycle()
+    {
+        var (b, m) = OnePlatform(Platform("p", offset: "0.5"));
+        b.Update(1000, 1000);
+        Assert.That(m.Position.Z, Is.EqualTo(375.0));
+    }
+
+    [Test]
+    public void OnlyStatesTwoFiveAndSixMove()
+    {
+        foreach (var (state, moves) in new[] { (0, false), (1, false), (2, true), (3, false), (4, false), (5, true), (6, true) })
+        {
+            var (b, m) = OnePlatform(Platform("p"));
+            b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry("p", (byte)state, 1, 0, 0) }));
+            b.Update(1500, 1500);
+            Assert.That(m.Position.Z, Is.EqualTo(moves ? 375.0 : 300.0), $"state {state}");
+        }
+    }
+
+    [Test]
+    public void MovedFiresOnlyWhenThePlaceOrTurnChanges()
+    {
+        var (b, m) = OnePlatform(Platform("p"));
+        int moved = 0;
+        b.Moved = x => { Assert.That(x, Is.SameAs(m)); moved++; };
+        b.Update(100, 100);   // the base: nothing changed
+        b.Update(1500, 1500);
+        b.Update(1600, 1600);
+        b.Update(2500, 2500);   // the end wait: the top and the turn
+        b.Update(2600, 2600);
+        b.Update(3600, 3600);
+        Assert.That(moved, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void AMarkerWithoutAMoveTimeOrDistanceIsNotInTheMovingList()
+    {
+        var b = new BreakableObjects();
+        b.AttachField(new[] { Platform("a", dur: "0"), Platform("b", dist: "0"), Platform("c"), LiftEntityAsBreakable("d") });
+        Assert.That(b.Moving.Select(m => m.Name), Is.EqualTo(new[] { "c" }));
+        b.AttachField(new[] { Platform("c", dur: "0") });   // the same name replaces it
+        Assert.That(b.Moving, Is.Empty);
+        b.AttachField(new[] { Platform("c") });
+        b.ClearMarkers();
+        Assert.That(b.Moving, Is.Empty);
+    }
+
+    static FieldEntity LiftEntityAsBreakable(string id)
+    {
+        var flat = new FlatModel { Name = "MS2BreakableNIF" };
+        flat.Mixins.Add("MS2Breakable");
+        return new FieldEntity { Raw = new XEntity { Id = id, ModelName = "MS2BreakableNIF", Name = id }, Flat = flat };
+    }
+
+    [Test]
+    public void TheMoveCycleAllocatesNothing()
+    {
+        var b = new BreakableObjects();
+        b.AttachField(new[] { Platform("a"), Platform("b", round: "1"), Platform("c", offset: "2") });
+        int n = 0;
+        b.Moved = _ => n++;
+        int t = 0;
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 200; i++) { t += 37; b.Update(t, t); } });
+        Assert.That(bytes, Is.EqualTo(0));
+        Assert.That(n, Is.GreaterThan(0));
+    }
+
     internal static FieldEntity TargetBox(string id, string target, string pos = "0, 0, 0", string rot = "0, 0, 0")
     {
         var raw = new XEntity { Id = id, ModelName = "MS2LiftableTargetBox", Name = id };
