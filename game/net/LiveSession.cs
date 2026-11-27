@@ -3095,7 +3095,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.DungeonReward))
             {
                 var dr = Ms2.Net.Packets.DungeonRewardPacket.Read(p.Reader());   // UIDungeonRewardDialog::OnPacket (uidungeonrewarddialog.cpp:386)
-                GD.Print($"live: dungeon reward mode {dr.Mode} win {dr.Win} room {dr.RoomId} meso {dr.Main.GetMeso()} exp {dr.Main.GetExp()} items {dr.Main.Items.Count}");
+                GD.Print($"live: dungeon reward mode {dr.Mode} win {dr.Win} room {dr.RoomId} meso {dr.Main.GetMeso()}+{dr.Bonus.GetMeso()} exp {dr.Main.GetExp()}+{dr.Bonus.GetExp()} items {dr.Main.Items.Count}+{dr.Bonus.Items.Count}");   // main+bonus: the window adds the bonus after its two timers (FUN_140e23690)
                 DungeonRewardReceived?.Invoke(dr);
             }
             else if (game.Is(p, Inbound.RoomDungeon))
