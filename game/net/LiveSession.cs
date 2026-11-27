@@ -2984,6 +2984,10 @@ public partial class LiveSession : Node
                 Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
                 GD.Print($"live: dungeon revive count {Me.DungeonRevivalsUsed}");
             }
+            else if (game.Is(p, Inbound.RoomStageDungeon))
+                OnRoomStageDungeon(RoomStageDungeonPacket.Read(p.Reader()));   // OnRoomStageDungeon (networkservice.cpp:1082)
+            else if (game.Is(p, Inbound.DungeonMission))
+                OnDungeonMission(p.Reader());   // RoomStageDungeonCli::OnPacket (roomstagedungeoncli.cpp)
             else if (game.Is(p, Inbound.AutoRevive)) AutoReviveStarted?.Invoke(AutoRevive.Read(p.Reader()).DurationMs);   // OnAutoRevive (:4332)
             else if (game.Is(p, Inbound.ItemPutOnOrOff))
             {
