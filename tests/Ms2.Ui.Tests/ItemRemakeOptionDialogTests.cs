@@ -214,6 +214,26 @@ public class ItemRemakeOptionDialogTests
     }
 
     [Test]
+    public void IngredientCountAboveTheSlotMaxIsNotCapped()
+    {
+        // FUN_1412a0e30 (:823) makes each cost item with InitWithCount (item.cpp:2644), which keeps the count as given
+        var r = new Rig();
+        r.AddGood(41);
+        r.Open();
+        int lockItem = r.Model.Tables.Items.TagItemId(0x66);
+        var data = r.Model.Tables.Items.Get(lockItem);
+        Assert.That(data, Is.Not.Null);
+        int need = (int)data.SlotMax + 1;
+        r.Accept(41, new EnchantIngredient(lockItem, 0, need));
+        r.ByTag[0x66] = need - 1;
+        r.C.OnClickRemake(41, -1);
+        Assert.That((r.Sent.Count, r.Notices.Single()), Is.EqualTo((0, r.T("s_itemremake_error_server_lack_price"))), "one short of the full count");
+        r.ByTag[0x66] = need;
+        r.C.OnClickRemake(41, -1);
+        Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ChangeAttributesRequest.Remake(41))));
+    }
+
+    [Test]
     public void ShortMesoTagRowIsPaidWithMeso()
     {
         // a short tag 0x60 row costs (need - have) * 1000 meso

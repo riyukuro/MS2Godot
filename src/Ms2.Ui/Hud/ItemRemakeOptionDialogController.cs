@@ -365,7 +365,7 @@ public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOw
             int itemId = g.ItemId != 0 ? g.ItemId : Model.Tables.Items.TagItemId(g.Tag);
             var it = Item.Create(Model.Tables.Items, itemId, ItemTooltip.ItemRank(Model.Tables.Items, itemId));
             if (it == null) continue;                                                 // InitWithCount fails
-            it.SetCountClamped(g.Count);
+            it.Count = (uint)g.Count;                                                 // InitWithCount: m_6c as given, no slot cap
             int have = HaveOf(it);
             string key = IngredientPrefix + i.ToString(CultureInfo.InvariantCulture);
             list.Add(Host.Obj(("binding", BindItemToSlot(it, key, names1b8)), ("countText", IngredientCountText(have, g.Count))));
