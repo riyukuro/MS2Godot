@@ -604,7 +604,8 @@ public sealed partial class RemoteLayer : Node3D
     }
 
     /// <summary>
-    /// PCBase::FUN_141671c20's vfunc_111 per hit (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
+    /// PCBase::FUN_141671c20's vfunc_111 per hit, or OnSplashDamageRecord's for a region or splash record (modes 5 and 6,
+    /// the region skill objects' <see cref="RegionSkillOf"/>), (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
     /// show test (FUN_141913bd0) with the battle options; the party mask is IsMemberByCharId on a player's character.
     /// A player target outside the field's sight range gives none (pcbase.cpp:3930); the local player is never outside.
     /// </summary>
@@ -615,7 +616,7 @@ public sealed partial class RemoteLayer : Node3D
         isObject ??= Tracker.HasObject;
         UpdateMagicPlayerPos();
         pcPosition ??= PcPosition;
-        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject, SkillDamage, pcPosition, MagicSight());
+        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject, SkillDamage, pcPosition, MagicSight(), RegionSkillOf);
         var o = GameOptions.Current?.BattleOption ?? defaultBattle;
         foreach (var n in numbers)
             if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask))

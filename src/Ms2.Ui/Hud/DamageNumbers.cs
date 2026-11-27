@@ -31,7 +31,18 @@ public static class DamageNumbers
     /// (pcbase.cpp:3962). An npc target has no such test.
     /// STILL-OPEN: main type 0x12's miss effect when it has none (Constants m_8350 per type 2 hit, pcbase.cpp:3942), the
     /// tag 0x11 hit point, and the magic service's delivery of the hit (FUN_14146b440, only with a
-    /// caster object; the numbers are made when the packet comes); modes 0, 5 and 6 are not listed here (mode 3 is the dot number).
+    /// caster object; the numbers are made when the packet comes); mode 0 gives none (mode 3 is the dot number).
+    /// <para>Modes 5 and 6 (OnRegionSkillDamage @0x14171dc40, scenestategame.cpp:7766-7823; OnSplashDamage @0x14171e440,
+    /// :5730-5755): per target a CSplashDamageRecord (Init @0x14175b1c0, skillrecord.cpp:677) that the magic service hands to
+    /// the target (CMagicService::FUN_14146bc80 @0x14146bc80, magicdata.cpp:2844, vf35_End), whose vfunc_35 (PC::vfunc_35
+    /// pc.cpp:1082, CNpc::vfunc_35 @0x141098940) runs PCBase::OnSplashDamageRecord (@0x1416721d0, pcbase.cpp:3970): the
+    /// attack's HasDamage, the sight test of a PC target, then one vfunc_111 per hit with abs(damage) and the record's owner.
+    /// Mode 5's record is the region skill object's skill and level (<paramref name="regionSkill"/>; nothing without the
+    /// object) at motion 0 and the packet's attack, its owner the packet's owner; mode 6's is the packet's skill and level at
+    /// motion 0, attack 0, owner 0 (Init(id, 0, ...)). A target that is no object of the field gets none (FindObjectById,
+    /// :5751 / :7790). A skill or level the table lacks fails Init and ends the packet (:5743 / :7784).
+    /// STILL-OPEN: mode 5's npc with property tag 0x1d and no collision anchors ends the packet (:7799-7800); its
+    /// FUN_141671c20 route (CNpc::vfunc_35) gives the same numbers.</para>
     /// <para>Mode 4 (CSceneStateGame::FUN_14171d820 @0x14171d820, scenestategame.cpp:5685-5726): nothing when the owner is
     /// no object of the field (FUN_141bd1200, <paramref name="isObject"/>; a null test means none is); with the show byte,
     /// each nonzero value of the three in order is one number of type 5, 6 and 7 (FUN_1417403b0 @0x1417403b0, :9005) on the
@@ -40,8 +51,30 @@ public static class DamageNumbers
     /// and CNpc::vfunc_111's skip of a dead npc whose data has CorpseHitAble (@0x141090620).</para>
     /// </summary>
     public static void Records(SkillDamage d, List<DamageNumber> into, System.Func<int, bool> isObject, SkillDamageTable damage,
-        System.Func<int, System.Numerics.Vector3?> pcPosition = null, FieldSight sight = default)
+        System.Func<int, System.Numerics.Vector3?> pcPosition = null, FieldSight sight = default,
+        System.Func<int, (int Skill, short Level)?> regionSkill = null)
     {
+        if (d.Mode is 5 or 6)
+        {
+            int skill = d.SkillId, attack = 0, owner = 0;
+            short level = d.Level;
+            if (d.Mode == 5)
+            {
+                if (regionSkill?.Invoke(d.RegionId) is not { } region) return;
+                (skill, level) = region;
+                attack = d.AttackPoint;
+                owner = d.OwnerId;
+            }
+            if (damage?.Get(skill, level, 0, attack)?.HasDamage != true) return;
+            foreach (var t in d.Targets)
+            {
+                if (isObject == null || !isObject(t.TargetId)) continue;
+                if (pcPosition?.Invoke(t.TargetId) is System.Numerics.Vector3 hitAt && sight.IsOutside(hitAt)) continue;
+                foreach (var h in t.Hits)
+                    into.Add(new DamageNumber(t.TargetId, h.Damage < 0 ? -h.Damage : h.Damage, h.Flag == 8 ? 3 : h.Flag, owner));
+            }
+            return;
+        }
         if (d.Mode == 4)
         {
             if (isObject == null || !isObject(d.OwnerId) || !d.ShowValues) return;

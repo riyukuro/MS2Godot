@@ -159,4 +159,46 @@ public class DamageNumbersTests
         DamageNumbers.Records(d, list, id => id == 10, Damage);
         Assert.That(list, Is.Empty, "no show byte");
     }
+
+    [Test]
+    public void RegionAndSplashHitsAreNumbersOnTheirTargets()
+    {
+        // OnRegionSkillDamage / OnSplashDamage -> CSplashDamageRecord -> OnSplashDamageRecord (pcbase.cpp:3970): mode 5 is
+        // the region object's skill and level at motion 0 and the packet's attack, owned by the packet's owner; mode 6 the
+        // packet's skill at motion 0, attack 0, owner 0
+        System.Func<int, (int, short)?> regions = id => id == 9 ? (100, (short)1) : null;
+        var region = new SkillDamage { Mode = 5, OwnerId = 77, RegionId = 9, AttackPoint = 0 };
+        region.Targets.Add(new HitTarget(5, new[] { new Hit(0, 120), new Hit(8, -40) }, default, default));
+        region.Targets.Add(new HitTarget(6, new[] { new Hit(1, 50) }, default, default));
+        region.Targets.Add(new HitTarget(4, new[] { new Hit(0, 70) }, default, default));
+        var list = new List<DamageNumber>();
+        System.Func<int, bool> objects = id => id is 5 or 6;
+        DamageNumbers.Records(region, list, objects, Damage, null, default, regions);
+        Assert.That(list, Is.EqualTo(new[]
+        {
+            new DamageNumber(5, 120, 0, 77), new DamageNumber(5, 40, 3, 77), new DamageNumber(6, 50, 1, 77),
+        }), "abs value, type 8 becomes 3, a target that is no object gives none");
+        list.Clear();
+        region.AttackPoint = 1;
+        DamageNumbers.Records(region, list, objects, Damage, null, default, regions);
+        Assert.That(list, Is.Empty, "the region's attack 1 has no damage value (HasDamage)");
+        region.AttackPoint = 0;
+        region.RegionId = 8;
+        DamageNumbers.Records(region, list, objects, Damage, null, default, regions);
+        Assert.That(list, Is.Empty, "no region skill object: the handler returns");
+        region.RegionId = 9;
+        System.Func<int, System.Numerics.Vector3?> pc = id => id == 6 ? new System.Numerics.Vector3(1000, 0, 0) : null;
+        DamageNumbers.Records(region, list, objects, Damage, pc, new FieldSight(999f, System.Numerics.Vector3.Zero), regions);
+        Assert.That(list.Select(n => n.TargetId), Is.EqualTo(new[] { 5, 5 }), "a PC target outside the sight range gives none");
+
+        list.Clear();
+        var splash = new SkillDamage { Mode = 6, SkillId = 100, Level = 1 };
+        splash.Targets.Add(new HitTarget(5, new[] { new Hit(0, 90) }, default, default));
+        DamageNumbers.Records(splash, list, objects, Damage);
+        Assert.That(list, Is.EqualTo(new[] { new DamageNumber(5, 90, 0, 0) }), "owner 0 (Init(id, 0, ...))");
+        list.Clear();
+        splash.Level = 2;
+        DamageNumbers.Records(splash, list, objects, Damage);
+        Assert.That(list, Is.Empty, "level 2's attack has no damage");
+    }
 }
