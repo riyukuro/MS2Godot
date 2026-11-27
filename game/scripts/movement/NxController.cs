@@ -56,21 +56,26 @@ public sealed class NxController
     /// as its body and the body's shape index.</summary>
     public System.Action<GodotObject, int> ShapeHit;
 
-    /// <summary>Groups (collision layer bits) left out of the sweep: GameObjectController m_nIgnoreGroups. The sweeps'
-    /// motion test reads the body's own mask, so a change is applied to it here, once: setting a body's mask moves every
-    /// shape in the broadphase and wakes the body (GodotCollisionObject3D::_shape_changed), too slow to do per sweep.</summary>
-    public uint IgnoreGroups
+    /// <summary>Groups (collision layer bits) left out of the sweep: GameObjectController m_nIgnoreGroups, applied by the
+    /// next <see cref="Move"/>.</summary>
+    public uint IgnoreGroups { get; set; }
+
+    /// <summary>The body mask writes so far. The sweeps' motion test reads the body's own mask, so a move's groups go on it;
+    /// setting a body's mask moves every shape in the broadphase and wakes the body (GodotCollisionObject3D::_shape_changed),
+    /// too slow to do per sweep, so a move writes it only when its groups differ from the last move's.</summary>
+    public int MaskWrites { get; private set; }
+    uint applied, groups;
+
+    /// <summary>move(disp, m_nGroups & ~nExclude & ~m_nIgnoreGroups) (GameObjectController::Move, physxhelpers.cpp:213-220):
+    /// the groups left out of this move on the body's mask, written only when they changed.</summary>
+    void ApplyGroups(uint off)
     {
-        get => ignoreGroups;
-        set
-        {
-            if (value == ignoreGroups) return;
-            if (ignoreGroups == 0) groups = body.CollisionMask;
-            ignoreGroups = value;
-            body.CollisionMask = groups & ~value;                               // move(disp, m_nGroups & ~m_nIgnoreGroups)
-        }
+        if (off == applied) return;
+        if (applied == 0) groups = body.CollisionMask;
+        applied = off;
+        body.CollisionMask = groups & ~off;
+        MaskWrites++;
     }
-    uint ignoreGroups, groups;
 
     /// <summary>onControllerHit (0x140cfaec0) in the last move: the side or down pass touched another controller (the up
     /// pass runs with the callbacks off, :1036).</summary>
@@ -89,9 +94,11 @@ public sealed class NxController
         faceGrids = faces ?? new FaceGrids();
     }
 
-    /// <summary>Controller::move (CharacterController.cpp:1205-1336): the body is moved by <paramref name="disp"/>.</summary>
-    public Hit Move(Vector3 disp)
+    /// <summary>Controller::move (CharacterController.cpp:1205-1336): the body is moved by <paramref name="disp"/>, the
+    /// groups in <see cref="IgnoreGroups"/> and <paramref name="exclude"/> (Move's nExcludeGroups, this move only) left out.</summary>
+    public Hit Move(Vector3 disp, uint exclude = 0)
     {
+        ApplyGroups(IgnoreGroups | exclude);
         var backup = body.GlobalPosition;
         HitController = false;
         walkExperiment = false;

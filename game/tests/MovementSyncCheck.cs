@@ -14,6 +14,8 @@ namespace Ms2Godot.Tests;
 ///   bodies' (whose sweeps end in the end test), allocate at most 8 B per move;
 ///   bodies jumping on a 200 m floor box and on a mesh terrain never fall through, nor bodies crossing one-sided walls from
 ///   behind on that box.
+/// - A skill move's ignored groups (Move's nExcludeGroups) go on the body's mask when the skill starts and come off when it
+///   ends: two mask writes for the whole move, not two around each move and its slide.
 /// - Riding: the game tick makes the mount's records (scenestategame.cpp:1362-1368), which go out as RideSync
 ///   (StateRideeController::vfunc_0, state.cpp:537-562); the rider's own records wait for the ride off.
 /// Quits with 0 when all hold, else 1.
@@ -323,7 +325,52 @@ public partial class MovementSyncCheck : Node3D
         bool okIgnored = perIgnored <= 8f;
         GD.Print($"movement sync check: with ignored groups {perIgnored:0.0} B per move (cap 8), {sw.Elapsed.TotalMilliseconds * 1000 / lap:0.0} us per move: {(okIgnored ? "OK" : "FAIL")}");
         b.QueueFree();
-        return ok && okIgnored;
+        return ok && okIgnored && SkillMoveMaskWrites(dirs);
+    }
+
+    // A skill move (a motion with ignoreCollisionGroups, Move's nExcludeGroups) of many steps, each a move and its slide:
+    // the body's mask is written when the skill's groups go on and when they come off, not per move. The old way (the
+    // ignore groups set around each move) is timed beside it on a second body: two mask writes per move.
+    bool SkillMoveMaskWrites(Vector3[] dirs)
+    {
+        const int steps = 240, rounds = 5;
+        const uint exclude = Movement.MoveConfig.NpcLayer;
+        var (b, nx) = Bodies(1, 4950)[0];          // both on the step box (PCs do not block PCs: 0x399 has no group 2)
+        var (b2, nx2) = Bodies(1, 4950)[0];
+        uint groups = b2.CollisionMask;
+        var sw = new System.Diagnostics.Stopwatch();
+        var swOld = new System.Diagnostics.Stopwatch();
+        int writes = 0;
+        bool held = true, back = true;
+        for (int r = 0; r < rounds; r++)        // the two ways alternate from the same start, so neither has the warm cache
+        {
+            b.GlobalPosition = b2.GlobalPosition = new Vector3(4950, 25, 0);
+            for (int f = 0; f < 30; f++) { nx.Move(dirs[0]); nx2.Move(dirs[0]); }
+            int w0 = nx.MaskWrites;
+            sw.Start();
+            for (int f = 0; f < steps; f++) { nx.Move(dirs[f / 60 % 4], exclude); nx.Move(Vector3.Zero, exclude); }
+            sw.Stop();
+            held &= b.CollisionMask == (Movement.MoveConfig.PcGroups & ~exclude);
+            nx.Move(dirs[0]);
+            writes = System.Math.Max(writes, nx.MaskWrites - w0);
+            back &= b.CollisionMask == Movement.MoveConfig.PcGroups;
+            swOld.Start();
+            for (int f = 0; f < steps; f++)
+                for (int m = 0; m < 2; m++)
+                {
+                    b2.CollisionMask = groups & ~exclude;
+                    nx2.Move(m == 0 ? dirs[f / 60 % 4] : Vector3.Zero);
+                    b2.CollisionMask = groups;
+                }
+            swOld.Stop();
+        }
+        b.QueueFree();
+        b2.QueueFree();
+        bool ok = writes == 2 && held && back;
+        GD.Print($"movement sync check: a {steps}-step skill move writes the body mask {writes} time(s) (2: on and off; set around " +
+                 $"each move it is {4 * steps}), {sw.Elapsed.TotalMilliseconds * 1000 / (steps * rounds):0.0} us per step against " +
+                 $"{swOld.Elapsed.TotalMilliseconds * 1000 / (steps * rounds):0.0} us with the mask set around each move: {(ok ? "OK" : "FAIL")}");
+        return ok;
     }
 
     // Eight bodies drop onto a bumpy mesh terrain rising to a slope (1 m cells, two-sided, no floor under it) and walk and

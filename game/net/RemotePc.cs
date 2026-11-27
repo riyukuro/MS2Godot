@@ -254,14 +254,7 @@ public sealed partial class RemotePc : IRemotePc
     void ControllerMove(Vector3 delta, float dt, uint exclude = 0)
     {
         moveShapeHit = false;
-        if (exclude != 0 && (exclude & ~nx.IgnoreGroups) != 0)
-        {
-            uint keep = nx.IgnoreGroups;
-            nx.IgnoreGroups = keep | exclude;
-            nxHit = nx.Move(delta);
-            nx.IgnoreGroups = keep;
-        }
-        else nxHit = nx.Move(delta);
+        nxHit = nx.Move(delta, exclude);
         bool other = nx.HitController;
         if (nxHit == NxController.Hit.Up) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;
         if (nxHit == NxController.Hit.Down && other) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;
