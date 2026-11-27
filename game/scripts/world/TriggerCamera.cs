@@ -104,6 +104,7 @@ public sealed class TriggerCamera
     float interpElapsed, elapsed, duration;
     ILocalCameraFollow follow;
     Ms2.Ui.ILocalCameraTarget localTarget;
+    System.Func<int, System.Numerics.Vector3, bool> localBoxContains;   // localTarget.BoxContains, made once in Bind: AutoCheck runs per frame
     Ms2.Ui.LocalTargetCamera local;
     bool keepDistance;          // the follow mode's m_bc (FUN_14183cc80)
     float keptDistance;         // g_143aef240
@@ -119,7 +120,7 @@ public sealed class TriggerCamera
     public TriggerCamera(ITargetCamera target) { this.target = target; }
 
     /// <summary>Binds the follow camera's local-mode side and the camera target (the own player).</summary>
-    public void Bind(ILocalCameraFollow f, Ms2.Ui.ILocalCameraTarget t) { follow = f; localTarget = t; }
+    public void Bind(ILocalCameraFollow f, Ms2.Ui.ILocalCameraTarget t) { follow = f; localTarget = t; localBoxContains = t != null ? t.BoxContains : null; }
 
     /// <summary>GetModeType: 2 follow, 3 fly-by, 4 lock.</summary>
     public int ModeType => mode;
@@ -290,7 +291,7 @@ public sealed class TriggerCamera
     {
         if (!LocalCamerasOn || Setups.Count == 0 || mode != Target || follow == null) return;
         if (localTarget?.Position is not { } p) return;
-        if (Ms2.Ui.LocalCameraSetup.FindAuto(Setups, p, localTarget.BoxContains) is { } s) StartLocal(s);
+        if (Ms2.Ui.LocalCameraSetup.FindAuto(Setups, p, localBoxContains) is { } s) StartLocal(s);
     }
 
     void StartLocal(in Ms2.Ui.LocalCameraSetup s)
