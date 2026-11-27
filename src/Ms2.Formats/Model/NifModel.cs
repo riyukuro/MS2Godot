@@ -60,6 +60,11 @@ public sealed class ModelMesh
     /// by GetWorldToSkinTransform = SkeletonTransform * RootBoneParentWorld^-1 (NiSkinningMeshModifier.inl:58-65) and the mesh
     /// world transform then places it, so in skeleton (scene root) space the world bound is this times the merged bound.</summary>
     public Xform BoneBoundsToRoot = Xform.Identity;
+    /// <summary>Skinned meshes: the frame PerformPick tests the mesh's triangles in, relative to the scene root. The pick reads
+    /// the POSITION stream as stored, unskinned, at the mesh's world transform (FindIntersectionsMeshPosition,
+    /// NiCollisionTraversals.cpp:2248-2330); the held <see cref="Positions"/> were moved to the scene root by the skin's
+    /// first bone bind, so this is the mesh node relative to the scene root times the inverse of that move.</summary>
+    public Xform PickToRoot = Xform.Identity;
     public bool AlphaTest;                // has an NiAlphaProperty
     public float[] Ambient, Diffuse, Emissive;   // NiMaterialProperty colours (rgb), or null without a material
     public float[] Specular;              // NiMaterialProperty specular colour (rgb), or null
@@ -1310,6 +1315,7 @@ public sealed class ModelData
                 int mpar = parent.TryGetValue(i, out var mp) ? mp : root;
                 var meshToRoot = (boneOf.TryGetValue(mpar, out var mpb) ? md.Bones[mpb].World : Xform.Identity).Compose(XformOf(b));
                 mesh.BoundToRoot = meshToRoot;
+                mesh.PickToRoot = meshToRoot;
                 if ((sk.IntOr("Flags", 0) & 2) != 0)
                 {
                     var bb = sk.Structs("Bone Bounds");
@@ -1329,7 +1335,7 @@ public sealed class ModelData
                     // usable bind there: the skin's Skeleton Transform places the skin in the scene root instead (identity in
                     // the select-pose effect nifs, so its direction is not checked)
                     if (toRoot.S == 0) toRoot = XformOf(sk.Struct("Skeleton Transform"));
-                    if (!IsIdentity(toRoot)) ToRootSpace(mesh, toRoot);
+                    if (!IsIdentity(toRoot)) { ToRootSpace(mesh, toRoot); mesh.PickToRoot = meshToRoot.Compose(toRoot.Inverse()); }
                     // each skin bone's bind (scene root -> bone) from its bone transform, the mesh now being in root space
                     var rootToSkin = toRoot.Inverse();
                     mesh.SkinBinds = new Dictionary<int, Xform>();

@@ -24,8 +24,26 @@ namespace Ms2Godot.World;
 /// The instanced entity leaves its instancing while it fades (0xa0b6b179 set when HardwareInstancingService::FUN_1413d6f40
 /// holds, cleared on release): here its copy in the shared MultiMesh is hidden and the entity draws alone with the
 /// faded material (<see cref="ModelBuilder.FadeMaterial"/>). Not modelled: the sorting of the faded entities
-/// (SortEntities), AlphaShellComposite::MarkScene, the shadow and glow of a faded entity, and props drawn elsewhere (animated
-/// props); the frustum test uses the entity's merged mesh box for its NiBound.
+/// (SortEntities), AlphaShellComposite::MarkScene, the shadow and glow of a faded entity; the frustum test uses the entity's
+/// merged mesh box for its NiBound.
+///
+/// Only a mesh whose active material is an MS2StandardMaterial is faded (Apply, bgtransparencymgr.cpp:517-520: the
+/// DynamicCast of GetActiveMaterial); a glass mesh or one without a material keeps its own draw, and the entity is in the map
+/// all the same.
+///
+/// The props world/FieldProps draws (models that animate themselves, an entity's own or a reactable twin's) are targets
+/// too, as the same entity (<see cref="UseProps"/>). Their pick is PerformPick's on each mesh as it is now: the ray must
+/// meet the mesh's world bound first (FindIntersectionsRenderObject, FindBoundIntersect, NiCollisionUtils.inl:24-46);
+/// then SimpleSkinPickObjectPolicy (NiPick.cpp:97-118) tests its triangles, the POSITION stream as stored at the mesh's
+/// world transform, unskinned for a skinned mesh (ModelMesh.PickToRoot), and failing that a skinned mesh's bone bounds,
+/// each at its bone's world transform (FindIntersectionsSkinnedMeshBounds, NiCollisionTraversals.cpp:2332-2393), which
+/// only a RECOMPUTE_BOUNDS skin has (ModelMesh.BoneBounds). A skinned mesh's world bound is its merged bone bounds
+/// (CharacterAlphaSort.SkinnedBound), else its model bound at the mesh node. A faded prop mesh draws with the faded
+/// material as its override. Their frustum sphere is the merge of the meshes' world bounds now.
+///
+/// STILL-OPEN: the POSITION lock needs the stream's CPU read access (NiDataStreamElementLock in
+/// FindIntersectionsMeshPosition); the stream access flags are not read here, so every mesh is picked as if readable.
+/// A skinned mesh's node is placed at its file pose under the skeleton (ModelMesh.BoundToRoot), as for its alpha key.
 ///
 /// STILL-OPEN: the camera option's user flags. BGTransparencyMgr::SetUserFlags is fed from the game option
 /// (gameoption.cpp:534, mypc.cpp:1002), and m_nFlags 0 turns the test off and sends every faded entity back to fade-in;
@@ -45,30 +63,57 @@ public partial class FieldFade : Node
         public List<FieldBuilder.FadeDraw> Draws;
         public int Group;
         public Vector3 Centre; public float Radius;
+        /// <summary>The sphere of <see cref="Draws"/> alone (they do not move).</summary>
+        public Vector3 DrawsCentre; public float DrawsRadius;
+        /// <summary>The entities world/FieldProps draws for it (its own, a reactable twin), and their meshes once built.</summary>
+        public List<FieldEntity> PropEntities;
+        public List<PropPick> Props;
+    }
+
+    /// <summary>One mesh of an animated prop, with what its pick needs.</summary>
+    sealed class PropPick
+    {
+        public FieldProps.PropMesh M;
+        public bool HasBound; public Vector3 Centre; public float Radius;   // the model bound
+        public Transform3D PickToSkel, BoundToSkel;                         // skinned: relative to the skeleton
+        public int[] Bones; public Vector3[] BoneCentres; public float[] BoneRadii;   // RECOMPUTE_BOUNDS
     }
 
     sealed class Element
     {
         public float Alpha;
         public ulong Start;
+        /// <summary>The fade-out's end value is set (<see cref="UpdateFadeOut"/>).</summary>
+        public bool Settled;
         public bool Running(ulong now) => now - Start < FadeMs;
         public float Ratio(ulong now) => Math.Min((now - Start) / (float)FadeMs, 1f);
         public readonly List<Part> Parts = new();
     }
 
-    /// <summary>One faded draw. <see cref="TestRef"/> is the alpha-test reference of its cloned NiAlphaProperty
+    /// <summary>One faded draw (<see cref="draw"/>), or one faded prop mesh (<see cref="prop"/>). <see cref="TestRef"/> is the alpha-test reference of its cloned NiAlphaProperty
     /// (TransparencyMaterial::FUN_141860140), which every vfunc_4 call scales; it starts again from the mesh's own
     /// reference only when a new element clones the property again.</summary>
     sealed class Part
     {
         public FieldBuilder.FadeDraw draw; public Transform3D xf; public MultiMeshInstance3D node; public ShaderMaterial mat;
+        public MeshInstance3D prop;
+        public ModelMesh model;
         public int TestRef;
-        public void SetFade(float a) => ModelBuilder.SetFade(mat, draw.Mesh, a, ref TestRef);
+        public void SetFade(float a) => ModelBuilder.SetFade(mat, model, a, ref TestRef);
+
+        /// <summary>The faded draw goes: the copy is freed, or the prop mesh's override is taken off.</summary>
+        public void Free()
+        {
+            if (draw != null) node.QueueFree();
+            else if (GodotObject.IsInstanceValid(prop) && prop.MaterialOverride == mat) prop.MaterialOverride = null;
+        }
     }
 
     readonly List<Target> targets = new();
     readonly Dictionary<int, List<Target>> groups = new();
     readonly Dictionary<FieldEntity, Target> byEntity = new();
+    readonly List<Target> propTargets = new();
+    FieldProps props;
     readonly Dictionary<(MultiMesh, int), Target> byDraw = new();
     readonly Dictionary<Target, Element> fadeOut = new(), fadeIn = new();
     // each mesh to its triangles, made once. Keyed by the mesh: the split alpha path makes several MultiMeshes over one mesh,
@@ -97,15 +142,158 @@ public partial class FieldFade : Node
                 box = first ? b : box.Merge(b);
                 first = false;
             }
-            t.Centre = box.GetCenter(); t.Radius = box.Size.Length() / 2;
-            targets.Add(t);
-            byEntity[e] = t;
-            if (t.Group > 0)
-            {
-                if (!groups.TryGetValue(t.Group, out var g)) groups[t.Group] = g = new List<Target>();
-                g.Add(t);
-            }
+            t.Centre = t.DrawsCentre = box.GetCenter(); t.Radius = t.DrawsRadius = box.Size.Length() / 2;
+            AddTarget(t);
         }
+    }
+
+    void AddTarget(Target t)
+    {
+        targets.Add(t);
+        byEntity[t.Entity] = t;
+        if (t.Group > 0)
+        {
+            if (!groups.TryGetValue(t.Group, out var g)) groups[t.Group] = g = new List<Target>();
+            g.Add(t);
+        }
+    }
+
+    /// <summary>
+    /// The props world/FieldProps draws (<paramref name="drawn"/>, FieldBuilder.DrawnElsewhere) whose entity is a target
+    /// (FieldBuilder.IsFadeTarget): an entity's own, or the twin of a reactable model (<paramref name="reactableTwins"/>, by
+    /// its entity), which fades with its entity as the static twin does. Their meshes are taken once the props are built.
+    /// </summary>
+    public void UseProps(FieldProps fieldProps, IEnumerable<FieldEntity> drawn, IReadOnlyDictionary<FieldEntity, FieldEntity> reactableTwins)
+    {
+        props = fieldProps;
+        if (props == null) return;
+        var ownerOf = new Dictionary<FieldEntity, FieldEntity>();
+        if (reactableTwins != null) foreach (var (e, twin) in reactableTwins) ownerOf[twin] = e;
+        foreach (var p in drawn)
+        {
+            var e = ownerOf.TryGetValue(p, out var o) ? o : p;
+            if (!FieldBuilder.IsFadeTarget(e)) continue;
+            if (!byEntity.TryGetValue(e, out var t))
+            {
+                t = new Target { Entity = e, Draws = new List<FieldBuilder.FadeDraw>(), Group = (int)e.Number("TransparencyGroupID", -1), DrawsRadius = -1 };
+                AddTarget(t);
+            }
+            if (t.PropEntities == null) { t.PropEntities = new List<FieldEntity>(); propTargets.Add(t); }
+            t.PropEntities.Add(p);
+        }
+    }
+
+    /// <summary>The target's prop meshes, made once every one of its props is built; false before.</summary>
+    bool PropsBuilt(Target t)
+    {
+        if (t.Props != null) return true;
+        foreach (var p in t.PropEntities) if (props.NodeOf(p) == null) return false;
+        t.Props = new List<PropPick>();
+        foreach (var p in t.PropEntities)
+            foreach (var m in props.MeshesOf(p))
+            {
+                var mesh = m.Mesh;
+                var pk = new PropPick { M = m };
+                if (mesh.Bound != null) { pk.HasBound = true; pk.Centre = new Vector3(mesh.Bound[0], mesh.Bound[1], mesh.Bound[2]); pk.Radius = mesh.Bound[3]; }
+                if (mesh.Skinned)
+                {
+                    pk.PickToSkel = ModelBuilder.ToGodot(mesh.PickToRoot);
+                    pk.BoundToSkel = ModelBuilder.ToGodot(mesh.BoundToRoot);
+                    if (mesh.BoneBounds is { Count: > 0 } bb)
+                    {
+                        pk.Bones = new int[bb.Count]; pk.BoneCentres = new Vector3[bb.Count]; pk.BoneRadii = new float[bb.Count];
+                        for (int i = 0; i < bb.Count; i++)
+                        {
+                            pk.Bones[i] = bb[i].Bone;   // the skeleton's bones are the model's, in order (FieldProps.BuildOne)
+                            pk.BoneCentres[i] = new Vector3(bb[i].Bound[0], bb[i].Bound[1], bb[i].Bound[2]);
+                            pk.BoneRadii[i] = bb[i].Bound[3];
+                        }
+                        pk.BoundToSkel = ModelBuilder.ToGodot(mesh.BoneBoundsToRoot);
+                        pk.HasBound = true;
+                    }
+                }
+                t.Props.Add(pk);
+            }
+        return true;
+    }
+
+    /// <summary>Whether the prop mesh is drawn now (its node, or the entity's, not hidden; the node not freed).</summary>
+    static bool Drawn(PropPick pk) => GodotObject.IsInstanceValid(pk.M.Node) && pk.M.Node.IsVisibleInTree();
+
+    /// <summary>The prop mesh's world bound now (NiBound::Update at its world transform; a RECOMPUTE_BOUNDS skin's from its
+    /// bones), or without a model bound the box of its mesh at its node.</summary>
+    static (Vector3 c, float r) WorldBound(PropPick pk)
+    {
+        if (pk.Bones != null) return CharacterAlphaSort.SkinnedBound(pk.M.Skel, pk.BoundToSkel, pk.Bones, pk.BoneCentres, pk.BoneRadii);
+        if (pk.HasBound)
+        {
+            var x = pk.M.Mesh.Skinned ? pk.M.Skel.GlobalTransform * pk.BoundToSkel : pk.M.Node.GlobalTransform;
+            return (x * pk.Centre, x.Basis.Scale.X * pk.Radius);
+        }
+        var box = PickTransform(pk) * pk.M.Node.GetAabb();
+        return (box.GetCenter(), box.Size.Length() / 2);
+    }
+
+    /// <summary>Where the pick places the mesh's held vertices: a skinned mesh's unskinned at its node, a rigid one's at its node.</summary>
+    static Transform3D PickTransform(PropPick pk) => pk.M.Mesh.Skinned ? pk.M.Skel.GlobalTransform * pk.PickToSkel : pk.M.Node.GlobalTransform;
+
+    /// <summary>The frustum sphere of a target with props: its draws' sphere merged with each drawn prop mesh's bound now;
+    /// a radius below 0 when nothing of it is drawn.</summary>
+    static void Refresh(Target t)
+    {
+        Vector3 c = t.DrawsCentre; float r = t.DrawsRadius;
+        foreach (var pk in t.Props)
+        {
+            if (!Drawn(pk)) continue;
+            var (pc, pr) = WorldBound(pk);
+            if (r < 0) { c = pc; r = pr; }
+            else (c, r) = AlphaSort.Merge(c, r, pc, pr);
+        }
+        t.Centre = c; t.Radius = r;
+    }
+
+    /// <summary>FindRaySphereIntersectHelper / FindBoundIntersect (NiCollisionUtils.cpp:96-150, NiCollisionUtils.inl:24-46) for
+    /// a unit direction: an origin inside the sphere hits; else the sphere must be ahead and the ray come within it.</summary>
+    static bool SphereHit(Vector3 o, Vector3 dir, Vector3 c, float r)
+    {
+        var d = o - c;
+        float cc = d.LengthSquared() - r * r;
+        if (cc <= 0) return true;
+        float b = d.Dot(dir);
+        if (b >= 0) return false;
+        return b * b - cc >= 0;
+    }
+
+    /// <summary>PerformPick on one prop mesh (SimpleSkinPickObjectPolicy behind the bound test).</summary>
+    bool PropHits(PropPick pk, Vector3 from, Vector3 dir)
+    {
+        if (pk.HasBound)
+        {
+            var (c, r) = WorldBound(pk);
+            if (!SphereHit(from, dir, c, r)) return false;
+        }
+        if (HitsFaces(pk.M.Node.Mesh, PickTransform(pk), from, dir)) return true;
+        if (pk.Bones == null) return false;
+        var skel = pk.M.Skel.GlobalTransform;
+        for (int i = 0; i < pk.Bones.Length; i++)
+        {
+            var bone = skel * pk.M.Skel.GetBoneGlobalPose(pk.Bones[i]);
+            if (SphereHit(from, dir, bone * pk.BoneCentres[i], bone.Basis.Scale.X * pk.BoneRadii[i])) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Any triangle of the mesh at <paramref name="xf"/>, either side, ahead of the origin.</summary>
+    bool HitsFaces(Mesh mesh, Transform3D xf, Vector3 from, Vector3 dir)
+    {
+        if (mesh == null) return false;
+        var inv = xf.AffineInverse();
+        var o = inv * from;
+        var v = inv.Basis * dir;
+        if (!faces.TryGetValue(mesh, out var f)) { faces[mesh] = f = mesh.GetFaces(); FacesBuilt++; }
+        for (int i = 0; i + 2 < f.Length; i += 3)
+            if (Triangle(o, v, f[i], f[i + 1], f[i + 2])) return true;
+        return false;
     }
 
     public override void _EnterTree() => TriggerFade.Switched += OnSwitched;
@@ -129,8 +317,8 @@ public partial class FieldFade : Node
         for (int i = el.Parts.Count - 1; i >= 0; i--)
         {
             var p = el.Parts[i];
-            if (p.draw.Mm != mm || p.draw.Index != index) continue;
-            p.node.QueueFree();
+            if (p.draw == null || p.draw.Mm != mm || p.draw.Index != index) continue;
+            p.Free();
             el.Parts.RemoveAt(i);
         }
         if (el.Parts.Count == 0) map.Remove(t);
@@ -161,9 +349,10 @@ public partial class FieldFade : Node
         var hit = new HashSet<Target>();
         Vector3 a = pos + Vector3.Up * RayLow, b = pos + Vector3.Up * RayHigh;
         Vector3 da = (eye - a).Normalized(), db = (eye - b).Normalized();
+        if (props != null) foreach (var t in propTargets) if (PropsBuilt(t)) Refresh(t);
         foreach (var t in targets)
         {
-            if (!InFrustum(frustum, np, t.Centre, t.Radius)) continue;
+            if (t.Radius < 0 || !InFrustum(frustum, np, t.Centre, t.Radius)) continue;
             // the second ray's test against the first hit only skips an insert the set already holds
             if (RayHits(t, a, da) || RayHits(t, b, db)) Add(hit, t);
         }
@@ -217,14 +406,11 @@ public partial class FieldFade : Node
                 xf = d.Mm.GetInstanceTransform(d.Index);
                 if (xf.Basis.Determinant() == 0) continue;
             }
-            var inv = (d.Parent.GlobalTransform * xf).AffineInverse();
-            var o = inv * from;
-            var v = inv.Basis * dir;
-            var mesh = d.Mm.Mesh;
-            if (!faces.TryGetValue(mesh, out var f)) { faces[mesh] = f = mesh.GetFaces(); FacesBuilt++; }
-            for (int i = 0; i + 2 < f.Length; i += 3)
-                if (Triangle(o, v, f[i], f[i + 1], f[i + 2])) return true;
+            if (HitsFaces(d.Mm.Mesh, d.Parent.GlobalTransform * xf, from, dir)) return true;
         }
+        if (t.Props != null)
+            foreach (var pk in t.Props)
+                if (Drawn(pk) && PropHits(pk, from, dir)) return true;
         return false;
     }
 
@@ -244,26 +430,63 @@ public partial class FieldFade : Node
     public void Release(FieldEntity e)
     {
         if (e == null || !byEntity.TryGetValue(e, out var t)) return;
-        if (fadeOut.Remove(t, out var a)) foreach (var p in a.Parts) p.node.QueueFree();
-        if (fadeIn.Remove(t, out var b)) foreach (var p in b.Parts) p.node.QueueFree();
+        if (fadeOut.Remove(t, out var a)) foreach (var p in a.Parts) p.Free();
+        if (fadeIn.Remove(t, out var b)) foreach (var p in b.Parts) p.Free();
     }
 
     /// <summary>For the headless check: the entity as if the 300 ms test had hit it alone (Apply).</summary>
     internal void FadeOutNow(FieldEntity e)
     {
-        if (e != null && byEntity.TryGetValue(e, out var t)) Apply(new HashSet<Target> { t }, Time.GetTicksMsec());
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return;
+        if (t.PropEntities != null && props != null && PropsBuilt(t)) Refresh(t);
+        Apply(new HashSet<Target> { t }, Time.GetTicksMsec());
     }
 
     /// <summary>For the headless check: whether the pick of the entity's draws (RayHits) meets the ray.</summary>
-    internal bool Picks(FieldEntity e, Vector3 from, Vector3 dir) => e != null && byEntity.TryGetValue(e, out var t) && RayHits(t, from, dir);
+    internal bool Picks(FieldEntity e, Vector3 from, Vector3 dir)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return false;
+        if (t.PropEntities != null && props != null && PropsBuilt(t)) Refresh(t);
+        return t.Radius >= 0 && RayHits(t, from, dir);
+    }
 
     /// <summary>For the headless check: the draws a fade of the entity holds (none: not fading).</summary>
     internal IReadOnlyList<FieldBuilder.FadeDraw> Fading(FieldEntity e)
     {
         if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<FieldBuilder.FadeDraw>();
         var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
-        return el == null ? Array.Empty<FieldBuilder.FadeDraw>() : el.Parts.Select(p => p.draw).ToList();
+        return el == null ? Array.Empty<FieldBuilder.FadeDraw>() : el.Parts.Where(p => p.draw != null).Select(p => p.draw).ToList();
     }
+
+    /// <summary>For the headless check: the prop meshes a fade of the entity holds, with their fade material (none: not fading).</summary>
+    internal IReadOnlyList<(MeshInstance3D Node, ShaderMaterial Material)> FadingProps(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<(MeshInstance3D, ShaderMaterial)>();
+        var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
+        return el == null ? Array.Empty<(MeshInstance3D, ShaderMaterial)>() : el.Parts.Where(p => p.prop != null).Select(p => (p.prop, p.mat)).ToList();
+    }
+
+    /// <summary>For the headless check: the fade material and model of every part a fade of the entity holds.</summary>
+    internal IReadOnlyList<(ShaderMaterial Material, ModelMesh Mesh)> FadeMaterials(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return Array.Empty<(ShaderMaterial, ModelMesh)>();
+        var el = fadeOut.TryGetValue(t, out var a) ? a : fadeIn.TryGetValue(t, out a) ? a : null;
+        return el == null ? Array.Empty<(ShaderMaterial, ModelMesh)>() : el.Parts.Select(p => (p.mat, p.model)).ToList();
+    }
+
+    /// <summary>For the headless check: whether the entity is a fade target, and its test sphere (radius below 0: nothing drawn).</summary>
+    internal (Vector3 Centre, float Radius)? TargetBound(FieldEntity e)
+    {
+        if (e == null || !byEntity.TryGetValue(e, out var t)) return null;
+        if (t.PropEntities != null && props != null && PropsBuilt(t)) Refresh(t);
+        return (t.Centre, t.Radius);
+    }
+
+    /// <summary>For the headless check: runs the 300 ms test now.</summary>
+    internal void TestNow() => Test(Time.GetTicksMsec());
+
+    /// <summary>For the headless check: steps the fades to <paramref name="now"/> (milliseconds on the tick clock).</summary>
+    internal void StepTo(ulong now) { UpdateFadeOut(now); UpdateFadeIn(now); }
 
     /// <summary>Whether a fade holds the entity (fading out or back in).</summary>
     public bool Holds(FieldEntity e) => e != null && byEntity.TryGetValue(e, out var t) && (fadeOut.ContainsKey(t) || fadeIn.ContainsKey(t));
@@ -303,6 +526,9 @@ public partial class FieldFade : Node
             {
                 // a hidden draw (a state, a trigger, an interact mesh's other model) is not drawn, so not faded
                 if (TriggerFade.Hidden(d.Mm, d.Index) || d.Mm.GetInstanceTransform(d.Index).Basis.Determinant() == 0) continue;
+                // only a mesh whose active material is an MS2StandardMaterial gets a TransparencyStandardMaterial
+                // (bgtransparencymgr.cpp:517-520); any other (MS2GlassMaterial, no material) keeps its own draw
+                if (!ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial)) continue;
                 var mesh = d.Mm.Mesh;
                 var colour = (ShaderMaterial)mesh.SurfaceGetMaterial(0);
                 if (colour.NextPass is ShaderMaterial next && colour.Shader != next.Shader) colour = next;   // a fluid shell's colour pass
@@ -316,10 +542,24 @@ public partial class FieldFade : Node
                 if (d.LightOff != 0) node.SetInstanceShaderParameter(LightOffParam, (float)d.LightOff);   // nor the lights its draw does not take
                 d.Parent.AddChild(node);
                 d.Mm.SetInstanceTransform(d.Index, new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), xf.Origin));
-                var part = new Part { draw = d, xf = xf, node = node, mat = mat, TestRef = d.Mesh.AlphaThreshold };
+                var part = new Part { draw = d, xf = xf, node = node, mat = mat, model = d.Mesh, TestRef = d.Mesh.AlphaThreshold };
                 part.SetFade(1f);
                 el.Parts.Add(part);
             }
+            if (t.Props != null)
+                foreach (var pk in t.Props)
+                {
+                    // a prop mesh not drawn now is not faded, as a hidden draw is not
+                    if (!Drawn(pk) || !ModelData.IsStandardMaterial(pk.M.Mesh.ActiveMaterial)) continue;
+                    var node = pk.M.Node;
+                    if (node.Mesh?.SurfaceGetMaterial(0) is not ShaderMaterial colour) continue;
+                    if (colour.NextPass is ShaderMaterial next && colour.Shader != next.Shader) colour = next;
+                    var mat = ModelBuilder.FadeMaterial(colour, pk.M.Mesh);
+                    node.MaterialOverride = mat;
+                    var part = new Part { prop = node, mat = mat, model = pk.M.Mesh, TestRef = pk.M.Mesh.AlphaThreshold };
+                    part.SetFade(1f);
+                    el.Parts.Add(part);
+                }
             if (el.Parts.Count > 0) fadeOut[t] = el;
         }
     }
@@ -330,13 +570,23 @@ public partial class FieldFade : Node
         fadeOut.Clear();
     }
 
+    /// <summary>
+    /// UpdateFadeOut (0x140a0ebf0): each running element's materials go to clamp(1 - ratio, alpha, 1); an element whose timer
+    /// has run out is skipped (Timer::IsRunning, timer.cpp:159-164). The client's frames come well inside the 300 ms, so the
+    /// last running frame has a ratio past 1 - alpha and has already set the floor. A frame here can come later than that
+    /// (the first draw of a fade material builds its pipeline), and the element would stay at the value of the frame
+    /// before, 1 when that was the Apply's own: an element seen out of time for the first time is set once to its end
+    /// value, clamp(1 - 1, alpha, 1), the value the client's last running frame sets.
+    /// </summary>
     void UpdateFadeOut(ulong now)
     {
         foreach (var el in fadeOut.Values)
         {
-            if (!el.Running(now)) continue;
+            bool running = el.Running(now);
+            if (!running && el.Settled) continue;
             float a = Mathf.Clamp(1f - el.Ratio(now), el.Alpha, 1f);
             foreach (var p in el.Parts) p.SetFade(a);
+            el.Settled = !running;
         }
     }
 
@@ -355,8 +605,8 @@ public partial class FieldFade : Node
             foreach (var p in fadeIn[t].Parts)
             {
                 // a draw a switch hid meanwhile stays hidden
-                if (!TriggerFade.Hidden(p.draw.Mm, p.draw.Index)) p.draw.Mm.SetInstanceTransform(p.draw.Index, p.xf);
-                p.node.QueueFree();
+                if (p.draw != null && !TriggerFade.Hidden(p.draw.Mm, p.draw.Index)) p.draw.Mm.SetInstanceTransform(p.draw.Index, p.xf);
+                p.Free();
             }
             fadeIn.Remove(t);
         }

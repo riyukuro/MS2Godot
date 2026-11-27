@@ -190,22 +190,30 @@ public static class CharacterAlphaSort
     /// <summary>The world bound (Godot space) of a registered mesh now.</summary>
     static (Vector3 c, float r) WorldBound(Item it)
     {
-        if (it.Bones != null)
-        {
-            Vector3 c = default; float r = 0;
-            for (int i = 0; i < it.Bones.Length; i++)
-            {
-                var pose = it.Skel.GetBoneGlobalPose(it.Bones[i]);
-                var bc = pose * it.BoneCenters[i];
-                float br = pose.Basis.Scale.X * it.BoneRadii[i];
-                if (i == 0) { c = bc; r = br; }
-                else (c, r) = AlphaSort.Merge(c, r, bc, br);
-            }
-            var w = it.Skel.GlobalTransform * it.ToSkel;
-            return (w * c, w.Basis.Scale.X * r);
-        }
+        if (it.Bones != null) return SkinnedBound(it.Skel, it.ToSkel, it.Bones, it.BoneCenters, it.BoneRadii);
         var x = it.Skel != null ? it.Skel.GlobalTransform * it.ToSkel : it.Node.GlobalTransform;
         return (x * it.Center, x.Basis.Scale.X * it.Radius);
+    }
+
+    /// <summary>
+    /// The world bound (Godot space) of a skinned mesh with RECOMPUTE_BOUNDS now: each skin bone's bound (in skin bone order,
+    /// <paramref name="bones"/> the skeleton bone of each) moved by the bone's pose and merged (NiSkinningMeshModifier::
+    /// UpdateModelBounds, NiSkinningMeshModifier.cpp:1036-1056), then placed by <paramref name="toSkel"/>
+    /// (ModelMesh.BoneBoundsToRoot) under the skeleton.
+    /// </summary>
+    public static (Vector3 c, float r) SkinnedBound(Skeleton3D skel, Transform3D toSkel, int[] bones, Vector3[] centres, float[] radii)
+    {
+        Vector3 c = default; float r = 0;
+        for (int i = 0; i < bones.Length; i++)
+        {
+            var pose = skel.GetBoneGlobalPose(bones[i]);
+            var bc = pose * centres[i];
+            float br = pose.Basis.Scale.X * radii[i];
+            if (i == 0) { c = bc; r = br; }
+            else (c, r) = AlphaSort.Merge(c, r, bc, br);
+        }
+        var w = skel.GlobalTransform * toSkel;
+        return (w * c, w.Basis.Scale.X * r);
     }
 
     /// <summary>Sets each live mesh's SortingOffset so Godot's depth is the client's key; drops freed meshes.</summary>

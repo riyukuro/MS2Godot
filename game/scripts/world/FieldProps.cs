@@ -31,6 +31,11 @@ public sealed class FieldProps
     /// <summary>The players of the running (not frozen) nodes, and when each hidden one was hidden (<see cref="Clock"/>).</summary>
     readonly Dictionary<FieldEntity, AnimationPlayer> players = new();
     readonly Dictionary<FieldEntity, double> hiddenAt = new();
+    readonly Dictionary<FieldEntity, List<PropMesh>> meshesOf = new();
+
+    /// <summary>One mesh of a built prop: its node, its model mesh, and the skeleton it hangs under (whose bones are the
+    /// model's, in <see cref="ModelData.Bones"/> order).</summary>
+    public readonly record struct PropMesh(MeshInstance3D Node, ModelMesh Mesh, Skeleton3D Skel);
 
     /// <summary>The time in seconds a hidden node's controllers keep running by (a check sets its own).</summary>
     public Func<double> Clock { get; set; } = Seconds;
@@ -64,8 +69,10 @@ public sealed class FieldProps
             var col = c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2])
                                                  : new Color(DefaultMaterialColor, DefaultMaterialColor, DefaultMaterialColor);
             bool frozen = FieldBuilder.IsStatic(e);
+            var list = new List<PropMesh>();
             var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e), frozen,
-                                LightOff.TryGetValue(e, out var off) ? off : 0);
+                                LightOff.TryGetValue(e, out var off) ? off : 0, list);
+            meshesOf[e] = list;
             node.Transform = ModelBuilder.ToGodot(e.Transform);
             nodes[e] = node;
             if (shown.TryGetValue(e, out bool show) && !show) { Show(node, false); hiddenAt[e] = Clock(); }
@@ -113,6 +120,9 @@ public sealed class FieldProps
     /// <summary>Whether the entity's node is shown (as set, or as built: shown).</summary>
     public bool Shown(FieldEntity e) => e == null || !shown.TryGetValue(e, out bool s) || s;
 
+    /// <summary>The entity's meshes once built, else none (world/FieldFade picks and fades them).</summary>
+    public IReadOnlyList<PropMesh> MeshesOf(FieldEntity e) => e != null && meshesOf.TryGetValue(e, out var l) ? l : Array.Empty<PropMesh>();
+
     /// <summary>The entity's node once built, else null.</summary>
     public Node3D NodeOf(FieldEntity e) => e != null && nodes.TryGetValue(e, out var n) && GodotObject.IsInstanceValid(n) ? n : null;
 
@@ -128,7 +138,8 @@ public sealed class FieldProps
     /// <param name="receives">The entity takes the sun's shadow (ShadowReceivers); else every mesh's ms2_receive is 0, as in
     /// FieldBuilder.</param>
     /// <param name="lightOff">The field lights that do not reach the entity (FieldLightSet.Unlit), as each mesh's ms2_light_off.</param>
-    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives, bool frozen, uint lightOff)
+    /// <param name="built">Each mesh made, in model order.</param>
+    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives, bool frozen, uint lightOff, List<PropMesh> built)
     {
         var root = new Node3D { Name = name.ValidateNodeName() };
         var model = new Node3D { Name = "Model", Transform = ModelBuilder.ToGodot(md.RootLocal) };
@@ -167,6 +178,7 @@ public sealed class FieldProps
                 meshPaths.TryAdd(m.Name ?? "", $"{ModelBuilder.SkeletonName}/m{mi}");
             }
             builder.AddGlowTwin(inst, m, m.Skinned ? skin : null, frozen ? freezeAt : -1f);
+            built.Add(new PropMesh(inst, m, skel));
         }
         var player = new AnimationPlayer { Name = "AnimationPlayer" };
         model.AddChild(player);
