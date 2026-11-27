@@ -500,7 +500,7 @@ public class ItemTooltipExtrasTests
         // a remake scroll lists the items of its scroll row the job group may wear, at the row's first rank
         var scroll = m.Tables.RemakeScroll(10000001);
         Assert.That(scroll, Is.Not.Null);
-        var expected = scroll.Value.Items.Select(i => m.Tables.Items.Get((int)i))
+        var expected = scroll.Items.Select(i => m.Tables.Items.Get((int)i))
             .Where(d => d != null && d.IsJobAllowed(10) && d.IsJobRecommended(10)).ToList();
         var stip = Tip(m, It(31000183, 42));
         if (expected.Count == 0) Assert.That(stip.Data.ContainsKey("itemPackageList"), Is.False);
@@ -508,10 +508,10 @@ public class ItemTooltipExtrasTests
         {
             var srows = ((List<object>)stip.Data["itemPackageList"]).Cast<Dictionary<string, object>>().ToList();
             Assert.That(srows.Count, Is.EqualTo(expected.Count));
-            int rank = scroll.Value.Ranks.Length == 0 ? 1 : (int)scroll.Value.Ranks[0];
+            int rank = scroll.Ranks.Length == 0 ? 1 : (int)scroll.Ranks[0];
             Assert.That(srows.Select(r => r["itemGrade"]), Is.All.EqualTo(rank));
         }
-        TestContext.Out.WriteLine($"scroll 10000001: {scroll.Value.Items.Length} items, {expected.Count} for job group 10");
+        TestContext.Out.WriteLine($"scroll 10000001: {scroll.Items.Length} items, {expected.Count} for job group 10");
     }
 
     [Test]

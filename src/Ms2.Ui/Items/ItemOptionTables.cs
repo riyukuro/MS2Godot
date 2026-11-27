@@ -299,6 +299,49 @@ public sealed class ItemOptionTables
     /// <summary>CItemData::FUN_14053eff0 (itemdata.cpp:1633) for a non-pet item: its randomID.</summary>
     static int RandomCode(ItemData d) => d.RandomId;
 
+    /// <summary>CItemData::FUN_14053eff0 (@0x14053eff0, itemdata.cpp:1633): a pet's random option code by
+    /// <paramref name="rank"/> (2 to 0x3a2c941, 3 to 0x3a2c942, 4 to 0x3a2c943, 5 and 6 to 0x3a2c944, else 0; 0 without a
+    /// constantID), any other item's randomID.</summary>
+    public static int RandomCode(ItemData d, int rank)
+    {
+        if (!d.IsPetItem) return d.RandomId;
+        if (d.ConstantId == 0) return 0;
+        return rank switch { 2 => 0x3a2c941, 3 => 0x3a2c942, 4 => 0x3a2c943, 5 or 6 => 0x3a2c944, _ => 0 };
+    }
+
+    /// <summary>ItemOptionRandom::HasStat / HasSpecialStat (@0x1405d74d0, @0x1405d7550, itemoptiondata_2.cpp:2179, :2185) of the
+    /// random option <paramref name="code"/> (GetRandom): the option has a value of the stat (or, with <paramref name="stat"/>
+    /// -1, the special); null without the option.</summary>
+    public bool? RandomHas(int code, int stat, int special)
+    {
+        if (!Randoms().TryGetValue(code, out var r)) return null;
+        foreach (var v in r.Values)
+            if (stat != -1 ? v.Stat == stat : v.Special == special) return true;
+        return false;
+    }
+
+    /// <summary>GetStatName (stat.cpp): the stat's option name, "" when none.</summary>
+    public string StatOptionName(int stat) => (uint)stat < 0x23 ? Stats()[stat]?.Name ?? "" : "";
+
+    static readonly int[] ExclusiveStats = { 0x17, 0x18, 0, 2, 3, 1, 0xf, 0xd, 0x1f };
+    static readonly int[] ExclusiveSpecials = { 0x1b, 0x1a, 9, 0xb, 0xc, 0x23 };
+    HashSet<string> exclusiveNames;
+
+    /// <summary>CItemOptionTable::FindOptionNameList (@0x1405f6e40, itemoptiondata_3.cpp:667) is not null: the name is in the one
+    /// exclusive group FUN_1405f78f0 (:817) builds, the names of the stats 0x17, 0x18, 0, 2, 3, 1, 0xf, 0xd, 0x1f and of the
+    /// specials 0x1b, 0x1a, 9, 0xb, 0xc, 0x23 (a CString map, so the case counts).</summary>
+    public bool IsExclusiveOptionName(string name)
+    {
+        if (exclusiveNames == null)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (int s in ExclusiveStats) names.Add(StatOptionName(s));
+            foreach (int s in ExclusiveSpecials) names.Add(SpecialOption(s));
+            exclusiveNames = names;
+        }
+        return exclusiveNames.Contains(name ?? "");
+    }
+
     /// <summary>ItemOptionRandom::GetPickCount (itemoptiondata_2.cpp:2021) of the item's random option at
     /// <paramref name="rank"/>; null without the option (GetRandom, a map find). Not for pets.</summary>
     public int? PickCount(ItemData d, int rank)

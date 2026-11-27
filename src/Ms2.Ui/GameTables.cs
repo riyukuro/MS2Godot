@@ -1058,11 +1058,12 @@ public sealed class GameTables
         : new Ms2.Ui.Items.ItemMergeOptionTable(Xml(TablePath.Resolve(packs, "itemmergeoptionbase.xml") ?? "table/itemmergeoptionbase.xml"),
             (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName, ItemOptions.FindSpecialByName,
             TablePath.Resolve(packs, Ms2.Ui.Items.ItemMergeOptionTable.MaterialFile) is { } material ? Xml(material) : null);
-    Dictionary<int, (uint[] Items, uint[] Ranks)> remakeScrolls;
-    /// <summary>CItemRemakeScrollTable::GetData (itemremakescrolldata.cpp:200): Load (:148) reads Table/itemRemakeScroll.xml's
-    /// &lt;remakeScroll&gt; rows whose feature is on (IsElementFeatureEnabled), id not 0, the item and rank lists split at ','
-    /// (XmlTokenList), the last row of an id kept; null for no row. Read on first use.</summary>
-    public (uint[] Items, uint[] Ranks)? RemakeScroll(int id)
+    Dictionary<int, Ms2.Ui.Items.ItemRemakeScrollData> remakeScrolls;
+    /// <summary>CItemRemakeScrollTable::GetData (itemremakescrolldata.cpp:200): Load (@0x140615700, :148) reads
+    /// Table/itemRemakeScroll.xml's &lt;remakeScroll&gt; rows whose feature is on (IsElementFeatureEnabled), id not 0: minLv and
+    /// maxLv as unsigned shorts, the rank, slot and item lists split at ',' (XmlTokenList), onlyPet, representOpValue, addOpKind
+    /// and addOpValue (XmlValue, the number); the last row of an id kept; null for no row. Read on first use.</summary>
+    public Ms2.Ui.Items.ItemRemakeScrollData RemakeScroll(int id)
     {
         if (remakeScrolls == null)
         {
@@ -1075,7 +1076,10 @@ public sealed class GameTables
                     if (key == 0) continue;
                     static uint[] List(string s) => (s ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
                         .Select(t => (uint)Ms2.Ui.Items.ItemData.Atoi(t)).ToArray();
-                    remakeScrolls[key] = (List((string)e.Attribute("item")), List((string)e.Attribute("rank")));
+                    int Num(string name) => Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute(name) ?? "");
+                    remakeScrolls[key] = new Ms2.Ui.Items.ItemRemakeScrollData((ushort)Num("minLv"), (ushort)Num("maxLv"),
+                        List((string)e.Attribute("rank")), List((string)e.Attribute("slot")), Num("onlyPet"),
+                        List((string)e.Attribute("item")), Num("representOpValue"), Num("addOpKind"), Num("addOpValue"));
                 }
         }
         return remakeScrolls.TryGetValue(id, out var r) ? r : null;
