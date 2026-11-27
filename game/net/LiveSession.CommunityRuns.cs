@@ -15,6 +15,9 @@ namespace Ms2Godot.Net;
 public partial class LiveSession
 {
     int buddyPackets;       // Buddy packets read, for the live steps
+    /// <summary>A scripted run with steps (MS2_LIVE_COMBAT_STEP): only then are the sends and protocols read kept as text
+    /// and a list for the steps, so a normal session allocates nothing for them.</summary>
+    static readonly bool CommunitySteps = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_COMBAT_STEP"));
 
     static void I64(List<byte> b, long v) { I32(b, (int)v); I32(b, (int)(v >> 32)); }
 
