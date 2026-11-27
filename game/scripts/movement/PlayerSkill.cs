@@ -60,6 +60,14 @@ public partial class Player : ISkillMotionOwner
     Vector3 SkillMotionMove(Vector2 rawInput, float dt)
     {
         if (!SkillSequencePlaying()) return Vector3.Zero;
+        // the frame's text keys come before the state's move step (PCBase::vfunc_53, pcbase.cpp:3730-3732: the actor
+        // update throws them, then m_spStateMgr->Update runs StateSkill::vfunc_3's FUN_1417edc20), so an attack point
+        // at a move key fills where the body stood before the move (Knight_ShieldRush_A's p0 and move0 at 0.1)
+        if (SkillKeysBeforeMove != null)
+        {
+            SkillKeysBeforeMove();
+            if (!SkillSequencePlaying()) return Vector3.Zero;
+        }
         SkillMotionKeys();
         if (skillMotion.NoMove) return Vector3.Zero;
         bool input = skillMotion.TakesInput;
@@ -72,6 +80,11 @@ public partial class Player : ISkillMotionOwner
         if (input) d += dir * (baseSpeed * dt);
         return d;
     }
+
+    /// <summary>StateSkill::TextKeyEvent's other keys (the HUD's attack points, combo and tag keys) for the sequence time
+    /// the move keys are about to be read up to, asked in each physics step before <see cref="SkillMotionKeys"/> and the
+    /// motion's step (the client throws a frame's keys before the state's move, pcbase.cpp:3730-3732).</summary>
+    public System.Action SkillKeysBeforeMove;
 
     /// <summary>StateSkill::TextKeyEvent's move keys for the keys the own sequence passed since the last read.</summary>
     void SkillMotionKeys()

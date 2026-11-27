@@ -853,6 +853,7 @@ public partial class HudScene
         ownEnded = false;
         ownPollWorld = null;
         me.SkillSequenceEnding = ownEndingStep ??= OwnSequenceEnding;
+        me.SkillKeysBeforeMove = ownKeysBeforeMove ??= OwnKeysBeforeMove;
         ownSync.Reset(new System.Numerics.Vector3(0, 0, me.FacingRotZ));   // vfunc_4 (:484-487): the owner's rotation
         ownAttack = 0;
         ownSequence = me.SkillSequence;
@@ -890,6 +891,8 @@ public partial class HudScene
     /// </summary>
     void TickOwnAttacks()
     {
+        bool stopped = ownKeysStopped;
+        ownKeysStopped = false;
         pollKeyDown ??= CastKeyDown;
         heldKeys.Release(pollKeyDown, OwnSkillStateRuns());
         if (ownCast == null) return;
@@ -900,12 +903,32 @@ public partial class HudScene
         // the client's animation service throws the frame's text keys in MyPC's update (mypc.cpp:2942-2966) before the
         // state's vfunc_8 polls the keys, so a window a key opens (inputcombo, the selfInputCombo key) sees that frame's
         // held key: the keys first, then the poll
-        if (!OwnKeys(pos)) return;
+        // the body's physics steps read the keys first (OwnKeysBeforeMove); this reads the ones a frame with no physics step
+        // passed, and a read the steps stopped skips the rest of the frame as OwnKeys' false does
+        if (stopped || !OwnKeys(pos)) return;
         PollOwnPress();
         if (!OwnSkillStateRuns() || ownEnded) return;
         var running = ownCast;
         if (ownNext != null) TryChainOwn(running);
         if (ownCast == running && OwnSkillStateRuns()) OwnSwingCancel();   // vfunc_8's last step (:725)
+    }
+
+    System.Action ownKeysBeforeMove;
+    bool ownKeysStopped;   // a physics step's key read stopped the state's read this frame (OwnKeys' false)
+
+    /// <summary>
+    /// The own cast's text keys read from the body's physics step before its skill motion moves
+    /// (<see cref="Player.SkillKeysBeforeMove"/>): the client throws a frame's keys in the actor update before the state
+    /// manager's update moves the body (PCBase::vfunc_53, pcbase.cpp:3730-3732; StateSkill::vfunc_3's FUN_1417edc20), so
+    /// FireAttacksAtPoint fills at the position the body had before the move key's move. The HUD's frame
+    /// (<see cref="TickOwnAttacks"/>) runs after Godot's physics steps, where a move key's move had already stepped (several
+    /// steps in a slow frame): a rush point at its move0 key (Knight_DrillBlade_A p0 and move0 at 0.15 s) filled 160-380 ahead.
+    /// </summary>
+    void OwnKeysBeforeMove()
+    {
+        if (ownCast == null || ownEnded || player == null || (object)player.SkillSequence != ownSequence) return;
+        double pos = player.SkillSequencePosition;
+        if (pos >= 0 && !OwnKeys(pos)) ownKeysStopped = true;
     }
 
     /// <summary>
