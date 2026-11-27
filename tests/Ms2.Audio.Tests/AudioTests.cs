@@ -639,6 +639,45 @@ public class AudioTests
         Assert.That(allocated, Is.LessThan(512), "MusicCrossfade per-frame stepping must not allocate");
     }
 
+    /// <summary>
+    /// A third cue prompted halfway through a 2000 ms cue fade, measured on the client's fmod_event64.dll (4.44.64,
+    /// MusicSystem::promptCue, cues 212 -> 43 at 4000 ms -> 138 at 5000 ms; 138's crossfadeMs is 1000): the voices
+    /// were 0.52 / 0.50 at the prompt; both kept playing and ramped from there to 0 over 1000 ms while cue 138 ramped
+    /// 0 to 1 (0.46 / 0.46 / 0.16 at +123 ms, 0.24 / 0.24 / 0.58 at +549 ms, only cue 138 left at +1061 ms). Only the
+    /// gains are read, so the slot each voice sits in does not matter.
+    /// </summary>
+    [Test]
+    public void ThirdCueMidFadeKeepsBothFadingVoices()
+    {
+        var xf = new MusicCrossfade();
+        xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: false);
+        xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
+        xf.Step(1.0f);
+        xf.BeginTransition(crossfadeMs: 1000, hasActiveAudio: true);
+
+        var gains = new float[MusicCrossfade.SlotCount];
+        for (int i = 0; i < gains.Length; i++) gains[i] = xf.Gain(i);
+        Array.Sort(gains);
+        Array.Reverse(gains);
+        Assert.That(gains[0], Is.EqualTo(0.5f).Within(1e-5f), "the older voice keeps its gain at the prompt");
+        Assert.That(gains[1], Is.EqualTo(0.5f).Within(1e-5f), "the newer voice keeps its gain at the prompt");
+
+        xf.Step(0.5f);
+        for (int i = 0; i < gains.Length; i++) gains[i] = xf.Gain(i);
+        Array.Sort(gains);
+        Array.Reverse(gains);
+        Assert.That(gains[0], Is.EqualTo(0.5f).Within(1e-5f), "the third cue, halfway up");
+        Assert.That(gains[1], Is.EqualTo(0.25f).Within(1e-5f), "a fading voice, halfway down over the third cue's 1000 ms");
+        Assert.That(gains[2], Is.EqualTo(0.25f).Within(1e-5f), "the other fading voice, halfway down");
+
+        xf.Step(0.5f);
+        Assert.That(xf.IsFading, Is.False);
+        float sum = 0f;
+        for (int i = 0; i < MusicCrossfade.SlotCount; i++) sum += xf.Gain(i);
+        Assert.That(xf.ActiveGain, Is.EqualTo(1f));
+        Assert.That(sum, Is.EqualTo(1f).Within(1e-5f), "only the third cue is left");
+    }
+
     [Test]
     public void ThemeCrossfadeUsesFevThemeCrossfadeMsOnlyOnCueChangeNotInThemeLinks()
     {
