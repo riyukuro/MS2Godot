@@ -178,6 +178,7 @@ public partial class LiveSession : Node
         Party.BattleRecords = BattleRecords;
         FieldProperties.UserTagSymbolApplied += () => remote?.RefreshFieldSymbols();   // FieldPropertyUserTagSymbolCli::vfunc_4
         FieldProperties.HideMyPCApplied += OnHideMyPC;   // FieldPropertyHideMyPCCli::vfunc_4 / vfunc_5
+        FieldProperties.LocalCamerasChanged += OnLocalCamerasChanged;   // FieldPropertyEnableLocalCameraCli::vfunc_4 / vfunc_5
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
         BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
@@ -1763,6 +1764,15 @@ public partial class LiveSession : Node
         if (LiveCheck) GD.Print($"live: camera reset over {m.Seconds:0.##} s{(on ? "" : " (no field yet, nothing to reset)")}");
     }
 
+    /// <summary>Field property 10's apply or unapply (CameraMgr::FUN_140aeb900): the field's local cameras on or off. Before the
+    /// field is built there is no camera yet; <see cref="OnFieldBuilt"/> gives it the value then.</summary>
+    void OnLocalCamerasChanged(bool on)
+    {
+        var cam = triggerField != null && GodotObject.IsInstanceValid(triggerField) ? triggerField.TriggerCamera : null;
+        if (cam != null) cam.LocalCamerasOn = on;
+        if (LiveCheck) GD.Print($"live: local cameras {(on ? "on" : "off")}{(cam == null ? " (no field yet)" : $", mode {cam.ModeType}")}");
+    }
+
     /// <summary>OnLocalCamera (@0x14173a370, scenestategame.cpp:6580-6588): CameraMgr::FUN_140aecbb0 on the field's camera
     /// (<see cref="World.TriggerCamera.EnterLocal"/>); before the field is built there are no setups, so nothing happens.</summary>
     void OnLocalCamera(LocalCamera m)
@@ -1943,6 +1953,7 @@ public partial class LiveSession : Node
         triggerField = field;
         fieldBuilder = builder;
         FieldProperties.Lights = field;   // the field's ambient and sun light entities: stored light records apply now
+        if (field.TriggerCamera != null) field.TriggerCamera.LocalCamerasOn = FieldProperties.LocalCamerasOn;   // CameraMgr m_24c is not the field's: the list's kind 10 may have come first
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();

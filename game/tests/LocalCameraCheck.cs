@@ -18,6 +18,8 @@ namespace Ms2Godot.Tests;
 /// - 02100004: the auto check enters the Operate 3 setup of trigger box 101 while the player stands in it, not with the
 ///   local cameras off, and the camera moves back once the player walks out.
 /// - 02000064: the auto check enters the Operate 1 setup 101 within its Scope 450 of (-3600, 7200, 2100).
+/// - Each field whose trigger uses EnableLocalCamera: field property 10 off, handed to the camera as the live session does,
+///   keeps the auto check out of the field's first auto setup; on, the auto check enters it; off again, it moves back.
 /// Needs MS2_DATA. Quits with 0 when it holds, else 1.
 /// </summary>
 public partial class LocalCameraCheck : Node
@@ -109,6 +111,7 @@ public partial class LocalCameraCheck : Node
         Trigger();
         Box();
         Scope();
+        EnableLocalCamera();
     }
 
     void Trigger()
@@ -191,6 +194,55 @@ public partial class LocalCameraCheck : Node
         var (c2, _, _) = Field(2000064, at - new System.Numerics.Vector3(0, 20, 0));
         c2.Update(1 / 60f);
         Mode("02000064 460 from setup 101", c2, TriggerCamera.Target);
+    }
+
+    /// <summary>The fields of the trigger xmls' EnableLocalCamera uses (both data sets).</summary>
+    static readonly int[] EnableLocalCameraFields = { 2020003, 2020006, 2020009, 2020013, 2020030, 2020031, 2020066, 2020071, 99999870 };
+
+    void EnableLocalCamera()
+    {
+        int fields = 0;
+        foreach (int id in EnableLocalCameraFields)
+        {
+            if (FieldData.FindById(packs, id) is not { } fd) { notes.Add($"{id}: no field"); continue; }
+            var map = FieldMap.Load(packs, new FlatLibrary(packs), fd.XBlock);
+            var setups = Ms2.Ui.LocalCameraSetup.All(map.Entities);
+            System.Numerics.Vector3? at = null;
+            foreach (var s in setups)
+            {
+                if (s.Operate == 1) { at = s.Setting.Position; break; }
+                if (s.Operate == 3)
+                    foreach (var e in map.Entities)
+                        if (e.HasMixin("MS2TriggerBox") && (int)e.Number("TriggerObjectID") == s.BoxId)
+                        { at = new System.Numerics.Vector3((float)e.Position.X, (float)e.Position.Y, (float)e.Position.Z); break; }
+                if (at != null) break;
+            }
+            if (at is not { } p) { notes.Add($"{id}: no auto setup"); continue; }
+            fields++;
+            var (c, _, _) = Field(id, p);
+            var props = new Ms2.Ui.Hud.FieldProperties();
+            void Recv(string hex) => props.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(
+                new Maple2.PacketLib.Tools.ByteReader(Convert.FromHexString(hex)), Ms2.Net.ProtocolProfile.Kms2525));
+            // the live session: the camera takes the flag when the field is built and on each change
+            props.LocalCamerasChanged += on => c.LocalCamerasOn = on;
+            Recv("010A00");
+            c.LocalCamerasOn = props.LocalCamerasOn;
+            c.Update(1 / 60f);
+            Mode($"{id} with property 10 off", c, TriggerCamera.Target);
+            Recv("010A01");
+            c.Update(1 / 60f);
+            Mode($"{id} with property 10 on", c, TriggerCamera.LocalTarget);
+            Frames(c, 0.5f);
+            Recv("010A00");
+            c.Update(1 / 60f);
+            if (c.Local?.Returning != true) fails.Add($"{id}: property 10 off does not move back");
+            for (int i = 0; i < 600 && c.ModeType == TriggerCamera.LocalTarget; i++) c.Update(1 / 60f);
+            Mode($"{id} off: back", c, TriggerCamera.Target);
+            props.Clear();
+            if (!c.LocalCamerasOn) fails.Add($"{id}: the field leave leaves the cameras off");
+        }
+        if (fields < 5) fails.Add($"EnableLocalCamera: {fields} fields with an auto setup");
+        notes.Add($"EnableLocalCamera: {fields} fields");
     }
 
     void Done()

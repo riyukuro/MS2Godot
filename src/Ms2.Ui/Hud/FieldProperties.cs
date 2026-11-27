@@ -22,8 +22,8 @@ namespace Ms2.Ui.Hud;
 /// clear only drops the record and stops a running fade: the light keeps the colour it has.
 /// Kind 3 hides the own player while it is registered (<see cref="HideMyPCApplied"/>): a list or an add applies it, and a
 /// remove or a clear unapplies it (RemoveFieldProperty and ClearFieldProperties call vfunc_5, worldservice_1.cpp:5354-5378).
-/// STILL-OPEN: the other kinds' effects (gravity, music concert, lock of the own player, user tag symbol,
-/// the local camera, photo studio); the sight range's war fog and npc visibility (FUN_141bd6810's rest); the weather's world
+/// Kind 10 turns the field's automatic local cameras on or off (<see cref="LocalCamerasOn"/>).
+/// STILL-OPEN: the other kinds' effects (gravity, music concert, lock of the own player, user tag symbol, photo studio); the sight range's war fog and npc visibility (FUN_141bd6810's rest); the weather's world
 /// effect (CEffectService::FUN_1411a7e80).
 /// </summary>
 public sealed class FieldProperties
@@ -76,13 +76,33 @@ public sealed class FieldProperties
         ApplyLight(p);
         if (p.Kind == 5) UserTagSymbolApplied?.Invoke();
         if (p is FieldProperty.HideMyPC) HideMyPCApplied?.Invoke(true);
+        if (p is FieldProperty.EnableLocalCamera e) SetLocalCameras(e.Value);
     }
 
     /// <summary>A record's vfunc_5, for the kinds the port unapplies (the lights and kind 5 keep FieldProperty's empty one).</summary>
     void Unapply(FieldProperty p)
     {
         if (p is FieldProperty.HideMyPC) HideMyPCApplied?.Invoke(false);
+        if (p is FieldProperty.EnableLocalCamera) SetLocalCameras(true);
     }
+
+    /// <summary>CameraMgr::FUN_140aeb900 (@0x140aeb900, camera.cpp:1003): m_24c = b.</summary>
+    void SetLocalCameras(bool on)
+    {
+        LocalCamerasOn = on;
+        LocalCamerasChanged?.Invoke(on);
+    }
+
+    /// <summary>CameraMgr m_24c (camera.h:310), read by FUN_140aed0d0 (camera.cpp:1281): the field's local cameras are on.
+    /// Kind 10's apply sets its value and its unapply sets true (FieldPropertyEnableLocalCameraCli vfunc_4 @0x140b27ca0 and
+    /// vfunc_5 @0x140b27cd0, fieldpropertycli.cpp:243-245), so a remove or a field leave's clear turns them on again; the
+    /// camera's release on that leave sets it too (CameraMgr::FUN_140aead90, camera.cpp:877, from worldservice_1.cpp:10103).
+    /// While it is false the auto check enters no setup (FUN_140aece50, camera.cpp:1199) and a local camera mode moves back
+    /// (CLocalTargetCameraMode::vfunc_8, localtargetcameramode.cpp:161-164). It starts true (CameraMgr(), camera.cpp:755).</summary>
+    public bool LocalCamerasOn { get; private set; } = true;
+
+    /// <summary>Kind 10's apply or unapply set <see cref="LocalCamerasOn"/> to this value.</summary>
+    public event Action<bool> LocalCamerasChanged;
 
     /// <summary>A new field (ClearFieldProperties @0x141bcaa80): each registered property is unapplied, then none of the old
     /// field's properties stays, and the lights are the new field's.</summary>
@@ -90,6 +110,7 @@ public sealed class FieldProperties
     {
         foreach (var p in byKind.Values.ToArray()) Unapply(p);
         byKind.Clear(); fades.Clear(); lights = null;
+        LocalCamerasOn = true;   // CameraMgr::FUN_140aead90 on the same leave (worldservice_1.cpp:10103, camera.cpp:877)
     }
 
     /// <summary>Kind 3 is registered: the own player is hidden for it.</summary>
