@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Ms2.Formats.Model;
 using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
@@ -50,6 +49,9 @@ public class StandardLightFormTests
         using var packs = new PackSet(dir);
         var spec = new NifSpec(NifEnv.NifXml());
         var byType = new Dictionary<int, int>();
+        var byForm = new Dictionary<int, int>();
+        var others = new Dictionary<string, int>();
+        int boosted = 0;
         var nifs = new HashSet<string>();
         var failed = new List<string>();
         foreach (var kfmEntry in packs.List(Map).Where(e => e.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)))
@@ -69,11 +71,19 @@ public class StandardLightFormTests
             {
                 int t = ModelData.StandardMaterialType(m.Material);
                 byType[t] = byType.GetValueOrDefault(t) + 1;
+                int f = ModelData.LightForm(m.ActiveMaterial);
+                byForm[f] = byForm.GetValueOrDefault(f) + 1;
+                if (m.AlphaBoost) boosted++;
+                if (m.ActiveMaterial != null && ModelData.StandardMaterialType(m.ActiveMaterial) < 0)
+                    others[m.ActiveMaterial] = others.GetValueOrDefault(m.ActiveMaterial) + 1;
             }
         }
         int all = byType.Values.Sum();
         TestContext.WriteLine($"{env}: {nifs.Count} actor models, {all} meshes; by type: " +
             string.Join(", ", byType.OrderBy(k => k.Key).Select(k => $"{k.Key}={k.Value}")) + $"; {failed.Count} failed to load");
+        TestContext.WriteLine($"  by light form: " + string.Join(", ", byForm.OrderBy(k => k.Key).Select(k => $"{k.Key}={k.Value}")) +
+            $"; {boosted} swapped to MS2AlphaBoostMaterial; other names: " +
+            string.Join(", ", others.OrderByDescending(k => k.Value).Select(k => $"{k.Key}={k.Value}")));
         foreach (var f in failed.Take(20)) TestContext.WriteLine("  " + f);
 
         Assert.That(packs.Exists(Map, Brick), Is.True, "the 02000110 breakable brick");
@@ -82,44 +92,29 @@ public class StandardLightFormTests
         Assert.That(brick.Meshes.Select(m => m.Material), Is.All.EqualTo("MS2StandardMaterial"));
         Assert.That(brick.Meshes.All(m => ModelData.IsStandardLightMaterial(m.Material)), Is.True);
         Assert.That(byType.GetValueOrDefault(0), Is.GreaterThan(all / 2), "type 0 is most of the actor meshes");
+        Assert.That(boosted, Is.GreaterThan(0), "meshes the load swaps to MS2AlphaBoostMaterial");
+        Assert.That(byForm.GetValueOrDefault(ModelData.NiStandardLightForm), Is.GreaterThan(0), "meshes naming no material");
     }
 
-    static string Source(string relative)
-    {
-        for (var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); dir != null; dir = dir.Parent)
-        {
-            var path = Path.Combine(dir.FullName, relative);
-            if (File.Exists(path)) return Regex.Replace(File.ReadAllText(path), @"\s+", " ");
-        }
-        Assert.Fail($"{relative} not found above the test directory");
-        return null!;
-    }
-
-    static void Has(string source, string text, string why = null) =>
-        Assert.That(source.Contains(text, StringComparison.Ordinal), Is.True, why == null ? $"missing: {text}" : $"missing: {text} ({why})");
-
-    /// <summary>character_lit's standard form: ModelBuilder sets standard_light on a type 0 mesh; the shader then takes the
-    /// light's world direction (ms2_sun_dir, as field_lit), MS2Light's plain N.L with no rim, and leaves out the colour boost
-    /// and the dye (HandleColorBoost :652-662 and HandleCustomMaps :667-676 are types 1-3 only).</summary>
+    /// <summary>The light form a mesh takes by the material it draws with: types 1-3 the character light, type 0 MS2Light, no
+    /// material the renderer's default NiStandardMaterial; and the alpha-boost swap makes any mesh MS2AlphaBoostMaterial
+    /// (type 0), a character material too.</summary>
     [Test]
-    public void CharacterShaderHasTheStandardForm()
+    public void TheLightFormFollowsTheActiveMaterial()
     {
-        var shader = Source("game/shaders/character_lit.gdshader");
-        Has(shader, "uniform bool standard_light");
-        Has(shader, "global uniform vec3 ms2_sun_dir;");
-        Has(shader, "bool std_form = standard_light && !own;");
-        Has(shader, "vec3 l = std_form ? -ms2_sun_dir : -light_dir;");
-        Has(shader, "float intensity = std_form ? max(dot(l, n), 0.0) : half_lambert + rim;");
-        Has(shader, "if (has_ctrl && !standard_light) {", "the dye is types 1-3 only");
-        int boosts = Regex.Matches(shader, @"diffuse \*= color_boost;").Count;
-        Assert.That(boosts, Is.EqualTo(1));
-        Has(shader, "if (!standard_light) { diffuse *= color_boost; }", "the colour boost is types 1-3 only");
-        Has(shader, "if (std_form) { diffuse += ms2_point_lights(world_pos, n, 0);",
-            "the field's point lights through MS2Light, as field_lit");
+        Assert.That(ModelData.LightForm("MS2StandardMaterial"), Is.EqualTo(ModelData.MS2LightForm));
+        Assert.That(ModelData.LightForm("MS2AlphaBoostMaterial"), Is.EqualTo(ModelData.MS2LightForm));
+        foreach (var name in new[] { "MS2CharacterMaterial", "MS2CharacterSkinMaterial", "MS2CharacterHairMaterial", "MS2ChaosMaterial" })
+            Assert.That(ModelData.LightForm(name), Is.EqualTo(ModelData.CharacterLightForm), name);
+        Assert.That(ModelData.LightForm(null), Is.EqualTo(ModelData.NiStandardLightForm));
 
-        Has(Source("game/scripts/ShaderParam.cs"), "StandardLight = \"standard_light\"");
-        var builder = Source("game/scripts/ModelBuilder.cs");
-        Has(builder, "sm.SetShaderParameter(ShaderParam.StandardLight, IsStandardLightMaterial(m));");
-        Has(builder, "IsStandardLightMaterial(ModelMesh m) => ModelData.IsStandardLightMaterial(m.Material);");
+        var hair = new ModelMesh { Material = "MS2CharacterHairMaterial" };
+        Assert.That(hair.ActiveMaterial, Is.EqualTo("MS2CharacterHairMaterial"));
+        Assert.That(ModelData.LightForm(hair.ActiveMaterial), Is.EqualTo(ModelData.CharacterLightForm));
+        hair.AlphaBoost = true;
+        Assert.That(hair.ActiveMaterial, Is.EqualTo("MS2AlphaBoostMaterial"));
+        Assert.That(ModelData.LightForm(hair.ActiveMaterial), Is.EqualTo(ModelData.MS2LightForm));
+        var unnamed = new ModelMesh { AlphaBoost = true };
+        Assert.That(ModelData.LightForm(unnamed.ActiveMaterial), Is.EqualTo(ModelData.MS2LightForm));
     }
 }

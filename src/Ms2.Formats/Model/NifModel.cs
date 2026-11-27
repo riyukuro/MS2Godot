@@ -220,6 +220,12 @@ public sealed class ModelMesh
     /// runtime weighs the targets on the CPU, so it takes every one of these.</summary>
     public MorphAnim AnyMorph;
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
+    /// <summary>The client swaps this mesh to MS2AlphaBoostMaterial when a character-path model loads
+    /// (<see cref="ModelData.AlphaBoost"/>).</summary>
+    public bool AlphaBoost;
+    /// <summary>The material a character-path mesh draws with: MS2AlphaBoostMaterial where <see cref="AlphaBoost"/>
+    /// swapped it, else <see cref="Material"/> (null: the renderer's default NiStandardMaterial).</summary>
+    public string ActiveMaterial => AlphaBoost ? "MS2AlphaBoostMaterial" : Material;
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
     public Dictionary<string, int> ExtraInts = new();          // NiIntegerExtraData by name (ColorOverrideMapIndex, ...)
@@ -976,6 +982,22 @@ public sealed class ModelData
     /// light, whatever model the mesh hangs under.</summary>
     public static bool IsStandardLightMaterial(string name) => StandardMaterialType(name) == 0;
 
+    /// <summary>The character light: types 1-3 (<see cref="LightForm"/>).</summary>
+    public const int CharacterLightForm = 0;
+    /// <summary>The "MS2Light" node of type 0 (<see cref="LightForm"/>).</summary>
+    public const int MS2LightForm = 1;
+    /// <summary>NiStandardMaterial's own light fragment (<see cref="LightForm"/>).</summary>
+    public const int NiStandardLightForm = 2;
+
+    /// <summary>How a character-path mesh is lit by the material it draws with (<see cref="ModelMesh.ActiveMaterial"/>):
+    /// types 1-3 by the character light, type 0 by MS2Light (<see cref="IsStandardLightMaterial"/>), and a mesh that names
+    /// no material by the renderer's default material, an NiStandardMaterial (NiRenderer::NiRenderer,
+    /// NiRenderer.cpp:49-54: m_spInitialDefaultMaterial; NiRenderObject::LoadBinary, NiRenderObject.cpp:389-412, applies
+    /// only the names the file stores). STILL-OPEN: a name no library builds (not one of
+    /// <see cref="StandardMaterialNames"/>) keeps the character light here.</summary>
+    public static int LightForm(string material) =>
+        material == null ? NiStandardLightForm : IsStandardLightMaterial(material) ? MS2LightForm : CharacterLightForm;
+
     /// <summary>The client gives the render object (a mesh or a particle system) at block <paramref name="block"/>
     /// MS2AlphaBoostMaterial when it loads, whatever material it names: its own NiMaterialProperty has an alpha above 1, or
     /// that property's first controller is an NiAlphaController whose key-based interpolator has a float key above 1.
@@ -1212,6 +1234,7 @@ public sealed class ModelData
             }
             mesh.Flags = (int)b.IntOr("Flags", 0);
             ReadMaterial(nif, b, mesh);
+            mesh.AlphaBoost = AlphaBoost(nif, i);
             ReadTextureControllers(nif, b, mesh);
             ReadMorph(nif, b, s, skinned, mesh);
             // the submeshes (skin partitions): each draws its own INDEX region over its own vertex region
