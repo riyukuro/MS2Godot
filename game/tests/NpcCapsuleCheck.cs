@@ -15,6 +15,8 @@ namespace Ms2Godot.Tests;
 /// - The own player's controller move (PCBase::vfunc_68) stops at the live npc; a move that leaves out the skill motion's
 ///   ignoreCollisionGroups 20 (groups 2 and 4, heavy gunner JetBoots 10600081; StateSkill::FUN_1417edc20,
 ///   stateskill.cpp:2862-2874) passes it, and so does a plain move once the npc is dead.
+/// - A live npc pressing the standing player (each move starts inside its capsule): the moves pass through it, as with no
+///   npc there (SweepCapsuleBox d == 0, CharacterController.cpp:366-374), and allocate nothing.
 /// Quits with 0 when all hold, else 1.
 /// MS2_NPC_CAPSULE_PERF=N (a measurement, not a check): after the checks, N live npcs walk a circle each physics frame
 /// with the runner stepping among them, 300 frames with their capsule bodies and 300 with the bodies freed; prints the
@@ -94,8 +96,49 @@ public partial class NpcCapsuleCheck : Node3D
         return runner.GlobalPosition.X;
     }
 
+    // The capsule body takes a moved root's transform at the next frame's flush; these steps run inside one frame.
+    static void Place(Node3D npc, Vector3 at)
+    {
+        npc.GlobalPosition = at;
+        npc.GetNode<Node3D>("Capsule").ForceUpdateTransform();
+    }
+
+    // A live npc pressing the runner, as a mob walking into a standing player in melee: npc 4's capsule 20 behind the
+    // runner each step, so every step starts inside it, and the runner stepping 2 along +x. The sweeps pass through a
+    // controller they start inside (SweepCapsuleBox d == 0, CharacterController.cpp:366-374), so the runner ends where it
+    // does with no npc there, and the start inside the npc's capsule allocates nothing.
+    void Pressed()
+    {
+        var step = (System.Func<Vector3, float, uint, Movement.NxController.Hit>)System.Delegate.CreateDelegate(
+            typeof(System.Func<Vector3, float, uint, Movement.NxController.Hit>), runner,
+            typeof(Player).GetMethod("MoveStep", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic));
+        npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 4, NpcId = table0 }));
+        var npc = GetNode<Node3D>("Npc4");
+        Check(Layer(4, this) == 1u << 4, $"pressing npc capsule layer {Layer(4, this):x}, not group 4");
+        float Walk(bool pressed, out long bytes)
+        {
+            runner.GlobalPosition = new Vector3(-300, 0.5f, 500);
+            bytes = 0;
+            for (int i = 0; i < 80; i++)
+            {
+                Place(npc, pressed ? runner.GlobalPosition + new Vector3(-20, 0, 0) : new Vector3(0, 4, -3000));
+                long b0 = System.GC.GetAllocatedBytesForCurrentThread();
+                step(new Vector3(2, 0, 0), 1f / 60, 0);
+                if (i >= 20) bytes += System.GC.GetAllocatedBytesForCurrentThread() - b0;
+            }
+            return runner.GlobalPosition.X;
+        }
+        float free = Walk(false, out long freeBytes), pressedX = Walk(true, out long pressedBytes);
+        Check(Mathf.Abs(pressedX - free) < 0.01f, $"the pressed runner ends at x {pressedX:0.000}, with no npc at {free:0.000}");
+        Check(pressedBytes / 60 <= 8, $"a step inside the npc's capsule allocates {pressedBytes / 60} B (with no npc {freeBytes / 60} B)");
+        GD.Print($"npc capsule check: pressed by a live npc the runner ends at x {pressedX:0.000} (no npc {free:0.000}), " +
+                 $"{pressedBytes / 60} B per step (no npc {freeBytes / 60} B)");
+        npcs.Remove(4, false);
+    }
+
     void Run()
     {
+        Check(npcs != null, "the setup did not finish (no npc layer)");
         if (runner != null)
         {
             float plain = Rush(0), ignored = Rush(20);
@@ -106,6 +149,7 @@ public partial class NpcCapsuleCheck : Node3D
             float dead = Rush(0);
             Check(dead > 250, $"a plain move stopped at the dead npc (x {dead:0})");
             GD.Print($"npc capsule check: plain move ends at x {plain:0}, the ignore-20 move at {ignored:0}, past the dead npc at {dead:0}");
+            Pressed();
         }
         foreach (var f in fails) GD.Print($"npc capsule check: FAIL {f}");
         GD.Print($"npc capsule check: {(fails.Count == 0 ? "OK" : "FAIL")}");

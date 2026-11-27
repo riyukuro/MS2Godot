@@ -43,6 +43,7 @@ public sealed class NxController
         excludeList.Clear();
         excludeList.Add(body.GetRid());
         if (ignoreBody && IgnoreBody.IsValid) excludeList.Add(IgnoreBody);
+        for (int i = 0; ignoreBody && i < startSkips; i++) excludeList.Add(startSkip[i]);
         var q = shapeQuery;
         q.Shape = shapeNode.Shape;
         q.CollisionMask = mask;
@@ -387,7 +388,8 @@ public sealed class NxController
         {
             var move = dir * length;
             bool collided = TestMotion(from, move, CastMargin, false);
-            if (StartedInside(collided, move)) return SweepFromInside(from, dir, length);
+            if (StartedInside(collided, move))
+                return PastStartControllers(from, dir, length, out var past) ? past : SweepFromInside(from, dir, length);
             float safeF = motionResult.GetCollisionSafeFraction();
             if (collided && safeF < 1f)
             {
@@ -476,6 +478,55 @@ public sealed class NxController
         return new Contact(distance, normal, collider, mesh, face, shapeIdx);
     }
 
+    // the other controllers' bodies a sweep started inside, left out of its tests while it runs (PastStartControllers)
+    readonly Rid[] startSkip = new Rid[8];
+    int startSkips;
+
+    /// <summary>A sweep that starts inside other controllers' bodies only (an npc's capsule moved into the standing player,
+    /// a mob pressing it in melee): the same sweep with those bodies left out of the motion tests and the shape query.
+    /// SweepCapsuleBox's d == 0 reports no hit for a shape the sweep starts inside (CharacterController.cpp:366-374), and
+    /// <see cref="SweepFromInside"/>'s cast leaves out the shapes it starts inside; a body of one shape left out is that
+    /// shape left out, so the result is the same, from the motion test's own result objects: it allocates nothing, where
+    /// SweepFromInside's cast and rest query allocate their results. The start contacts are the probe's (recovery as
+    /// collision, as <see cref="InsideSolid"/>'s); false, with nothing changed, where one at least the cast's margin deep
+    /// is not such a body (a mesh, a box, a controller of several shapes). A second run that still starts inside something
+    /// takes SweepFromInside with them left out of its query.</summary>
+    bool PastStartControllers(Vector3 from, Vector3 dir, float length, out Contact? contact)
+    {
+        contact = null;
+        if (startSkips > 0) return false;                                       // already this sweep's second run
+        var probe = dir * ProbeMotion;
+        endMotion.From = new Transform3D(Basis.Identity, from);
+        endMotion.Motion = probe;
+        endMotion.Margin = CastMargin;
+        endMotion.RecoveryAsCollision = true;
+        PhysicsServer3D.BodyTestMotion(body.GetRid(), endMotion, motionResult);
+        int n = motionResult.GetCollisionCount(), k = 0;
+        for (int i = 0; i < n; i++)
+        {
+            if (motionResult.GetCollisionDepth(i) < CastMargin) continue;      // a touch, not an overlap
+            var rid = motionResult.GetColliderRid(i);
+            if (PhysicsServer3D.BodyGetShapeCount(rid) != 1 || !IsController(GodotObject.InstanceFromId(motionResult.GetColliderId(i))))
+                return false;
+            bool seen = false;
+            for (int j = 0; j < k && !seen; j++) seen = startSkip[j] == rid;
+            if (seen) continue;
+            if (k == startSkip.Length) return false;
+            startSkip[k++] = rid;
+        }
+        if (k == 0) return false;
+        for (int j = 0; j < k; j++) motionExclude.Add(startSkip[j]);
+        motion.ExcludeBodies = motionExclude;
+        endMotion.ExcludeBodies = motionExclude;
+        startSkips = k;
+        contact = SweepTests(from, dir, length);                                // inside something else too: SweepFromInside there
+        for (int j = 0; j < k; j++) motionExclude.RemoveAt(motionExclude.Count - 1);
+        motion.ExcludeBodies = motionExclude;
+        endMotion.ExcludeBodies = motionExclude;
+        startSkips = 0;
+        return true;
+    }
+
     /// <summary>
     /// A sweep that starts inside a shape: the shape query's cast, which leaves out the shapes it starts inside (GodotPhysics3D
     /// cast_motion skips a shape it overlaps at the start), as SweepCapsuleBox's d == 0 reports no hit. BodyTestMotion cannot
@@ -485,7 +536,8 @@ public sealed class NxController
     /// The controller keeps one skin off what it touches, so a move starts inside a shape after something moved into it,
     /// or after the body walked through a one-sided triangle's back face (the client's triangle sweeps cull back faces,
     /// so it is inside the triangle for a few moves).
-    /// STILL-OPEN: this path allocates its results (a float[] and a Dictionary).
+    /// It allocates its results (a float[] and a Dictionary); a start inside other controllers only does not come here
+    /// (<see cref="PastStartControllers"/>).
     /// STILL-OPEN, where the motion test differs from the shape query this controller used before: (1) on a one-sided mesh
     /// the motion test's first step pushes the shape out of a triangle it is behind, so a move that starts behind one is
     /// taken here, and the cast passes back faces as the client's triangle sweeps do, where the shape query's cast stopped
