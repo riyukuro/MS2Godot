@@ -14,7 +14,8 @@ namespace Ms2Godot.Tests;
 /// system's frame, the system node being turned a quarter about +Z (MeshAlign: columns normal, up x normal, normal x right,
 /// so the clone's axes are -X, -Y, +Z), scaled by the particle's size, the child at its local offset under it
 /// (PostUpdate, :376-436). A dead particle's clone is hidden (RemoveParticle, :326-340). Steps that reuse the pooled clones
-/// allocate 0 B. Before the port the system drew its particles as quads and the master meshes statically.
+/// allocate 0 B, both when the masters share one material and when an alpha and a UV controller give each clone its own,
+/// run at the clone's age (StartAnimations, :229-300; most master meshes in the data are animated). Before the port the system drew its particles as quads and the master meshes statically.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class MeshParticleCheck : Node
@@ -28,7 +29,7 @@ public partial class MeshParticleCheck : Node
         Ambient = new float[] { 0, 0, 0 }, Diffuse = new float[] { 0, 0, 0 }, Emissive = new float[] { 1, 1, 1 },
     };
 
-    static EffectScene Scene(double stop)
+    static EffectScene Scene(double stop, bool animated = false)
     {
         var sc = new EffectScene { Duration = 10 };
         // the system node turned a quarter about +Z (row-major: X goes to +Y)
@@ -37,6 +38,12 @@ public partial class MeshParticleCheck : Node
         sc.Nodes.Add(new EffectNode { Name = "leaf", Parent = 1, Local = Xform.Identity with { T = new Vec3(0, 0, Up) } });
         sc.Meshes.Add(new EffectMesh { Mesh = Quad("root"), Node = 1, Master = true });
         sc.Meshes.Add(new EffectMesh { Mesh = Quad("leaf"), Node = 2, Master = true });
+        if (animated)
+            foreach (var em in sc.Meshes)
+            {
+                em.Alpha = t => 1 - t; em.AlphaCtl = new TimeCtl { Stop = 1 };
+                em.Uv.Add(new UvOp { Operation = 0, Slot = "base", Curve = t => t, Ctl = new TimeCtl { Stop = 1 } });
+            }
         var d = new ParticleSystemDef
         {
             Node = 0, Name = "meshps", MaxParticles = 64, MeshParticles = true,
@@ -67,9 +74,9 @@ public partial class MeshParticleCheck : Node
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
 
-    EffectInstance Start(double stop)
+    EffectInstance Start(double stop, bool animated = false)
     {
-        var fx = new EffectInstance(Scene(stop), new ModelBuilder(null, null), 10, 1);
+        var fx = new EffectInstance(Scene(stop, animated), new ModelBuilder(null, null), 10, 1);
         AddChild(fx);
         fx.FileSpace = Transform3D.Identity;
         return fx;
@@ -128,12 +135,21 @@ public partial class MeshParticleCheck : Node
         if (Meshes(fx) != 0) fails.Add($"{Meshes(fx)} clones still shown after their particles died");
         fx.QueueFree();
 
-        // steady emission: once the pool holds a clone for each slot, steps allocate nothing
-        fx = Start(10);
-        for (int f = 0; f < 100; f++) fx._Process(0.02);
-        long bytes = CheckAlloc.Least(() => { for (int i = 0; i < 50; i++) fx._Process(0.02); });
-        GD.Print($"mesh particle: 250 steps reusing pooled clones: {bytes} B");
-        if (bytes != 0) fails.Add($"steps reusing pooled clones allocated {bytes} B");
-        fx.QueueFree();
+        // steady emission: once the pool holds a clone for each slot, steps allocate nothing, with shared materials and with
+        // a material per animated clone
+        foreach (bool animated in new[] { false, true })
+        {
+            string path = animated ? "animated" : "shared";
+            fx = Start(10, animated);
+            for (int f = 0; f < 100; f++) fx._Process(0.02);
+            var live = Shown(fx, fails);
+            if (live.Count < 2) fails.Add($"{path}: {live.Count} clones live in steady emission");
+            else if ((live[0].Root.MaterialOverride == live[1].Root.MaterialOverride) == animated)
+                fails.Add(animated ? "animated: two clones share a material, so the per-clone path is not run" : "shared: two clones of an unanimated master have their own materials");
+            long bytes = CheckAlloc.Least(() => { for (int i = 0; i < 50; i++) fx._Process(0.02); });
+            GD.Print($"mesh particle: 250 steps reusing pooled clones ({path} materials, {live.Count} live): {bytes} B");
+            if (bytes != 0) fails.Add($"{path}: steps reusing pooled clones allocated {bytes} B");
+            fx.QueueFree();
+        }
     }
 }
