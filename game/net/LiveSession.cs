@@ -4079,7 +4079,9 @@ public partial class LiveSession : Node
         // ("use:first" the first valid learned one with a row, "use:idle" the first with an idleAnim too); "/<word>" types that line in the first chat window ("word:first"
         // the first reserved word of a valid emotion other than the one playing); "sticker"
         // opens the sticker dialog and sends its first usable sticker from the preview; "useitem:<id>" double clicks that bag
-        // item and answers its box yes; "close" closes both dialogs; "~N" waits N s.
+        // item and answers its box yes; "preview:<id>" (or "preview:first", "preview:idle") is the dialog's shift + right click
+        // on that emotion (the skill preview, a shot each half second for 6 s as preview_<n>_<k>.png); "close" closes both
+        // dialogs; "~N" waits N s.
         // The own state and emotion are logged each half second for 6 s after a use; with MS2_LIVE_EMOTE_SHOTS=<dir> a shot after each
         // step as emote_<n>.png.
         await SoundRun(tree, Frames);   // MS2_LIVE_SOUND (LiveSession.SoundScript.cs)
@@ -4117,6 +4119,24 @@ public partial class LiveSession : Node
                         seen += $" {half * 0.5:0.0}s:{st:x}/{em}";
                     }
                     GD.Print($"live: emote use {n}: state/emotion{seen}");
+                }
+                else if (step.StartsWith("preview:"))
+                {
+                    // "preview:<id>|first|idle": the dialog's onShiftRClick with that emotion (the movie's OnRightClick with
+                    // shift held), then a shot each half second for 6 s as preview_<n>_<k>.png
+                    uint id = 0;
+                    if (step == "preview:first") id = eh.FirstValidEmotionScripted(false);
+                    else if (step == "preview:idle") id = eh.FirstValidEmotionScripted(true);
+                    else uint.TryParse(step.AsSpan(8), out id);
+                    GD.Print($"live: emote preview {n}: {id} {(eh.PreviewEmotionScripted(id) ? "sent" : "dialog closed")}");
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    for (int half = 1; half <= 12; half++)
+                    {
+                        while (clock.ElapsedMilliseconds < half * 500) await Frames(1);
+                        if (!string.IsNullOrEmpty(emoteShots))
+                            tree.Root.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"preview_{n}_{half:00}.png"));
+                    }
+                    GD.Print($"live: emote preview {n}: {eh.SkillPreviewScripted()}");
                 }
                 else if (step.StartsWith('/') || step == "word:first")
                 {

@@ -162,32 +162,7 @@ public sealed class ActionAnims
     /// <summary>Reads the action table and loads each movement sequence the body has (female/&lt;name&gt;.kf).</summary>
     public static ActionAnims Load(PackSet packs, ModelBuilder builder, ModelData md, AnimationPlayer player, string bodyDir)
     {
-        var aa = new ActionAnims { builder = builder, md = md, lib = player?.GetAnimationLibrary(""), bodyDir = bodyDir };
-        string kfmEntry = $"{bodyDir}/{bodyDir}.kfm";
-        if (packs.Exists(ModelBuilder.ModelArchive, kfmEntry))
-        {
-            aa.kfm = KfmFile.Load(packs.Read(ModelBuilder.ModelArchive, kfmEntry));
-            foreach (var sq in aa.kfm.Sequences)
-                aa.seqIds.TryAdd(Path.GetFileNameWithoutExtension(sq.KfPath.Replace('\\', '/')), sq.Id);
-        }
-        string xmlEntry = $"{bodyDir}/{bodyDir}.xml";
-        if (packs.Exists(ModelBuilder.ModelArchive, xmlEntry))
-        {
-            var kx = PackXml.Parse(packs.Read(ModelBuilder.ModelArchive, xmlEntry));
-            foreach (var el in kx.Root?.Elements() ?? Enumerable.Empty<XElement>())
-            {
-                if (aa.xmlKeys.ContainsKey(el.Name.LocalName)) continue;   // FirstChild (ms2animationservice.cpp:395)
-                List<(double, string)> list = null;
-                foreach (var k in el.Elements("key"))
-                {
-                    string text = (string)k.Attribute("text");
-                    if (string.IsNullOrEmpty(text)) continue;
-                    double.TryParse((string)k.Attribute("time"), NumberStyles.Float, CultureInfo.InvariantCulture, out double t);
-                    (list ??= new()).Add((t, text));
-                }
-                if (list != null) aa.xmlKeys[el.Name.LocalName] = list;
-            }
-        }
+        var aa = Body(packs, builder, md, player, bodyDir);
         var table = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
         var x = PackXml.Parse(packs.Read("Xml", "table/pcactiondata.xml"));
         var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");
@@ -215,6 +190,39 @@ public sealed class ActionAnims
                 aa.Kf[key] = kf;
             }
             aa.names[a] = key;
+        }
+        return aa;
+    }
+
+    /// <summary>The body's sequences without the action table: the KFM's ids and the companion xml's keys, each sequence
+    /// loaded on first use (<see cref="Sequence"/>). The skill preview's avatar plays only its emotion's sequences.</summary>
+    public static ActionAnims Body(PackSet packs, ModelBuilder builder, ModelData md, AnimationPlayer player, string bodyDir)
+    {
+        var aa = new ActionAnims { builder = builder, md = md, lib = player?.GetAnimationLibrary(""), bodyDir = bodyDir };
+        string kfmEntry = $"{bodyDir}/{bodyDir}.kfm";
+        if (packs.Exists(ModelBuilder.ModelArchive, kfmEntry))
+        {
+            aa.kfm = KfmFile.Load(packs.Read(ModelBuilder.ModelArchive, kfmEntry));
+            foreach (var sq in aa.kfm.Sequences)
+                aa.seqIds.TryAdd(Path.GetFileNameWithoutExtension(sq.KfPath.Replace('\\', '/')), sq.Id);
+        }
+        string xmlEntry = $"{bodyDir}/{bodyDir}.xml";
+        if (packs.Exists(ModelBuilder.ModelArchive, xmlEntry))
+        {
+            var kx = PackXml.Parse(packs.Read(ModelBuilder.ModelArchive, xmlEntry));
+            foreach (var el in kx.Root?.Elements() ?? Enumerable.Empty<XElement>())
+            {
+                if (aa.xmlKeys.ContainsKey(el.Name.LocalName)) continue;   // FirstChild (ms2animationservice.cpp:395)
+                List<(double, string)> list = null;
+                foreach (var k in el.Elements("key"))
+                {
+                    string text = (string)k.Attribute("text");
+                    if (string.IsNullOrEmpty(text)) continue;
+                    double.TryParse((string)k.Attribute("time"), NumberStyles.Float, CultureInfo.InvariantCulture, out double t);
+                    (list ??= new()).Add((t, text));
+                }
+                if (list != null) aa.xmlKeys[el.Name.LocalName] = list;
+            }
         }
         return aa;
     }

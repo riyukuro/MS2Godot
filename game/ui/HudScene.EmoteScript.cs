@@ -23,6 +23,18 @@ public partial class HudScene
         return true;
     }
 
+    /// <summary>The dialog's onShiftRClick with that id (the movie's OnRightClick with shift held); false while the dialog is closed.</summary>
+    public bool PreviewEmotionScripted(uint id)
+    {
+        if (!DynamicActionOpen) return false;
+        dynamicAction.OnCallback("onShiftRClick", new object[] { id });
+        return true;
+    }
+
+    /// <summary>The skill preview dialog now: open or not, the avatar's view and its emotion state.</summary>
+    public string SkillPreviewScripted() =>
+        $"open {SkillPreviewOpen} view {skillPreviewView != null} {skillPreviewView?.EmotionState ?? "-"}";
+
     /// <summary>The first emotion valid now (GetValidEmotions' order) whose skill row is a social emotion (main type 0xe); with
     /// <paramref name="withIdle"/> the first whose emotion in the own face item's group has an idleAnim.</summary>
     public uint FirstValidEmotionScripted(bool withIdle)

@@ -38,6 +38,7 @@ public partial class HudScene
             HasPlayer = () => GetTree().GetFirstNodeInGroup(Player.Group) is Player,
             InCubeMode = () => Ms2Godot.Net.LiveSession.Instance?.CubeCraft?.InCubeMode == true,
             UseSkill = UseOwnSkill,
+            PreviewAction = PreviewSkillAction,
         };
         c.Unloaded += () =>
         {

@@ -1,7 +1,9 @@
 using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
+using Ms2.Ui;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Skills;
 
 namespace Ms2Godot.Ui;
 
@@ -19,6 +21,8 @@ namespace Ms2Godot.Ui;
 /// position raised to its bound's centre but at most 25 above Eff_Body (vfunc_13).</item>
 /// <item>Re-dress: a live session's put-on / put-off (MyCharacter's equip lists replaced, CSceneStateGame::OnItemPutOn /
 /// OnItemPutOff) builds the model again from the new lists, keeping the turn and the zoom.</item>
+/// <item>Emotion (the skill preview's, <see cref="PlayEmotion"/>): the body's emotion sequences and the face item's emotion
+/// group, made at the first emotion; <see cref="PreviewEmotion"/> runs the states.</item>
 /// </list>
 /// </summary>
 public sealed partial class AvatarView : Node
@@ -40,6 +44,20 @@ public sealed partial class AvatarView : Node
     string nifXml;
     object dressedWith;
     Ms2.Net.Packets.MyCharacter me;
+    AnimationPlayer anim;
+    ModelBuilder builder;
+    ModelData md;
+    string bodyDir;
+    // the emotion part, null until the first PlayEmotion (and again after a re-dress)
+    PreviewEmotion emotion;
+    /// <summary>The emotion's state and paramStr ("-" before the first), for the scripted live run.</summary>
+    public string EmotionState => emotion == null ? "-" : $"state {emotion.State:x} anim {emotion.Anim}";
+    Movement.ActionAnims anims;
+    FaceEmotion face;
+    string playing;                    // the sequence the emotion part played last ("idle" after StateIdle)
+    double clock;                      // the view's own ms clock for the face
+    double keyPos = KeysFromStart;
+    const double KeysFromStart = -2;
 
     /// <summary>The render target the movie shows.</summary>
     public Texture2D Image => view?.GetTexture();
@@ -58,12 +76,14 @@ public sealed partial class AvatarView : Node
     /// be built. The node has to stay in the tree to render.</summary>
     /// <param name="minDistance">The farthest the camera zooms out (the character window's 300; the shop preview's 1000).</param>
     /// <param name="dress">Changes the items the model is dressed in (the shop preview's items over the player's own); null: as they are.</param>
+    /// <param name="stepsDone">The zoom steps the camera starts out from the eye (m_nStepsDone; the skill preview's 2).</param>
     public static AvatarView Create(PackSet packs, string nifXml, Vector2I size, AvatarControl control,
-        float minDistance = MinDistance, Func<IReadOnlyList<Ms2.Net.Packets.EquipItem>, IReadOnlyList<Ms2.Net.Packets.EquipItem>> dress = null)
+        float minDistance = MinDistance, Func<IReadOnlyList<Ms2.Net.Packets.EquipItem>, IReadOnlyList<Ms2.Net.Packets.EquipItem>> dress = null,
+        int stepsDone = 0)
     {
         if (string.IsNullOrEmpty(nifXml) || control == null) return null;
         var av = new AvatarView { Name = "AvatarView", control = control, packs = packs, nifXml = nifXml, dress = dress, minDistance = minDistance,
-            zoom = new AvatarZoom(EyeDistance, minDistance, MaxDistance, ZoomSpeed, ZoomSteps) };
+            zoom = new AvatarZoom(EyeDistance, minDistance, MaxDistance, ZoomSpeed, ZoomSteps, stepsDone) };
         av.dressedWith = av.Worn();
         if (!av.BuildModel(packs, nifXml, size)) { av.QueueFree(); return null; }
         control.Turned += av.Turn;
@@ -104,9 +124,10 @@ public sealed partial class AvatarView : Node
     /// <summary>The model in the player's current look (<see cref="Look.PlayerLook"/>), in its idle, lit, with its pivot.</summary>
     void Dress(PackSet packs, string nifXml)
     {
-        var builder = ModelBuilder.Ui(packs, nifXml);
-        var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs, dress);
+        builder = ModelBuilder.Ui(packs, nifXml);
+        (var visual, anim, md, bodyDir) = Look.PlayerLook.Build(builder, packs, dress);
         copy = visual;
+        emotion = null; anims = null; face = null; playing = null;
         view.AddChild(copy);
         if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
         PortraitView.OwnLights(copy, PortraitView.ModelViewLightDir);
@@ -150,7 +171,7 @@ public sealed partial class AvatarView : Node
     /// <summary>A wheel turn: the zoom starts (the handler is a method so the view can take it off again).</summary>
     void StartZoom(bool zoomIn) => zoom.Start(zoomIn);
 
-    /// <summary>ItemPreview::ResetCamera: the zoom again at the farthest step and the camera there.</summary>
+    /// <summary>ItemPreview::ResetCamera (itempreview.cpp:489-509): the zoom again from the eye, no steps done.</summary>
     void ResetZoom()
     {
         zoom = new AvatarZoom(EyeDistance, minDistance, MaxDistance, ZoomSpeed, ZoomSteps);
@@ -210,9 +231,71 @@ public sealed partial class AvatarView : Node
         camera.LookAtFromPosition(target + new Vector3(zoom.Distance, 0, 0), target, Vector3.Up);
     }
 
+    long Ms => (long)clock;
+
+    /// <summary>
+    /// The emotion of <paramref name="row"/> on the avatar (UIAvatarPC::FUN_1418bce80, uiavatarbase.cpp:1509, from the skill
+    /// preview): the first one loads the body's sequence list (<see cref="Movement.ActionAnims.Body"/>, no movement table) and
+    /// the face item's emotion group (<see cref="Look.FaceTexture.For"/>), then <see cref="PreviewEmotion.Enter"/>.
+    /// </summary>
+    public void PlayEmotion(SkillData row)
+    {
+        if (copy == null || anim == null || row == null) return;
+        if (emotion == null)
+        {
+            anims = Movement.ActionAnims.Body(packs, builder, md, anim, bodyDir);
+            var (f, group) = Look.FaceTexture.For(copy, builder, packs, bodyDir == "male" ? 0 : 1);
+            face = f;
+            face?.SetBattle(false, Ms);
+            face?.SetGroup(group, Ms);
+            emotion = new PreviewEmotion
+            {
+                Animation = (n, k) => EmotionCast.Animation(group, n, k),
+                Play = PlaySequence,
+                Face = n => face?.Play(n, false, Ms),
+                FaceRest = () => face?.ToRest(true, Ms),
+                Idle = () => { if (anim.HasAnimation("idle")) { anim.Play("idle"); playing = "idle"; } },
+            };
+        }
+        emotion.Enter(row);
+    }
+
+    /// <summary>PCBase::PlayAnimation(name, 1, bForce, false) on the avatar: the kf's own cycle, from its start; without bForce
+    /// the sequence playing now is left as it is.</summary>
+    (double, int)? PlaySequence(string name, bool force)
+    {
+        string key = anims.SequenceOwnCycle(name);
+        if (key == null || (!force && key == playing && anim.IsPlaying())) return null;
+        anim.Play(key);
+        anim.Seek(0, true);
+        playing = key;
+        keyPos = KeysFromStart;
+        anims.Kf.TryGetValue(key, out var kf);
+        return (anim.GetAnimation(key).Length, kf?.Cycle ?? 0);
+    }
+
+    /// <summary>The keys the played sequence passed since the last frame, to the face (PCBase::TextKeyEvent's emo_ branch,
+    /// pcbase.cpp:1032-1039), as the own pc's.</summary>
+    void FaceKeys()
+    {
+        if (face == null || playing == null || !anim.IsPlaying() || !anims.Kf.TryGetValue(playing, out var kf) || kf.TextKeys.Count == 0) return;
+        double pos = anim.CurrentAnimationPosition, from = keyPos;
+        keyPos = pos;
+        foreach (var (t, key) in kf.TextKeys)
+        {
+            bool crossed = from == KeysFromStart ? t <= pos : pos >= from ? from < t && t <= pos : t > from || t <= pos;
+            if (crossed) face.TextKey(key, Ms);
+        }
+    }
+
     public override void _Process(double delta)
     {
         if (camera != null && zoom.Update((float)delta)) Place();
+        if (emotion == null) return;
+        clock += delta * 1000;
+        face?.Tick(Ms);                // the face before the states, as PCBase::vfunc_53
+        emotion.Tick(delta);
+        FaceKeys();
     }
 
     public override void _ExitTree()
