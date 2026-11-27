@@ -19,7 +19,8 @@ namespace Ms2Godot.World;
 /// map starts fading out: its alpha floor is property 0x188f01c1 (0.3 when unset), its meshes get a TransparencyStandardMaterial,
 /// its timer starts at 300 ms. UpdateFadeOut sets each running element's materials to clamp(1 - ratio, alpha, 1);
 /// UpdateFadeIn to clamp(ratio, alpha, 1), and a stopped fade-in releases the materials. An entity fading in is skipped by
-/// Apply until it is released.
+/// Apply until it is released. The timers and the 300 ms test read the game clock (GameTimeClock), which moves at most
+/// m_maxDelta = 0.25 s per frame (GameTimeClock.cpp:34, 108); <see cref="clock"/> moves the same way.
 ///
 /// The instanced entity leaves its instancing while it fades (0xa0b6b179 set when HardwareInstancingService::FUN_1413d6f40
 /// holds, cleared on release): here its copy in the shared MultiMesh is hidden and the entity draws alone with the
@@ -44,7 +45,8 @@ namespace Ms2Godot.World;
 /// each at its bone's world transform (FindIntersectionsSkinnedMeshBounds, NiCollisionTraversals.cpp:2332-2393), which
 /// only a RECOMPUTE_BOUNDS skin has (ModelMesh.BoneBounds). A skinned mesh's world bound is its merged bone bounds
 /// (CharacterAlphaSort.SkinnedBound), else its model bound at the mesh node. A faded prop mesh draws with the faded
-/// material as its override. Their frustum sphere is the merge of the meshes' world bounds now.
+/// material as its override. Their frustum sphere is the merge of the meshes' world bounds now, read once per test for the
+/// frustum and both rays, and only for a target whose outer sphere (<see cref="Outer"/>) is in the frustum and near a ray.
 ///
 /// STILL-OPEN: the POSITION lock needs the stream's CPU read access (NiDataStreamElementLock in
 /// FindIntersectionsMeshPosition); the stream access flags are not read here, so every mesh is picked as if readable.
@@ -57,7 +59,9 @@ namespace Ms2Godot.World;
 /// </summary>
 public partial class FieldFade : Node
 {
-    const ulong TestPeriodMs = 300, FadeMs = 300;
+    const double TestPeriodMs = 300, FadeMs = 300;
+    /// <summary>GameTimeClock's m_maxDelta: the game clock moves at most 0.25 s per update (GameTimeClock.cpp:34, 108).</summary>
+    const double MaxStepMs = 250;
     const float RayLow = 20f, RayHigh = 100f;
     static readonly StringName ReceiveParam = "ms2_receive";
     static readonly StringName LightOffParam = "ms2_light_off";
@@ -73,6 +77,11 @@ public partial class FieldFade : Node
         /// <summary>The entities world/FieldProps draws for it (its own, a reactable twin), and their meshes once built.</summary>
         public List<FieldEntity> PropEntities;
         public List<PropPick> Props;
+        /// <summary>A sphere round every prop mesh, made once when the props are built (<see cref="PropsBuilt"/>): the test reads
+        /// no node or bone of a target whose sphere is outside the frustum.</summary>
+        public Vector3 OuterCentre; public float OuterRadius;
+        /// <summary>Whether the outer sphere holds every prop mesh (false while one is out of the tree: the test then reads them all).</summary>
+        public bool OuterAll;
     }
 
     /// <summary>One mesh of an animated prop, with what its pick needs.</summary>
@@ -82,18 +91,21 @@ public partial class FieldFade : Node
         public bool HasBound; public Vector3 Centre; public float Radius;   // the model bound
         public Transform3D PickToSkel, BoundToSkel;                         // skinned: relative to the skeleton
         public int[] Bones; public Vector3[] BoneCentres; public float[] BoneRadii;   // RECOMPUTE_BOUNDS
+        // read once per test (Refresh), for the frustum sphere and both rays: whether it is drawn, the skeleton's world
+        // transform (skinned) or the node's, the bones' poses under the skeleton, where the pick places the vertices,
+        // and the world bound
+        public bool Shown; public Transform3D Xf, PickXf; public Transform3D[] Poses; public Vector3 WC; public float WR;
     }
 
     sealed class Element
     {
         public float Alpha;
-        public ulong Start;
+        /// <summary>When the timer started, on the fade clock (<see cref="clock"/>, milliseconds).</summary>
+        public double Start;
         /// <summary>The element's place in <see cref="Sort"/> (-1: not placed yet).</summary>
         public int Rank = -1;
-        /// <summary>The fade-out's end value is set (<see cref="UpdateFadeOut"/>).</summary>
-        public bool Settled;
-        public bool Running(ulong now) => now - Start < FadeMs;
-        public float Ratio(ulong now) => Math.Min((now - Start) / (float)FadeMs, 1f);
+        public bool Running(double now) => now - Start < FadeMs;
+        public float Ratio(double now) => Math.Min((float)((now - Start) / FadeMs), 1f);
         public readonly List<Part> Parts = new();
     }
 
@@ -132,7 +144,7 @@ public partial class FieldFade : Node
     public int FacesBuilt { get; private set; }
     readonly Func<Vector3?> feet;
     readonly Func<Camera3D> camera;
-    ulong nextTest;
+    double nextTest;
     public int Faded => fadeOut.Count;
 
     public FieldFade(Dictionary<FieldEntity, List<FieldBuilder.FadeDraw>> draws, Func<Vector3?> feet, Func<Camera3D> camera)
@@ -211,6 +223,7 @@ public partial class FieldFade : Node
                     if (mesh.BoneBounds is { Count: > 0 } bb)
                     {
                         pk.Bones = new int[bb.Count]; pk.BoneCentres = new Vector3[bb.Count]; pk.BoneRadii = new float[bb.Count];
+                        pk.Poses = new Transform3D[bb.Count];
                         for (int i = 0; i < bb.Count; i++)
                         {
                             pk.Bones[i] = bb[i].Bone;   // the skeleton's bones are the model's, in order (FieldProps.BuildOne)
@@ -223,40 +236,91 @@ public partial class FieldFade : Node
                 }
                 t.Props.Add(pk);
             }
+        Outer(t);
         return true;
+    }
+
+    /// <summary>
+    /// The target's outer sphere: its draws' sphere merged with every prop mesh's world bound at build (drawn or not), the
+    /// props' radius doubled. A prop is placed once (FieldProps) and its animation moves its meshes about their place, so a
+    /// mesh's bound stays within it while it moves less than its own radius again.
+    /// STILL-OPEN: a prop whose animation carries a mesh farther than that (a long translation) can leave the outer sphere
+    /// while its bound is in the frustum, and is then not tested; the animations' extents are not read here.
+    /// </summary>
+    void Outer(Target t)
+    {
+        Skeleton3D skel = null; Transform3D sx = default;
+        Vector3 c = default; float r = -1;
+        t.OuterAll = true;
+        foreach (var pk in t.Props)
+        {
+            if (!GodotObject.IsInstanceValid(pk.M.Node) || !pk.M.Node.IsInsideTree()) { t.OuterAll = false; continue; }
+            Read(pk, ref skel, ref sx);
+            if (r < 0) { c = pk.WC; r = pk.WR; }
+            else (c, r) = AlphaSort.Merge(c, r, pk.WC, pk.WR);
+        }
+        if (r >= 0) r *= 2;
+        if (t.DrawsRadius >= 0) (c, r) = r < 0 ? (t.DrawsCentre, t.DrawsRadius) : AlphaSort.Merge(t.DrawsCentre, t.DrawsRadius, c, r);
+        t.OuterCentre = c; t.OuterRadius = r;
     }
 
     /// <summary>Whether the prop mesh is drawn now (its node, or the entity's, not hidden; the node not freed).</summary>
     static bool Drawn(PropPick pk) => GodotObject.IsInstanceValid(pk.M.Node) && pk.M.Node.IsVisibleInTree();
 
-    /// <summary>The prop mesh's world bound now (NiBound::Update at its world transform; a RECOMPUTE_BOUNDS skin's from its
-    /// bones), or without a model bound the box of its mesh at its node.</summary>
-    static (Vector3 c, float r) WorldBound(PropPick pk)
+    /// <summary>
+    /// Reads the prop mesh's transforms once (<paramref name="skel"/> and <paramref name="sx"/> carry the last skeleton's world
+    /// transform: the meshes of one prop share it) and its world bound from them (NiBound::Update at its world transform; a
+    /// RECOMPUTE_BOUNDS skin's from its bones, as CharacterAlphaSort.SkinnedBound), or without a model bound the box of its
+    /// mesh where the pick places it.
+    /// </summary>
+    static void Read(PropPick pk, ref Skeleton3D skel, ref Transform3D sx)
     {
-        if (pk.Bones != null) return CharacterAlphaSort.SkinnedBound(pk.M.Skel, pk.BoundToSkel, pk.Bones, pk.BoneCentres, pk.BoneRadii);
-        if (pk.HasBound)
+        if (pk.M.Mesh.Skinned)
         {
-            var x = pk.M.Mesh.Skinned ? pk.M.Skel.GlobalTransform * pk.BoundToSkel : pk.M.Node.GlobalTransform;
-            return (x * pk.Centre, x.Basis.Scale.X * pk.Radius);
+            if (!ReferenceEquals(pk.M.Skel, skel)) { skel = pk.M.Skel; sx = skel.GlobalTransform; }
+            pk.Xf = sx;
+            pk.PickXf = sx * pk.PickToSkel;
         }
-        var box = PickTransform(pk) * pk.M.Node.GetAabb();
-        return (box.GetCenter(), box.Size.Length() / 2);
+        else pk.Xf = pk.PickXf = pk.M.Node.GlobalTransform;
+        if (pk.Bones != null)
+        {
+            Vector3 c = default; float r = 0;
+            for (int i = 0; i < pk.Bones.Length; i++)
+            {
+                var pose = pk.Poses[i] = pk.M.Skel.GetBoneGlobalPose(pk.Bones[i]);
+                var bc = pose * pk.BoneCentres[i];
+                float br = pose.Basis.Scale.X * pk.BoneRadii[i];
+                if (i == 0) { c = bc; r = br; }
+                else (c, r) = AlphaSort.Merge(c, r, bc, br);
+            }
+            var w = pk.Xf * pk.BoundToSkel;
+            pk.WC = w * c; pk.WR = w.Basis.Scale.X * r;
+        }
+        else if (pk.HasBound)
+        {
+            var x = pk.M.Mesh.Skinned ? pk.Xf * pk.BoundToSkel : pk.Xf;
+            pk.WC = x * pk.Centre; pk.WR = x.Basis.Scale.X * pk.Radius;
+        }
+        else
+        {
+            var box = pk.PickXf * pk.M.Node.GetAabb();
+            pk.WC = box.GetCenter(); pk.WR = box.Size.Length() / 2;
+        }
     }
 
-    /// <summary>Where the pick places the mesh's held vertices: a skinned mesh's unskinned at its node, a rigid one's at its node.</summary>
-    static Transform3D PickTransform(PropPick pk) => pk.M.Mesh.Skinned ? pk.M.Skel.GlobalTransform * pk.PickToSkel : pk.M.Node.GlobalTransform;
-
     /// <summary>The frustum sphere of a target with props: its draws' sphere merged with each drawn prop mesh's bound now;
-    /// a radius below 0 when nothing of it is drawn.</summary>
+    /// a radius below 0 when nothing of it is drawn. Each drawn mesh's transforms and bones are read here once, for the
+    /// test's two rays as well.</summary>
     static void Refresh(Target t)
     {
         Vector3 c = t.DrawsCentre; float r = t.DrawsRadius;
+        Skeleton3D skel = null; Transform3D sx = default;
         foreach (var pk in t.Props)
         {
-            if (!Drawn(pk)) continue;
-            var (pc, pr) = WorldBound(pk);
-            if (r < 0) { c = pc; r = pr; }
-            else (c, r) = AlphaSort.Merge(c, r, pc, pr);
+            if (!(pk.Shown = Drawn(pk))) continue;
+            Read(pk, ref skel, ref sx);
+            if (r < 0) { c = pk.WC; r = pk.WR; }
+            else (c, r) = AlphaSort.Merge(c, r, pk.WC, pk.WR);
         }
         t.Centre = c; t.Radius = r;
     }
@@ -273,20 +337,16 @@ public partial class FieldFade : Node
         return b * b - cc >= 0;
     }
 
-    /// <summary>PerformPick on one prop mesh (SimpleSkinPickObjectPolicy behind the bound test).</summary>
+    /// <summary>PerformPick on one prop mesh (SimpleSkinPickObjectPolicy behind the bound test), at the transforms
+    /// <see cref="Refresh"/> read.</summary>
     bool PropHits(PropPick pk, Vector3 from, Vector3 dir)
     {
-        if (pk.HasBound)
-        {
-            var (c, r) = WorldBound(pk);
-            if (!SphereHit(from, dir, c, r)) return false;
-        }
-        if (HitsFaces(pk.M.Node.Mesh, PickTransform(pk), from, dir)) return true;
+        if (pk.HasBound && !SphereHit(from, dir, pk.WC, pk.WR)) return false;
+        if (HitsFaces(pk.M.Node.Mesh, pk.PickXf, from, dir)) return true;
         if (pk.Bones == null) return false;
-        var skel = pk.M.Skel.GlobalTransform;
         for (int i = 0; i < pk.Bones.Length; i++)
         {
-            var bone = skel * pk.M.Skel.GetBoneGlobalPose(pk.Bones[i]);
+            var bone = pk.Xf * pk.Poses[i];
             if (SphereHit(from, dir, bone * pk.BoneCentres[i], bone.Basis.Scale.X * pk.BoneRadii[i])) return true;
         }
         return false;
@@ -333,19 +393,38 @@ public partial class FieldFade : Node
         if (el.Parts.Count == 0) map.Remove(t);
     }
 
+    /// <summary>
+    /// The fade clock, in milliseconds: the game clock BGTransparencyMgr's tick and timers read (service 0xE001001B,
+    /// GameTimeClock), which adds the frame's real time capped at m_maxDelta = 0.25 s (GameTimeClock.cpp:34, 108); nothing
+    /// in the client calls SetMaxDelta. It drives the 300 ms test and the fade timers.
+    /// </summary>
+    double clock;
+    ulong lastUsec;
+
+    /// <summary>One update of the fade clock: the time since the last one, at most <see cref="MaxStepMs"/>.</summary>
+    void Step(double ms) => clock += Math.Min(ms, MaxStepMs);
+
     public override void _Process(double delta)
     {
-        ulong now = Time.GetTicksMsec();
-        UpdateFadeOut(now);
-        UpdateFadeIn(now);
-        if (now >= nextTest)
+        ulong us = Time.GetTicksUsec();
+        if (lastUsec != 0) Step((us - lastUsec) / 1000.0);
+        lastUsec = us;
+        Tick();
+    }
+
+    /// <summary>The tick (0x140a0d000) at the fade clock's time: UpdateFadeOut, UpdateFadeIn, then the test when its 300 ms are up.</summary>
+    void Tick()
+    {
+        UpdateFadeOut(clock);
+        UpdateFadeIn(clock);
+        if (clock >= nextTest)
         {
-            Test(now);
-            nextTest = now + TestPeriodMs;
+            Test(clock);
+            nextTest = clock + TestPeriodMs;
         }
     }
 
-    void Test(ulong now)
+    void Test(double now)
     {
         var cam = camera();
         if (cam == null || !cam.IsInsideTree() || feet() is not { } pos) return;
@@ -358,9 +437,18 @@ public partial class FieldFade : Node
         var hit = new HashSet<Target>();
         Vector3 a = pos + Vector3.Up * RayLow, b = pos + Vector3.Up * RayHigh;
         Vector3 da = (eye - a).Normalized(), db = (eye - b).Normalized();
-        if (props != null) foreach (var t in propTargets) if (PropsBuilt(t)) Refresh(t);
         foreach (var t in targets)
         {
+            if (t.PropEntities != null && props != null && PropsBuilt(t))
+            {
+                // a held entity is read all the same: Sort orders it by its sphere now. Any other is skipped unread when its
+                // outer sphere is out of the frustum or neither ray comes near it: its bound is within that sphere
+                if (!t.OuterAll) Outer(t);
+                if (t.OuterAll && !fadeOut.ContainsKey(t) && !fadeIn.ContainsKey(t)
+                    && (t.OuterRadius < 0 || !InFrustum(frustum, np, t.OuterCentre, t.OuterRadius)
+                        || !NearSphere(a, da, t.OuterCentre, t.OuterRadius) && !NearSphere(b, db, t.OuterCentre, t.OuterRadius))) continue;
+                Refresh(t);
+            }
             if (t.Radius < 0 || !InFrustum(frustum, np, t.Centre, t.Radius)) continue;
             // the second ray's test against the first hit only skips an insert the set already holds
             if (RayHits(t, a, da) || RayHits(t, b, db)) Add(hit, t);
@@ -448,7 +536,7 @@ public partial class FieldFade : Node
         }
         if (t.Props != null)
             foreach (var pk in t.Props)
-                if (Drawn(pk) && PropHits(pk, from, dir)) return true;
+                if (pk.Shown && PropHits(pk, from, dir)) return true;
         return false;
     }
 
@@ -477,7 +565,7 @@ public partial class FieldFade : Node
     {
         if (e == null || !byEntity.TryGetValue(e, out var t)) return;
         if (t.PropEntities != null && props != null && PropsBuilt(t)) Refresh(t);
-        Apply(new HashSet<Target> { t }, Time.GetTicksMsec());
+        Apply(new HashSet<Target> { t }, clock);
         if (camera() is { } cam && cam.IsInsideTree()) Sort(cam.GlobalPosition);
     }
 
@@ -522,8 +610,8 @@ public partial class FieldFade : Node
         return el == null ? Array.Empty<(Material, ShaderMaterial)>() : el.Parts.Select(p => (p.prop != null ? p.prop.MaterialOverride : p.node.MaterialOverride, p.mat)).ToList();
     }
 
-    /// <summary>For the headless check: when the entity's fade (out, or back in) started, on the tick clock.</summary>
-    internal ulong? StartOf(FieldEntity e)
+    /// <summary>For the headless check: when the entity's fade (out, or back in) started, on the fade clock.</summary>
+    internal double? StartOf(FieldEntity e)
     {
         if (e == null || !byEntity.TryGetValue(e, out var t)) return null;
         return fadeOut.TryGetValue(t, out var a) ? a.Start : fadeIn.TryGetValue(t, out a) ? a.Start : null;
@@ -538,10 +626,19 @@ public partial class FieldFade : Node
     }
 
     /// <summary>For the headless check: runs the 300 ms test now.</summary>
-    internal void TestNow() => Test(Time.GetTicksMsec());
+    internal void TestNow() => Test(clock);
 
-    /// <summary>For the headless check: steps the fades to <paramref name="now"/> (milliseconds on the tick clock).</summary>
-    internal void StepTo(ulong now) { UpdateFadeOut(now); UpdateFadeIn(now); }
+    /// <summary>For the headless check: a frame <paramref name="ms"/> after the last one, the fades stepped on the fade clock
+    /// (capped as GameTimeClock's step) and the test not run.</summary>
+    internal void StepFrame(double ms)
+    {
+        Step(ms);
+        UpdateFadeOut(clock);
+        UpdateFadeIn(clock);
+    }
+
+    /// <summary>For the headless check: the fade clock (milliseconds).</summary>
+    internal double Now => clock;
 
     /// <summary>Whether a fade holds the entity (fading out or back in).</summary>
     public bool Holds(FieldEntity e) => e != null && byEntity.TryGetValue(e, out var t) && (fadeOut.ContainsKey(t) || fadeIn.ContainsKey(t));
@@ -562,7 +659,7 @@ public partial class FieldFade : Node
         return e2.Dot(q) * inv >= 0;
     }
 
-    void Apply(HashSet<Target> hit, ulong now)
+    void Apply(HashSet<Target> hit, double now)
     {
         if (hit.Count == 0) { MoveAllToFadeIn(now); return; }
         foreach (var t in fadeOut.Keys.Where(t => !hit.Contains(t)).ToList())
@@ -621,7 +718,7 @@ public partial class FieldFade : Node
         }
     }
 
-    void MoveAllToFadeIn(ulong now)
+    void MoveAllToFadeIn(double now)
     {
         foreach (var (t, el) in fadeOut) { fadeIn[t] = el; el.Start = now; }
         fadeOut.Clear();
@@ -629,28 +726,22 @@ public partial class FieldFade : Node
 
     /// <summary>
     /// UpdateFadeOut (0x140a0ebf0): each running element's materials go to clamp(1 - ratio, alpha, 1); an element whose timer
-    /// has run out is skipped (Timer::IsRunning, timer.cpp:159-164). The timer reads the game clock (service 0xE001001B,
-    /// GameTimeClock), which moves at most m_maxDelta = 0.25 s per frame (GameTimeClock.cpp:34, 108): the client's first
-    /// frame after the Apply is always running, at a ratio of 250 / 300 or less, and with a frame rate above about 11 fps
-    /// its last running frame has a ratio past 1 - alpha and has already set the floor. Our tick clock has no such cap,
-    /// so a frame here can come later than the 300 ms (the first draw of a fade material builds its pipeline), and the
-    /// element would stay at the value of the frame before, 1 when that was the Apply's own: an element seen out of time
-    /// for the first time is set once to its end value, clamp(1 - 1, alpha, 1), what the client's capped frame sets for
-    /// any floor of 1/6 or more.
+    /// has run out is skipped (Timer::IsRunning, timer.cpp:159-164) and keeps the value its last running frame set. The
+    /// timer reads the game clock (service 0xE001001B, GameTimeClock), which moves at most m_maxDelta = 0.25 s per frame
+    /// (GameTimeClock.cpp:34, 108), and so does <see cref="clock"/>: the first frame after the Apply is always running, at a
+    /// ratio of 250 / 300 or less, so a fade whose floor is 1/6 or more reaches it however long that frame took.
     /// </summary>
-    void UpdateFadeOut(ulong now)
+    void UpdateFadeOut(double now)
     {
         foreach (var el in fadeOut.Values)
         {
-            bool running = el.Running(now);
-            if (!running && el.Settled) continue;
+            if (!el.Running(now)) continue;
             float a = Mathf.Clamp(1f - el.Ratio(now), el.Alpha, 1f);
             foreach (var p in el.Parts) p.SetFade(a);
-            el.Settled = !running;
         }
     }
 
-    void UpdateFadeIn(ulong now)
+    void UpdateFadeIn(double now)
     {
         List<Target> done = null;
         foreach (var (t, el) in fadeIn)

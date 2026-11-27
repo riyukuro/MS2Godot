@@ -9,8 +9,10 @@ namespace Ms2Godot.Tests;
 /// <summary>
 /// Headless check (res://tests/field_fade.tscn) of the camera fade (world/FieldFade, BGTransparencyMgr):
 /// <list type="bullet">
-/// <item>a fade whose 300 ms run out before any frame stepped it ends at the 0.3 floor (UpdateFadeOut's last running frame
-/// sets it in the client), on the 02000110_bf fade targets;</item>
+/// <item>the fades run on a clock that moves at most 250 ms a frame, as the client's game clock (GameTimeClock's
+/// m_maxDelta): a fade whose first frame comes 400 ms after its Apply is stepped 250 ms, to 5/6, so it reaches the 0.3
+/// floor, and a second such frame leaves it there, on the 02000110_bf fade targets; a fade stepped 100 ms and then 400 ms
+/// stays at 1 - 1/3, its last running frame's value (UpdateFadeOut skips an element whose timer has run out);</item>
 /// <item>only a mesh whose active material is an MS2StandardMaterial is faded (bgtransparencymgr.cpp:517-520): the
 /// ke_fi_prop_light_a01 glass on 61000031_me keeps its own draw;</item>
 /// <item>the animated models world/FieldProps draws are faded too, skinned (the he_fi_nature_reed_a02 reeds on 52000094_qd)
@@ -20,15 +22,15 @@ namespace Ms2Godot.Tests;
 /// <item>a faded part draws as the client's capture of the 02000110 tree shows (captures/02000110_450_1650_4350_treefade):
 /// a depth-only pass first (AlphaShellComposite::MarkScene, ModelBuilder.FadeShell) with the fade material as its next pass,
 /// each held entity in its own pair of render priorities, the farther one first;</item>
-/// <item>the fade back in, 250 ms after it starts, is at 250 / 300 = 5/6, the 0.8333 of the capture's fade-in frame
-/// (UpdateFadeIn, Timer::GetRatio).</item>
+/// <item>the fade back in, its first frame 400 ms after it starts, is at 250 / 300 = 5/6, the 0.8333 of the capture's
+/// fade-in frame (UpdateFadeIn, Timer::GetRatio), and still held; the next frame ends it.</item>
 /// </list>
 /// Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
 /// </summary>
 public partial class FieldFadeCheck : Node
 {
     const float Floor = 0.3f;
-    const ulong Past = 400;   // past the 300 ms timer
+    const double Past = 400;   // a frame longer than the 300 ms timer (the clock moves 250 ms of it)
 
     ModelBuilder builder;
     PackSet packs;
@@ -112,9 +114,11 @@ public partial class FieldFadeCheck : Node
             if (!draws.Any(d => ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial))) continue;
             b.Fade.FadeOutNow(e);
             if (b.Fade.FadeMaterials(e).Count == 0) { fails.Add($"settle: {e.Name} was not faded"); continue; }
-            // no frame between the Apply and the step: the 300 ms are over at the first one
-            b.Fade.StepTo(Time.GetTicksMsec() + Past);
-            AtFloor(b, e, $"settle: {e.Name} stepped first after its timer ran out");
+            // the first frame after the Apply comes 400 ms later: the clock moves 250 ms, 5/6 of the way, past the floor
+            b.Fade.StepFrame(Past);
+            AtFloor(b, e, $"settle: {e.Name} first stepped 400 ms after its Apply");
+            b.Fade.StepFrame(Past);
+            AtFloor(b, e, $"settle: {e.Name} stepped again after its timer ran out");
             TwoPass(b, e, $"settle: {e.Name}");
             if (++n == 40) break;
         }
@@ -128,17 +132,40 @@ public partial class FieldFadeCheck : Node
             b.Fade.FadeOutNow(two[1]);
             Order(b, two[0], two[1]);
             TwoPass(b, two[0], $"order: {two[0].Name} fading back in");
-            // the fade back in, 250 ms on: 5/6
-            if (b.Fade.StartOf(two[0]) is { } start)
+            // the fade back in, its first frame 400 ms on: the clock moves 250 ms, 5/6, and the fade is still held
+            if (b.Fade.StartOf(two[0]) is { } start && start == b.Fade.Now)
             {
-                b.Fade.StepTo(start + 250);
+                b.Fade.StepFrame(Past);
+                if (!b.Fade.Holds(two[0])) fails.Add($"fade-in: {two[0].Name} released at its first frame, 400 ms on");
                 foreach (var (mat, mesh) in b.Fade.FadeMaterials(two[0]))
                     if (Math.Abs(Alpha(mat) - mesh.MaterialAlpha * 5f / 6f) > 1e-4f)
-                    { fails.Add($"fade-in: {two[0].Name} at {Alpha(mat):0.####} 250 ms on, not 5/6"); break; }
+                    { fails.Add($"fade-in: {two[0].Name} at {Alpha(mat):0.####} at its first frame, 400 ms on, not 5/6"); break; }
+                // a 16 ms frame: 266 ms on the clock, still running; then a 400 ms frame ends it
+                b.Fade.StepFrame(16);
+                if (!b.Fade.Holds(two[0])) fails.Add($"fade-in: {two[0].Name} released at 266 ms on the clock");
+                b.Fade.StepFrame(Past);
+                if (b.Fade.Holds(two[0])) fails.Add($"fade-in: {two[0].Name} still held after its timer ran out");
             }
-            else fails.Add($"fade-in: {two[0].Name} is not held after the next fade's Apply");
+            else fails.Add($"fade-in: {two[0].Name} is not held from the next fade's Apply");
             cam.Position = Vector3.Zero;
         }
+        // a fade stepped 100 ms, then a 400 ms frame: its timer runs out in that frame, which it skips, so it keeps the
+        // 1 - 1/3 of the frame before (UpdateFadeOut, Timer::IsRunning)
+        var late = b.Fb.FadeDraws.Where(kv => kv.Value.Any(d => ModelData.IsStandardMaterial(d.Mesh.ActiveMaterial)) && !b.Fade.Holds(kv.Key)).Select(kv => kv.Key).FirstOrDefault();
+        if (late != null)
+        {
+            b.Fade.FadeOutNow(late);
+            b.Fade.StepFrame(100);
+            b.Fade.StepFrame(Past);
+            var mats = b.Fade.FadeMaterials(late);
+            if (mats.Count == 0) fails.Add($"late: {late.Name} was not faded");
+            foreach (var (mat, mesh) in mats)
+            {
+                float want = mesh.MaterialAlpha * Math.Max(1f - 1f / 3f, Floor);
+                if (Math.Abs(Alpha(mat) - want) > 1e-4f) { fails.Add($"late: {late.Name} at {Alpha(mat):0.####} after 100 ms and a 400 ms frame, not {want:0.####}"); break; }
+            }
+        }
+        else fails.Add("late: no fade target left that is not held");
         GD.Print($"field fade check: settle {n} fade targets on 02000110_bf");
         if (n == 0) fails.Add("settle: no fade target with a standard material on 02000110_bf");
         Drop(b);
@@ -194,14 +221,15 @@ public partial class FieldFadeCheck : Node
             if (fading.Count == 0) { fails.Add($"{kind}: {xblock} {e.Name}: the test between camera and feet did not take it"); feet = null; break; }
             foreach (var (node, mat) in fading)
                 if (node.MaterialOverride != mat) fails.Add($"{kind}: {e.Name}: a faded mesh does not draw its faded passes");
-            b.Fade.StepTo(Time.GetTicksMsec() + Past);
+            b.Fade.StepFrame(Past);
             AtFloor(b, e, $"{kind}: {e.Name}");
             TwoPass(b, e, $"{kind}: {e.Name}");
             // the camera turned away: the next test takes nothing, the fade goes back in and ends
             feet = bd.Centre + Vector3.Up * 100000f;
             cam.LookAtFromPosition(eye + Vector3.Up * 200000f, eye + Vector3.Up * 300000f, Vector3.Forward);
             b.Fade.TestNow();
-            b.Fade.StepTo(Time.GetTicksMsec() + Past);
+            b.Fade.StepFrame(Past);   // 5/6 back in
+            b.Fade.StepFrame(Past);   // over
             if (b.Fade.Holds(e)) fails.Add($"{kind}: {e.Name}: still held after the fade back in");
             foreach (var (node, _) in fading)
                 if (GodotObject.IsInstanceValid(node) && node.MaterialOverride != null) fails.Add($"{kind}: {e.Name}: a mesh kept the fade material after the fade back in");
