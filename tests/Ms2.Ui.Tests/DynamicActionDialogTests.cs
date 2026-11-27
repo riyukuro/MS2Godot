@@ -212,11 +212,16 @@ public class DynamicActionDialogTests
         var p = h.Player;
         var cell = h.Invoke(h.Child("m_list"), "getRendererAt", 0) as AsDisplayObject;
         Assert.That(cell, Is.Not.Null, "the list's first renderer");
+        // the cell has doubleClickEnabled, so a second release at the same pixel within DoubleClickMs is a doubleClick
+        // (sfr_as3_17.cpp:7140), not a click: the test clock moves past that window between the two clicks
+        double now = 1000;
+        p.Clock = () => now;
         var (x, y) = cell.LocalToGlobal(10, 10);
         p.MouseMove(x, y);
         p.MouseButton(true, Player.RightButton);
         p.MouseButton(false, Player.RightButton);
         Assert.That(previewed, Is.Empty, "a right click without Shift");
+        now += Player.DoubleClickMs + 1;
         p.Key(16, 0, true, shift: true);
         p.MouseButton(true, Player.RightButton);
         p.MouseButton(false, Player.RightButton);
