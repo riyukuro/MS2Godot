@@ -23,7 +23,12 @@ namespace Ms2Godot.Tests;
 /// a depth-only pass first (AlphaShellComposite::MarkScene, ModelBuilder.FadeShell) with the fade material as its next pass,
 /// each held entity in its own pair of render priorities, the farther one first;</item>
 /// <item>the fade back in, its first frame 400 ms after it starts, is at 250 / 300 = 5/6, the 0.8333 of the capture's
-/// fade-in frame (UpdateFadeIn, Timer::GetRatio), and still held; the next frame ends it.</item>
+/// fade-in frame (UpdateFadeIn, Timer::GetRatio), and still held; the next frame ends it;</item>
+/// <item>the fade passes are warmed at the load, as Field does: the draws' (Warm) and, once the props are built, the
+/// animated props' (WarmProps); the props' tests then build no more copies, and no warm copy carries "fade" in its name
+/// (the name the live copies' counts look for);</item>
+/// <item>a prop target with a mesh out of the tree when it is taken builds its outer sphere once, not on every test, and
+/// again once the mesh is back.</item>
 /// </list>
 /// Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
 /// </summary>
@@ -47,10 +52,11 @@ public partial class FieldFadeCheck : Node
         public FieldFade Fade;
         public FieldProps Props;
         public Node Root;
+        public int PropsWarmed;
     }
 
     /// <summary>A field as Field builds it for the fade: the animated props taken by world/FieldProps, the fade given them.</summary>
-    Built BuildField(string xblock)
+    Built BuildField(string xblock, Action<Built> beforePropWarm = null)
     {
         var b = new Built { Map = FieldMap.Load(packs, new FlatLibrary(packs), xblock), Root = new Node3D { Name = xblock } };
         AddChild(b.Root);
@@ -71,6 +77,23 @@ public partial class FieldFadeCheck : Node
         b.Props.NotReceiving.UnionWith(b.Fb.NotReceivingElsewhere);
         foreach (var (e, off) in b.Fb.LightOffElsewhere) b.Props.LightOff[e] = off;
         b.Root.AddChild(b.Props.Build());
+        beforePropWarm?.Invoke(b);
+        // the props' passes warmed once they are built, as Field does after FieldContents.Start
+        int drawsWarmed = b.Fade.Warmed;
+        b.Fade.WarmProps();
+        b.PropsWarmed = b.Fade.Warmed - drawsWarmed;
+        int named = 0;
+        void Walk(Node n)
+        {
+            for (int i = 0; i < n.GetChildCount(); i++)
+            {
+                var c = n.GetChild(i);
+                if (c is GeometryInstance3D g && !g.Visible && g.Name.ToString().Contains("fade")) named++;
+                Walk(c);
+            }
+        }
+        Walk(b.Root);
+        if (named > 0) fails.Add($"warm: {xblock}: {named} hidden warm copies named with \"fade\"");
         return b;
     }
 
@@ -247,7 +270,9 @@ public partial class FieldFadeCheck : Node
     void Props(string xblock, string model, string kind)
     {
         var b = BuildField(xblock);
+        int warmedAtLoad = b.Fade.Warmed;   // before TargetBound, which takes a target's props when the load has not
         var ents = b.Fb.DrawnElsewhere.Where(e => b.Fade.TargetBound(e) != null && (e.Get("NifAsset") ?? "") != "").ToList();
+        if (b.PropsWarmed == 0) fails.Add($"warm: {xblock}: WarmProps built no copy of the props' fade passes");
         int taken = 0, tried = 0;
         Cost(b, xblock);
         foreach (var e in ents)
@@ -284,7 +309,8 @@ public partial class FieldFadeCheck : Node
             taken++;
             if (taken == 5) break;
         }
-        GD.Print($"field fade check: {kind} props on {xblock} ({model}): {ents.Count} targets, {taken} of {tried} tried faded and back");
+        if (b.Fade.Warmed != warmedAtLoad) fails.Add($"warm: {xblock}: the props' tests built {b.Fade.Warmed - warmedAtLoad} copies the load had not");
+        GD.Print($"field fade check: {kind} props on {xblock} ({model}): {ents.Count} targets, {taken} of {tried} tried faded and back, {b.PropsWarmed} prop warm copies at load");
         if (tried == 0) fails.Add($"{kind}: no {kind} animated fade target drawn on {xblock}");
         feet = null;
         Drop(b);
@@ -309,6 +335,38 @@ public partial class FieldFadeCheck : Node
         GD.Print($"field fade check: cost {xblock}: test {sw.Elapsed.TotalMilliseconds * 1000 / n:0.0} us, {bytes / n} B per test, {b.Fade.Faded} fading");
         b.Fade.Release(null);
         feet = null;
+    }
+
+    /// <summary>A reed target on 52000094_qd with one mesh taken out of the tree before the props are warmed: its outer
+    /// sphere is not built on each test (the bones would be read there and again in Refresh), and is built once the mesh is back.</summary>
+    void OutOfTree()
+    {
+        Node3D taken = null; Node parent = null;
+        var b = BuildField("52000094_qd", x =>
+        {
+            foreach (var e in x.Fb.DrawnElsewhere)
+            {
+                if (!x.Fade.IsTarget(e)) continue;
+                var nodes = x.Props.MeshesOf(e);
+                if (nodes.Count == 0 || !GodotObject.IsInstanceValid(nodes[0].Node)) continue;
+                taken = nodes[0].Node; parent = taken.GetParent();
+                parent.RemoveChild(taken);
+                return;
+            }
+        });
+        if (taken == null) { fails.Add("tree: no prop target on 52000094_qd"); Drop(b); return; }
+        cam.LookAtFromPosition(new Vector3(0, 0, 1000), Vector3.Zero, Vector3.Up);
+        feet = Vector3.Zero;
+        int built = b.Fade.OuterBuilds;
+        for (int i = 0; i < 3; i++) b.Fade.TestNow();
+        if (b.Fade.OuterBuilds != built) fails.Add($"tree: {b.Fade.OuterBuilds - built} outer spheres built in 3 tests with a mesh out of the tree, want 0");
+        parent.AddChild(taken);
+        b.Fade.TestNow();
+        b.Fade.TestNow();
+        if (b.Fade.OuterBuilds != built + 1) fails.Add($"tree: {b.Fade.OuterBuilds - built} outer spheres built once the mesh is back, want 1");
+        GD.Print($"field fade check: tree: outer spheres {built} at load, {b.Fade.OuterBuilds - built} after the mesh came back");
+        feet = null;
+        Drop(b);
     }
 
     void Drop(Built b)
@@ -337,7 +395,7 @@ public partial class FieldFadeCheck : Node
         if (fails.Count == 0)
             foreach (var step in new Action[] { Settle, Gate,
                 () => Props("52000094_qd", "he_fi_nature_reed_a02", "skinned"),
-                () => Props("02000161_bf", "clockwork", "rigid") })
+                () => Props("02000161_bf", "clockwork", "rigid"), OutOfTree })
                 try { step(); }
                 catch (Exception e) { fails.Add(e.ToString()); }
         GD.Print($"field fade check: {(fails.Count == 0 ? "OK" : "FAIL\n  " + string.Join("\n  ", fails))}");

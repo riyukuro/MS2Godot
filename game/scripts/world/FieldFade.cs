@@ -208,6 +208,19 @@ public partial class FieldFade : Node
         }
     }
 
+    /// <summary>
+    /// The animated props' fade passes, as <see cref="Warm"/> does the draws': every prop target's meshes taken
+    /// (<see cref="PropsBuilt"/>) and one hidden copy per new format. Field calls it once FieldContents.Start has built the
+    /// props, in the load's last frame; the loading screen covers the frames after it (FieldContents' settle), so the copies
+    /// are compiled there with the props themselves, not in the first test's frame. A target whose props are not all built
+    /// is left to the test, as before.
+    /// </summary>
+    public void WarmProps()
+    {
+        if (props == null) return;
+        foreach (var t in propTargets) PropsBuilt(t);
+    }
+
     /// <summary>The target's prop meshes, made once every one of its props is built; false before.</summary>
     bool PropsBuilt(Target t)
     {
@@ -254,6 +267,7 @@ public partial class FieldFade : Node
     /// </summary>
     void Outer(Target t)
     {
+        OuterBuilds++;
         Skeleton3D skel = null; Transform3D sx = default;
         Vector3 c = default; float r = -1;
         t.OuterAll = true;
@@ -272,8 +286,11 @@ public partial class FieldFade : Node
     // the fade's passes already built for a mesh format: (additive form, culling, vertex format, prop copy), which give
     // the two passes' shaders (ModelBuilder.FadeForm) and so their pipelines
     readonly HashSet<(bool, string, ulong, bool)> warmed = new();
-    /// <summary>The hidden copies <see cref="Warm"/> and the props' build made.</summary>
+    /// <summary>The hidden copies <see cref="Warm"/> and <see cref="WarmProps"/> (or a test taking a prop target first) made.</summary>
     public int Warmed { get; private set; }
+    /// <summary>The prop targets' outer spheres built (<see cref="Outer"/>): once per target, and again only when a target that
+    /// had a node out of the tree has them all back.</summary>
+    public int OuterBuilds { get; private set; }
 
     /// <summary>A mesh's colour material, the one Apply fades (a fluid shell's colour pass, not its depth pass).</summary>
     static ShaderMaterial Colour(Mesh mesh)
@@ -289,8 +306,8 @@ public partial class FieldFade : Node
     /// static draws of every target, at the field load and behind the loading screen: one hidden copy, made as Apply makes
     /// its own, for each vertex format and pair of fade shaders the targets take. Godot builds a shader and its pipelines
     /// for a mesh when an instance of it enters the scene (its pipeline precompile), hidden or not; without the copies
-    /// that happened in the frame of the first fade. The animated props' meshes are warmed when they are built
-    /// (<see cref="PropsBuilt"/>). The copies stay hidden for the field's life.
+    /// that happened in the frame of the first fade. The animated props are built later (FieldContents.Start) and warmed
+    /// then (<see cref="WarmProps"/>). The copies stay hidden for the field's life.
     /// </summary>
     public void Warm()
     {
@@ -304,7 +321,7 @@ public partial class FieldFade : Node
                 var shell = ModelBuilder.FadeShell(ModelBuilder.FadeMaterial(colour, d.Mesh), d.Mesh);
                 var one = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, Mesh = d.Mm.Mesh, InstanceCount = 1 };
                 one.SetInstanceTransform(0, d.Mm.GetInstanceTransform(d.Index));
-                d.Parent.AddChild(new MultiMeshInstance3D { Name = "fade_warm", Multimesh = one, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Visible = false });
+                d.Parent.AddChild(new MultiMeshInstance3D { Name = "warm_pass", Multimesh = one, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Visible = false });
                 Warmed++;
             }
     }
@@ -318,8 +335,14 @@ public partial class FieldFade : Node
         var (add, cull) = ModelBuilder.FadeForm(pk.M.Mesh);
         if (!warmed.Add((add, cull, Format(node.Mesh), true))) return;
         var shell = ModelBuilder.FadeShell(ModelBuilder.FadeMaterial(colour, pk.M.Mesh), pk.M.Mesh);
-        parent.AddChild(new MeshInstance3D { Name = "fade_warm", Mesh = node.Mesh, Transform = node.Transform, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Visible = false });
+        parent.AddChild(new MeshInstance3D { Name = "warm_pass", Mesh = node.Mesh, Transform = node.Transform, MaterialOverride = shell, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, Visible = false });
         Warmed++;
+    }
+
+    static bool AllInTree(Target t)
+    {
+        foreach (var pk in t.Props) if (!GodotObject.IsInstanceValid(pk.M.Node) || !pk.M.Node.IsInsideTree()) return false;
+        return true;
     }
 
     /// <summary>Whether the prop mesh is drawn now (its node, or the entity's, not hidden; the node not freed).</summary>
@@ -509,7 +532,13 @@ public partial class FieldFade : Node
             {
                 // a held entity is read all the same: Sort orders it by its sphere now. Any other is skipped unread when its
                 // outer sphere is out of the frustum or neither ray comes near it: its bound is within that sphere
-                if (!t.OuterAll) Outer(t);
+                // a target with a node out of the tree has no outer sphere and is read in full (Refresh); its sphere is
+                // built again only once every node is back, so its bones are not read twice per test
+                // STILL-OPEN: the target sphere is merged member by member, so it can reach past the outer sphere into the
+                // frustum while its geometry does not; the client then casts its rays, this skips it. A ray could only hit
+                // that geometry between the eye and the near plane (not drawn), so nothing shown differs, but a fade begun
+                // there would already be at its floor when the camera turns. No test pins this edge.
+                if (!t.OuterAll && AllInTree(t)) Outer(t);
                 if (t.OuterAll && !fadeOut.ContainsKey(t) && !fadeIn.ContainsKey(t)
                     && (t.OuterRadius < 0 || !InFrustum(frustum, np, t.OuterCentre, t.OuterRadius)
                         || !NearSphere(a, da, t.OuterCentre, t.OuterRadius) && !NearSphere(b, db, t.OuterCentre, t.OuterRadius))) continue;
@@ -543,6 +572,10 @@ public partial class FieldFade : Node
     /// Update moves the key by FUN_141b71c50's bias for a shell with either of two extra data tags
     /// (DAT_143ae51d0, DAT_143ae5190); the tags are not read here, so no key is moved. A draw's centre is its box's, not
     /// its NiBound's.
+    /// STILL-OPEN: a held prop's key uses its parts' centres from the last test (Refresh, every 300 ms); the client reads
+    /// each shell's GetWorldBound every frame (alphacomponent.cpp:134-143). Two held entities at nearly one depth, one a
+    /// swinging prop, can draw in the wrong order for up to 300 ms where they overlap. Reading the bones here every frame
+    /// would bring back the per-frame bone reads the test was built to drop.
     /// </summary>
     void Sort(Vector3 dir)
     {
@@ -697,7 +730,11 @@ public partial class FieldFade : Node
         return fadeOut.TryGetValue(t, out var a) ? a.Start : fadeIn.TryGetValue(t, out a) ? a.Start : null;
     }
 
+    /// <summary>For the headless check: whether the entity is a target, its props not taken.</summary>
+    internal bool IsTarget(FieldEntity e) => e != null && byEntity.ContainsKey(e);
+
     /// <summary>For the headless check: whether the entity is a fade target, and its test sphere (radius below 0: nothing drawn).</summary>
+
     internal (Vector3 Centre, float Radius)? TargetBound(FieldEntity e)
     {
         if (e == null || !byEntity.TryGetValue(e, out var t)) return null;

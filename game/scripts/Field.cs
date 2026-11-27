@@ -226,7 +226,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         Interacts = new World.FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders, fb.InteractReactableDraws, fb.InteractColliders) { Fade = Fade };
         Interacts.UseProps(contents.Props, fb.DrawnElsewhere, fb.ReactableElsewhere);   // the animated ones, built with the contents
         Fade.UseProps(contents.Props, fb.DrawnElsewhere, fb.ReactableElsewhere);       // BGTransparencyMgr fades those too
-        Fade.Warm();   // the fade passes built behind the loading screen, not in the first fade's frame
+        Fade.Warm();   // the draws' fade passes built behind the loading screen, not in the first fade's frame
         AddChild(Interacts.Fader);
         Liftables = new World.FieldLiftables(Net.LiveSession.Instance?.Liftables, fb.LiftableMeshDraws, fb.LiftableFadeDraws);
         AddChild(Liftables.Fader);
@@ -269,6 +269,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         AddChild(contents);
         abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
+        Fade.WarmProps();   // and the animated props' (built just now), not in the first test's frame
         Triggers.Bind(contents.TriggerActors);   // the actor trigger objects' drawn actors
         // the portal entities' draws: live, the registered portals' shown flags (contents.Start attached them), then each change;
         // offline, the sandbox's list (its quest masks for a fresh character)
