@@ -27,6 +27,13 @@ public static class GraphicGates
         return g.OuterGlow;
     }
 
+    /// <summary>IsFogEnabled @0x14125e020 (gameoptionstruct.cpp:2022-2028): with a field loaded whose m_bFog (+0x1fd, set by
+    /// CFieldDataCli::LoadXBlock only when the mapxblock has a fog element, fielddatacli.cpp:400-408) is off, false; otherwise
+    /// the graphic option's fog flag (+0x18), which its reset sets true (gameoptionstruct.cpp:1921) and no load or dialog
+    /// changes, so true by default here. ApplyEffect::ApplyFieldFog (applyeffect.cpp:497-514) passes it to SetFogRange: the
+    /// field's depth fog on or off.</summary>
+    public static bool IsFogEnabled(bool fieldFog, bool optionFog = true) => fieldFog && optionFog;
+
     /// <summary>The light dimmer scale for the HDR state: SetHdr @0x14125e300 (gameoptionstruct.cpp:2081-2090) calls
     /// MS2LightService::ScaleLightIntensity @0x1414c0820 (ms2lightservice.cpp:395-403) with 1.0 when HDR is on and the bloom step
     /// is active, 1.1 otherwise; HandleEntityEnterWorld @0x1414c08e0 (ms2lightservice.cpp:407-433) gives each entering light

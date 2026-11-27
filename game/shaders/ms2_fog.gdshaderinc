@@ -10,8 +10,11 @@
 // FogBias is the global CameraMgr::Update sets every frame from the camera
 // mode (camera.cpp:828-829, CCameraMode::vfunc_19 = m_50, the camera distance; no mode overrides it).
 // The pixel shader then lerps to the fog colour by it (NiStandardMaterial::HandleApplyFog, after the height fog and
-// before the blend, for every blend mode). So the fogged share is saturate((z - near - bias) / (far - near)), computed
-// per vertex and interpolated as the client's is. It replaces Godot's environment fog (smoothstep over the distance,
+// before the blend, for every blend mode). So the fogged share is 1 - saturate((far + bias - z) / (far - near)), computed
+// per vertex and interpolated as the client's is. For far > near that is saturate((z - near - bias) / (far - near)); a
+// block with near == far (KMS2 and GMS2 52000104_qd and three more) divides by zero, a step at far + bias (no fog before
+// it, full fog past it; the 0/0 at the step is taken as no fog); a block with near > far (63000041_cs) divides by a
+// negative range, so it is full fog up to far + bias and clears by near + bias. It replaces Godot's environment fog (smoothstep over the distance,
 // no bias) for the material: writing FOG turns that off.
 // Only cameras that carry FOG_LAYER in their cull mask fog (the field camera); the UI character views share
 // character_lit and draw no fog.
@@ -27,5 +30,10 @@ float ms2_fog_share(mat4 view, vec3 world, uint layers) {
 		return 0.0;
 	}
 	float z = -(view * vec4(world, 1.0)).z;
-	return clamp((z - ms2_fog.x - ms2_fog.z) / max(ms2_fog.y - ms2_fog.x, 1e-3), 0.0, 1.0);
+	float range = ms2_fog.y - ms2_fog.x;
+	float left = ms2_fog.y + ms2_fog.z - z;
+	if (range == 0.0) {
+		return left >= 0.0 ? 0.0 : 1.0;
+	}
+	return 1.0 - clamp(left / range, 0.0, 1.0);
 }

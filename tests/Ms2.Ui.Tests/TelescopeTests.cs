@@ -363,4 +363,36 @@ public class FieldFogDataTests
         Assert.That(fogs, Is.GreaterThan(0));
         Assert.That(bad, Is.Empty);
     }
+
+    /// <summary>Every mapxblock on both data sets, by the depth fog the field load gives it: off when the block has no fog
+    /// element (FieldFog.Fog false, so GraphicGates.IsFogEnabled false and ApplyFieldFog's SetFogRange(false)), else on with
+    /// the block's range, counted by its form (far above near; near equal to far, a step at far + bias; near above far, fog
+    /// that clears by near + bias), which ms2_fog.gdshaderinc draws as the client's vertex fog (res://tests/fog_share.tscn).</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryMapxblockDepthFogSwitch(string env)
+    {
+        var d = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore($"{env} is not set");
+        using var packs = new Ms2.Formats.Pack.PackSet(d);
+        var count = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        var example = new Dictionary<string, string>();
+        var bad = new List<string>();
+        foreach (var entry in packs.List(MapXBlock.Archive).Where(n => n.StartsWith("mapxblock/") && n.EndsWith(".xml")).OrderBy(n => n, StringComparer.Ordinal))
+        {
+            var x = MapXBlock.Parse(packs.Read(MapXBlock.Archive, entry));
+            var ff = FieldFog.Parse(x);
+            bool on = Ms2.Formats.Options.GraphicGates.IsFogEnabled(ff.Fog);
+            if (on != (x.Root?.Element("fog") != null)) bad.Add($"{entry}: on {on}");
+            string k = !on ? "off (no fog element)" : ff.FogFar > ff.FogNear ? "on, far above near" : ff.FogFar == ff.FogNear ? "on, near equal to far" : "on, near above far";
+            count[k] = count.GetValueOrDefault(k) + 1;
+            if (example.TryGetValue(k, out var e)) { if (k.Contains("near equal") || k.Contains("near above")) example[k] = e + " " + entry; }
+            else example[k] = entry;
+        }
+        TestContext.Out.WriteLine($"{env}:");
+        foreach (var (k, c) in count) TestContext.Out.WriteLine($"  {k}: {c} (e.g. {example[k]})");
+        Assert.That(bad, Is.Empty);
+        Assert.That(count.GetValueOrDefault("off (no fog element)"), Is.GreaterThan(100));
+        Assert.That(count.GetValueOrDefault("on, far above near"), Is.GreaterThan(100));
+    }
 }

@@ -573,39 +573,33 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
 
     void BuildEnvironment(FieldMap map, string fieldName, bool hdrOn)
     {
-        Color fog = new(199 / 255f, 237 / 255f, 1f);
-        float fogNear = 5276, fogFar = 20000;
         XDocument x = null;
-        try
-        {
-            x = MapXBlock.Load(packs, fieldName);
-            var f = x.Root?.Element("fog");
-            if (f != null)
-            {
-                var c = ((string)f.Attribute("color")).Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture) / 255f).ToArray();
-                fog = new Color(c[0], c[1], c[2]);
-                fogNear = float.Parse((string)f.Attribute("near"), CultureInfo.InvariantCulture);
-                fogFar = float.Parse((string)f.Attribute("far"), CultureInfo.InvariantCulture);
-            }
-        }
+        try { x = MapXBlock.Load(packs, fieldName); }
         catch (Exception ex) { GD.PushWarning("mapxblock: " + ex.Message); }
+        // The depth fog as the client's field entry applies it: CFieldDataCli::LoadXBlock's fog (FieldFog.Parse), then
+        // ApplyEffect::ApplyFieldFog (@0x1409a49b0, applyeffect.cpp:497-514) passes IsFogEnabled to ApplyFieldFogRange and
+        // SetFogRange (applyeffect.cpp:417-424, 586-622). IsFogEnabled (@0x14125e020, gameoptionstruct.cpp:2022-2028) is
+        // false when the field's m_bFog is, so a mapxblock without a fog element has no depth fog; else the graphic option's
+        // fog flag, true from its reset (gameoptionstruct.cpp:1921) and never loaded or changed, so on. The range and colour
+        // are the field's, the constructor's 1000, 10000 and 0 when the block has none (fielddatacli.cpp:73).
+        var ff = Ms2.Ui.FieldFog.Parse(x);
+        bool fogOn = Ms2.Formats.Options.GraphicGates.IsFogEnabled(ff.Fog);
+        float fogNear = ff.FogNear, fogFar = ff.FogFar;
+        Color fog = Unpacked(ff.FogColor);
+        // The clear colour the background shows where nothing is drawn: the fog colour, or this sky blue for a block
+        // without fog. STILL-OPEN: the client's game scene clears to black (CSceneStateGame::OnEnter,
+        // scenestategame.cpp:1297) behind its background movie; which of the two the fog colour stands in for is not checked.
+        Color clear = ff.Fog ? fog : new Color(199 / 255f, 237 / 255f, 1f);
 
-        loadedFog = null; loadedFogApplied = (fogNear, fogFar, fog); loadedHeightFog = null;
+        loadedFog = ff;
         // mapxblock heightfog: colour, upper, lower, percentage (a standard height blend in field_lit)
         RenderingServer.GlobalShaderParameterSet("ms2_hfog", hfogShown = Vector3.Zero);
-        if (x?.Root?.Element("heightfog") is { } hfog)
+        if (ff.HeightFog)
         {
-            try
-            {
-                var hc = ((string)hfog.Attribute("color")).Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture) / 255f).ToArray();
-                float up = float.Parse((string)hfog.Attribute("upper"), CultureInfo.InvariantCulture);
-                float lo = float.Parse((string)hfog.Attribute("lower"), CultureInfo.InvariantCulture);
-                float pct = float.Parse((string)hfog.Attribute("percentage"), CultureInfo.InvariantCulture) / 100f;
-                RenderingServer.GlobalShaderParameterSet("ms2_hfog_color", hfogColorShown = new Vector3(hc[0], hc[1], hc[2]));
-                RenderingServer.GlobalShaderParameterSet("ms2_hfog", hfogShown = new Vector3(up, lo, Mathf.Clamp(pct, 0f, 1f)));
-                loadedHeightFog = (new Color(hc[0], hc[1], hc[2]), up, lo, pct * 100f);
-            }
-            catch (Exception ex) { GD.PushWarning("heightfog: " + ex.Message); }
+            var hc = Unpacked(ff.HeightFogColor);
+            RenderingServer.GlobalShaderParameterSet("ms2_hfog_color", hfogColorShown = new Vector3(hc.R, hc.G, hc.B));
+            RenderingServer.GlobalShaderParameterSet("ms2_hfog",
+                hfogShown = new Vector3(ff.HeightFogUpper, ff.HeightFogLower, Mathf.Clamp(ff.HeightFogPercentage / 100f, 0f, 1f)));
         }
 
         float ambient = 0.8f, sunDim = 0.8f;
@@ -639,7 +633,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         // bias the camera distance, set each frame by UpdateCamera; a view without a target camera mode (the lobby) keeps the
         // CCameraMode default m_50 = 1200 (cameramode.cpp:284, :297). The environment fog below serves the other materials.
         RenderingServer.GlobalShaderParameterSet("ms2_fog_color", fogColorShown = new Vector3(fog.R, fog.G, fog.B));
-        fogParams = new Vector4(fogNear, fogFar, DefaultFogBias, 0);
+        fogParams = new Vector4(fogNear, fogFar, DefaultFogBias, fogOn ? 0f : 1f);
         RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
         // The colour buffer holds gamma values (field_lit.gdshader) and Godot turns an environment colour from sRGB to
         // linear, so the background and fog colours are passed through LinearToSrgb: Godot's value is the client's
@@ -654,11 +648,11 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         var env = environment = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = fog.LinearToSrgb(),
+            BackgroundColor = clear.LinearToSrgb(),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = ambientColor,
             AmbientLightEnergy = ambient,
-            FogEnabled = true,
+            FogEnabled = fogOn,
             FogMode = Godot.Environment.FogModeEnum.Depth,
             FogLightColor = fog.LinearToSrgb(),
             FogDepthBegin = fogNear,
@@ -830,37 +824,19 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     public string FogShown => $"{fogParams.X},{fogParams.Y},{fogParams.W} {fogColorShown} {hfogShown} {hfogColorShown}";
 
     /// <summary>The fog this field's load applied, for the telescope's skip to put back (CInteractTelescopeObject::OnCutSceneSkip
-    /// sets the field's CFieldDataCli fog again, interactobject.cpp:1016-1022): the depth fog's near, far and colour and the
-    /// height fog's colour, heights and percentage, exactly as the load set them, so the skip shows what the load showed.
-    /// The load always turns the depth fog on (a mapxblock without a fog element gets the defaults above), where the client's
-    /// m_bFog is false for such a block: STILL-OPEN, the load's own fog for such a field is not the client's.
-    /// Built when asked (the telescope's skip), so the field load does no more work.</summary>
-    public Ms2.Ui.FieldFog LoadedFog
-    {
-        get
-        {
-            if (loadedFog != null) return loadedFog;
-            var (near, far, c) = loadedFogApplied;
-            var f = new Ms2.Ui.FieldFog { Fog = true, FogNear = near, FogFar = far, FogColor = Packed(c) };
-            if (loadedHeightFog is var (hc, up, lo, pct))
-            {
-                f.HeightFog = true; f.HeightFogColor = Packed(hc);
-                f.HeightFogUpper = up; f.HeightFogLower = lo; f.HeightFogPercentage = pct;
-            }
-            return loadedFog = f;
-        }
-    }
-    static uint Packed(Color c) => 0xff000000u | (uint)(c.R8 << 16 | c.G8 << 8 | c.B8);
+    /// sets the field's CFieldDataCli fog again, interactobject.cpp:1016-1022): the mapxblock's fog as LoadXBlock reads it, so
+    /// the skip shows what the load showed (a block without a fog element has its depth fog off).</summary>
+    public Ms2.Ui.FieldFog LoadedFog => loadedFog ?? new Ms2.Ui.FieldFog();
     Ms2.Ui.FieldFog loadedFog;
-    (float Near, float Far, Color Color) loadedFogApplied;
-    (Color Color, float Upper, float Lower, float Percentage)? loadedHeightFog;
+    /// <summary>A 0xAARRGGBB colour's rgb (the gamma value, as the mapxblock's).</summary>
+    static Color Unpacked(uint color) => new(((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f);
 
     /// <summary>ApplyEffect::SetFogRange (@0x1409a4450, applyeffect.cpp:586-622): the depth fog on or off (NiFogProperty
     /// SetFog), its near and far, and its colour (0xAARRGGBB; the rgb is the gamma value, as the mapxblock's). The field_lit
     /// family's fog (ms2_fog, its w the off switch) and the environment fog of the other materials both follow.</summary>
     public void SetFogRange(bool on, float near, float far, uint color)
     {
-        var c = new Color(((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f);
+        var c = Unpacked(color);
         RenderingServer.GlobalShaderParameterSet("ms2_fog_color", fogColorShown = new Vector3(c.R, c.G, c.B));
         fogParams = new Vector4(near, far, fogParams.Z, on ? 0f : 1f);
         RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
