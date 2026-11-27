@@ -315,6 +315,8 @@ public sealed class DungeonRewardDialogController : UiController
         if (titleClip != null && Host.Child("m_name", titleClip) is { } name)
             Host.Set(name, "htmlText", C(Win ? "s_dungeon_reward_title_success" : "s_dungeon_reward_title_fail"));
         if (time != null)
+            // STILL-OPEN: FUN_140cff310 (uidungeonrewarddialog.cpp:632,635) body is not recovered; the m_timeMovie of the KMS2, restore and GMS2
+            // movies holds m_title and textField but no m_clearTimeName, so this lookup finds nothing and writes nothing (which field the client fills is unknown).
             SetText(Host.Child("m_clearTimeName", time), C(Win ? "s_dungeon_reward_clear_time" : "s_dungeon_reward_fail_time"));
         if (Party && leaveButton != null) Host.SetVisible(leaveButton, true);
     }

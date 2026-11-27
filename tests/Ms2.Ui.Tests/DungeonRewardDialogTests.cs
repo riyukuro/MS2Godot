@@ -5,6 +5,7 @@ using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
+using Ms2.Quest;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
@@ -40,8 +41,10 @@ public class DungeonRewardDialogTests
 
     static DungeonRoomData RoomOf(Func<DungeonRoomData, bool> pick, string what)
     {
-        var r = Tables().DungeonRooms.RoomList.FirstOrDefault(pick);
-        if (r == null) Assert.Ignore("no " + what);
+        var list = Tables().DungeonRooms.RoomList;
+        if (list.Count == 0) Assert.Ignore("the data has no dungeon room table");
+        var r = list.FirstOrDefault(pick);
+        Assert.That(r, Is.Not.Null, "no " + what + " in the room table");
         return r;
     }
 
@@ -171,7 +174,123 @@ public class DungeonRewardDialogTests
         var e = Open(Result((int)room.Id, true, false, 125, 0, new (byte, int)[0], new (int, int, int)[0], new (byte, int)[0], new (int, int, int)[0]));
         var time = e.Host.FindNamed("m_timeMovie", null);
         var text = Rt.ToString(e.Host.Get(e.Host.Child("textField", time), "text"));
-        Assert.That(text, Does.Contain("2").And.Contain("5"));
+        Assert.That(text, Is.EqualTo(ClientFormat.Format(Tables().Common(0x97e) ?? "", 125 / 60, 125 % 60)), "string 0x97e with minutes and seconds");
+        Assert.That(text, Is.Not.Empty);
+    }
+
+    [Test]
+    public void TheTitleAndTheClearTimeNameFollowTheWin()
+    {
+        var room = RoomOf(r => r.GroupType > 0, "a dungeon room");
+        Info0(out var none);
+        foreach (bool win in new[] { true, false })
+        {
+            var e = Open(Result((int)room.Id, win, false, 90, 0, none.a, none.b, none.a, none.b));
+            var title = e.Host.Child("m_name", e.Host.Child("m_title"));
+            Assert.That(title, Is.Not.Null);
+            string titleKey = win ? "s_dungeon_reward_title_success" : "s_dungeon_reward_title_fail";
+            string want = Tables().Common(titleKey);
+            Assert.That(want, Is.Not.Null.And.Not.Empty, titleKey);
+            Assert.That(Plain(Rt.ToString(e.Host.Get(title, "htmlText"))), Does.Contain(Plain(want)), "title of a " + (win ? "win" : "loss"));
+            // The clear time name goes through FUN_140cff310 (uidungeonrewarddialog.cpp:632,635; its body is not recovered, see STILL-OPEN
+            // on the controller): only the two texts the client picks are checked to exist here.
+            string nameKey = win ? "s_dungeon_reward_clear_time" : "s_dungeon_reward_fail_time";
+            Assert.That(Tables().Common(nameKey), Is.Not.Null.And.Not.Empty, nameKey);
+        }
+    }
+
+    static string Plain(string html) => System.Text.RegularExpressions.Regex.Replace(html ?? "", "<[^>]*>", "").Trim();
+
+    static object TextNode(Env e, object clip) => e.Host.Has(clip, "htmlText") ? clip : e.Host.Child("textField", clip);
+
+    static string RewardFrame(Env e) =>
+        Rt.ToString(e.Host.Get(e.Host.Child("m_rewardInfo", e.Host.Child("m_rewardAni")), "currentLabel"));
+
+    [Test]
+    public void ARoundOfStageOneShowsTheMinigameFrameAndAnotherStageTheStageFrame()
+    {
+        Info0(out var none);
+        var first = Open(Mode(1, w => { w.WriteInt(1); w.WriteInt(1); Info(w, none.a, none.b); }));
+        Assert.That(first.C.Type, Is.EqualTo(2));
+        Assert.That(RewardFrame(first), Is.EqualTo("_minigame"));
+        var later = Open(Mode(1, w => { w.WriteInt(3); w.WriteInt(2); Info(w, none.a, none.b); }));
+        Assert.That((later.C.Round, later.C.Stage), Is.EqualTo((3, 2)));
+        Assert.That(RewardFrame(later), Is.EqualTo("_minigame_stage"));
+    }
+
+    [Test]
+    public void TheMinigameEndShowsTheMinigameFrameWithTheWin()
+    {
+        Info0(out var none);
+        foreach (bool win in new[] { true, false })
+        {
+            var e = Open(Mode(3, w => { w.WriteBool(win); Info(w, new (byte, int)[] { (1, 70) }, none.b); }));
+            Assert.That((e.C.Type, e.C.Win), Is.EqualTo((4, win)));
+            Assert.That(RewardFrame(e), Is.EqualTo("_minigame"));
+            Assert.That(Text(e, "m_mesoText"), Does.Contain("70"));
+        }
+    }
+
+    [Test]
+    public void TipLineOneNeedsTheRoomAndFallsThroughToLineTwoWithout()
+    {
+        var room = RoomOf(r => r.GroupType > 0 && r.RewardRoomId != 0, "a room with a reward room");
+        Info0(out var none);
+        string C(string key) => Tables().Common(key) ?? "";
+        var without = new DungeonRewardDialogController { PreloadTables = Tables() };
+        Assert.That(without.Room, Is.Null);
+        Assert.That(without.TipLine(1), Is.EqualTo(without.TipLine(2)));
+        Assert.That(without.TipLine(1), Is.EqualTo(C("s_dungeon_reward_bonus_event")));
+        var book = new DungeonRecordBook { ServerTime = () => 1_000_000, Rooms = Tables().DungeonRooms };
+        var with = new DungeonRewardDialogController { PreloadTables = Tables(), Records = book };
+        with.OnPacket(Result((int)room.Id, true, false, 1, 0b10, none.a, none.b, none.a, none.b));
+        Assert.That(with.Room?.Id, Is.EqualTo(room.Id));
+        string expect = ClientFormat.Format(C("s_dungeon_reward_dungeon_reward_count"),
+            book.WeeklyRewardCountText(room.RewardRoomId, C("s_dungeonRoom_event_reward_count")));
+        Assert.That(with.TipLine(1), Is.EqualTo(expect));
+        Assert.That(with.Tip, Is.EqualTo(expect), "bit 1 of the packet adds the line");
+    }
+
+    [Test]
+    public void EveryTextKeyTheDungeonDialogsReadResolvesOnTheData()
+    {
+        var t = Tables();
+        var keys = new List<string>
+        {
+            "s_dungeon_reward_title_success", "s_dungeon_reward_title_fail", "s_dungeon_reward_clear_time", "s_dungeon_reward_fail_time",
+            "s_dungeon_reward_bonus_event", "s_dungeon_reward_dungeon_reward_count", "s_dungeon_reward_mission_rank", "s_dungeon_reward_dungeon_helper",
+            "s_dungeon_reward_dungeon_helper_event", "s_dungeon_reward_mentor", "s_dungeon_reward_mentee", "s_dungeon_reward_mentee_party_gift",
+            "s_dungeon_reward_united_weekly", "s_dungeonRoom_event_reward_count", "s_format_exp", "s_dungeonLobby_title", "s_dungeonLobby_subTitle",
+        };
+        var missing = keys.Where(k => string.IsNullOrEmpty(t.Common(k))).ToList();
+        Assert.That(missing, Is.Empty, "keys without a text: " + string.Join(", ", missing));
+        Assert.That(t.Common(0x97e), Is.Not.Empty, "string 0x97e (the clear time)");
+    }
+
+    [Test]
+    public void EveryRoomGroupTheLobbyNamesHasAGroupName()
+    {
+        var t = Tables();
+        var groups = t.DungeonRooms.RoomList.Select(r => r.GroupType).Distinct().Where(g => g > 0).OrderBy(g => g).ToList();
+        if (groups.Count == 0) Assert.Ignore("the data has no dungeon room table");
+        var bad = groups.Where(g => g >= AchieveController.DungeonGroupKeys.Length || string.IsNullOrEmpty(t.Common("s_enum_dungeon_group_" + AchieveController.DungeonGroupKeys[g]))).ToList();
+        Assert.That(bad, Is.Empty, "group types without a name: " + string.Join(", ", bad));
+    }
+
+    [Test]
+    public void TheScenesLeaveClosesAnOpenWindowOnce()
+    {
+        var room = RoomOf(r => r.GroupType > 0, "a dungeon room");
+        Info0(out var none);
+        var e = Open(Result((int)room.Id, true, false, 1, 0, none.a, none.b, none.a, none.b));
+        Assert.That(e.C.IsClosed, Is.False);
+        Assert.That(e.C.KeptAtSceneLeave, Is.False, "only the DPS dialog sets flag 2");
+        Assert.That(e.C.CloseAtSceneLeave(), Is.True);
+        for (int i = 0; i < 200 && !e.C.IsClosed; i++) e.Player.Tick();
+        Assert.That(e.C.IsClosed, Is.True);
+        Assert.That(e.Sent, Is.Empty, "vfunc_68 sends nothing (RequestClose is the button's)");
+        Assert.That(e.C.CloseAtSceneLeave(), Is.False, "a closed dialog is skipped");
+        Assert.That(new DungeonRewardDialogController().CloseAtSceneLeave(), Is.False, "never opened");
     }
 
     [Test]
