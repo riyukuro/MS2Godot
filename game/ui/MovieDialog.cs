@@ -31,6 +31,15 @@ public partial class MovieDialog : Node2D
     /// </summary>
     public static readonly System.Collections.Generic.List<UiController> Live = new();
 
+    /// <summary>
+    /// The movie is a GFxMovie of its own, not a UISwfEntity in main.gfx (movie 2): the tooltip (CommonTooltip) and the mouse
+    /// cursor movies (gfxmanager.cpp:1133, 1151). CUIService::IsTextFieldFocused asks movie 2 only (GFxManager::IsTextFieldFocused(2),
+    /// gfxmanager.cpp:531), so the focus of such a movie is not one the keys wait for and it stays out of
+    /// <see cref="OffStageTextFocus"/>. Set before the dialog enters the tree. STILL-OPEN: the movie ids of the loading movie, the
+    /// cut-scene swf and the NPC balloon movies are not read; they count as movie 2 and none has an input field today.
+    /// </summary>
+    public bool OwnMovie { get; init; }
+
     public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window, ICharacterFolder folder = null)
     {
         var perf = PerfLog.On ? new PerfLog.Steps("open " + controller.Movie) : null;
@@ -129,7 +138,7 @@ public partial class MovieDialog : Node2D
         for (var n = GetParent(); n != null; n = n.GetParent())
             if (n is IUiStageHost h && h.UiStage != null) { stage = h.UiStage; break; }
         if (stage != null) stage.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree);
-        else OffStageTextFocus.Add(Host.Player, view.IsVisibleInTree);   // a layer outside the scene's stage (the message box)
+        else if (!OwnMovie) OffStageTextFocus.Add(Host.Player, view.IsVisibleInTree);   // a layer outside the scene's stage (the message box)
         if (Host?.Controller is { } c) Live.Add(c);        // CUIService's registry: in while the tree holds it
     }
 

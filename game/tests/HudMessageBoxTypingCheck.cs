@@ -125,6 +125,13 @@ public partial class HudMessageBoxTypingDriver : Node
                 var opened = Opened();
                 note = $"field \"{field.Text}\", opened: {(opened.Count == 0 ? "none" : string.Join(", ", opened))}";
                 if (field.Text != Typed || opened.Count != 0) { Finish(false, note); return; }
+                // the client asks movie 2 (main.gfx) only: the message box movie is on the list, the tooltip and the mouse cursor movies
+                // (GFxMovies of their own) are not
+                var own = new[] { ("tooltip", TooltipLayer.Instance?.Movie), ("mouse cursor", MouseCursorLayer.Instance?.Movie) };
+                if (!Ms2.Ui.OffStageTextFocus.Has(MessageBoxLayer.LayerMovie.Player)) { Finish(false, note + "; the message box movie is not on the off-stage list"); return; }
+                foreach (var (what, mv) in own)
+                    if (mv != null && Ms2.Ui.OffStageTextFocus.Has(mv.Player)) { Finish(false, note + $"; the {what} movie is on the off-stage list"); return; }
+                if (own.All(o => o.Item2 == null)) { Finish(false, note + "; no tooltip or mouse cursor layer to check"); return; }
                 var read = Ms2Godot.Movement.MoveInput.Read();
                 note += $", move keys held: move ({read.Move.X}, {read.Move.Y}) jump {read.Jump}, own keys blocked {Ms2.Ui.InputBlock.OwnKeysBlocked}";
                 if (read.Move != Vector2.Zero || read.Jump || !Ms2.Ui.InputBlock.OwnKeysBlocked) { Finish(false, note + "; the held move keys reached the player"); return; }

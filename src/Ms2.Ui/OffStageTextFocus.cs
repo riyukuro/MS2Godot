@@ -25,6 +25,9 @@ public static class OffStageTextFocus
         entries.Add(new Entry(player, shown));
     }
 
+    /// <summary>The movie is registered.</summary>
+    public static bool Has(Player player) => entries.Exists(e => e.Player == player);
+
     public static void Remove(Player player) => entries.RemoveAll(e => e.Player == player);
 
     /// <summary>A registered, shown movie's focus is a text field that takes the IME (<see cref="UiStage.TakesIme"/>).</summary>
