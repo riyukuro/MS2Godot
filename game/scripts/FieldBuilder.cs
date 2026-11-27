@@ -17,6 +17,9 @@ public sealed class FieldBuilder
     const float ChunkSize = 1500f;                     // collider bodies per 10 x 10 cubes
     /// <summary>Meta on a collision shape of a fall-return cube: the entity's index in the field (see the collision pass).</summary>
     public static readonly StringName FallReturnMeta = "ms2_fall_return";
+    /// <summary>Meta on a collision shape of a breakable entity (its NIF's shapes and its box): the marker's name, the
+    /// entity's id, for PCBase::vfunc_68's FindMarkerByEntity (a moving platform carries what stands on it).</summary>
+    public static readonly StringName BreakableMeta = "ms2_breakable";
     /// <summary>Meta on a collision shape whose entity's PropCollisionGroup is not the group of its body (a GeneratePhysX
     /// cube box); a shape without it has its body's group.</summary>
     public static readonly StringName KindMeta = "ms2_kind";
@@ -114,6 +117,7 @@ public sealed class FieldBuilder
         /// <paramref name="group"/> (layer bit n = group n), as a field body's group meta says.</summary>
         public void SetGroup(int group)
         {
+            Movement.SceneChange.Report();                     // SetEntityCollisionGroup's refresh (physxhelper.cpp:418)
             Body.CollisionLayer = 1u << group;
             Body.SetMeta(GroupMeta, group);
             ColliderGroups.Set(Body.GetInstanceId(), group);   // a ray may have cached the old group (RayQuery.Nearest)
@@ -124,6 +128,7 @@ public sealed class FieldBuilder
         public void SetOn(bool on)
         {
             if (on) { SetGroup(Group); return; }
+            Movement.SceneChange.Report();                     // the interact swap's FUN_141bc8e00 (interactobject.cpp:901)
             Body.CollisionLayer = 0;
             if (OverlapKey >= 0) Overlap.SetLayer(OverlapKey, 0);
         }
@@ -732,9 +737,11 @@ public sealed class FieldBuilder
                 // entity, so the hit report and the ground ray can name it (both actors of a cube are the same entity)
                 bool fallReturn = e.HasMixin("MS2CubeProp") && e.Bool("IsFallReturn") && (group == 9 || group == 8);
                 var material = e.Get("MapAttribute");
+                string breakableId = IsBreakable(e) ? e.Raw?.Id?.ToLowerInvariant() : null;
                 CollisionShape3D Tag(CollisionShape3D cs)
                 {
                     if (fallReturn) cs.SetMeta(FallReturnMeta, entityIndex);
+                    if (breakableId != null) cs.SetMeta(BreakableMeta, breakableId);
                     TagGround(cs, material);
                     return cs;
                 }

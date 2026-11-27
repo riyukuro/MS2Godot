@@ -85,8 +85,9 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         foreach (var pair in System.Environment.GetEnvironmentVariable("MS2_BREAKABLE_STATE").Split(','))
             if (pair.Split('=') is [var name, var st] && byte.TryParse(st, out byte state))
             {
-                if (name.Trim() != "*") list.Add(new(name.Trim(), state, 0, 0, 0));
-                else foreach (var m in devBreakables.Sorted) list.Add(new(m.Name, state, 0, 0, 0));   // every marker
+                // SyncA 1: the cycle runs on the clock (SyncA 0 holds a moving marker at SyncC's point of it)
+                if (name.Trim() != "*") list.Add(new(name.Trim(), state, 1, 0, 0));
+                else foreach (var m in devBreakables.Sorted) list.Add(new(m.Name, state, 1, 0, 0));   // every marker
             }
         devBreakables.Apply(new Ms2.Net.Packets.BreakableUpdate(1, list));
         GD.Print($"MS2Godot breakables: {devBreakables.Count} markers, {Breakables.Count} drawn, {list.Count} dev states");
@@ -262,7 +263,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         await Budget();
         Movement.MoveProof.Effects = (packs, builder);   // the scripted run's fx step
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
-        if (player != null) { Triggers.Bind(player.Climbs); player.ForceRegions = regionSkills.Objects; }   // FUN_141bc8420's zones
+        if (player != null) { Triggers.Bind(player.Climbs); player.ForceRegions = regionSkills.Objects; player.Platforms = Net.LiveSession.Instance?.Breakables ?? devBreakables; }   // FUN_141bc8420's zones
         await Budget();
         // From here to the end of the load, one frame: FieldContents.Start adopts the loading screen into the field, so no
         // frame is drawn between it and Loaded. The field is enabled again first, as it was throughout the one-frame build:

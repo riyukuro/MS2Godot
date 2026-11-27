@@ -148,6 +148,11 @@ public partial class Player : CharacterBody3D
     int hitGroup = -1;                    // GameObjectControllerHitReport m_entity: its collision group, -1 = none
     readonly GroundMaterialSnapshot ground = new();   // m_str958 and the hit report entity's MapAttribute
     ulong hitOwner;                       // the instance id of the last touched shape owner (its entity's metas are read once)
+    string hitBreakable;                  // that owner's breakable marker (FindMarkerByEntity on the report's entity), null: none
+    string carryId;                       // PCBase m_unk_ae0: the marker the last frame stood by
+    Ms2.Formats.Model.Vec3 carryPos;           // PCBase m_posAE8: that marker's position then (field units)
+    /// <summary>The field's breakable markers (the session's, or the offline dev ones), for the platform carry.</summary>
+    public Ms2.Ui.BreakableObjects Platforms;
     NxController nx;
     NxController.Hit nxHit;               // GameObjectController m_nCollisionFlags of the last move
     bool fallTimerRunning;                // GameObjectController m_kFallTimer is running (airTime is its elapsed time)
@@ -669,6 +674,7 @@ public partial class Player : CharacterBody3D
         hitGroup = owner != null && owner.HasMeta(FieldBuilder.KindMeta) ? (int)owner.GetMeta(FieldBuilder.KindMeta)
                  : collider is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
         hitFallReturn = FallReturnEntity(collider, shape);
+        hitBreakable = owner != null && owner.HasMeta(FieldBuilder.BreakableMeta) ? (string)owner.GetMeta(FieldBuilder.BreakableMeta) : null;
         ground.Entity = FieldBuilder.GroundMaterial(owner);
     }
 
@@ -738,7 +744,14 @@ public partial class Player : CharacterBody3D
         // its PhysX scale.
         // STILL-OPEN: in the jump and fall states the client's horizontal drift is part of that step too, and goes with it.
         var push = ForcePush(dt, out bool lifted, out bool pushed);
-        if (lifted)
+        // :1778-1780: on the ground (IsOnGround: Down, not jumping, not on a lift), the fall timer at 0, no collider change
+        // this world update (FUN_141bc9a80), an entity in the hit report and no move of its own: the step is skipped, so a
+        // body standing still makes no controller move at all and its flags stay as they were.
+        bool changed = SceneChange.ReadAndClear();
+        bool still = !lifted && Grounded && !jumping && !lift.Active && airTime == 0f && !changed && hitOwner != 0
+                     && v == Vector3.Zero && skillMove == Vector3.Zero;
+        if (still) { }
+        else if (lifted)
         {
             if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
         }
@@ -763,7 +776,9 @@ public partial class Player : CharacterBody3D
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
         var delta = v * dt + skillMove + push;
-        var firstHit = MoveStep(delta, dt);
+        delta += Carry(ref pushed);
+        // :1822: the controller moves only when the frame's move is not ZERO; a still frame keeps the last move's flags
+        var firstHit = delta == Vector3.Zero ? nxHit : MoveStep(delta, dt);
         if (pushed && delta != Vector3.Zero) syncPushed = true;   // vfunc_68: a zone that acted, on a frame that moves, calls vfunc_110 (pcbase.cpp:1772-1775, 1820-1823)
 
         // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)
@@ -772,6 +787,32 @@ public partial class Player : CharacterBody3D
         {
             // the controller stays under the ceiling until the jump curve comes back down
         }
+    }
+
+    /// <summary>
+    /// PCBase::vfunc_68's ride (pcbase.cpp:1797-1817): when the hit report's entity is a field marker's
+    /// (WorldService::FindMarkerByEntity) and the same one as last frame, its Position property's change since then carries
+    /// the body: a change that is not upward joins the frame's move (in field units here; the client's 0.01 is its PhysX
+    /// scale), an upward one puts the body there at once (vfunc_19, no sweep). Any change sets bPushed. The report keeps its
+    /// entity until another shape is touched (ClearHit clears m_bHit only, gameobjectcontrollerhitreport.cpp:140), so a body
+    /// that jumped off still follows the platform it last touched, as the client's does.
+    /// STILL-OPEN: UpdateTimeScale on a marker with a point velocity (:1804-1805).
+    /// </summary>
+    Vector3 Carry(ref bool pushed)
+    {
+        var marker = hitBreakable != null ? Platforms?.Find(hitBreakable) : null;
+        var move = Vector3.Zero;
+        if (marker != null && hitBreakable == carryId)
+        {
+            var d = marker.Position - carryPos;
+            if (d.X != 0 || d.Y != 0 || d.Z != 0) pushed = true;
+            var g = new Vector3((float)d.X, (float)d.Z, (float)-d.Y);   // field (x, y, z) to Godot (x, z, -y)
+            if (!(d.Z > 0)) move = g;
+            else GlobalPosition += g;
+        }
+        if (marker != null) carryPos = marker.Position;
+        carryId = marker != null ? hitBreakable : null;
+        return move;
     }
 
     /// <summary>The field's region skill objects, the force zones WorldService::FUN_141bc8420 reads first; null without them.</summary>

@@ -103,7 +103,11 @@ public sealed class FieldBreakables
         if (colliders == null || m == null) return;
         if (!m.HasBox)
         {
-            if (boxes.Remove(m, out var old) && GodotObject.IsInstanceValid(old)) old.QueueFree();
+            if (boxes.Remove(m, out var old) && GodotObject.IsInstanceValid(old))
+            {
+                old.QueueFree();
+                Movement.SceneChange.Report();                 // ReleasePhysicsActor's FUN_141bc8e00 (:747)
+            }
             return;
         }
         if (boxes.ContainsKey(m)) return;
@@ -117,7 +121,9 @@ public sealed class FieldBreakables
                                         new Vector3((float)c.X, (float)c.Y, (float)c.Z)),
         };
         body.SetMeta(FieldBuilder.GroupMeta, m.Group);
-        body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)m.Size.X, (float)m.Size.Y, (float)m.Size.Z) } });
+        var shape = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)m.Size.X, (float)m.Size.Y, (float)m.Size.Z) } };
+        shape.SetMeta(FieldBuilder.BreakableMeta, m.Name);   // the box actor's entity is the marker's
+        body.AddChild(shape);
         colliders.AddChild(body);
         ColliderGroups.Set(body.GetInstanceId(), m.Group);
         boxes[m] = body;
