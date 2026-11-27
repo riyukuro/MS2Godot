@@ -72,11 +72,10 @@ public sealed class MessengerController : UiController
     float offsetX, offsetY;                                   // m_fOffsetX / m_fOffsetY
     int alignType = 7;                                        // m_nAlignType
     int tabSelectedIndex, targetSelectedIndex;                // m_nTabSelectedIndex / m_nTargetSelectedIndex
+    int historyIndex = -1;                                    // m_nHistoryIndex: the target row kept while types are hidden
     public readonly List<TalkTab> Tabs = new();               // m_tabs
     /// <summary>m_pBrowser, the log and panel statics all windows share.</summary>
     public readonly MessengerBrowser Browser;
-    /// <summary>UIMessengerBrowser::m_hiddenTypes (HideType, from CSceneStateGame::OnMessengerBrowserStamp).</summary>
-    public readonly HashSet<int> HiddenTypes = new();
     /// <summary>CGameRule's world / channel chat discount rates (m_2b0 / m_2d0 Get(0, 0), gamerule.cpp:757, :766), set by
     /// game events; 0 = none.</summary>
     public uint WorldChatRate, ChannelChatRate;
@@ -100,7 +99,19 @@ public sealed class MessengerController : UiController
     }
 
     /// <summary>UIMessengerBrowser::IsTypeHidden (:3614).</summary>
-    bool IsTypeHidden(int type) => (type == Super && !Model.IsFeatureEnabled(SuperChatFeature)) || HiddenTypes.Contains(type);
+    bool IsTypeHidden(int type) => (type == Super && !Model.IsFeatureEnabled(SuperChatFeature)) || Browser.HiddenTypes.Contains(type);
+
+    /// <summary>
+    /// RestoreSubject (@0x141a0f870, uimessenger.cpp:1310): while the browser hides types the target row is kept aside;
+    /// once none is hidden the kept row comes back; then the target list is rebuilt and the current tab reselected.
+    /// </summary>
+    public void RestoreSubject()
+    {
+        if (Browser.HasHiddenTypes) historyIndex = targetSelectedIndex;
+        else if (historyIndex != -1) { targetSelectedIndex = historyIndex; historyIndex = -1; }
+        RebuildSubjectList();
+        ReselectCurrentTab();
+    }
 
     /// <summary>
     /// vfunc_5 (:657), where UIDialog reads its settings file: the window's own document (m_doc). UIMessenger's

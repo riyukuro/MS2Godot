@@ -1164,7 +1164,9 @@ public partial class HudScene : Node, IUiStageHost
             live.UserChat += onChat;
             Action<Ms2.Net.Packets.ChatItemLinks> onLinks = ChatLog.OnItemLinks;
             live.UserChatItemLink += onLinks;
-            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; ChatLog.SendPacket = null; ChatLog.SendSticker = null; ChatLog.ChatBalloon = null; };
+            Action<Ms2.Net.Packets.MessengerBrowserStamp> onStamp = ChatLog.OnStamp;
+            live.MessengerBrowserStamped += onStamp;
+            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; live.MessengerBrowserStamped -= onStamp; ChatLog.SendPacket = null; ChatLog.SendSticker = null; ChatLog.ChatBalloon = null; };
         }
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;

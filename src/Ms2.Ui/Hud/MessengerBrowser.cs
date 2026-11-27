@@ -193,6 +193,34 @@ public sealed class MessengerBrowser
     int shown;                                                // m_194, lines the windows show
     /// <summary>m_windows.</summary>
     public readonly List<MessengerController> Windows = new();
+    /// <summary>m_hiddenTypes: the chat types the windows' target lists leave out (<see cref="OnStamp"/>).</summary>
+    public readonly HashSet<int> HiddenTypes = new();
+
+    /// <summary>HasHiddenTypes (@0x141a26480, uimessenger.cpp:3606).</summary>
+    public bool HasHiddenTypes => HiddenTypes.Count != 0;
+    /// <summary>HideType (@0x141a26560, :3624).</summary>
+    public void HideType(int type) => HiddenTypes.Add(type);
+    /// <summary>ShowType (@0x141a265a0, :3630).</summary>
+    public void ShowType(int type) => HiddenTypes.Remove(type);
+    /// <summary>ShowAllTypes (@0x141a265d0, :3636).</summary>
+    public void ShowAllTypes() => HiddenTypes.Clear();
+
+    /// <summary>FUN_141a26600 (:3642): each window's RestoreSubject.</summary>
+    public void RestoreSubjects()
+    {
+        foreach (var w in Windows) w?.RestoreSubject();
+    }
+
+    /// <summary>
+    /// CSceneStateGame::OnMessengerBrowserStamp (@0x14173f0c0, scenestategame.cpp:6842-6855): all types shown again, the
+    /// stamp's types hidden, then each window's subject list rebuilt.
+    /// </summary>
+    public void OnStamp(Ms2.Net.Packets.MessengerBrowserStamp stamp)
+    {
+        ShowAllTypes();
+        foreach (var t in stamp.HiddenTypes) HideType(t);
+        RestoreSubjects();
+    }
     /// <summary>PanelSetting::s_nGlobal: the tabs use <see cref="GlobalScreen"/> (FUN_1414821b0).</summary>
     public bool Global;
     /// <summary>DAT_143adda48, the shared screen setting: its font size is the one the lines are made with.</summary>

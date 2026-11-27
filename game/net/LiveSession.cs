@@ -579,6 +579,8 @@ public partial class LiveSession : Node
     public event Action<ChatMessage, Func<WeddingChatHall>> UserChat;
     /// <summary>UIMessengerBrowser::vfunc_85 (0x1e, uimessenger.cpp:2963): the items the chat lines link, by uid.</summary>
     public event Action<ChatItemLinks> UserChatItemLink;
+    /// <summary>MessengerBrowserStamp (0x12C): the chat types the chat windows' target lists hide.</summary>
+    public event Action<MessengerBrowserStamp> MessengerBrowserStamped;
     /// <summary>The local player's skill book (JobSystem): the own FieldAddUser's block (OnAddUser, scenestategame.cpp:11135) and the
     /// Job packets (OnJob); null before one arrives.</summary>
     public SkillBook SkillBook { get; private set; }
@@ -2707,6 +2709,12 @@ public partial class LiveSession : Node
                 var links = ChatItemLinks.Read(p.Reader());  // UIMessengerBrowser::vfunc_85 (uimessenger.cpp:2963); no ExpectEnd: the client ignores trailing bytes
                 UserChatItemLink?.Invoke(links);
                 if (LiveCheck) GD.Print($"live: chat item links {links.Items.Count}");
+            }
+            else if (game.Is(p, Inbound.MessengerBrowserStamp))
+            {
+                var stamp = MessengerBrowserStamp.Read(p.Reader());   // CSceneStateGame::OnMessengerBrowserStamp (scenestategame.cpp:6842)
+                MessengerBrowserStamped?.Invoke(stamp);
+                if (LiveCheck) GD.Print($"live: messenger browser hides [{string.Join(",", stamp.HiddenTypes)}]");
             }
             else if (game.Is(p, Inbound.BadgeEquip))
             {
