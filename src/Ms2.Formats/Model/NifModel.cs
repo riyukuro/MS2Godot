@@ -1088,12 +1088,15 @@ public sealed class ModelData
     /// root, so the object and everything under it draw with FOG_NONE (NiStandardMaterialDescriptor.cpp:625-650), FOGENABLED 0
     /// (NiStandardMaterial.cpp:1077), no depth fog. A mesh is fog-off when it or a node above it matches. The height fog is
     /// switched by gbHeightFogEnable and the mesh's own blend (NiStandardMaterial.cpp:687-697), not by this.
+    /// Flag 0x400 is IS_PARTICLE_SYSTEM (NiAVObject.h:267): NiPSParticleSystem::LoadBinary sets it after reading the stored
+    /// flags (NiPSParticleSystem.cpp:1282, exe 0x141e9afd0), so every NiPSParticleSystem and NiPSMeshParticleSystem (its
+    /// subclass) is fog-off, whatever its file flags hold (<see cref="ParticleSystemFlag"/>).
     /// </summary>
     public static bool FogOff(NifFile nif, int block)
     {
         var b = nif.Blocks[block];
         if (UserProp(nif, block) is { } v && v.Contains("nofog", StringComparison.OrdinalIgnoreCase)) return true;
-        if ((b.IntOr("Flags", 0) & 0x400) != 0) return true;
+        if (ParticleSystemFlag(nif, block)) return true;
         if (!b.TryGetValue("Properties", out var pv) || pv is not long[] props) return false;
         foreach (var p in props)
         {
@@ -1102,6 +1105,17 @@ public sealed class ModelData
             return (f & 1) != 0 && ((f >> 5) & 15) == 0;
         }
         return false;
+    }
+
+    /// <summary>
+    /// The loaded object's NiAVObject flag 0x400 (IS_PARTICLE_SYSTEM, NiAVObject.h:267; tested by FUN_14098dfc0,
+    /// alphaanimation.cpp:391-395): the flags the file stores, or a particle system's, which its constructors and
+    /// NiPSParticleSystem::LoadBinary set (NiPSParticleSystem.cpp:137, 194, 1282).
+    /// </summary>
+    public static bool ParticleSystemFlag(NifFile nif, int block)
+    {
+        var b = nif.Blocks[block];
+        return b.Type is "NiPSParticleSystem" or "NiPSMeshParticleSystem" || (b.IntOr("Flags", 0) & 0x400) != 0;
     }
 
     /// <summary>

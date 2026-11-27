@@ -370,10 +370,11 @@ void fragment() {
     // lerps to the fog colour by it in every blend mode. But PrepareLoadedNif runs FUN_141567b60 on every effect nif as on a
     // model (nifeffectparam.cpp:2338; unit_141567000.cpp:349-424): a "nofog" tag, flag 0x400 or an own blended dest-ONE
     // alpha property attaches a fog-off property to that subtree, which draws with FOG_NONE (no_fog: ModelMesh.NoFog, a
-    // system's Material.Mesh.NoFog). The pillar capture (02000110, eff_com_recovery.nif) draws its two SRCALPHA / ONE
-    // systems FOGENABLE FALSE with no fog in the shaders. STILL-OPEN: its two SRCALPHA / INVSRCALPHA systems (PArray01, leaf:
-    // no tag, no flag 0x400, the alpha property its fogged meshes share) draw without the depth fog too; nothing in the walk
-    // or in NiStandardMaterialDescriptor::SetFogPropertyDescriptor explains it, so they keep the fog here. The height
+    // system's Material.Mesh.NoFog). Flag 0x400 is IS_PARTICLE_SYSTEM, which NiPSParticleSystem::LoadBinary sets on every
+    // particle system after reading the file's flags (NiPSParticleSystem.cpp:1282, exe 0x141e9afd0), so every particle
+    // system draws without the depth fog, whatever its blend (NifModel.ParticleSystemFlag); its mesh particles inherit that
+    // property state (NiPSMeshParticleSystem.cpp:270). The pillar capture (02000110, eff_com_recovery.nif) draws all four of
+    // its systems, the SRCALPHA / INVSRCALPHA PArray01 and leaf too, with no fog in the shaders, and its meshes fogged. The height
     // fog comes first, but not on meshes whose dest blend is ONE (NiStandardMaterial::GenerateDescriptor,
     // NiStandardMaterial.cpp:687-697; the Godot height_fog flag). The glow and shimmer passes have no fog
     // (ms2glowmaterial.cpp:126, ms2shimmermaterial.cpp:52); the ribbon, swoosh, beam and lightning effects turn it off on

@@ -966,7 +966,8 @@ public sealed class EffectScene
         var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null,
                                   Textures = ModelData.TexturesOf(n, blk), Maps = ModelData.MapsOf(n, blk), Material = ModelData.MaterialName(n, b) };
         // the fog-off subtrees as a mesh's (ModelMesh.NoFog): PrepareLoadedNif runs FUN_141567b60 on every loaded nif, effects
-        // too (CNifLoadingService::CreateCachedNif, nifeffectparam.cpp:2338), and its walk tests a particle system as any object
+        // too (CNifLoadingService::CreateCachedNif, nifeffectparam.cpp:2338), and its walk tests a particle system as any object;
+        // LoadBinary has set its flag 0x400 (NiPSParticleSystem.cpp:1282), so the walk always finds it fog-off
         (_, mat.NoFog) = ModelData.SubtreeTags(n, parent, n.Roots[0], blk);
         d.Material = new EffectMesh { Mesh = mat, Node = node, AlphaBoost = ModelData.AlphaBoost(n, blk) };
 
