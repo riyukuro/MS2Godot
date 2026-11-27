@@ -144,12 +144,28 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// next segment's decode would start), it goes back to its start, so no segment switch (the next segment's decode on
     /// the pool threads, its first play on the main thread) lands in a measured window. The switch follows the music's
     /// own clock, the audio driver's wall time, not the gate's frames. The per-frame music work runs as before. The seek
-    /// to the current position here compiles the seek before any window.
+    /// to the current position here compiles the seek before any window. The hold covers every busy music voice: an
+    /// outgoing one (fading, or holding its gain after the incoming voice ended) goes back to its start the same way, so
+    /// it neither chains into its next segment nor frees its slot in a window.
     /// </summary>
     public void GateHoldMusic()
     {
         gateHold = true;
-        if (musicPlayers[crossfade.ActiveSlot] is { } p && IsInstanceValid(p) && p.Playing) p.Seek((float)p.GetPlaybackPosition());
+        for (int i = 0; i < musicPlayers.Length; i++)
+            if (crossfade.Busy(i) && musicPlayers[i] is { } p && IsInstanceValid(p) && p.Playing) p.Seek((float)p.GetPlaybackPosition());
+    }
+
+    /// <summary>The gate hold for the outgoing voices: each goes back to its start where its last
+    /// <see cref="MusicPlaybackGuard.PredecodeLeadSeconds"/> seconds start. Gate sessions only.</summary>
+    void HoldOutgoingVoices()
+    {
+        for (int i = 0; i < musicPlayers.Length; i++)
+        {
+            if (i == crossfade.ActiveSlot || !crossfade.Busy(i)) continue;
+            var p = musicPlayers[i];
+            if (p == null || !p.Playing || p.Stream == null) continue;
+            if (p.GetPlaybackPosition() >= p.Stream.GetLength() - MusicPlaybackGuard.PredecodeLeadSeconds) p.Seek(0);
+        }
     }
 
     public int BgmCue { get; private set; }
@@ -577,6 +593,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
                 else if (playbackGuard.TryBeginPredecode(pos)) PredecodeNextSegment();
             }
         }
+        if (gateHold && crossfade.HasOutgoing) HoldOutgoingVoices();
     }
 
     /// <summary>The busy slots' volumes; a free slot's player is stopped and gets its volume when a segment takes it.</summary>
