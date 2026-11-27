@@ -1807,8 +1807,53 @@ public partial class LiveSession : Node
     void TriggerFace(int objectId, string name)
     {
         if (objectId == selfObject && player != null && IsInstanceValid(player)) player.TriggerFace(name);
-        else if (remote != null && remote.TriggerNpcFace(objectId, name)) { if (LiveCheck) GD.Print($"live: trigger face npc {objectId} '{name}'"); }
+        else if (remote != null && remote.TriggerNpcFace(objectId, name)) { if (LiveCheck) { GD.Print($"live: trigger face npc {objectId} '{name}'"); NpcFaceProbe(objectId, name); } }
         else TriggerNotApplied(TriggerObjects.Ui, TriggerObjects.UiFaceEmotion);
+    }
+
+    /// <summary>Live check only: waits out the npc's texture wait, logs the frame the face shows and the mesh it is on, and with
+    /// MS2_LIVE_CHAT_SHOTS saves the screen and a 3x crop around that mesh (npcface_&lt;object&gt;_&lt;name&gt;[_crop].png).</summary>
+    async void NpcFaceProbe(int objectId, string name)
+    {
+        try
+        {
+            var tree = (SceneTree)Engine.GetMainLoop();
+            Ms2.Ui.FaceEmotion fe = null;
+            for (int k = 0; k < 600; k++)
+            {
+                fe = remote?.NpcFace(objectId);
+                if (fe == null || fe.Current != name || fe.Frame >= 0) break;
+                await tree.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            }
+            if (fe == null || name.Length == 0) return;
+            string target = fe.Group?.Find(name)?.Texture?.Target;
+            var body = remote?.NpcBody(objectId);
+            var mesh = target == null || body == null ? null : body.FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>()
+                .FirstOrDefault(m => m.Visible && (m.Name.ToString() == target || m.Name.ToString() == target.Replace(':', '_')));
+            var cam = tree.Root.GetCamera3D();
+            Vector2? at = null;
+            if (mesh != null && cam != null)
+            {
+                var c = mesh.GlobalTransform * mesh.GetAabb().GetCenter();
+                if (!cam.IsPositionBehind(c)) at = cam.UnprojectPosition(c);
+            }
+            GD.Print($"live: npc face {objectId} '{name}' now '{fe.Current}' frame {fe.Frame} on {mesh?.Name.ToString() ?? "no mesh"} ({target ?? "no texture"}), screen {at?.ToString() ?? "-"}");
+            string dir = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAT_SHOTS");
+            if (string.IsNullOrEmpty(dir)) return;
+            await tree.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            var img = tree.Root.GetTexture().GetImage();
+            DirAccess.MakeDirRecursiveAbsolute(dir);
+            img.SavePng(System.IO.Path.Combine(dir, $"npcface_{objectId}_{name}.png"));
+            if (at is { } p)
+            {
+                const int half = 80;
+                int x = Mathf.Clamp((int)p.X - half, 0, Mathf.Max(0, img.GetWidth() - 2 * half)), y = Mathf.Clamp((int)p.Y - half, 0, Mathf.Max(0, img.GetHeight() - 2 * half));
+                var crop = img.GetRegion(new Rect2I(x, y, Mathf.Min(2 * half, img.GetWidth()), Mathf.Min(2 * half, img.GetHeight())));
+                crop.Resize(crop.GetWidth() * 3, crop.GetHeight() * 3, Image.Interpolation.Nearest);
+                crop.SavePng(System.IO.Path.Combine(dir, $"npcface_{objectId}_{name}_crop.png"));
+            }
+        }
+        catch (System.Exception e) { GD.Print($"live: npc face {objectId} '{name}' probe failed: {e.Message}"); }
     }
 
     /// <summary>A UI trigger command read but not applied: logged once per type and sub.</summary>

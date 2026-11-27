@@ -256,6 +256,10 @@ public sealed partial class RemoteLayer : Node3D
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
     /// <summary>The trigger's face emotion on the npc of that object id (<see cref="NpcLayer.TriggerFace"/>); false when none.</summary>
     public bool TriggerNpcFace(int objectId, string name) => npcs.TriggerFace(objectId, name);
+    /// <summary>The npc's face emotion by object id (a live check's view); null when there is none.</summary>
+    public Ms2.Ui.FaceEmotion NpcFace(int objectId) => npcs.Face(objectId);
+    /// <summary>The npc's built body by object id; null when there is none.</summary>
+    public Node3D NpcBody(int objectId) => npcs.ModelOf(objectId)?.Body;
     /// <summary>An npc's id and hp pair by object id (<see cref="NpcLayer.HpOf"/>); null when the field has none.</summary>
     public (int NpcId, long Hp, long MaxHp)? NpcHp(int objectId) => npcs.HpOf(objectId);
 
