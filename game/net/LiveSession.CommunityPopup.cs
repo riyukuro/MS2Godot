@@ -9,6 +9,9 @@ public partial class LiveSession
 {
     /// <summary>GmCommand mode 1 with feature 0x88 on: the line (Name) and its address (A) for UICommunityPopup's Show.</summary>
     public event Action<GmCommand> GmPopupText;
+    /// <summary>The last GmCommand read and the count read (for the live checks).</summary>
+    public string LastGmCommand { get; private set; } = "";
+    public int GmCommands { get; private set; }
 
     bool? popupTextFeature;
     /// <summary>Feature 0x88 (FUN_14173c0f0's gate), as UiModel.IsFeatureEnabled reads it.</summary>

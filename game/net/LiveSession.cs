@@ -1052,7 +1052,9 @@ public partial class LiveSession : Node
     /// <summary>The friend dialogs' sends (Buddy 0x30, EventReward 0x97).</summary>
     public void SendBuddy(Ms2.Net.Wire.IOutPacket packet)
     {
-        if (game != null) Send(packet);
+        if (game == null) return;
+        Send(packet);
+        BuddySends++; LastBuddySent = packet.ToString();
     }
     /// <summary>CTradeManagerEx (trademanagerex_1.cpp): the trade with another player from the Trade packets (0x82,
     /// OnTrade @0x14185bd20); live only. Its sends (Trade 0x49) go out while the game connection is up. The partner is
@@ -2719,6 +2721,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.GmCommand))
             {
                 var g = GmCommand.Read(p.Reader(), PopupTextFeature());   // CSceneStateGame::OnGmCommand (scenestategame.cpp:5159); no ExpectEnd: the client ignores trailing bytes
+                LastGmCommand = g.ToString(); GmCommands++;
                 if (LiveCheck) GD.Print($"live: gm command {g}");
                 if (g.IsPopupText) GmPopupText?.Invoke(g);
             }
@@ -2935,6 +2938,7 @@ public partial class LiveSession : Node
             {
                 var m = BuddyMessage.Read(p.Reader());            // CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy (buddymanager.cpp:95)
                 if (m != null) { Buddies.Apply(m); BuddyPacket?.Invoke(m); }
+                buddyPackets++; buddySeen.Add(m?.Protocol ?? -1);
                 if (LiveCheck) GD.Print($"live: buddy protocol {m?.Protocol.ToString() ?? "?"} ({Buddies.Count} entries, {Buddies.ReceivedCount} received)");
             }
             else if (game.Is(p, Inbound.Guild))

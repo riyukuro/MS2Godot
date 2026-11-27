@@ -161,6 +161,7 @@ public partial class LiveSession
         foreach (var step in steps.Split(','))
         {
             GD.Print($"live: combat step {step}");
+            if (await live.CommunityStep(step, hud, frames, until, Shot, Check)) continue;     // the friend and community steps (LiveSession.CommunityRuns.cs)
             if (step.StartsWith("warp:"))
             {
                 int entered = 0; void Entered(int map, long ms) => entered++;
