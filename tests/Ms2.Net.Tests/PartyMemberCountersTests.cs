@@ -36,6 +36,16 @@ public class PartyMemberCountersTests {
     }
 
     [Test]
+    public void AHostileCounterCountNeverSizesTheMapAndEndsInTheReadersError()
+    {
+        var body = new PartyJoin(User(2)) { Counters = Map((1, 1)) }.Write();
+        int at = body.Length - 9;                   // i32 count, i32 key, u8 value close the body
+        body[at] = 0xff; body[at + 1] = 0xff; body[at + 2] = 0xff; body[at + 3] = 0x7f;
+        var ex = Assert.Catch(() => PartyMessage.Read(new ByteReader(body)));
+        Assert.That(ex, Is.Not.Null.And.Not.InstanceOf<OutOfMemoryException>());
+    }
+
+    [Test]
     public void ACountersPacketReplacesTheWholeMap()
     {
         var book = new PartyBook();

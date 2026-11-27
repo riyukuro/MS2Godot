@@ -128,7 +128,7 @@ public abstract record PartyMessage(int Mode) {
     internal static IReadOnlyDictionary<int, int> ReadCounters(ByteReader r) {
         int n = r.ReadInt();
         if (n <= 0) return NoCounters;
-        var map = new Dictionary<int, int>(n);
+        var map = new Dictionary<int, int>(Math.Min(n, r.Available / 5));   // a count from the wire never sizes the map past the bytes left (5 per entry)
         for (int i = 0; i < n; i++) { int key = r.ReadInt(); map[key] = r.ReadByte(); }
         return map;
     }
