@@ -18,10 +18,10 @@ static class FxParam
 /// <summary>
 /// A playing effect NIF: its node tree with the transform controllers, its static meshes with the alpha, uv-scroll and flipbook controllers, and its
 /// particle systems simulated on the CPU (emitters, gravity, drag and bomb forces, size / color keys over the particle's age, grow and shrink ramps)
-/// and drawn as camera-facing or aligned quads (AlignedQuad) in one MultiMesh per system. All of it lives in MS2 file space (Z up) under one rotated node.
-/// A mesh's morph controller moves its vertices (EffectMorph). The planar and spherical colliders bounce or kill the particles (ParticleColliders). Not
-/// simulated: the other forces, spawners (death
-/// spawns), emitter-radius / color controllers, mesh particles (drawn as quads).
+/// and drawn as camera-facing or aligned quads (AlignedQuad) in one MultiMesh per system, or for a mesh-particle system as a clone of its master
+/// particle per particle, turned and scaled by the mesh-align kernel (MeshAlign, DrawClones). All of it lives in MS2 file space (Z up) under one
+/// rotated node. A mesh's morph controller moves its vertices (EffectMorph). The planar and spherical colliders bounce or kill the particles
+/// (ParticleColliders). Not simulated: the other forces, spawners (death spawns), emitter-radius / color controllers.
 /// </summary>
 public sealed partial class EffectInstance : Node3D
 {
@@ -52,6 +52,22 @@ public sealed partial class EffectInstance : Node3D
         public Aabb Box; public bool HasBox;                      // the MultiMesh's CustomAabb: every quad drawn so far, grown only (Step)
         public MeshState Shading;                                 // the system's material (ParticleSystemDef.Material) and its shader parameters
         public ParticleColliders.Collider[] Colliders; public int[] Tried; // the active colliders on this step (Step), and the kernel's scratch
+        // a mesh-particle system (ParticleSystemDef.MeshParticles; no MultiMesh, no Shading): each live particle's clone, kept
+        // in its slot (Swap) and reused by the next particle there (the client's per-generation pool, InitializeParticle);
+        // per particle its rotation axis (null without "Has Rotation Axes"); per generation each master node's parent slot
+        // in MasterNodes, each master mesh's node slot, and the material its clones share when nothing animates it
+        public Clone[] Clones; public System.Numerics.Vector3[] RotAxis;
+        public int[][] ParentSlot, MeshSlot; public ShaderMaterial[][] SharedMat;
+        public bool ClonesOk;                                     // the kernel that ran is ported (SetupClones)
+    }
+
+    /// <summary>One particle's clone of a master particle (NiPSMeshParticleSystem::InitializeParticle,
+    /// NiPSMeshParticleSystem.cpp:229-300): its meshes, its nodes' world transforms this frame (MasterNodes order), and the
+    /// first and third columns of the rotation last set (PostUpdate reads the particle's current rotation, :408-424).</summary>
+    sealed class Clone
+    {
+        public int Gen; public MeshState[] Meshes; public Transform3D[] World;
+        public System.Numerics.Vector3 Prev0, Prev2; public bool Shown;
     }
 
     readonly EffectScene scene; readonly ModelBuilder mb;
@@ -62,7 +78,8 @@ public sealed partial class EffectInstance : Node3D
     readonly Transform3D[] rest; readonly Basis[] restBasis; readonly float[] restScale;
     readonly int[] dynNodes;             // the nodes whose world transform changes over time (an animated or billboard node on the way to the root)
     readonly bool needCam;               // a billboard node or a particle system reads the camera
-    readonly bool hasAligned;            // a system has NiPSAlignedQuadGenerator quads
+    readonly bool needAxes;              // a system has NiPSAlignedQuadGenerator quads, or is a world-space mesh-particle system
+    readonly bool useLighting;           // the part's <attachInfo useLighting> (the constructor's)
     Vector3 worldX = new(1, 0, 0), worldZ = new(0, 0, 1);
     bool inTree, shown = true;           // shown: z's Visible as last set (a new node is visible)
     readonly Random rng;
@@ -80,6 +97,7 @@ public sealed partial class EffectInstance : Node3D
     // draws the same vertices with its own material (MaterialOverride), and nothing here changes a built mesh, so a
     // footstep or cast effect replayed by each player shares it instead of building the arrays (and a surface material) again.
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<EffectMesh, ArrayMesh> builtMeshes = new();
+    readonly Dictionary<EffectMesh, (Texture2D[] T, Variant[] V)> flips = new();   // each flipbook mesh's frames and their Variants (BuildMeshState)
     // Textures and colours are taken raw (no source_color): the colour buffer holds gamma values (field_lit.gdshader).
     static readonly string MeshCode = @"shader_type spatial;
 render_mode unshaded, MESHSTATE, BLEND;
@@ -477,7 +495,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     /// unlit (EffectMesh.PartLightForm).</param>
     public EffectInstance(EffectScene scene, ModelBuilder mb, float duration, int seed, bool useLighting = true)
     {
-        this.scene = scene; this.mb = mb; rng = new Random(seed);
+        this.scene = scene; this.mb = mb; this.useLighting = useLighting; rng = new Random(seed);
         // The client removes an effect once the game time passes start + duration (CEffect::vfunc_9, OnTick), with no tail
         // and no fade: a fade-out runs only when the effect is faded on request. A zero duration takes the longest
         // controller end time of the loaded nif (CNifEffect::vfunc_3).
@@ -494,82 +512,15 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         bool Dyn(int i) => i >= 0 && (dyn[i] ??= scene.Nodes[i].Anim != null || scene.Nodes[i].Billboard || Dyn(scene.Nodes[i].Parent));
         dynNodes = Enumerable.Range(0, scene.Nodes.Count).Where(Dyn).ToArray();
         needCam = scene.Nodes.Any(n => n.Billboard) || scene.Systems.Any(d => d.Emitters.Count > 0);
-        hasAligned = scene.Systems.Any(d => d.Aligned);
+        needAxes = scene.Systems.Any(d => d.Aligned || (d.MeshParticles && d.WorldSpace));
         AddChild(z);
         foreach (var em in scene.Meshes)
         {
-            if (scene.Nodes[em.Node].Culled && false) continue;
-            var ms = new MeshState { Def = em };
-            var m = em.Mesh;
-            bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
-            // a morph with more offset targets than custom arrays keeps the positions with its fixed weights baked
-            if (em.Morph is { } mo && mo.Anim.Deltas.Length <= ModelBuilder.EffectMorphTargets) { ms.Morph = mo; ms.MorphTargets = mo.Anim.Deltas.Length; }
-            ms.Ho = em.Ho;
-            var mat = new ShaderMaterial { Shader = ShaderOf(em, add, false, ms.MorphTargets) };
-            if (m.NoFog) mat.SetShaderParameter(FxParam.NoFog, true);
-            // SORTING_OFF meshes are drawn unsorted after the opaque buckets and before the depth-sorted alpha list
-            // (MS2RenderListProcessor: RenderNoSortList then RenderAlphaList, ms2renderlistprocessor.cpp:264-266, :368-370): a
-            // lower priority puts them ahead of the field's other transparent objects. STILL-OPEN: their order among
-            // themselves is the culling (scene) order in the client; Godot sorts them by depth within the priority.
-            if (m.NoSort) mat.RenderPriority = -1;
-            ms.BaseKey = m.Textures.ContainsKey("base") ? "base" : "shader0";
-            ms.Base = m.Textures.TryGetValue(ms.BaseKey, out var bn) ? mb.Texture(bn) : null;
-            ms.BaseMap = m.Maps.GetValueOrDefault(ms.BaseKey);
-            ms.Mat = mat; ms.Add = add;
-            ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform(); ms.DetailT = new TexTransform(); ms.NormalT = new TexTransform();
-            if (ms.Ho != null) HoSetup(ms, m);
-            else
-            {
-                mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
-                if (DestOne(m.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
-                if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
-                if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt)
-                {
-                    mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt);
-                    ms.GlowMap = m.Maps.GetValueOrDefault("glow");
-                }
-                if (m.Textures.TryGetValue("detail", out var dn) && mb.Texture(dn) is { } dt)
-                {
-                    mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dt);
-                    if (em.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true);
-                    ms.DetailMap = m.Maps.GetValueOrDefault("detail");
-                }
-                MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
-                MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
-                MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp);
-                SetRows(ms, ms.BaseMap?.Transform, 0, true);
-                SetRows(ms, ms.GlowMap?.Transform, 1, true);
-                SetRows(ms, ms.DetailMap?.Transform, 2, true);
-                var vcu = em.VertexColors;
-                if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
-                if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
-                if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
-                if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
-                if (em.AlphaBoost) mat.SetShaderParameter(FxParam.AlphaBoost, true);
-                mat.SetShaderParameter(FxParam.LightForm, EffectMesh.PartLightForm(em.LightForm, useLighting));
-                if (m.Normals == null) mat.SetShaderParameter(FxParam.LitNormals, false);
-                Shade(ms, 0, true);
-                mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
-            }
-            ms.LastTex = ms.Base;
-            if (em.Flip != null)
-            {
-                ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
-                // the frames as Variants made once: converting a Texture2D at each SetShaderParameter allocates (112 B)
-                ms.FlipV = ms.Flip.Select(x => x == null ? default : Variant.From(x)).ToArray();
-            }
+            // a master particle's meshes are drawn only as the particles' clones (EffectMesh.Master, DrawClones)
+            if (em.Master) continue;
+            var ms = BuildMeshState(em, null);
             ms.Static = !Dyn(em.Node);
-            // No shadow. A skill effect (CNifEffect) roots in EffectNode(useLighting, useShadow) (nifeffectparam.cpp:680), and
-            // useShadow defaults to false (:353; an xml attribute, :395). EffectNode passes it on as LightUnaffectedNode's second
-            // argument (effectservice.cpp:916); when that is false the node joins every shadow generator's unaffected caster and
-            // receiver lists (lightunaffectednode.cpp:43-49), and SetShadowCaster(root, useShadow) clears the caster flag (:804).
-            // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
-            // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
-            // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
-            if (ms.Morph != null) SetMorphWeights(ms, 0, true);
-            var morph = ms.Morph?.Anim;
-            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.Ho?.VertexColor ?? e.VertexColors.Any, effectMorph: morph)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
-                Visible = !scene.Nodes[em.Node].Culled };
+            ms.Node.Visible = !scene.Nodes[em.Node].Culled;
             z.AddChild(ms.Node);
             meshes.Add(ms);
         }
@@ -583,6 +534,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
             int nc = 0;
             foreach (var c in d.ColliderList) if (c.Active) nc++;
             if (nc > 0) { ps.Colliders = new ParticleColliders.Collider[nc]; ps.Tried = new int[nc]; }
+            if (d.MeshParticles) { SetupClones(ps); systems.Add(ps); continue; }
             // the quads draw through the system's _HO technique (EffectMesh.Ho on Material), else the standard shader
             var ho = d.Material.Ho;
             var mat = new ShaderMaterial { Shader = ho != null ? HoShader(ho, "cull_disabled, depth_draw_never", true, BlendOn(d.AlphaFlags), d.Additive)
@@ -650,6 +602,102 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         }
         Advance(0);
     }
+
+    /// <summary>A mesh's drawn state: its material with the shader parameters at time 0 and its MeshInstance3D (not yet in the
+    /// tree, visible): for a mesh in the effect's graph, and for each clone of a master mesh (DrawClones). With
+    /// <paramref name="shared"/> the mesh draws through that material and sets nothing on it (a master mesh no controller
+    /// animates, MeshAnimated).</summary>
+    MeshState BuildMeshState(EffectMesh em, ShaderMaterial shared)
+    {
+        var ms = new MeshState { Def = em };
+        var m = em.Mesh;
+        bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
+        if (shared != null)
+        {
+            // a clone of a master mesh nothing animates draws through the material its first clone made (SharedMat)
+            ms.Mat = shared; ms.Add = add; ms.Ho = em.Ho;
+            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.Ho?.VertexColor ?? e.VertexColors.Any, effectMorph: null)), MaterialOverride = shared, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            return ms;
+        }
+        // a morph with more offset targets than custom arrays keeps the positions with its fixed weights baked
+        if (em.Morph is { } mo && mo.Anim.Deltas.Length <= ModelBuilder.EffectMorphTargets) { ms.Morph = mo; ms.MorphTargets = mo.Anim.Deltas.Length; }
+        ms.Ho = em.Ho;
+        var mat = new ShaderMaterial { Shader = ShaderOf(em, add, mirrored, ms.MorphTargets) };
+        if (m.NoFog) mat.SetShaderParameter(FxParam.NoFog, true);
+        // SORTING_OFF meshes are drawn unsorted after the opaque buckets and before the depth-sorted alpha list
+        // (MS2RenderListProcessor: RenderNoSortList then RenderAlphaList, ms2renderlistprocessor.cpp:264-266, :368-370): a
+        // lower priority puts them ahead of the field's other transparent objects. STILL-OPEN: their order among
+        // themselves is the culling (scene) order in the client; Godot sorts them by depth within the priority.
+        if (m.NoSort) mat.RenderPriority = -1;
+        ms.BaseKey = m.Textures.ContainsKey("base") ? "base" : "shader0";
+        ms.Base = m.Textures.TryGetValue(ms.BaseKey, out var bn) ? mb.Texture(bn) : null;
+        ms.BaseMap = m.Maps.GetValueOrDefault(ms.BaseKey);
+        ms.Mat = mat; ms.Add = add;
+        ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform(); ms.DetailT = new TexTransform(); ms.NormalT = new TexTransform();
+        if (ms.Ho != null) HoSetup(ms, m);
+        else
+        {
+            mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
+            if (DestOne(m.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
+            if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
+            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt)
+            {
+                mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt);
+                ms.GlowMap = m.Maps.GetValueOrDefault("glow");
+            }
+            if (m.Textures.TryGetValue("detail", out var dn) && mb.Texture(dn) is { } dt)
+            {
+                mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dt);
+                if (em.DetailOpacity) mat.SetShaderParameter(FxParam.DetailOpacity, true);
+                ms.DetailMap = m.Maps.GetValueOrDefault("detail");
+            }
+            MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
+            MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
+            MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp);
+            SetRows(ms, ms.BaseMap?.Transform, 0, true);
+            SetRows(ms, ms.GlowMap?.Transform, 1, true);
+            SetRows(ms, ms.DetailMap?.Transform, 2, true);
+            var vcu = em.VertexColors;
+            if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
+            if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
+            if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
+            if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
+            if (em.AlphaBoost) mat.SetShaderParameter(FxParam.AlphaBoost, true);
+            mat.SetShaderParameter(FxParam.LightForm, EffectMesh.PartLightForm(em.LightForm, useLighting));
+            if (m.Normals == null) mat.SetShaderParameter(FxParam.LitNormals, false);
+            Shade(ms, 0, true);
+            mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
+        }
+        ms.LastTex = ms.Base;
+        if (em.Flip != null)
+        {
+            // the frames as Variants made once: converting a Texture2D at each SetShaderParameter allocates (112 B); a mesh
+            // particle's clones share their master's (flips)
+            if (!flips.TryGetValue(em, out var fl))
+            {
+                var src = em.Flip.Sources;
+                fl = (new Texture2D[src.Length], new Variant[src.Length]);
+                for (int k = 0; k < src.Length; k++)
+                    if (src[k] != null && (fl.T[k] = mb.Texture(src[k])) != null) fl.V[k] = Variant.From(fl.T[k]);
+                flips[em] = fl;
+            }
+            ms.Flip = fl.T; ms.FlipV = fl.V;
+        }
+        // No shadow. A skill effect (CNifEffect) roots in EffectNode(useLighting, useShadow) (nifeffectparam.cpp:680), and
+        // useShadow defaults to false (:353; an xml attribute, :395). EffectNode passes it on as LightUnaffectedNode's second
+        // argument (effectservice.cpp:916); when that is false the node joins every shadow generator's unaffected caster and
+        // receiver lists (lightunaffectednode.cpp:43-49), and SetShadowCaster(root, useShadow) clears the caster flag (:804).
+        // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
+        // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
+        // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
+        if (ms.Morph != null) SetMorphWeights(ms, 0, true);
+        var morph = ms.Morph?.Anim;
+        ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.Ho?.VertexColor ?? e.VertexColors.Any, effectMorph: morph)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+        return ms;
+    }
+
+    /// <summary>The mesh has a controller Animate runs (colour, alpha, uv, morph or flipbook).</summary>
+    static bool MeshAnimated(EffectMesh d) => d.Colors.Count > 0 || d.Alpha != null || d.Uv.Count > 0 || d.Morph != null || d.Flip != null;
 
     /// <summary>A mesh's colour terms at effect time t (EffectMesh.Shade) as the tint (the emissive), mat_diffuse and
     /// mat_ambient parameters, each set only when it changed (always when force). The lights they take are the shader's
@@ -766,6 +814,14 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         mirrored = m;
         foreach (var ms in meshes)
             if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
+        // and the clones made so far (a later one takes mirrored as it is made, BuildMeshState); a shared material is set
+        // once per clone, to the same shader
+        foreach (var ps in systems)
+            if (ps.Clones != null)
+                foreach (var cl in ps.Clones)
+                    if (cl != null)
+                        foreach (var ms in cl.Meshes)
+                            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = ShaderOf(ms.Def, ms.Add, mirrored, ms.MorphTargets);
     }
     bool mirrored;
     public override void _ExitTree() => inTree = false;
@@ -801,11 +857,12 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     /// NaN there and their vertices draw nothing. Here such a mesh is hidden and keeps its last transform, as the renderer
     /// takes no non-finite transform; it shows again when the transform is finite (a culled mesh stays hidden).
     /// </summary>
-    void Place(MeshState ms, in Transform3D w)
+    /// With <paramref name="show"/> its visibility is set whatever it was (a clone shown again, DrawClones).
+    void Place(MeshState ms, in Transform3D w, bool show = false)
     {
         bool finite = w.IsFinite();
         if (finite) ms.Node.Transform = w;
-        if (finite == ms.NotFinite) { ms.NotFinite = !finite; ms.Node.Visible = finite && !scene.Nodes[ms.Def.Node].Culled; }
+        if (show || finite == ms.NotFinite) { ms.NotFinite = !finite; ms.Node.Visible = finite && !scene.Nodes[ms.Def.Node].Culled; }
     }
 
     Transform3D World(int i, float t, Vector3 camLocal)
@@ -816,22 +873,25 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         var l = Local(i, t);
         var p = n.Parent >= 0 ? World(n.Parent, t, camLocal) : Transform3D.Identity;
         var w = p * l;
-        if (n.Billboard)
-        {
-            // NiBillboardNode::RotateToCamera (BillboardFace; NiBillboardNode.cpp:66-205, run from OnVisible :212-216): the node's
-            // world rotation times the face matrix, which is a rotation in the node's own frame (m_kWorld.m_Rotate * kFaceMat, :199).
-            // The camera's position, direction, up and right go into that frame without the node's scale.
-            float s = w.Basis.Column0.Length();
-            if (s > 0)
-            {
-                var inv = w.Basis.Orthonormalized().Transposed();
-                var (c0, c1, c2) = BillboardFace.Face(n.BillboardMode, N(inv * (camLocal - w.Origin)), N(inv * camDirFx), N(inv * camUpFx),
-                                                      N(inv * camRightFx), s);
-                w = new Transform3D(w.Basis * new Basis(G(c0), G(c1), G(c2)), w.Origin);
-            }
-        }
+        if (n.Billboard) w = Face(i, w, camLocal);
         done[i] = true; world[i] = w;
         return w;
+    }
+
+    /// <summary>
+    /// NiBillboardNode::RotateToCamera (BillboardFace; NiBillboardNode.cpp:66-205, run from OnVisible :212-216) on billboard node
+    /// <paramref name="i"/>'s world transform: the node's world rotation times the face matrix, which is a rotation in the node's
+    /// own frame (m_kWorld.m_Rotate * kFaceMat, :199). The camera's position, direction, up and right go into that frame without
+    /// the node's scale.
+    /// </summary>
+    Transform3D Face(int i, in Transform3D w, Vector3 camLocal)
+    {
+        float s = w.Basis.Column0.Length();
+        if (!(s > 0)) return w;
+        var inv = w.Basis.Orthonormalized().Transposed();
+        var (c0, c1, c2) = BillboardFace.Face(scene.Nodes[i].BillboardMode, N(inv * (camLocal - w.Origin)), N(inv * camDirFx), N(inv * camUpFx),
+                                              N(inv * camRightFx), s);
+        return new Transform3D(w.Basis * new Basis(G(c0), G(c1), G(c2)), w.Origin);
     }
 
     /// <summary>The index of the scene's node named <paramref name="name"/> (NiAVObject::GetObjectByName: the exact name), -1
@@ -863,7 +923,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         long q0 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var cam = needCam ? FrameCamera() : null;
         // the effect's world transform, fetched once for the camera and the aligned quads below
-        bool zIn = hasAligned && z.IsInsideTree();
+        bool zIn = needAxes && z.IsInsideTree();
         var zg = cam != null || zIn ? z.GlobalTransform : Transform3D.Identity;
         var camLocal = cam != null ? zg.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
         // the camera's right and up in this effect's space (file space), for the facing particle quads
@@ -876,8 +936,9 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         }
         camRightFx = camRight; camUpFx = camUp; camDirFx = camDir; camLocalFx = camLocal;
         // the file's world X and Z axes (Z goes to Godot's up) in this effect's space, for the aligned quads of world-space
-        // systems (AlignedQuad: the kernels' UNIT_X / UNIT_Z defaults)
-        if (hasAligned)
+        // systems (AlignedQuad: the kernels' UNIT_X / UNIT_Z defaults) and the world frame of a world-space mesh-particle
+        // system (DrawClones)
+        if (needAxes)
         {
             // (the first step runs in the constructor, before the effect is in the tree: its own transform until then)
             var zb = zIn ? zg.Basis : Transform.Basis * z.Transform.Basis;
@@ -890,32 +951,16 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
 
         foreach (var ms in meshes)
         {
-            var d = ms.Def;
-            if (!ms.Static || !ms.Placed) { Place(ms, World(d.Node, t, camLocal)); ms.Placed = true; }
-            if (ms.Ho != null) { if (d.Colors.Count > 0 || d.Alpha != null) HoShade(ms, t, false); }
-            else
-            {
-                if (d.Colors.Count > 0) Shade(ms, t, false);
-                if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
-            }
-            if (d.Uv.Count > 0) AnimateUv(ms, t);
-            if (ms.Morph != null) SetMorphWeights(ms, t, false);
-            if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
-            {
-                double lt = d.Flip.Ctl.Local(t);
-                int idx = d.Flip.Curve != null ? (int)Math.Floor(d.Flip.Curve(lt) + 0.001)
-                                               : (int)Math.Floor((lt - d.Flip.Ctl.Start) / Math.Max(d.Flip.Ctl.Stop - d.Flip.Ctl.Start, 1e-6) * ms.Flip.Length);
-                idx = Math.Clamp(idx, 0, ms.Flip.Length - 1);
-                var tex = ms.Flip[idx];
-                if (tex != null && tex != ms.LastTex) { ms.LastTex = tex; ms.Mat.SetShaderParameter(FxParam.Tex, ms.FlipV[idx]); }
-            }
+            if (!ms.Static || !ms.Placed) { Place(ms, World(ms.Def.Node, t, camLocal)); ms.Placed = true; }
+            Animate(ms, t, false);
         }
 
         long q2 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         foreach (var ps in systems)
         {
             var sm = ps.Shading;
-            if (sm.Ho != null) { if (sm.Def.Colors.Count > 0 || sm.Def.Alpha != null) HoShade(sm, t, false); }
+            if (sm == null) { }                                       // a mesh-particle system: its clones are shaded (DrawClones)
+            else if (sm.Ho != null) { if (sm.Def.Colors.Count > 0 || sm.Def.Alpha != null) HoShade(sm, t, false); }
             else
             {
                 if (sm.Def.Colors.Count > 0) Shade(sm, t, false);
@@ -925,6 +970,30 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         }
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
+    /// <summary>A mesh's controllers at time t: the colours and alpha (or an _HO block's), the uv transforms, the morph weights
+    /// and the flipbook frame. started: every uv controller runs (a clone's, AnimateUv).</summary>
+    void Animate(MeshState ms, float t, bool started)
+    {
+        var d = ms.Def;
+        if (ms.Ho != null) { if (d.Colors.Count > 0 || d.Alpha != null) HoShade(ms, t, false); }
+        else
+        {
+            if (d.Colors.Count > 0) Shade(ms, t, false);
+            if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
+        }
+        if (d.Uv.Count > 0) AnimateUv(ms, t, started);
+        if (ms.Morph != null) SetMorphWeights(ms, t, false);
+        if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
+        {
+            double lt = d.Flip.Ctl.Local(t);
+            int idx = d.Flip.Curve != null ? (int)Math.Floor(d.Flip.Curve(lt) + 0.001)
+                                           : (int)Math.Floor((lt - d.Flip.Ctl.Start) / Math.Max(d.Flip.Ctl.Stop - d.Flip.Ctl.Start, 1e-6) * ms.Flip.Length);
+            idx = Math.Clamp(idx, 0, ms.Flip.Length - 1);
+            var tex = ms.Flip[idx];
+            if (tex != null && tex != ms.LastTex) { ms.LastTex = tex; ms.Mat.SetShaderParameter(FxParam.Tex, ms.FlipV[idx]); }
+        }
+    }
+
     // the MS2_PERF_FX probe's segment counters (a measuring tool, printed by Probe; untouched when the probe is off):
     // ticks in camera, meshes, systems, buffer set, draw loop, and the particle count
     static readonly long[] seg = new long[6];
@@ -941,13 +1010,15 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
     // StartAnimations). STILL-OPEN: FUN_141545250 (nifanimationcontroller.cpp:175-190) calls NiTimeController::
     // StartAnimations on an entity's scene graph, which activates controllers the file leaves inactive; a field-entity
     // effect started that way would run them. The alpha, colour and flip controllers here do not check Active yet.
+    // A clone of a master particle runs them all: InitializeParticle starts the clone's controllers
+    // (NiTimeController::StartAnimations(clone, 0), NiPSMeshParticleSystem.cpp:268), and starting one sets it active.
     static readonly TexTransform NoTransform = TexTransform.ControllerDefault();
-    static void AnimateUv(MeshState ms, float t)
+    static void AnimateUv(MeshState ms, float t, bool started)
     {
         bool baseOn = false, glowOn = false, detailOn = false, normalOn = false;
         foreach (var op in ms.Def.Uv)
         {
-            if (!op.Ctl.Active) continue;
+            if (!op.Ctl.Active && !started) continue;
             TexTransform w;
             if (op.Slot == ms.BaseKey && ms.BaseMap != null) { if (!baseOn) { ms.BaseT.CopyFrom(ms.BaseMap.Transform ?? NoTransform); baseOn = true; } w = ms.BaseT; }
             else if (op.Slot == "glow" && ms.GlowMap != null) { if (!glowOn) { ms.GlowT.CopyFrom(ms.GlowMap.Transform ?? NoTransform); glowOn = true; } w = ms.GlowT; }
@@ -1113,6 +1184,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
                 }
                 if (ps.Count >= ps.Pos.Length) ps.Accum[ei] = 0;
             }
+        if (ps.Clones != null) { DrawClones(ps, sysWorld, psScale, camLocal); return; }
         long qd = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         // draw
         // The MultiMesh holds Cap instances, not the system's full capacity: multimesh_set_buffer takes exactly Cap * 20 floats
@@ -1257,12 +1329,154 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         if (ps.Count != ps.LastCount || resized) { ps.MM.VisibleInstanceCount = ps.Count; ps.LastCount = ps.Count; }
     }
 
+    /// <summary>A mesh-particle system's clone tables (PSys.Clones): per generation each master node's parent slot and each
+    /// master mesh's node slot in ParticleSystemDef.MasterNodes. Only the fixed-method kernel is ported (MeshAlign), with
+    /// rotation axes when the system has rotations (NiPSSimulatorMeshAlignKernelFF asserts them); a system needing another
+    /// draws nothing. STILL-OPEN: the other mesh-align kernels (none in either data set).</summary>
+    void SetupClones(PSys ps)
+    {
+        var d = ps.Def;
+        int n = ps.Pos.Length, gens = d.MasterNodes.Length;
+        ps.Clones = new Clone[n];
+        if (d.HasRotationAxes) ps.RotAxis = new System.Numerics.Vector3[n];
+        ps.ParentSlot = new int[gens][]; ps.MeshSlot = new int[gens][]; ps.SharedMat = new ShaderMaterial[gens][];
+        for (int g = 0; g < gens; g++)
+        {
+            var nodes = d.MasterNodes[g]; var mi = d.MasterMeshes[g];
+            var par = ps.ParentSlot[g] = new int[nodes.Length];
+            for (int k = 0; k < nodes.Length; k++) par[k] = Array.IndexOf(nodes, scene.Nodes[nodes[k]].Parent);
+            var slot = ps.MeshSlot[g] = new int[mi.Length];
+            for (int j = 0; j < mi.Length; j++) slot[j] = Array.IndexOf(nodes, scene.Meshes[mi[j]].Node);
+            ps.SharedMat[g] = new ShaderMaterial[mi.Length];
+        }
+        ps.ClonesOk = gens > 0 && d.NormalMethod == AlignedQuad.LocalFixed && d.UpMethod == AlignedQuad.LocalFixed
+                      && (!d.HasRotations || d.HasRotationAxes);
+    }
+
+    /// <summary>NiPSMeshParticleSystem::InitializeParticle (NiPSMeshParticleSystem.cpp:229-300) for the new particle i: its
+    /// generation (NiRand() % generations, :240-247; STILL-OPEN: the client's NiRand sequence, every system in both data sets
+    /// has one generation), then the clone: the slot's own when it is of that generation (the pool's, :249-262), else a new
+    /// clone of the master (:263-266). Its controllers start at 0 (:268, AnimateUv), it takes the system's fog-off property
+    /// (UpdatePropertiesDownward, :275; EffectScene.ReadMasters sets NoFog), and its current rotation is the identity (:288).
+    /// STILL-OPEN: the system's other inherited properties.</summary>
+    void StartClone(PSys ps, int i)
+    {
+        int gens = ps.Def.MasterNodes.Length;
+        if (gens == 0) return;
+        int g = gens > 1 ? rng.Next(gens) : 0;
+        var cl = ps.Clones[i];
+        if (cl == null || cl.Gen != g)
+        {
+            if (cl != null) foreach (var ms in cl.Meshes) ms.Node.QueueFree();
+            cl = ps.Clones[i] = BuildClone(ps, g);
+        }
+        cl.Prev0 = System.Numerics.Vector3.UnitX; cl.Prev2 = System.Numerics.Vector3.UnitZ;
+        cl.Shown = false;
+    }
+
+    /// <summary>A new clone of generation g's master: its meshes, hidden until DrawClones places them. A master mesh no
+    /// controller animates draws through one material for every clone (SharedMat, made with the first).</summary>
+    Clone BuildClone(PSys ps, int g)
+    {
+        var mi = ps.Def.MasterMeshes[g];
+        var cl = new Clone { Gen = g, Meshes = new MeshState[mi.Length], World = new Transform3D[ps.Def.MasterNodes[g].Length] };
+        var shared = ps.SharedMat[g];
+        for (int j = 0; j < mi.Length; j++)
+        {
+            var em = scene.Meshes[mi[j]];
+            bool anim = MeshAnimated(em);
+            var ms = BuildMeshState(em, anim ? null : shared[j]);
+            if (!anim && shared[j] == null) shared[j] = ms.Mat;
+            ms.Node.Visible = false;
+            z.AddChild(ms.Node);
+            cl.Meshes[j] = ms;
+        }
+        return cl;
+    }
+
+    /// <summary>
+    /// The live particles' clones this frame: NiPSMeshParticleSystem::PostUpdate (NiPSMeshParticleSystem.cpp:376-436) sets
+    /// each clone's translate to the particle's position, its scale to the step's (MeshAlign.Scale over the particle's radius
+    /// and size, the size from the general step's keys, grow and shrink as for the quads) and its rotation to the step's
+    /// (MeshAlign.Rotation, repaired by MeshAlign.Repair), then updates it at the particle's age (UpdateDownwardPass(age),
+    /// :430). The clones are children of the particle container, which takes the system's world transform
+    /// (UpdateWorldData, :502-509): for a world-space system that is only its scale, the rotation and translate being cleared
+    /// (NiPSParticleSystem::UpdateWorldData), so the frame there is the world's axes. The step's fixed normal and up are the
+    /// system's directions, in world space turned by the system's original world rotation (NiPSSimulatorMeshAlignStep.cpp:
+    /// 337-346, :388; in local space as they are, :427-458), and unitized with UNIT_X and UNIT_Z. Positions here are in the
+    /// effect's space, the client's times the system's scale, so the scale is multiplied by it. A clone whose particle died is
+    /// hidden (the client detaches it, RemoveParticle :326-340, and keeps it pooled).
+    /// STILL-OPEN: clones are drawn one node per mesh, not batched.
+    /// </summary>
+    void DrawClones(PSys ps, in Transform3D sysWorld, float psScale, Vector3 camLocal)
+    {
+        var d = ps.Def;
+        if (ps.ClonesOk)
+        {
+            var r = sysWorld.Basis.Orthonormalized();
+            var frame = d.WorldSpace ? new Basis(worldX, worldZ.Cross(worldX), worldZ) : r;
+            var nd = new Vector3((float)d.NormalDirection.X, (float)d.NormalDirection.Y, (float)d.NormalDirection.Z);
+            var ud = new Vector3((float)d.UpDirection.X, (float)d.UpDirection.Y, (float)d.UpDirection.Z);
+            if (d.WorldSpace) { var fi = frame.Inverse(); nd = fi * (r * nd); ud = fi * (r * ud); }
+            var nrm = AlignedQuad.Unitize(N(nd), System.Numerics.Vector3.UnitX);
+            var up = AlignedQuad.Unitize(N(ud), System.Numerics.Vector3.UnitZ);
+            bool sizeKeys = d.SizeKeys.Length > 0, grow = d.GrowTime > 0, shrink = d.ShrinkTime > 0, rotations = d.HasRotations;
+            float growTime = (float)d.GrowTime, shrinkTime = (float)d.ShrinkTime;
+            for (int i = 0; i < ps.Count; i++)
+            {
+                var cl = ps.Clones[i];
+                if (cl == null) continue;
+                float age = ps.Age[i], lf = ps.Life[i];
+                float n = lf > 0 ? age / lf : 1f;
+                float mul = 1f;
+                if (sizeKeys) mul *= (float)Lerp(d.SizeKeys, n);
+                if (grow) mul *= Mathf.Clamp(age / growTime, 0f, 1f);
+                if (shrink) mul *= Mathf.Clamp((lf - age) / shrinkTime, 0f, 1f);
+                float scale = MeshAlign.Scale(ps.Size[i], mul) * psScale;
+                MeshAlign.Rotation(nrm, up, rotations, ps.Rot[i], ps.RotAxis != null ? ps.RotAxis[i] : default, out var c0, out var c1, out var c2);
+                MeshAlign.Repair(ref c0, ref c1, ref c2, cl.Prev0, cl.Prev2);
+                cl.Prev0 = c0; cl.Prev2 = c2;
+                var nodes = d.MasterNodes[cl.Gen]; var par = ps.ParentSlot[cl.Gen]; var slot = ps.MeshSlot[cl.Gen];
+                var wd = cl.World;
+                for (int k = 0; k < nodes.Length; k++)
+                {
+                    Transform3D w;
+                    if (par[k] < 0) w = new Transform3D(frame * new Basis(G(c0) * scale, G(c1) * scale, G(c2) * scale), ps.Pos[i]);
+                    else w = wd[par[k]] * Local(nodes[k], age);
+                    if (scene.Nodes[nodes[k]].Billboard) w = Face(nodes[k], w, camLocal);
+                    wd[k] = w;
+                }
+                bool show = !cl.Shown;
+                for (int j = 0; j < cl.Meshes.Length; j++)
+                {
+                    var ms = cl.Meshes[j];
+                    Place(ms, slot[j] >= 0 ? wd[slot[j]] : wd[0], show);
+                    Animate(ms, age, true);
+                }
+                cl.Shown = true;
+            }
+        }
+        // the clones of the particles that died since the last frame (their slots are past the live count)
+        for (int i = ps.Count; i < ps.LastCount; i++)
+        {
+            var cl = ps.Clones[i];
+            if (cl == null || !cl.Shown) continue;
+            foreach (var ms in cl.Meshes) ms.Node.Visible = false;
+            cl.Shown = false;
+        }
+        ps.LastCount = ps.Count;
+    }
+
     static void Swap(PSys p, int a, int b)
     {
         if (a == b) return;
         (p.Pos[a], p.Pos[b]) = (p.Pos[b], p.Pos[a]); (p.Vel[a], p.Vel[b]) = (p.Vel[b], p.Vel[a]); (p.Age[a], p.Age[b]) = (p.Age[b], p.Age[a]);
         (p.Life[a], p.Life[b]) = (p.Life[b], p.Life[a]); (p.Size[a], p.Size[b]) = (p.Size[b], p.Size[a]); (p.Rot[a], p.Rot[b]) = (p.Rot[b], p.Rot[a]);
         (p.RotSpeed[a], p.RotSpeed[b]) = (p.RotSpeed[b], p.RotSpeed[a]); (p.Variance[a], p.Variance[b]) = (p.Variance[b], p.Variance[a]);
+        // a mesh particle's clone moves with it (the client moves the last particle's clone into the removed one's slot,
+        // NiPSMeshParticleSystem::RemoveParticle, NiPSMeshParticleSystem.cpp:326-340)
+        if (p.Clones != null) (p.Clones[a], p.Clones[b]) = (p.Clones[b], p.Clones[a]);
+        if (p.RotAxis != null) (p.RotAxis[a], p.RotAxis[b]) = (p.RotAxis[b], p.RotAxis[a]);
     }
 
     static double Lerp((double t, double v)[] k, float n)
@@ -1348,6 +1562,18 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
         float rs = (float)v.RotSpeed + Spread((float)v.RotSpeedVar);
         if (e.RandomRotSpeedSign && R() < 0.5f) rs = -rs;
         ps.RotSpeed[i] = rs;
+        if (ps.RotAxis != null)
+        {
+            // the emitter's axis, or a random unit one (NiPSEmitter.cpp:248-260)
+            var ax = new System.Numerics.Vector3((float)e.RotAxis.X, (float)e.RotAxis.Y, (float)e.RotAxis.Z);
+            if (e.RandomRotAxis)
+            {
+                float phi = R() * MathF.PI, zc = MathF.Cos(phi), h = MathF.Sqrt(1f - zc * zc), th = R() * 2f * MathF.PI;
+                ax = new System.Numerics.Vector3(h * MathF.Cos(th), h * MathF.Sin(th), zc);
+            }
+            ps.RotAxis[i] = ax;
+        }
         ps.Variance[i] = Spread(1f);        // NiSymmetricRandom (NiPSParticleSystem.cpp:262-265)
+        if (ps.Clones != null) StartClone(ps, i);
     }
 }

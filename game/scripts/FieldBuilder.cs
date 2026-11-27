@@ -435,9 +435,10 @@ public sealed class FieldBuilder
     }
 
     /// <summary>
-    /// A field model's particle systems as an effect scene with no meshes (the field draws those). Every node of the
-    /// model's graph updates with it, so its NiPSParticleSystems simulate as an effect's do (EffectInstance). A system
-    /// with no emitter, or under a node that is culled in the file (its subtree is not drawn), is left out.
+    /// A field model's particle systems as an effect scene with no meshes but the mesh-particle masters (the field draws
+    /// the rest; the masters only as each particle's clone, NifModel.MasterParticleBlocks). Every node of the model's graph
+    /// updates with it, so its NiPSParticleSystems simulate as an effect's do (EffectInstance). A system with no emitter, or
+    /// under a node that is culled in the file (its subtree is not drawn), is left out.
     /// STILL-OPEN: a visibility controller that unculls such a node over time; a static entity's systems (updated once, at
     /// add time, so nothing is emitted: FieldBuilder.IsStatic) are not run at all.
     /// </summary>
@@ -445,7 +446,14 @@ public sealed class FieldBuilder
     {
         if (!nif.Blocks.Any(b => b.Type is "NiPSParticleSystem" or "NiPSMeshParticleSystem")) return null;
         var sc = EffectScene.Load(nif);
-        sc.Meshes.Clear();
+        // the master meshes stay, renumbered in each system's MasterMeshes
+        var at = new int[sc.Meshes.Count];
+        int kept = 0;
+        for (int i = 0; i < sc.Meshes.Count; i++) { at[i] = sc.Meshes[i].Master ? kept : -1; if (sc.Meshes[i].Master) sc.Meshes[kept++] = sc.Meshes[i]; }
+        sc.Meshes.RemoveRange(kept, sc.Meshes.Count - kept);
+        foreach (var d in sc.Systems)
+            for (int g = 0; g < d.MasterMeshes.Length; g++)
+                for (int j = 0; j < d.MasterMeshes[g].Length; j++) d.MasterMeshes[g][j] = at[d.MasterMeshes[g][j]];
         bool Culled(int i) => i >= 0 && (sc.Nodes[i].Culled || Culled(sc.Nodes[i].Parent));
         sc.Systems.RemoveAll(d => d.Emitters.Count == 0 || Culled(d.Node));
         return sc.Systems.Count > 0 ? sc : null;

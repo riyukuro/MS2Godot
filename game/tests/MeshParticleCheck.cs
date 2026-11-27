@@ -1,0 +1,139 @@
+using System;
+using System.Collections.Generic;
+using Godot;
+using Ms2.Formats.Model;
+using Ms2Godot.Net;
+
+namespace Ms2Godot.Tests;
+
+/// <summary>
+/// Headless check (res://tests/mesh_particle.tscn, no game data): an NiPSMeshParticleSystem whose master particle is a node
+/// with a quad and a child node 2 up with another. The masters hang under no node, so they are never drawn where they stand
+/// (EffectMesh.Master); each live particle draws a clone (NiPSMeshParticleSystem::InitializeParticle,
+/// NiPSMeshParticleSystem.cpp:229-300) at its position, turned by the mesh-align step's fixed normal +Y and up +Z in the
+/// system's frame, the system node being turned a quarter about +Z (MeshAlign: columns normal, up x normal, normal x right,
+/// so the clone's axes are -X, -Y, +Z), scaled by the particle's size, the child at its local offset under it
+/// (PostUpdate, :376-436). A dead particle's clone is hidden (RemoveParticle, :326-340). Steps that reuse the pooled clones
+/// allocate 0 B. Before the port the system drew its particles as quads and the master meshes statically.
+/// Quits with 0 when all hold, else 1.
+/// </summary>
+public partial class MeshParticleCheck : Node
+{
+    const float Size = 2f, Up = 2f;
+
+    static ModelMesh Quad(string name) => new()
+    {
+        Name = name, FileName = name, Positions = new float[] { -1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0 },
+        Normals = new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1 }, Indices = new[] { 0, 1, 2, 0, 2, 3 },
+        Ambient = new float[] { 0, 0, 0 }, Diffuse = new float[] { 0, 0, 0 }, Emissive = new float[] { 1, 1, 1 },
+    };
+
+    static EffectScene Scene(double stop)
+    {
+        var sc = new EffectScene { Duration = 10 };
+        // the system node turned a quarter about +Z (row-major: X goes to +Y)
+        sc.Nodes.Add(new EffectNode { Name = "system", Local = Xform.Identity with { R = new double[] { 0, -1, 0, 1, 0, 0, 0, 0, 1 } } });
+        sc.Nodes.Add(new EffectNode { Name = "master" });
+        sc.Nodes.Add(new EffectNode { Name = "leaf", Parent = 1, Local = Xform.Identity with { T = new Vec3(0, 0, Up) } });
+        sc.Meshes.Add(new EffectMesh { Mesh = Quad("root"), Node = 1, Master = true });
+        sc.Meshes.Add(new EffectMesh { Mesh = Quad("leaf"), Node = 2, Master = true });
+        var d = new ParticleSystemDef
+        {
+            Node = 0, Name = "meshps", MaxParticles = 64, MeshParticles = true,
+            MasterNodes = new[] { new[] { 1, 2 } }, MasterMeshes = new[] { new[] { 0, 1 } },
+            NormalMethod = AlignedQuad.LocalFixed, UpMethod = AlignedQuad.LocalFixed,
+            NormalDirection = new Vec3(0, 1, 0), UpDirection = new Vec3(0, 0, 1), HasRotations = false,
+            Material = new EffectMesh { Node = 0, Mesh = Quad("material") },
+            Emitters =
+            {
+                new EmitterDef
+                {
+                    Kind = EmitterKind.Box, Speed = 10, Size = Size, Lifespan = 0.5, Rate = lt => lt < stop ? 40 : 0,
+                    RateCtl = new TimeCtl { Stop = 10 },
+                },
+            },
+        };
+        sc.Systems.Add(d);
+        return sc;
+    }
+
+    public override void _Ready()
+    {
+        var fails = new List<string>();
+        try { Run(fails); }
+        catch (Exception e) { fails.Add(e.ToString()); }
+        foreach (var f in fails) GD.PrintErr("mesh particle: " + f);
+        GD.Print(fails.Count == 0 ? "mesh particle: PASS" : $"mesh particle: FAIL ({fails.Count})");
+        GetTree().Quit(fails.Count == 0 ? 0 : 1);
+    }
+
+    EffectInstance Start(double stop)
+    {
+        var fx = new EffectInstance(Scene(stop), new ModelBuilder(null, null), 10, 1);
+        AddChild(fx);
+        fx.FileSpace = Transform3D.Identity;
+        return fx;
+    }
+
+    /// <summary>The shown clones under the effect's space node: each clone adds its meshes in MasterMeshes order (BuildClone),
+    /// so with no other mesh the children pair up as (root, leaf).</summary>
+    static List<(MeshInstance3D Root, MeshInstance3D Leaf)> Shown(EffectInstance fx, List<string> fails)
+    {
+        var list = new List<(MeshInstance3D, MeshInstance3D)>();
+        var z = fx.GetChild<Node3D>(0);
+        var ms = new List<MeshInstance3D>();
+        for (int i = 0; i < z.GetChildCount(); i++) if (z.GetChild(i) is MeshInstance3D m) ms.Add(m);
+        if (ms.Count % 2 != 0) { fails.Add($"{ms.Count} meshes, want a root and a leaf per clone"); return list; }
+        for (int i = 0; i < ms.Count; i += 2)
+        {
+            if (ms[i].Visible != ms[i + 1].Visible) fails.Add($"clone {i / 2}: root shown {ms[i].Visible}, leaf shown {ms[i + 1].Visible}");
+            if (ms[i].Visible) list.Add((ms[i], ms[i + 1]));
+        }
+        return list;
+    }
+
+    static int Meshes(EffectInstance fx)
+    {
+        int n = 0; var z = fx.GetChild<Node3D>(0);
+        for (int i = 0; i < z.GetChildCount(); i++) if (z.GetChild(i) is MeshInstance3D m && m.Visible) n++;
+        return n;
+    }
+
+    static bool Near(Vector3 a, Vector3 b) => a.DistanceTo(b) < 1e-4f;
+
+    void Run(List<string> fails)
+    {
+        var fx = Start(0.3);
+        // before any step: nothing drawn (the masters are not in the scene graph)
+        if (Meshes(fx) != 0) fails.Add($"{Meshes(fx)} meshes shown before any particle: the masters are drawn statically");
+        for (int f = 0; f < 10; f++) fx._Process(0.02);
+        var clones = Shown(fx, fails);
+        GD.Print($"mesh particle: at 0.2 s {clones.Count} clones shown, {fx.ParticlesEmitted} emitted");
+        if (clones.Count == 0) fails.Add("no clone drawn for the live particles");
+        if (Meshes(fx) != 2 * clones.Count) fails.Add("a mesh other than the clones is drawn");
+        foreach (var (root, leaf) in clones)
+        {
+            var b = root.Transform.Basis;
+            float s = b.Column0.Length();
+            if (MathF.Abs(s - Size) > 1e-3f) fails.Add($"clone scale {s}, want the particle size {Size}");
+            if (!Near(b.Column0 / s, -Vector3.Right) || !Near(b.Column1 / s, -Vector3.Up) || !Near(b.Column2 / s, Vector3.Back))
+                fails.Add($"clone axes {b.Column0 / s} {b.Column1 / s} {b.Column2 / s}, want -X -Y +Z (the system's turn of normal +Y, up +Z)");
+            // its child: the root's transform times the leaf's local offset
+            var want = root.Transform.Origin + b * new Vector3(0, 0, Up);
+            if (!Near(leaf.Transform.Origin, want)) fails.Add($"leaf clone at {leaf.Transform.Origin}, want {want} under the root at {root.Transform.Origin}");
+        }
+        if (clones.Count > 1 && Near(clones[0].Root.Transform.Origin, clones[^1].Root.Transform.Origin)) fails.Add("the clones do not follow their particles (one place)");
+        // all dead by 1 s (emission stops at 0.3 s, life 0.5 s): every clone hidden
+        for (int f = 0; f < 40; f++) fx._Process(0.02);
+        if (Meshes(fx) != 0) fails.Add($"{Meshes(fx)} clones still shown after their particles died");
+        fx.QueueFree();
+
+        // steady emission: once the pool holds a clone for each slot, steps allocate nothing
+        fx = Start(10);
+        for (int f = 0; f < 100; f++) fx._Process(0.02);
+        long bytes = CheckAlloc.Least(() => { for (int i = 0; i < 50; i++) fx._Process(0.02); });
+        GD.Print($"mesh particle: 250 steps reusing pooled clones: {bytes} B");
+        if (bytes != 0) fails.Add($"steps reusing pooled clones allocated {bytes} B");
+        fx.QueueFree();
+    }
+}
