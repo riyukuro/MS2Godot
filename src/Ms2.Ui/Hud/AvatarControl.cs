@@ -209,15 +209,20 @@ public sealed class AvatarZoom
     /// <summary>The camera's distance from the target.</summary>
     public float Distance { get; private set; }
 
-    /// <summary>vfunc_13 with the camera at <paramref name="distance"/>: the farthest the greater of
-    /// <paramref name="minDistance"/> and it, the closest the smaller of <paramref name="maxDistance"/> and it.</summary>
-    public AvatarZoom(float distance, float minDistance, float maxDistance, float speed, int steps)
+    /// <summary>vfunc_13 @0x140e67710 (uimodelview.cpp:231-266) with the camera at <paramref name="distance"/>: the farthest
+    /// the greater of <paramref name="minDistance"/> and it, the closest the smaller of <paramref name="maxDistance"/> and
+    /// it. With <paramref name="stepsDone"/> (m_nStepsDone, at most the steps) the camera then starts that many steps out
+    /// from <paramref name="distance"/>; the range stays the one from <paramref name="distance"/>.</summary>
+    public AvatarZoom(float distance, float minDistance, float maxDistance, float speed, int steps, int stepsDone = 0)
     {
         Distance = distance;
         near = Math.Max(minDistance, distance);
         far = Math.Min(maxDistance, distance);
         this.speed = speed;
-        step = (near - far) / Math.Max(steps, 1);
+        steps = Math.Max(steps, 1);
+        step = (near - far) / steps;
+        int done = Math.Min(stepsDone, steps);
+        if (done > 0) Distance = distance + step * done;
     }
 
     /// <summary>vfunc_5 (true) / vfunc_6 (false).</summary>

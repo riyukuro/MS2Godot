@@ -81,6 +81,19 @@ public class AvatarControlTests
     }
 
     [Test]
+    public void StepsDoneStartsTheCameraThatFarOut()
+    {
+        // the skill preview's camera (uiskillpreviewdialog.cpp:84-87): eye 190, min 1000, max 150, 5 steps, 2 done
+        var z = new AvatarZoom(190, 1000, 150, 700, 5, 2);                   // range 150..1000, step 170
+        Assert.That(z.Distance, Is.EqualTo(530f), "190 + 2 x 170");
+        z.Start(true);
+        while (z.Update(1 / 60f)) { }
+        Assert.That(z.Distance, Is.InRange(350f, 360f), "one step (170) in from 530, the last frame past it");
+        Assert.That(new AvatarZoom(190, 1000, 150, 700, 5, 9).Distance, Is.EqualTo(1040f), "at most the steps: 190 + 5 x 170");
+        Assert.That(new AvatarZoom(190, 1000, 150, 700, 5).Distance, Is.EqualTo(190f));
+    }
+
+    [Test]
     public void RotateLimit()
     {
         Assert.That(new AvatarRotateLimit(0, 360).Limited, Is.False);
