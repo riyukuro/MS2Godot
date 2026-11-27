@@ -2140,6 +2140,82 @@ public partial class LiveSession
                 Shot($"aimcast{sid}_{Math.Abs(step.GetHashCode()) % 1000}.png");
                 continue;
             }
+            // sweep:<skill id>[/<skill id>...]: each skill cast once at a live mob in front (spawned again when the last one died),
+            // after the previous cast's sequence ended and the spirit refilled; one line per skill with what the cast did: the
+            // client's request (cast or the refusal), the sends (cast, attack targets, region hits, splashes), the sequences
+            // the own player played, the effects the own skill state kept (MS2_LIVE_FX_TRACE=1), the damage numbers on the mob,
+            // spirit and stamina before and after, own buffs, server refusals, kills and the quick slots' cooldown answer
+            if (step.StartsWith("sweep:"))
+            {
+                int mob = int.Parse(Env("MS2_LIVE_COMBAT_MOB", "0"));
+                int watch = int.Parse(Env("MS2_LIVE_SWEEP_FRAMES", "150"));
+                int fx = 0, buffs = 0, buffEnds = 0, buffUpdates = 0;
+                // the ids the cast's window added (a field's recovery region adds its own again and again, so the ids, not a count)
+                var buffIds = new System.Collections.Generic.List<uint>();
+                void Fx(string f) => fx++;
+                void Buff(Ms2.Net.Packets.BuffPacket b)
+                {
+                    if (b == null) return;
+                    if (b.Mode == Ms2.Net.Packets.BuffPacket.Add) { buffs++; if (b.State is { } st && !buffIds.Contains(st.Id)) buffIds.Add(st.Id); }
+                    else if (b.Mode == Ms2.Net.Packets.BuffPacket.Remove) buffEnds++; else buffUpdates++;
+                }
+                Ui.HudScene.OwnEffectKept += Fx;
+                live.BuffReceived += Buff;
+                var stats = Ms2Godot.Ui.StubHudData.Instance;
+                FieldNpcs.Placed target = null;
+                foreach (string entry in step[6..].Split('/'))
+                {
+                    // <skill id>@<distance>: the own pc put that far from the mob on the line to it before the cast (a rush's mob
+                    // further than its move start)
+                    int at = entry.IndexOf('@');
+                    uint sid = uint.Parse(at < 0 ? entry : entry[..at]);
+                    float away = at < 0 ? 0 : float.Parse(entry[(at + 1)..], System.Globalization.CultureInfo.InvariantCulture);
+                    if (!Alive(target))
+                    {
+                        int added = npcs;
+                        hud.SubmitChatLine("/npc " + mob);
+                        await until(() => npcs > added, 60 * 5); await frames(90);
+                        target = npcs > added ? lastNpc : null;
+                    }
+                    float dist = Alive(target) ? hud.FaceScripted(target.Position) : -1;
+                    for (int walk = 0; walk < 60 * 15 && dist > 200 && Alive(target); walk++) { dist = hud.DriveTowardScripted(target.Position, false); await frames(1); }
+                    hud.DriveEnd();
+                    await until(() => string.IsNullOrEmpty(live.player?.SkillSequence), 60 * 4);
+                    await until(() => stats.SpCurrent >= stats.SpMax, 60 * 6);
+                    await frames(10);
+                    if (away > 0 && Alive(target))
+                    {
+                        // Godot and MS2 units are the same scale (FieldPortals.ToMs2 only swaps the axes); y is up
+                        var me = live.player.GlobalPosition; var back = me - target.Position; back.Y = 0;
+                        if (back.LengthSquared() > 1e-6f) { var to = target.Position + back.Normalized() * away; to.Y = me.Y; live.player.GlobalPosition = to; }
+                        await frames(10);
+                    }
+                    if (Alive(target)) dist = hud.FaceScripted(target.Position);
+                    int sp0 = stats.SpCurrent, ep0 = stats.EpCurrent, c0 = live.CastsSent, d0 = live.DamagesSent, h0 = live.HitsSent,
+                        s0 = live.SplashesSent, f0 = live.SkillUseFailures, n0 = hitCount.GetValueOrDefault(target), k0 = kills, fx0 = fx, b0 = buffs, be0 = buffEnds, bu0 = buffUpdates;
+                    int spLow = sp0, epLow = ep0;
+                    buffIds.Clear();
+                    bool cast = hud.CastSkillScripted(sid);
+                    var seqs = new System.Collections.Generic.List<string>();
+                    string cdEarly = null; ulong castMs = Time.GetTicksMsec();
+                    for (int frame = 0; frame < watch; frame++)
+                    {
+                        if (live.player?.SkillSequence is { Length: > 0 } q && !seqs.Contains(q)) seqs.Add(q);
+                        spLow = Math.Min(spLow, stats.SpCurrent); epLow = Math.Min(epLow, stats.EpCurrent);
+                        // the cooldown read early: frames run slow under a software display, so a short cooldown has ended by the window's end
+                        if (frame == 10) cdEarly = hud.CooldownScripted(sid);
+                        if (frame == 20) Shot($"sweep{sid}.png");
+                        await frames(1);
+                    }
+                    GD.Print($"live: sweep {sid}: {(cast ? "cast" : "refused")} dist {dist:F0} sent {live.CastsSent - c0} dmg {live.DamagesSent - d0} " +
+                        $"hit {live.HitsSent - h0} splash {live.SplashesSent - s0} seq [{string.Join(' ', seqs)}] fx {fx - fx0} " +
+                        $"numbers {hitCount.GetValueOrDefault(target) - n0} sp {sp0}->{spLow} ep {ep0}->{epLow} buffs +{buffs - b0}/-{buffEnds - be0}/~{buffUpdates - bu0} [{string.Join(' ', buffIds)}] " +
+                        $"failed {live.SkillUseFailures - f0} kill {kills - k0} mob {(target == null ? "none" : Alive(target) ? "alive" : "gone")} cd {cdEarly} (at 10 frames), end {hud.CooldownScripted(sid)} after {Time.GetTicksMsec() - castMs} ms");
+                }
+                Ui.HudScene.OwnEffectKept -= Fx;
+                live.BuffReceived -= Buff;
+                continue;
+            }
             // cast:<skill id>[:<frames to wait after>[:<frame>/<frame>...]]: the own cast, shots before, during and after;
             // more shots at the listed frames after the cast (each past 15 and before the wait's end). With
             // MS2_LIVE_FX_TRACE=1 and a frame list, the shot before and at 15 are left out and each effect the own skill
@@ -2166,17 +2242,20 @@ public partial class LiveSession
                 if (onKeep) Ui.HudScene.OwnEffectKept -= Kept;
                 continue;
             }
-            // equip:<item id>: the item made by the GM item command and put on through the bag's equip action (as equip, with
-            // the id in the step instead of MS2_LIVE_COMBAT_WEAPON)
+            // equip:<item id>[:2]: the item made by the GM item command and put on through the bag's equip action (as equip, with
+            // the id in the step instead of MS2_LIVE_COMBAT_WEAPON); :2 a second copy for the other hand (as equip2)
             if (step.StartsWith("equip:"))
             {
-                int item = int.Parse(step[6..]);
+                var eq = step[6..].Split(':');
+                int item = int.Parse(eq[0]), copies = eq.Length > 1 ? int.Parse(eq[1]) : 1;
+                int Worn() => live.Me.Equips?.Count(e => e.Id == item) ?? 0;
+                int had = live.Items.All.Count(e => e.Id == item);
                 GD.Print($"live: combat {step}: item {(hud.SubmitChatLine($"/item {item}") ? "sent" : "no chat window")}");
-                await until(() => live.Items.All.Any(e => e.Id == item), 60 * 10); await frames(60);
+                await until(() => live.Items.All.Count(e => e.Id == item) > had, 60 * 10); await frames(60);
                 Check($"{item} is in the bag", live.Items.All.Any(e => e.Id == item));
-                GD.Print($"live: combat {step}: {(hud.EquipScripted(item) || EquipDirect(item, false) ? "sent" : "not sent")}");
-                await until(() => live.Me.Equips?.Any(e => e.Id == item) == true, 60 * 10); await frames(60);
-                Check($"{item} is worn", live.Me.Equips?.Any(e => e.Id == item) == true);
+                GD.Print($"live: combat {step}: {(hud.EquipScripted(item, copies > 1) || EquipDirect(item, copies > 1) ? "sent" : "not sent")}");
+                await until(() => Worn() >= copies, 60 * 10); await frames(60);
+                Check($"{item} is worn ({Worn()} of {copies})", Worn() >= copies);
                 Shot($"equip{item}.png");
                 continue;
             }
@@ -2203,7 +2282,9 @@ public partial class LiveSession
                 }
                 GD.Print($"live: combat {step}: window {(open ? "open" : "refused")}, apply {(hud.SkillBookApplyScripted() ? "sent" : "refused")}");
                 await frames(120);
-                hud.EscScripted(); await frames(60);
+                int escs = 0;
+                for (; escs < 3 && hud.SkillBookShown; escs++) { hud.EscScripted(); await frames(60); }
+                GD.Print($"live: combat {step}: skill window {(hud.SkillBookShown ? "still open" : "closed")} after {escs} Esc press(es)");
                 continue;
             }
             if (step == "hudonce")      // the HUD's live player watch counted (HudScene.LiveWatchScripted), one per event and model
@@ -3208,6 +3289,8 @@ public partial class LiveSession
                     int presses = 0, deadBefore = kills;
                     for (; presses < 30 && kills - deadBefore < npcs - added; presses++)
                     {
+                        // the mob walks after a hit that does not kill it (level 1): the pc turns to it before every press
+                        if (presses > 0 && lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root)) { hud.FaceScripted(lastNpc.Position); await frames(10); }
                         bool cast = hud.AttackScripted();
                         if (presses == 0) { Check("the attack key gave a cast request", cast); await frames(30); Shot("attack_cast.png"); }
                         await frames(20); if (presses < 3) Shot($"attack_press{presses}.png"); await frames(40);
@@ -3654,6 +3737,8 @@ public partial class LiveSession
                     static bool IsItem(Ms2.Net.Packets.FieldAddItem d) => !d.IsMeso && !Ms2.Formats.World.DropPickup.IsCurrencyId(d.ItemId) && !Ms2.Formats.World.DropPickup.IsSpecialId(d.ItemId);
                     var mine = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
                     int kill = 0;
+                    // the mesos before the first kill: a meso the player stands on is picked as it lands, before the run to the drops
+                    long mesoStart = mesoDelta;
                     for (; kill < most && !mine.Any(IsItem); kill++)
                     {
                         int added = npcs;
@@ -3707,7 +3792,7 @@ public partial class LiveSession
                     await until(() => BagSum(live) != bag0 || !items.Any(), 60 * 5); await frames(90);
                     live.PickupKeyHeld = false;
                     if (!mesoOnly) Check($"the bag took the item ({bag0} -> {BagSum(live)}; held {string.Join(" ", items.Select(i => $"{i.ItemId}:{live.Items.All.Where(e => e.Id == i.ItemId).Sum(e => (long)e.Amount)}"))})", items.Count > 0 && BagSum(live) > bag0);
-                    if (mine.Any(d => d.IsMeso)) Check($"the meso count changed ({mesoDelta - meso0})", mesoDelta > meso0);
+                    if (mine.Any(d => d.IsMeso)) Check($"the meso count changed ({mesoDelta - mesoStart}, {mesoDelta - meso0} on the run)", mesoDelta > mesoStart);
                     Shot(tag + "_picked.png");
                     GD.Print($"live: combat bag: {(hud.OpenInventoryScripted() ? "open" : "refused")}");
                     await frames(60);

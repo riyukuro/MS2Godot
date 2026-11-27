@@ -19,6 +19,8 @@ public partial class HudScene
     Ms2.Ui.Skills.SkillPointSimulator SkillBookPreview => skillBook != null && !skillBook.IsClosed ? skillBook.Simulator : null;
 
     /// <summary>Whether the open window's tree is built (the tab packet came).</summary>
+    /// <summary>Harness: the skill window is open.</summary>
+    public bool SkillBookShown => skillBook is { IsClosed: false };
     public bool SkillBookTreeShown => SkillBookPreview != null && SkillBookSlotCount > 0;
 
     int SkillBookSlotCount => skillBook?.Host?.Child("m_treeSkills") is { } tree ? (int)Rt.ToNumber(skillBook.Host.Get(tree, "numChildren")) : 0;
@@ -56,7 +58,10 @@ public partial class HudScene
         var sim = SkillBookPreview;
         if (sim == null) return "no window";
         var jobs = hudModel?.Tables?.Skills?.Jobs;
-        var job = jobs?.GetJobData(sim.JobCode) ?? jobs?.GetJobData(sim.JobCode / 10 * 10) ?? jobs?.GetJobData(sim.JobCode / 10);
+        // the window's job code is the rank's (100 for the knight's group 10), and a group id can equal another job's code
+        // (group 100): the table entry that holds the skill
+        var job = new[] { sim.JobCode / 10, sim.JobCode, sim.JobCode / 10 * 10 }.Select(c => jobs?.GetJobData(c))
+            .FirstOrDefault(j => j?.GetSkillData(id) != null);
         var log = new System.Collections.Generic.List<string>();
         void Learn(uint skill, int want, int depth)
         {

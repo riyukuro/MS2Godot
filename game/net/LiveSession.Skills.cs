@@ -6,6 +6,14 @@ namespace Ms2Godot.Net;
 // The own player's skill sends (SendOp Skill 0x20).
 public partial class LiveSession
 {
+    /// <summary>Harness counts of the own skill sends and the server's refusals (the scripted combat sweep reads them per
+    /// cast): casts, mode 1 target sends (attack, region hit, splash) and SkillUseFailed packets.</summary>
+    public int CastsSent { get; private set; }
+    public int DamagesSent { get; private set; }
+    public int HitsSent { get; private set; }
+    public int SplashesSent { get; private set; }
+    public int SkillUseFailures { get; private set; }
+
     /// <summary>
     /// The send of an own cast (StateSkill::FUN_1417ea570, stateskill.cpp:1807, <see cref="SkillCast.Use"/>): a state skill's
     /// SendOp StateSkill 0x21, else the mode 0 send (FUN_1417ebc00, :2079) with the server tick taken at the send; both with the
@@ -16,7 +24,7 @@ public partial class LiveSession
         if (game == null) return false;
         // UseStateSkill kind 0x26 (stateskill.cpp:2009-2021): MyPC's class takes UseRideeItem for the record's item
         if (!r.Skill.IsEmotion && r.Skill.ActionKind == 0x26 && r.ItemUid != 0) { UseRideeItem(r.ItemUid); return true; }
-        if (SkillCast.Use(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature) is { } pk) Send(pk);
+        if (SkillCast.Use(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature) is { } pk) { Send(pk); CastsSent++; }
         return true;
     }
 
@@ -43,7 +51,7 @@ public partial class LiveSession
     public bool SendDamage(Ms2.Net.Packets.SkillDamageRequest req)
     {
         if (game == null) return false;
-        Send(req);
+        Send(req); DamagesSent++;
         return true;
     }
 
@@ -51,7 +59,7 @@ public partial class LiveSession
     public bool SendHit(Ms2.Net.Packets.SkillHitRequest req)
     {
         if (game == null) return false;
-        Send(req);
+        Send(req); HitsSent++;
         return true;
     }
 
@@ -60,7 +68,7 @@ public partial class LiveSession
     public bool SendSplash(Ms2.Net.Packets.SkillSplashRequest req)
     {
         if (game == null) return false;
-        Send(req);
+        Send(req); SplashesSent++;
         return true;
     }
 
@@ -197,6 +205,7 @@ public partial class LiveSession
             else if (f.Mode == 6) OwnStateCancelled?.Invoke(0, f.State);
             Cooltimes.Apply(f);
             GD.Print($"live: skill use failed, skill {f.SkillId} error {f.Error} mode {f.Mode}");
+            SkillUseFailures++;
         }
         else if (game.Is(p, Ms2.Net.Inbound.SkillCooldown))
         {
