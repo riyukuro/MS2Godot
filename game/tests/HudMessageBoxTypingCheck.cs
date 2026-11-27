@@ -17,7 +17,8 @@ namespace Ms2Godot.Tests;
 /// closes the box (onEscapeKey) and an i opens the inventory again, as soon as the focus is gone. The own player's move keys are
 /// held the whole time (Left, Up and the jump key C, Unk_PCMove's key reads, MoveInput.Read): while the field has the focus the read
 /// gives no move and no jump and OwnKeysBlocked holds (it is the gate of the quick slot keys too), and once the box has closed the
-/// same held keys read as a move again. Quits with 0 when all of that holds, else 1.
+/// same held keys read as a move again. The box is no-input-block and modaless, so it holds no key layer of its own (asserted):
+/// the held move keys stay off the player through the focused field only, and the check fails without that gate. Quits with 0 when all of that holds, else 1.
 /// </summary>
 public partial class HudMessageBoxTypingCheck : Node
 {
@@ -89,6 +90,8 @@ public partial class HudMessageBoxTypingDriver : Node
                 hud = h; wait = 0;
                 var box = MessageBoxQueue.Create(5, "name", new BoxListener(), "t");   // the guild create and search prompts: type 5 with SetInput(0, "", max, 0, 0)
                 box.SetInput(0, "", 16, 0, 0);
+                box.NoInputBlock = true;    // FUN_141a02460(1) and SetModaless(1): the box holds no key layer, so only the focused field keeps the move keys off the player
+                box.Modaless = true;
                 MessageBoxQueue.Show(box);
                 stage = 1;
                 return;
@@ -114,6 +117,7 @@ public partial class HudMessageBoxTypingDriver : Node
                 var fo = MessageBoxLayer.LayerMovie.Player.Focus as AsDisplayObject;
                 if (!ReferenceEquals(fo, field)) { Finish(false, $"the field took no focus ({fo?.GetType().Name} {fo?.InstanceName})"); return; }
                 if (!Ms2.Ui.InputBlock.TextFieldFocused()) { Finish(false, "the field has the focus but InputBlock.TextFieldFocused is false"); return; }
+                if (Ms2.Ui.KeyInput.Shared.MoveHeld || Ms2.Ui.KeyInput.Shared.AttackHeld) { Finish(false, "the box holds a key layer, the check would not show the text focus gate"); return; }
                 foreach (var k in Held) Input.ParseInputEvent(new InputEventKey { Keycode = k, PhysicalKeycode = k, Pressed = true });
                 for (int i = 0; i < Keys.Length; i++) Press(Keys[i], Typed[i]);
                 wait = 0; stage = 3;
