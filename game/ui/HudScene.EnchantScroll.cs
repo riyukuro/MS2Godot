@@ -24,7 +24,6 @@ public partial class HudScene
         if (enchantScrollWatched || Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         enchantScrollWatched = true;
         var book = live.ScrollBook;
-        WireScrollBook(live, book);
         book.OpenRequested += OpenEnchantScroll;
         // FUN_140f3c6c0 runs on the dialog object whether the window is open or not (OnEnchantScroll, scenestategame.cpp:8084):
         // a result after the window closed still refreshes the bag slot, shows the box or the code's notice.
@@ -54,8 +53,7 @@ public partial class HudScene
         if (EnchantScrollOpen) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         if (enchantScrollMovie != null) { enchantScrollMovie.Host.Unload(); enchantScrollMovie.QueueFree(); enchantScrollMovie = null; }
-        var book = live.ScrollBook;
-        WireScrollBook(live, book);
+        var book = live.ScrollBook;   // its sends, item lookup and store are the session's (set with each packet)
         var c = new EnchantScrollDialogController
         {
             Book = book,
@@ -71,13 +69,6 @@ public partial class HudScene
         enchantScrollMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"enchant scroll: load={enchantScrollMovie.Loaded}");
         uiRoot.AddChild(enchantScrollMovie);
-    }
-
-    static void WireScrollBook(Ms2Godot.Net.LiveSession live, Ms2.Ui.Items.EnchantScrollBook book)
-    {
-        book.Send = live.SendEnchant;
-        book.Find = live.Items.Get;
-        book.StoreItem = i => live.Items.Apply(new ItemMessage.Update(i.Uid, i));
     }
 
     // ---- the scripted live run's hooks (LiveSession.CombatRun's scroll steps) ----------------------------------------
