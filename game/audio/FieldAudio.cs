@@ -68,7 +68,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     readonly object poolGate = new();
     bool poolClosed;
     readonly SoundMusicEffectState soundMusicFade = new();
-    readonly float[] slotSegmentVolume = { 1f, 1f, 1f, 1f };
+    /// <summary>Per music slot: the FEV volume of the segment it plays (one per <see cref="MusicCrossfade.SlotCount"/>).</summary>
+    readonly float[] slotSegmentVolume = System.Linq.Enumerable.Repeat(1f, MusicCrossfade.SlotCount).ToArray();
     AudioStreamPlayer ui;
     MusicSegment activeSegment;
     double audioClock;
