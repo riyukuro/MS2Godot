@@ -14,7 +14,7 @@ namespace Ms2Godot.Tests;
 /// character path, with its glow twin and its Attached step) or GlowMaterial (the field glow), draws them in a SubViewport
 /// of its own over black, and compares the centre pixel with the value the client's opacity gives:
 /// the NiAlphaController alpha, the vertex alpha (EMISSIVE + LIGHTING_E, AMB_DIFF + E_A_D), the test on the opacity, ONE / ONE
-/// unweighted, the z write of a blended mesh, DRAW_BOTH, the blink's node alpha (NodeFade), the glow pass's opacity, the closest-point alpha sort, and an
+/// unweighted, the z write of a blended mesh, DRAW_BOTH, the blink's node alpha (NodeFade), MS2AlphaBoostMaterial's saturated output, the glow pass's opacity, the closest-point alpha sort, and an
 /// effect mesh's unsaturated colour (EffectInstance). Each view converts through Ms2Bloom.GammaOut(), as the game's views without
 /// bloom do.
 /// Quits with 0 when all hold, else 1.
@@ -81,6 +81,23 @@ public partial class AlphaRenderCheck : Node
         vp.GetNode<Camera3D>("Cam").GlobalTransform = model.GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 0, 10));
         cases.Add((name, vp, check));
         return root;
+    }
+
+    /// <summary>The meshes as field statics (BuildMesh with the instance colour: field_lit), one MultiMesh instance each
+    /// with no MaterialColor (FieldBuilder.InstanceColor: alpha 0, the material's own ambient and diffuse), in a new
+    /// viewport; the camera sits at (0,0,10) looking down -z.</summary>
+    void Field(string name, Func<Color, string> check, params ModelMesh[] meshes)
+    {
+        var vp = View(1u);
+        foreach (var m in meshes)
+        {
+            var mm = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, Mesh = mb.BuildMesh(m, skin: false, instanceColor: true), InstanceCount = 1 };
+            mm.SetInstanceTransform(0, Transform3D.Identity);
+            mm.SetInstanceColor(0, new Color(0, 0, 0, 0));
+            vp.AddChild(new MultiMeshInstance3D { Multimesh = mm });
+        }
+        vp.GetNode<Camera3D>("Cam").Position = new Vector3(0, 0, 10);
+        cases.Add((name, vp, check));
     }
 
     /// <summary>One mesh played by the effect runtime (EffectInstance), blended (0xED) at the material alpha, in a new
@@ -266,6 +283,33 @@ public partial class AlphaRenderCheck : Node
         // nor their opacity is saturated either
         Particle("fx_part_unclamped", Rgb(0.8f, 0.5f, 1f, "particle emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
         Particle("fx_part_opacity_over_1", Rgb(0.6f, 0.3f, 0.45f, "particle emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
+
+        // MS2AlphaBoostMaterial (rgb *= opacity where it is above 1, HandleMS2FinalPixelOutputs ms2standardmaterial.cpp:774-790)
+        // into the client's A8R8G8B8 scene target (CreateRenderTargetSurface @0x1416a3cd0): the boosted output saturates
+        // before the blend, so an opacity of 1.5 blends as 1 and a boosted colour above 1 stores 1 (captures/02000299_-450_0_1800_f299,
+        // the dome glass). Character path (ModelBuilder.Build, character_lit) and field path (BuildMesh instanceColor, field_lit):
+        // emissive 0.2 at 1.5 over an opaque white quad replaces it with 0.3 (unsaturated: 0.3 * 1.5 - 0.5 * 1 = 0); emissive 0.8
+        // at 1.5 over black stores 1, and a black layer at alpha 0.5 over it leaves 0.5 (unsaturated: 1.8 * 0.5 = 0.9)
+        ModelMesh Boosted(string name, float z, float e, float[] bound)
+        {
+            var m = Emit(Quad(name, z), e, e, e);
+            m.AlphaFlags = 0xED; m.ZFlags = 1; m.MaterialAlpha = 1.5f; m.AlphaBoost = true; m.Bound = bound;
+            return m;
+        }
+        ModelMesh Layer()
+        {
+            var m = Emit(Quad("layer", 1), 0, 0, 0);
+            m.AlphaFlags = 0xED; m.ZFlags = 1; m.MaterialAlpha = 0.5f; m.Bound = new float[] { 0, 0, 1, 1.5f };
+            return m;
+        }
+        Model("boost_alpha_sat", main, Grey(0.3f, "boosted opacity 1.5 blends as 1"),
+            Quad("bg", 0, 2), Boosted("q", 0.5f, 0.2f, new float[] { 0, 0, 0.5f, 1.5f }));
+        Model("boost_rgb_sat", main, Grey(0.5f, "boosted colour 1.2 stores 1 under a half black layer"),
+            Boosted("q", 0, 0.8f, new float[] { 0, 0, 0, 1.5f }), Layer());
+        Field("field_boost_alpha_sat", Grey(0.3f, "field: boosted opacity 1.5 blends as 1"),
+            Quad("bg", 0, 2), Boosted("q", 0.5f, 0.2f, null));
+        Field("field_boost_rgb_sat", Grey(0.5f, "field: boosted colour 1.2 stores 1 under a half black layer"),
+            Boosted("q", 0, 0.8f, null), Layer());
 
         // the shadow of a blended mesh, with or without the z write: it stops casting and a shadow-only twin with the opaque form casts in its place
         var castRoot = Model("caster", main, null, Mesh(Quad("blend_zw", 0), 0xED), Mesh(Quad("blend_nozw", 0, 0.5f), 0xED, 1));

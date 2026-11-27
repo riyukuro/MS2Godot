@@ -225,10 +225,11 @@ public sealed class ModelMesh
     /// runtime weighs the targets on the CPU, so it takes every one of these.</summary>
     public MorphAnim AnyMorph;
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
-    /// <summary>The client swaps this mesh to MS2AlphaBoostMaterial when a character-path model loads
-    /// (<see cref="ModelData.AlphaBoost"/>).</summary>
+    /// <summary>The client swaps this mesh to MS2AlphaBoostMaterial when the model of a Mesh or Actor entity loads
+    /// (<see cref="ModelData.AlphaBoost"/>; FUN_141567000 @0x141567000, unit_141567000.cpp:112-124): field statics and
+    /// character-path models alike.</summary>
     public bool AlphaBoost;
-    /// <summary>The material a character-path mesh draws with: MS2AlphaBoostMaterial where <see cref="AlphaBoost"/>
+    /// <summary>The material the mesh draws with: MS2AlphaBoostMaterial where <see cref="AlphaBoost"/>
     /// swapped it, else <see cref="Material"/> (null: the renderer's default NiStandardMaterial).</summary>
     public string ActiveMaterial => AlphaBoost ? "MS2AlphaBoostMaterial" : Material;
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)

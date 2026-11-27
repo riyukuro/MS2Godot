@@ -828,7 +828,10 @@ public sealed class ModelBuilder
                 sm.SetShaderParameter(ShaderParam.HasGloss, gloss != null);
                 if (gloss != null) sm.SetShaderParameter(ShaderParam.GlossTex, gloss);
             }
-            sm.SetShaderParameter(ShaderParam.Glass, m.Material == "MS2GlassMaterial");
+            // the material the mesh draws with (ModelMesh.ActiveMaterial): a mesh swapped to MS2AlphaBoostMaterial is no
+            // glass, and its final node boosts and saturates (field_lit alpha_boost)
+            sm.SetShaderParameter(ShaderParam.Glass, m.ActiveMaterial == "MS2GlassMaterial");
+            sm.SetShaderParameter(ShaderParam.AlphaBoost, m.AlphaBoost);
             int flipSlot = m.FlipSlot == "base" ? 0 : m.FlipSlot == "dark" ? 1 : -1;
             var flip = flipSlot >= 0 ? FlipArray(m.FlipFrames) : null;
             if (flip != null)
@@ -1023,7 +1026,7 @@ public sealed class ModelBuilder
         var active = m.ActiveMaterial;
         sm.SetShaderParameter(ShaderParam.Skin, active == "MS2CharacterSkinMaterial");
         sm.SetShaderParameter(ShaderParam.LightForm, LightForm(m));
-        sm.SetShaderParameter(ShaderParam.CharacterAlphaBoost, m.AlphaBoost);
+        sm.SetShaderParameter(ShaderParam.AlphaBoost, m.AlphaBoost);
         // normal map and specular (on with an enabled NiSpecularProperty; the gloss map scales it; hair adds the
         // anisotropic term from its tangent map, custom map 1)
         var normal = m.Tangents != null && m.Textures.TryGetValue("normal", out var nn) ? Texture(nn) : null;

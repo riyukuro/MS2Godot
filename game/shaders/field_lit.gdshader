@@ -1,7 +1,9 @@
 // Field mesh lighting in the way the client's MS2StandardMaterial does it on D3D9: per-pixel
 // emissive + material ambient * ambient + material diffuse * (sun * N.L + sun ambient * (1 - N.L)), times the base
 // texture (with the decal and dark maps), all in gamma space: textures are sampled raw, not as sRGB. Not clamped:
-// the client renders to an HDR target, and values over 1 feed the bloom pass (Ms2Bloom).
+// the client renders to an HDR target, and values over 1 feed the bloom pass (Ms2Bloom). STILL-OPEN: the client's scene
+// target is A8R8G8B8 whatever the HDR setting (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0,
+// postprocessingservice.cpp:1518-1528), which saturates every output; only the alpha_boost form saturates here so far.
 // The output is the gamma value itself. The client blends in gamma space: D3D9 keeps D3DRS_SRGBWRITEENABLE and
 // D3DSAMP_SRGBTEXTURE at their initial 0 (NiDX9RenderState.cpp:132, :209), nothing in the client or engine sets them,
 // so its target holds the values the shaders write and every blend mixes those. The field's colour buffer holds gamma
@@ -12,7 +14,8 @@
 // ambient and diffuse. Vertex colours come in CUSTOM0 and replace both when the NIF's
 // NiVertexColorProperty says so. A glow map adds its colour on top. ModelBuilder compiles this three
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
-// (src alpha / one); both blended forms skip the depth write. A fourth form, SHELL (with BLEND), is the depth-only
+// (src alpha / one); both blended forms skip the depth write. alpha_boost (MS2AlphaBoostMaterial) scales and saturates
+// the final colour and opacity in every form but FADE. A fourth form, SHELL (with BLEND), is the depth-only
 // first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell).
 // The field's point and spot lights are added to the
 // diffuse term (ms2_lights.gdshaderinc), but for those the instance's ms2_light_off masks out (FieldLightSet.Unlit). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
@@ -107,6 +110,14 @@ uniform vec3 env_v = vec3(0.0, 1.0, 0.0);
 uniform sampler2D gloss_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_gloss = false;
 uniform bool glass = false;          // MS2GlassMaterial
+// MS2AlphaBoostMaterial (ModelMesh.AlphaBoost): PrepareLoadedNif swaps every render object of a Mesh or Actor entity
+// whose NiMaterialProperty alpha (or an alpha key) is above 1 to it (FUN_141567000 @0x141567000, unit_141567000.cpp:112-124;
+// the swap @0x141569280, :853-865). It is an MS2StandardMaterial whose final node is "AlphaBoost" in place of
+// CompositeFinalRGBAColor (MS2StandardMaterial::HandleMS2FinalPixelOutputs, ms2standardmaterial.cpp:774-790; the fragment
+// @0x142759d70, ms2materialnodelibrary.cpp:839-846): the fogged colour times the opacity where it is above 1. The scene
+// target is A8R8G8B8 (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0, postprocessingservice.cpp:1518-1528),
+// so that output is saturated before the blend: an opacity of 1.5 blends as 1 (captures/02000299_-450_0_1800_f299).
+uniform bool alpha_boost = false;
 uniform vec3 mat_ambient = vec3(0.7058824);
 uniform vec3 mat_diffuse = vec3(0.7058824);
 uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -293,6 +304,20 @@ void fragment() {
 	c = mix(c, ms2_hfog_color, hf);
 	c0 = mix(c0, ms2_hfog_color, hf);
 #endif
+	vec4 fog_out = vec4(ms2_fog_color, fog_share);
+#ifndef FADE
+	// a faded mesh draws a TransparencyStandardMaterial in its place (FieldFade), which has no boost
+	if (alpha_boost) {
+		// the depth fog here, then the boost and the target's saturation (Godot's float target saturates nothing); in the
+		// lit forms c and c0 are each saturated, so between full sun and full shadow the sum can differ from the client's
+		// saturated sum
+		float k = a > 1.0 ? a : 1.0;
+		c = clamp(mix(c, ms2_fog_color, fog_share) * k, 0.0, 1.0);
+		c0 = clamp(mix(c0, ms2_fog_color, fog_share) * k, 0.0, 1.0);
+		a = min(a, 1.0);
+		fog_out = vec4(0.0);
+	}
+#endif
 #ifdef LIT
 	// lit forms: everything but the sun is emission; the sun's share comes back in light(), times its shadow. Out of the
 	// shadow the sum is c, the formula above; in full shadow it is c0, the sun ambient alone (MS2Light above). In between
@@ -307,7 +332,7 @@ void fragment() {
 #ifdef BLEND
 	ALPHA = a;
 #endif
-	FOG = vec4(ms2_fog_color, fog_share);
+	FOG = fog_out;
 #ifdef SHELL
 	ALPHA = 0.0;
 #endif

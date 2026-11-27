@@ -72,7 +72,7 @@ static class ShaderParam
         SpecPower = "spec_power",
         SpecularOn = "specular_on",
         LightForm = "light_form",
-        CharacterAlphaBoost = "alpha_boost",
+        AlphaBoost = "alpha_boost",   // character_lit and field_lit: MS2AlphaBoostMaterial
         VcolorAmbDiff = "vcolor_amb_diff",
         VcEmissive = "vc_emissive",
         VcDiffuse = "vc_diffuse",

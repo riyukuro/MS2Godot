@@ -323,6 +323,16 @@ void fragment() {
 	// MS2AlphaBoostMaterial multiplies the fogged colour by an opacity above 1 (header), the depth fog's colour with it
 	float k = alpha_boost && a > 1.0 ? a : 1.0;
 	ALBEDO = c * k;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
+	FOG = vec4(ms2_fog_color * k, fog_share);
+	if (alpha_boost) {
+		// the client's scene target is A8R8G8B8 (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0,
+		// postprocessingservice.cpp:1518-1528), so the boosted output is saturated before the blend: an opacity of 1.5
+		// blends as 1 and replaces what is under it (captures/02000299_-450_0_1800_f299, the dome glass's AlphaBoost pass).
+		// Godot's float target saturates neither, so the fog is applied here and the sum clamped.
+		ALBEDO = clamp(mix(c, ms2_fog_color, fog_share) * k, 0.0, 1.0);
+		FOG = vec4(0.0);
+		a = min(a, 1.0);
+	}
 #ifdef BLEND
 #ifdef ONE
 	// ONE / ONE adds the colour unweighted: blend_premul_alpha is src + dst * (1 - ALPHA)
@@ -331,5 +341,4 @@ void fragment() {
 	ALPHA = a;
 #endif
 #endif
-	FOG = vec4(ms2_fog_color * k, fog_share);
 }

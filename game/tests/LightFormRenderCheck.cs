@@ -119,8 +119,8 @@ public partial class LightFormRenderCheck : Node
         Model("none_unclamped", Grey((1 + nis) * tex, "NiStandardMaterial lit above 1 is not clamped"), Quad(null, emissive: 1, tex: "half.dds"));
         Model("type1_clamped", Grey(tex, "the character light clamps at 1"), Quad("MS2CharacterMaterial", emissive: 1, tex: "half.dds"));
 
-        // MS2AlphaBoostMaterial: a blended MS2CharacterMaterial mesh at material alpha 1.5 draws as type 0 times 1.5 (over
-        // black, whatever the blend does with the opacity, the same mesh without the swap gives the ratio)
+        // MS2AlphaBoostMaterial: a blended MS2CharacterMaterial mesh at material alpha 1.5 draws as type 0 times 1.5, saturated
+        // into the 8-bit target with its opacity (CreateRenderTargetSurface @0x1416a3cd0), so over black it reads type 0 * 1.5
         ModelMesh Blended(bool boost)
         {
             var m = Quad("MS2CharacterMaterial", tex: "half.dds");
@@ -152,11 +152,11 @@ public partial class LightFormRenderCheck : Node
             if (err != null) fails.Add($"{name}: {err}");
         }
         float off = G(px["boost_off"]), on = G(px["boost_on"]);
-        // without the swap the mesh is type 1 (the character light, clamped); with it MS2Light times the opacity
-        float want = ms2 * tex * 1.5f, wantOff = chr * tex;
-        float ratio = on / Mathf.Max(off, 1e-4f), wantRatio = want / wantOff;
-        GD.Print($"light_form_render: boost off {off:F3} on {on:F3} ratio {ratio:F3} (want {wantRatio:F3})");
-        if (Mathf.Abs(ratio - wantRatio) > 0.08f) fails.Add($"alpha boost: on / off {ratio:F3}, want {wantRatio:F3}");
+        // without the swap the mesh is type 1 (the character light, clamped); with it MS2Light times the opacity, at an
+        // opacity saturated to 1 (an unsaturated 1.5 would weigh it by 1.5 again)
+        float want = Mathf.Min(ms2 * tex * 1.5f, 1f);
+        GD.Print($"light_form_render: boost off {off:F3} on {on:F3} (want {want:F3})");
+        if (Mathf.Abs(on - want) > 0.03f) fails.Add($"alpha boost: on {on:F3}, want {want:F3}");
         foreach (var (name, vp, _) in cases)
         {
             bool own = false;
