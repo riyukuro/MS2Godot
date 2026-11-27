@@ -253,7 +253,10 @@ public sealed class NpcLayer
         i.Height = row.CapsuleHeight * i.ScaleAc;
         // CNpc's load makes the controller (FUN_141670d50, unit_14108e1e0_npcactorandvibrate.cpp:2101); the spawn's
         // vfunc_126(m_unk_15c == 0, 0) (:541) puts it in group 4, or 5 with the row's capsule ignore. The PC's sweep
-        // (0x399) stops at group 4 unless the move leaves it out (a skill motion's ignoreCollisionGroups)
+        // (0x399) stops at group 4 unless the move leaves it out (a skill motion's ignoreCollisionGroups).
+        // STILL-OPEN: vfunc_126 returns first for an npc with a quest mask when b is 0 (m_nEB8, QuestMaskTable::HasNpcMask
+        // at the load, :2106; the return at :849), so such an npc keeps the controller's group from its creation; that
+        // group and the quest mask table are not ported, so it gets 4 or 5 here as well
         i.Capsule = World.NpcPresence.CapsuleBody(row, World.NpcPresence.ControllerGroup(true, row.CapsuleIgnore));
         root.AddChild(i.Capsule);
         parent.AddChild(root);
