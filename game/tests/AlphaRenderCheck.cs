@@ -86,9 +86,11 @@ public partial class AlphaRenderCheck : Node
     /// <summary>The meshes as field statics (BuildMesh with the instance colour: field_lit), one MultiMesh instance each
     /// with no MaterialColor (FieldBuilder.InstanceColor: alpha 0, the material's own ambient and diffuse), in a new
     /// viewport; the camera sits at (0,0,10) looking down -z.</summary>
-    void Field(string name, Func<Color, string> check, params ModelMesh[] meshes)
+    void Field(string name, Func<Color, string> check, params ModelMesh[] meshes) => Field(name, 1u, check, meshes);
+
+    void Field(string name, uint mask, Func<Color, string> check, params ModelMesh[] meshes)
     {
-        var vp = View(1u);
+        var vp = View(mask);
         foreach (var m in meshes)
         {
             var mm = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, Mesh = mb.BuildMesh(m, skin: false, instanceColor: true), InstanceCount = 1 };
@@ -310,6 +312,18 @@ public partial class AlphaRenderCheck : Node
             Quad("bg", 0, 2), Boosted("q", 0.5f, 0.2f, null));
         Field("field_boost_rgb_sat", Grey(0.5f, "field: boosted colour 1.2 stores 1 under a half black layer"),
             Boosted("q", 0, 0.8f, null), Layer());
+
+        // the client's fog-off subtrees (ModelMesh.NoFog, FUN_141567b60 @0x141567b60): the depth fog at its full share (near 0,
+        // far 1, the quad 10 away) to black, through a camera that fogs (Field.FogLayer, 1 << 20); a NoFog mesh keeps its
+        // emissive 1. Character path and field path. The other cases' cameras carry no fog layer.
+        RenderingServer.GlobalShaderParameterSet("ms2_fog", new Vector4(0, 1, 0, 0));
+        RenderingServer.GlobalShaderParameterSet("ms2_fog_color", Vector3.Zero);
+        const uint fogged = main | 1u << 20;
+        static ModelMesh NoFog(ModelMesh m) { m.NoFog = true; return m; }
+        Model("fog_on", fogged, Grey(0, "full depth fog to black"), Quad("q", 0));
+        Model("fog_off", fogged, Grey(1, "a NoFog mesh draws without the depth fog"), NoFog(Quad("q", 0)));
+        Field("field_fog_on", fogged, Grey(0, "field: full depth fog to black"), Quad("q", 0));
+        Field("field_fog_off", fogged, Grey(1, "field: a NoFog mesh draws without the depth fog"), NoFog(Quad("q", 0)));
 
         // the shadow of a blended mesh, with or without the z write: it stops casting and a shadow-only twin with the opaque form casts in its place
         var castRoot = Model("caster", main, null, Mesh(Quad("blend_zw", 0), 0xED), Mesh(Quad("blend_nozw", 0, 0.5f), 0xED, 1));

@@ -118,6 +118,9 @@ uniform bool glass = false;          // MS2GlassMaterial
 // target is A8R8G8B8 (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0, postprocessingservice.cpp:1518-1528),
 // so that output is saturated before the blend: an opacity of 1.5 blends as 1 (captures/02000299_-450_0_1800_f299).
 uniform bool alpha_boost = false;
+// the client's fog-off subtrees (ModelMesh.NoFog: a "nofog" tag, flag 0x400 or an additive alpha property; FUN_141567b60
+// @0x141567b60): no depth fog. The height fog keeps its own switch.
+uniform bool no_fog = false;
 uniform vec3 mat_ambient = vec3(0.7058824);
 uniform vec3 mat_diffuse = vec3(0.7058824);
 uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -184,7 +187,7 @@ void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vcolor = has_vcolor ? CUSTOM0 : vec4(1.0);
-	fog_share = ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
+	fog_share = no_fog ? 0.0 : ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
 	env_u_world = normalize((MODEL_MATRIX * vec4(env_u, 0.0)).xyz);
 	env_v_world = normalize((MODEL_MATRIX * vec4(env_v, 0.0)).xyz);
 #ifndef POINT_LIT
@@ -298,7 +301,8 @@ void fragment() {
 	// ApplyFog then lerps from the fog colour to the colour by it. Weight = percentage / 100 (ApplyEffect::SetFogEffect,
 	// applyeffect.cpp:625-665). So the fog share is Weight * (1 - (z - LowerZ) / (UpperZ - LowerZ)), linear in height.
 	// Not on additive meshes (dest blend ONE): the engine's descriptor sets HEIGHTFOG only for those that are not
-	// (NiStandardMaterial.cpp:687-697). The depth fog (ms2_fog.gdshaderinc) follows, for every blend mode.
+	// (NiStandardMaterial.cpp:687-697). The depth fog (ms2_fog.gdshaderinc) follows, for every blend mode; a fog-off mesh
+	// (no_fog) has a zero share.
 	float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
 #ifndef ADD
 	c = mix(c, ms2_hfog_color, hf);
@@ -308,9 +312,10 @@ void fragment() {
 #ifndef FADE
 	// a faded mesh draws a TransparencyStandardMaterial in its place (FieldFade), which has no boost
 	if (alpha_boost) {
-		// the depth fog here, then the boost and the target's saturation (Godot's float target saturates nothing); in the
-		// lit forms c and c0 are each saturated, so between full sun and full shadow the sum can differ from the client's
-		// saturated sum
+		// the depth fog here, then the boost and the target's saturation (Godot's float target saturates nothing).
+		// STILL-OPEN: the client saturates lerp(c0, c, shadow) * k once, after the lighting (ms2materialnodelibrary.cpp:839-846);
+		// the lit forms saturate c and c0 each, because Godot splits them into EMISSION and DIFFUSE_LIGHT and allows no clamp
+		// after light(). So a boosted lit pixel between full sun and full shadow can draw darker than the client's.
 		float k = a > 1.0 ? a : 1.0;
 		c = clamp(mix(c, ms2_fog_color, fog_share) * k, 0.0, 1.0);
 		c0 = clamp(mix(c0, ms2_fog_color, fog_share) * k, 0.0, 1.0);

@@ -73,6 +73,7 @@ static class ShaderParam
         SpecularOn = "specular_on",
         LightForm = "light_form",
         AlphaBoost = "alpha_boost",   // character_lit and field_lit: MS2AlphaBoostMaterial
+        NoFog = "no_fog",             // character_lit and field_lit: the client's fog-off subtrees (ModelMesh.NoFog)
         VcolorAmbDiff = "vcolor_amb_diff",
         VcEmissive = "vc_emissive",
         VcDiffuse = "vc_diffuse",

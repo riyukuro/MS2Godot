@@ -100,6 +100,9 @@ uniform float sss_power = 1.0;
 uniform float light_pitch_deg = 30.0;
 uniform int light_form = 0;   // 0 character light, 1 MS2Light, 2 NiStandardMaterial (header)
 uniform bool alpha_boost = false;   // MS2AlphaBoostMaterial (header)
+// the client's fog-off subtrees (ModelMesh.NoFog: a "nofog" tag, flag 0x400 or an additive alpha property; FUN_141567b60
+// @0x141567b60): no depth fog. The height fog keeps its own switch.
+uniform bool no_fog = false;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gloss_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D hair_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -135,7 +138,7 @@ void vertex() {
 	world_tangent = (MODEL_MATRIX * vec4(TANGENT, 0.0)).xyz;
 	world_binormal = (MODEL_MATRIX * vec4(BINORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	fog_share = ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
+	fog_share = no_fog ? 0.0 : ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
 }
 
 // One light's specular intensity: Blinn-Phong with the material glossiness as the power, cut where the light's half-lambert

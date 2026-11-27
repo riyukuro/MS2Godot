@@ -76,7 +76,10 @@ public sealed class ModelMesh
     /// <summary>The mesh or a node above it carries a "NoShadow" UserPropBuffer tag (NifModel.TaggedNoShadow): the client's
     /// caster walks skip that subtree, so the mesh never casts.</summary>
     public bool NoShadow;
-    public bool SpecularOn;               // an NiSpecularProperty with its enable flag set
+    /// <summary>The client gives the mesh's subtree a fog-off NiFogProperty (NifModel.FogOff), so it draws without the depth
+    /// fog; the height fog is its own switch and stays.</summary>
+    public bool NoFog;
+    public bool SpecularOn;              // an NiSpecularProperty with its enable flag set
     public float[] Colors;                // rgba 0..1 per vertex, or null
     public float[] Uvs1;                  // second uv set (TEXCOORD1), or null
     public int AlphaFlags = -1;           // NiAlphaProperty flags, -1 without one
@@ -1060,16 +1063,43 @@ public sealed class ModelData
     /// NIF has none, so the subtree casts nothing. The walk also skips nodes with NiAVObject flag 0x400 (IS_PARTICLE_SYSTEM,
     /// NiAVObject.h:267, set by the NiPSParticleSystem constructors); ModelData loads only NiMesh, so none of those is drawn.
     /// </summary>
-    public static bool TaggedNoShadow(NifFile nif, int block)
+    public static bool TaggedNoShadow(NifFile nif, int block) =>
+        UserProp(nif, block) is { } v && v.Contains("NoShadow", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The block's UserPropBuffer string, or null. NiObjectNET::GetExtraData returns the first entry of the name.</summary>
+    static string UserProp(NifFile nif, int block)
     {
         foreach (var e in nif.Blocks[block].Ints("Extra Data List"))
         {
             if (e < 0) continue;
             var x = nif.Blocks[(int)e];
             if (x.Type != "NiStringExtraData" || nif.Name((int)e) != "UserPropBuffer") continue;
-            // NiObjectNET::GetExtraData returns the first entry of the name
-            var v = nif.StrField(x, "String Data");
-            return v != null && v.Contains("NoShadow", StringComparison.OrdinalIgnoreCase);
+            return nif.StrField(x, "String Data");
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The client's render setup of a loaded model (FUN_141567b60 @0x141567b60, unit_141567000.cpp:346-390, run first by
+    /// PrepareLoadedNif @0x1415672e0 :172-181) walks it and gives a fog-off NiFogProperty to every object that has a
+    /// UserPropBuffer containing "nofog" (case ignored), has NiAVObject flag 0x400 (FUN_14098dfc0, alphaanimation.cpp:391-395),
+    /// or has its own NiAlphaProperty blending with destination ONE (FUN_1415671f0 @0x1415671f0, :147-156: flags bit 0 and
+    /// dest bits 5-8 = 0). FUN_141569620 (:900-915) drops the fog properties of that subtree and attaches the new one at its
+    /// root, so the object and everything under it draw with FOG_NONE (NiStandardMaterialDescriptor.cpp:625-650), FOGENABLED 0
+    /// (NiStandardMaterial.cpp:1077), no depth fog. A mesh is fog-off when it or a node above it matches. The height fog is
+    /// switched by gbHeightFogEnable and the mesh's own blend (NiStandardMaterial.cpp:687-697), not by this.
+    /// </summary>
+    public static bool FogOff(NifFile nif, int block)
+    {
+        var b = nif.Blocks[block];
+        if (UserProp(nif, block) is { } v && v.Contains("nofog", StringComparison.OrdinalIgnoreCase)) return true;
+        if ((b.IntOr("Flags", 0) & 0x400) != 0) return true;
+        if (!b.TryGetValue("Properties", out var pv) || pv is not long[] props) return false;
+        foreach (var p in props)
+        {
+            if (p < 0 || nif.Blocks[(int)p].Type != "NiAlphaProperty") continue;
+            int f = (int)nif.Blocks[(int)p].Int("Flags");
+            return (f & 1) != 0 && ((f >> 5) & 15) == 0;
         }
         return false;
     }
@@ -1234,8 +1264,9 @@ public sealed class ModelData
             };
             for (int at = i; ; )
             {
-                if (TaggedNoShadow(nif, at)) { mesh.NoShadow = true; break; }
-                if (at == root || !parent.TryGetValue(at, out at)) break;
+                if (!mesh.NoShadow && TaggedNoShadow(nif, at)) mesh.NoShadow = true;
+                if (!mesh.NoFog && FogOff(nif, at)) mesh.NoFog = true;
+                if (mesh.NoShadow && mesh.NoFog || at == root || !parent.TryGetValue(at, out at)) break;
             }
             mesh.Normals = Unit(nrm.v, nv);
             mesh.Tangents = Unit((skinned ? Pick("TANGENT_BP", "TANGENT") : Pick("TANGENT", "TANGENT_BP")).v, nv);
