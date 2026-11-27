@@ -81,6 +81,7 @@ public class MessageBoxTests
         foreach (var e in errors ?? Array.Empty<object>()) TestContext.WriteLine("  error: " + e);
         MessageBoxQueue.Clear(0);
         MessageBoxQueue.Layer = null;
+        KeyInput.ReleaseAll();
     }
 
     /// <summary>MessageBoxFactory.getCurMsgBox: the last of m_msgBoxArray.</summary>
@@ -134,6 +135,70 @@ public class MessageBoxTests
         MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, null, "gameexit");
         Click(h, "m_button0");
         Assert.That(quit, Is.EqualTo(1));
+    }
+
+    /// <summary>UIMessageBox::vfunc_47 (@0x1419f7f00, uimessagebox.cpp:549) called by vfunc_8: a shown box takes the move channel
+    /// (no move, jump, cast or pickup key) and the attack channel (the action keys), each unless the box and every queued one
+    /// have the setting that frees it (m_20c for the move channel, modaless for the attack channel).</summary>
+    [Test]
+    public void AShownBoxHoldsTheMoveAndAttackKeysAndGivesThemBack()
+    {
+        var (h, c) = Load();
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)));
+        MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, null, "gameexit");
+        h.Player.Tick();
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, true)), "the box is up");
+        Click(h, "m_button1");
+        Assert.That(c.IsIdle, Is.True);
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "closed: the keys are back");
+    }
+
+    [Test]
+    public void ABoxThatIsNotBlockingAndModalessHoldsNoKey()
+    {
+        var (h, c) = Load();
+        var box = MessageBoxQueue.Create(1, "x", null, "tagA");
+        box.NoInputBlock = true;                 // FUN_141a02460(1)
+        box.Modaless = true;                     // SetModaless(1)
+        MessageBoxQueue.Show(box);
+        h.Player.Tick();
+        Assert.That(c.CurrentBox, Is.SameAs(box));
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "a party invite style box leaves the keys");
+    }
+
+    [Test]
+    public void AModalessBoxStillHoldsTheMoveKeysAndANoBlockBoxStillHoldsTheActionKeys()
+    {
+        var (h, c) = Load();
+        var modaless = MessageBoxQueue.Create(1, "x", null, "tagB");
+        modaless.Modaless = true;
+        MessageBoxQueue.Show(modaless);
+        h.Player.Tick();
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, false)), "modaless frees the action keys only");
+        MessageBoxQueue.Clear(0);
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "CloseAll gives both back");
+        var noBlock = MessageBoxQueue.Create(1, "y", null, "tagC");
+        noBlock.NoInputBlock = true;
+        MessageBoxQueue.Show(noBlock);
+        h.Player.Tick();
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, true)), "m_20c frees the move keys only");
+    }
+
+    [Test]
+    public void AReplacedBoxIsJudgedBeforeItJoinsTheQueueAndTheOldOneTakesTheKeysBackWhenItReturns()
+    {
+        var (h, c) = Load();
+        MessageBoxQueue.ShowMessageBox("one", 0x17, null, "one");
+        h.Player.Tick();
+        var free = MessageBoxQueue.Create(1, "two", null, "two");
+        free.NoInputBlock = true; free.Modaless = true;
+        MessageBoxQueue.Show(free);                     // FUN_14151f150: ShowNow first, the replaced box joins the queue after
+        h.Player.Tick();
+        Assert.That(c.CurrentBox, Is.SameAs(free));
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "the empty queue and a free box: no key held");
+        MessageBoxQueue.Next();                          // FUN_14151f200: the shown box closes and the queued one is shown again
+        Assert.That(c.CurrentBox?.Extra, Is.EqualTo("one"));
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, true)), "the returning blocking box holds the keys");
     }
 
     /// <summary>The key pass over the panes (UISwfEntityManager::FUN_1422d1c20): the movie pane (layer 2) before the cinematic pane (layer 4).

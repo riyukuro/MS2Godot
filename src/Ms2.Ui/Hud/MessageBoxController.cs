@@ -78,6 +78,12 @@ public static class MessageBoxQueue
     /// <summary>FUN_14151f820: the box shown now.</summary>
     public static MessageBoxData Current() => Layer?.CurrentBox;
 
+    /// <summary>FUN_14151f8b0 (messageboxqueue.cpp:157): every queued box passes FUN_141a03050 (m_20c, <see cref="MessageBoxData.NoInputBlock"/>).</summary>
+    public static bool AllNoInputBlock()
+    {
+        lock (Lock) return Queue.All(d => d == null || d.NoInputBlock);
+    }
+
     /// <summary>FUN_14151f9c0: every queued box is modaless.</summary>
     public static bool AllModaless()
     {
@@ -343,6 +349,7 @@ public sealed class MessageBoxController : UiController
             closing = true;
             Host.Invoke(Host.Entity, "closeAll", result);
         }
+        KeyInput.MoveAndAttack(true, TypeId);      // FUN_1419f88e0(1) (uimessagebox.cpp:597), with or without the movie
     }
 
     /// <summary>ShowIfIdle @0x1419f81f0: replaces the shown box (the name is the decomp's; it returns when idle).</summary>
@@ -387,8 +394,27 @@ public sealed class MessageBoxController : UiController
         SetShown(true);
     }
 
-    /// <summary>vfunc_8: the root's visibility (vfunc_47's input block is the movie's modal background here).</summary>
-    void SetShown(bool visible) => Host.SetVisible(Host.Entity, visible);
+    /// <summary>UI id 0x4e48, vfunc_48: the layer this box takes in s_keyInput.</summary>
+    public const int TypeId = 0x4e48;
+
+    /// <summary>vfunc_8 (@0x1419f73d0): vfunc_47(visible == 0), then the root's visibility.</summary>
+    void SetShown(bool visible)
+    {
+        KeyBlock(!visible);
+        Host.SetVisible(Host.Entity, visible);
+    }
+
+    /// <summary>vfunc_47 (@0x1419f7f00, uimessagebox.cpp:549): <paramref name="release"/> is its bBlock (1 gives the layers back).
+    /// With a box (m_data): the move channel unless every queued box and this one have m_20c (FUN_14151f8b0, FUN_141a03050), the
+    /// attack channel unless every queued box and this one are modaless (FUN_14151f9c0, IsModaless); without one, both
+    /// (FUN_141901470). A queued box that changes between the take and the give back leaves the layer held, as in the client;
+    /// the HUD's teardown gives every layer back (<see cref="KeyInput.ReleaseAll"/>).</summary>
+    void KeyBlock(bool release)
+    {
+        if (data == null) { KeyInput.MoveAndAttack(release, TypeId); return; }
+        if (!MessageBoxQueue.AllNoInputBlock() || !data.NoInputBlock) KeyInput.Move(release, TypeId);
+        if (!MessageBoxQueue.AllModaless() || !data.Modaless) KeyInput.Attack(release, TypeId);
+    }
 
     /// <summary>ResetAfterClose @0x1419f9110.</summary>
     void ResetAfterClose()
