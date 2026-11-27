@@ -1386,7 +1386,7 @@ public partial class LiveSession
                 await until(() => !talk.Open, 60 * 5);
                 continue;
             }
-            if (step.StartsWith("kill:"))      // kill:<npc id>[:<count>]: the field's server npcs of that id, nearest first, each walked to, faced and attacked until it dies (up to MS2_LIVE_COMBAT_PRESSES presses each)
+            if (step.StartsWith("kill:"))      // kill:<npc id>[:<count>]: the field's server npcs of that id, nearest first, each walked to, faced and attacked until it dies (up to MS2_LIVE_COMBAT_PRESSES presses each; the step ends when the own pc dies)
             {
                 var a = step.Split(':');
                 int id = int.Parse(a[1]), count = a.Length > 2 ? int.Parse(a[2]) : 1, need = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "20")), dead = 0;
@@ -1414,7 +1414,8 @@ public partial class LiveSession
                         GD.Print($"live: combat {step}: the walk was blocked, put {dist:F0} from the npc");
                     }
                     int before = kills, progressBefore = questProgress, press = 0;
-                    for (; press < need && Alive(target) && kills == before && questProgress == progressBefore && live.FieldId == field; press++)
+                    // a dead pc's press is refused by the client's own cast gate (hp < 1), so pressing on would only pad the count
+                    for (; press < need && Alive(target) && kills == before && questProgress == progressBefore && live.FieldId == field && !live.Me.Dead; press++)
                     {
                         dist = hud.FaceScripted(target.Position);
                         await frames(20);
@@ -1426,6 +1427,11 @@ public partial class LiveSession
                     if (died) goneNpcs.Add(target.ObjectId);     // a corpse stays a while: the next pick skips it
                     GD.Print($"live: combat {step}: npc {i + 1} at distance {dist:F0}, {press} press(es), {hitCount.GetValueOrDefault(target)} number(s) on it, died {died}, own hp {live.Me.Dead switch { true => "dead", _ => "alive" }}");
                     if (died) dead++;
+                    if (live.Me.Dead)      // the step ends with the pc; the step list revives it (revive) or ends
+                    {
+                        GD.Print($"live: combat {step}: own pc dead after npc {i + 1}, step ended");
+                        break;
+                    }
                 }
                 Check($"{step}: {dead} of {count} died", dead == count);
                 continue;
