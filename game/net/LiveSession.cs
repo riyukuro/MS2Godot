@@ -1763,6 +1763,17 @@ public partial class LiveSession : Node
         if (LiveCheck) GD.Print($"live: camera reset over {m.Seconds:0.##} s{(on ? "" : " (no field yet, nothing to reset)")}");
     }
 
+    /// <summary>OnLocalCamera (@0x14173a370, scenestategame.cpp:6580-6588): CameraMgr::FUN_140aecbb0 on the field's camera
+    /// (<see cref="World.TriggerCamera.EnterLocal"/>); before the field is built there are no setups, so nothing happens.</summary>
+    void OnLocalCamera(LocalCamera m)
+    {
+        var cam = triggerField != null && GodotObject.IsInstanceValid(triggerField) ? triggerField.TriggerCamera : null;
+        bool found = cam != null && cam.EnterLocal(m.Id, m.ObjectId, m.Enter);
+        if (LiveCheck)
+            GD.Print($"live: local camera {m.Id} {(m.Enter ? "enter" : "leave")} object {m.ObjectId}: " +
+                     (cam == null ? "no field yet" : !found ? $"no setup ({cam.Setups.Count} on the field)" : $"mode {cam.ModeType}"));
+    }
+
     /// <summary>
     /// OnPremiumClub (scenestategame.cpp:8426): mode 0 sets the premium end time of the player it names (own or shown), which the item use
     /// checks (PC::IsVip). The client also refreshes the inventory button and a main-player-info flag, and modes 1 and 2 feed the VIP dialog's
@@ -2552,6 +2563,8 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.CameraInterpolation))
                 OnCameraInterpolation(CameraInterpolation.Read(p.Reader()));
+            else if (game.Is(p, Inbound.LocalCamera))
+                OnLocalCamera(LocalCamera.Read(p.Reader()));
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());

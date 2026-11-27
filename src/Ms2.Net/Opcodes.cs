@@ -41,6 +41,7 @@ public enum Inbound : ushort {
     FollowNpc = 0x70,             // RecvOp FollowNpc (commonfiles/opcodes.h:120): CSceneStateGame::OnFollowNpc (scenestategame.cpp:1627, 5862, @0x141723330)
     NpcRide = 0xE7,               // RecvOp NpcRide (commonfiles/opcodes.h:235): CSceneStateGame::OnNpcRide @0x141738ad0 (scenestategame.cpp:4871-4878)
     NpcNotice = 0xE8,             // RecvOp NpcNotice (commonfiles/opcodes.h:236): CSceneStateGame::OnNpcNotice (scenestategame.cpp:1851, 9145, @0x141738430)
+    LocalCamera = 0xE9,           // RecvOp LocalCamera (commonfiles/opcodes.h:237): CSceneStateGame::OnLocalCamera @0x14173a370 (scenestategame.cpp:6580-6588)
     BannerList = 0xB3,            // RecvOp BannerList: CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31, @0x14096b3a0)
     Survival = 0x119,             // RecvOp Survival (commonfiles/opcodes.h:280): no named client handler; layouts from the recordings and the Maple2 server's SurvivalPacket
     Mentoring = 0x10A,            // RecvOp Mentoring: CMentoringManager::OnPacket (mentoringmanager.cpp:255)

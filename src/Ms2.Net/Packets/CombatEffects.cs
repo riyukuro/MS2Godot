@@ -33,6 +33,19 @@ public sealed record CameraInterpolation(float Seconds) {
     }
 }
 
+/// <summary>
+/// Inbound LocalCamera (KMS 0xE9, GMS2 0xEB): CSceneStateGame::OnLocalCamera (@0x14173a370, scenestategame.cpp:6580-6588)
+/// reads i32 the local camera's id, bool enter, i32 the object the camera looks at (0: the own player) and hands them to
+/// CameraMgr::FUN_140aecbb0 (camera.cpp:1143). The server's trigger SetLocalCamera sends it.
+/// </summary>
+public sealed record LocalCamera(int Id, bool Enter, int ObjectId) {
+    public static LocalCamera Read(ByteReader r) {
+        var p = new LocalCamera(r.ReadInt(), r.ReadBool(), r.ReadInt());
+        r.ExpectEnd("LocalCamera");
+        return p;
+    }
+}
+
 public sealed record TimeScale(bool Start, float From, float To, float DurationMs, byte Curve) {
     public static TimeScale Read(ByteReader r) {
         var p = new TimeScale(r.ReadBool(), r.ReadFloat(), r.ReadFloat(), r.ReadFloat(), r.ReadByte());

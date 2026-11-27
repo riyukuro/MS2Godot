@@ -45,6 +45,7 @@ static class Gms2Opcodes {
         [Inbound.FollowNpc] = 0x72,
         [Inbound.NpcRide] = 0xE9,        // INFERRED: upstream SendOp has no row; the opcode name map's by-model pairing (KMS2 0xE7 -> 0xE9), the free number between BypassKey 0xE8 and NpcNotice 0xEA; no recording carries it
         [Inbound.NpcNotice] = 0xEA,
+        [Inbound.LocalCamera] = 0xEB,    // the upstream Maple2 server's SendOp LocalCamera (KMS2 0xE9)
         [Inbound.BannerList] = 0xB5,
         [Inbound.InGameRank] = 0xF0,
         [Inbound.DungeonMatch] = 0xF1,

@@ -15,7 +15,7 @@ namespace Ms2Godot;
 /// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).
 /// </summary>
-public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2.Ui.Hud.IFieldLights
+public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFollow, Ms2.Ui.ILocalCameraTarget, ITargetCameraView, Ms2.Ui.Hud.IFieldLights
 {
     /// <summary>The field a session opens in when nothing names another (Tria): the setup step builds its navmesh.</summary>
     public const string StartField = "02000001_tw_tria";
@@ -327,6 +327,10 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         TriggerCamera = new World.TriggerCamera(this);
         Triggers.Bind(TriggerCamera);   // the camera trigger objects' steps
+        // WorldService::FUN_141bbd640 (worldservice_1.cpp:10223-10253): the field's local cameras into CameraMgr
+        TriggerCamera.Setups.AddRange(Ms2.Ui.LocalCameraSetup.All(map.Entities));
+        TriggerCamera.Bind(this, this);
+        if (player != null) player.TurnsTowardTargetYaw = () => TriggerCamera.Local is not { } l || l.Setup.CharacterMovable;
         OnFieldBuilt(builder, map, fieldName);
         Built?.Invoke(this, builder);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
@@ -991,6 +995,70 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         Rotation = player?.CameraEuler ?? default,
     };
 
+    static System.Numerics.Vector3 ToMs2(Vector3 g) => new(g.X, -g.Z, g.Y);
+
+    // a Godot camera transform as a camera pose in MS2 axes: its eye and the euler of the eye toward a point it looks at
+    static Ms2.Ui.CameraPose PoseOf(Transform3D t)
+    {
+        var e = ToMs2(t.Origin);
+        var l = ToMs2(t.Origin - t.Basis.Z * 1000f);
+        var (x, y, z) = Ms2.Net.CameraMath.Euler(e.X, e.Y, e.Z, l.X, l.Y, l.Z);
+        return new Ms2.Ui.CameraPose(e, new System.Numerics.Vector3(x, y, z));
+    }
+
+    /// <summary>The follow mode as the local mode's constructor reads it (localtargetcameramode.cpp:98-129): its yaw (m_68)
+    /// and angle from the up axis (m_6c), distance, the shown camera as its setting (vfunc_39 puts m_c0 there), the look
+    /// point (m_78), the shown and placed cameras, the loose and the zoom range and heights.</summary>
+    Ms2.Ui.LocalCameraPrev World.ILocalCameraFollow.LocalPrev
+    {
+        get
+        {
+            var shown = PoseOf(shownCam ?? camera.GlobalTransform);
+            var euler = player?.CameraEuler ?? default;
+            return new Ms2.Ui.LocalCameraPrev
+            {
+                Type = World.TriggerCamera.Target,
+                Yaw = CameraYaw, Pitch = zoom.PlacedPitch, Distance = zoom.Distance,
+                Setting = new Ms2.Ui.LocalCameraSetting(cam.FovDeg, 250, 18000, shown.Position, shown.Rotation),
+                Center = zoom.Look is { } l ? new System.Numerics.Vector3(l.X, -l.Z, l.Y) : shown.Position,
+                Shown = shown,
+                Placed = new Ms2.Ui.CameraPose(zoom.PlacedEye is { } e ? new System.Numerics.Vector3(e.X, -e.Z, e.Y) : shown.Position,
+                                               new System.Numerics.Vector3(euler.X, euler.Y, euler.Z)),
+                LooseFinal = looseFinal, LooseNow = looseNow, LooseUpdate = looseUpdate,
+                Nearest = TargetCameraZoom.Nearest, Farthest = zoom.Setting.Distance,
+                ZoomOutHeight = zoom.Setting.ZoomOutHeightOffset, ZoomInHeight = zoom.Setting.ZoomInHeightOffset,
+            };
+        }
+    }
+
+    float World.ILocalCameraFollow.FollowDistance => zoom.Distance;
+
+    void World.ILocalCameraFollow.TakeShown(Ms2.Ui.CameraPose shown)
+    {
+        var p = shown.Position; var r = shown.Rotation;
+        shownCam = new World.CameraSetting { Position = new Vector3(p.X, p.Y, p.Z), Rotation = new Vector3(r.X, r.Y, r.Z) }.Transform();
+    }
+
+    void World.ILocalCameraFollow.Retarget(float? distance)
+    {
+        shownCam = null;            // m_f0 = 0: the next pass takes the placed camera
+        camBlending = false;
+        camYaw = 0;                 // m_68 = m_48, the field's yaw
+        zoom.SetView(distance ?? zoom.Setting.Distance, null);
+    }
+
+    System.Numerics.Vector3? Ms2.Ui.ILocalCameraTarget.Position =>
+        player != null && player.IsInsideTree() ? ToMs2(player.GlobalPosition) : null;
+    bool Ms2.Ui.ILocalCameraTarget.IsPc => true;
+    /// <summary>The player's rotation (vfunc_20): its z the facing in 0 .. 360.</summary>
+    System.Numerics.Vector3 Ms2.Ui.ILocalCameraTarget.Rotation
+    {
+        get => new(0, 0, player == null ? 0 : Mathf.PosMod(player.FacingRotZ, 360f));
+        set => player?.SetRotZ(value.Z);
+    }
+    bool Ms2.Ui.ILocalCameraTarget.LocalCamerasOn => TriggerCamera?.LocalCamerasOn ?? false;
+    bool Ms2.Ui.ILocalCameraTarget.BoxContains(int boxId, System.Numerics.Vector3 p) => Triggers?.Contains(boxId, p) ?? false;
+
     /// <summary>CTargetCameraMode m_6c: the camera's angle from the up axis in radians, as last placed.</summary>
     public float CameraPitch => zoom.PlacedPitch;
     /// <summary>The camera mode's position (m_setting.m_c = m_c0.m_pos): the placed eye before the shown camera's easing.</summary>
@@ -1127,7 +1195,15 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
                 if (Input.IsKeyPressed(Key.Up)) zoom.Pitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
                 if (Input.IsKeyPressed(Key.Down)) zoom.Pitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
             }
-            TriggerCamera?.Update((float)delta);
+            TriggerCamera?.Update((float)delta, zoomInput);
+            if (TriggerCamera?.Local != null)
+            {
+                zoomInput = 0;   // the local mode's zoom steps took the wheel (FUN_140a38d00)
+                // STILL-OPEN: what the client's move input reads of the camera in the local mode; here the shown camera's
+                // turn, as the follow mode's (Show) gives it
+                var f = -camera.GlobalBasis.Z;
+                if (f.X != 0 || f.Z != 0) player.CameraYaw = Mathf.Atan2(-f.X, -f.Z);
+            }
             if (TriggerCamera?.Shown is { } s)
             {
                 // a lock or fly-by mode (CameraMgr::Update, camera.cpp:819-825) places the camera; the follow mode waits

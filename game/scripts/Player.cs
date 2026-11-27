@@ -245,6 +245,19 @@ public partial class Player : CharacterBody3D
     /// (CTriggerService FUN_1418642e0, triggerservice.cpp:1072-1083) passes it.</summary>
     public void TurnToRotZ(float rotZ) => targetYawDeg = rotZ;
 
+    /// <summary>GameObject::vfunc_21 then PCBase::SetTargetYaw with the same z (MS2 Z rotation, degrees), as the local camera
+    /// mode turns its player target (localtargetcameramode.cpp:267-269, 291-293): the facing and the yaw to turn to at once.</summary>
+    public void SetRotZ(float rotZ)
+    {
+        yawDeg = targetYawDeg = rotZ;
+        (Mount?.Visual ?? Visual).Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
+    }
+
+    /// <summary>PCBase::vfunc_68 (pcbase.cpp:1864-1868): in the local camera mode the PC turns toward its target yaw only
+    /// while it is the camera's target and the mode lets it (CameraMgr::FUN_140aed3e0, the setup's CharacterMovable);
+    /// null or true: it turns.</summary>
+    public System.Func<bool> TurnsTowardTargetYaw;
+
     /// <summary>PCBase::GetTargetYaw (m_f934, pcbase.cpp:1469): the yaw <see cref="TurnTo"/> set, in the
     /// <see cref="FacingRotZ"/> convention (MS2 Z rotation, degrees).</summary>
     public float TargetRotZ => targetYawDeg;
@@ -870,6 +883,7 @@ public partial class Player : CharacterBody3D
 
     void TurnTowardTargetYaw(float dt)
     {
+        if (TurnsTowardTargetYaw != null && !TurnsTowardTargetYaw()) return;
         float diff = Mathf.Wrap(targetYawDeg - yawDeg, -180f, 180f);
         float step = MoveConfig.TurnSpeedDeg * dt;
         yawDeg = Mathf.Abs(diff) <= step ? targetYawDeg : yawDeg + Mathf.Sign(diff) * step;

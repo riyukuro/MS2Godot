@@ -38,6 +38,19 @@ public class CombatEffectPacketTests
         Assert.Throws(Is.InstanceOf<Exception>(), () => CameraInterpolation.Read(R(w => { w.WriteFloat(1f); w.WriteByte(0); })));
     }
 
+    /// <summary>OnLocalCamera (scenestategame.cpp:6580-6588): i32 id, bool enter, i32 object; RecvOp 0xE9 (opcodes.h:237), the
+    /// upstream Maple2 server's SendOp 0xEB.</summary>
+    [Test]
+    public void LocalCameraIsIdEnterObject()
+    {
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.LocalCamera), Is.EqualTo((ushort)0xE9));
+        Assert.That(ProtocolProfile.Gms2.Number(Inbound.LocalCamera), Is.EqualTo((ushort)0xEB));
+        Assert.That(LocalCamera.Read(R(w => { w.WriteInt(8002); w.WriteBool(true); w.WriteInt(0); })), Is.EqualTo(new LocalCamera(8002, true, 0)));
+        Assert.That(LocalCamera.Read(R(w => { w.WriteInt(301); w.WriteBool(false); w.WriteInt(11000123); })), Is.EqualTo(new LocalCamera(301, false, 11000123)));
+        Assert.Throws(Is.InstanceOf<Exception>(), () => LocalCamera.Read(R(w => { w.WriteInt(1); w.WriteBool(true); })));
+        Assert.Throws(Is.InstanceOf<Exception>(), () => LocalCamera.Read(R(w => { w.WriteInt(1); w.WriteBool(true); w.WriteInt(0); w.WriteByte(0); })));
+    }
+
     [Test]
     public void OneTimeEffectReadsTheNameOnlyOnAdd()
     {

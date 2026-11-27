@@ -126,6 +126,16 @@ public sealed class FieldTriggers
     /// <summary>The centre of the field's trigger box of that id (the server's box conditions; scripted runs stand in it).</summary>
     public Vec3? BoxCenter(int id) => boxes.TryGetValue(id, out var c) ? c : null;
 
+    /// <summary>CTriggerService::ObjectContains (@0x141863100, triggerservice.cpp:784-792): the trigger object of that id
+    /// (m_mapObjects) holds the point, which only a trigger box does (TriggerObject::Contains, triggeractioncli.cpp:400-427:
+    /// <see cref="Ms2.Ui.LocalCameraSetup.BoxContains"/>). MS2 axes.</summary>
+    public bool Contains(int id, System.Numerics.Vector3 p)
+    {
+        if (!entities.TryGetValue(id, out var e) || !e.HasMixin("MS2TriggerBox")) return false;
+        static System.Numerics.Vector3 V(Vec3 v) => new((float)v.X, (float)v.Y, (float)v.Z);
+        return Ms2.Ui.LocalCameraSetup.BoxContains(V(e.Position), V(e.Vector("ShapeDimensions")), (float)e.RotationDeg.Z, p);
+    }
+
     /// <summary>Binds the rope / ladder objects to the field's climbables: the entry of each object's entity.</summary>
     public void Bind(Climbables field)
     {
