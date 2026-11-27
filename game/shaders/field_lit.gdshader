@@ -1,9 +1,9 @@
 // Field mesh lighting in the way the client's MS2StandardMaterial does it on D3D9: per-pixel
 // emissive + material ambient * ambient + material diffuse * (sun * N.L + sun ambient * (1 - N.L)), times the base
-// texture (with the decal and dark maps), all in gamma space: textures are sampled raw, not as sRGB. Not clamped:
-// the client renders to an HDR target, and values over 1 feed the bloom pass (Ms2Bloom). STILL-OPEN: the client's scene
+// texture (with the decal and dark maps), all in gamma space: textures are sampled raw, not as sRGB. The client's scene
 // target is A8R8G8B8 whatever the HDR setting (PostProcessingService::CreateRenderTargetSurface @0x1416a3cd0,
-// postprocessingservice.cpp:1518-1528), which saturates every output; only the alpha_boost form saturates here so far.
+// postprocessingservice.cpp:1518-1528), which saturates every output before the blend and the bloom pass (Ms2Bloom).
+// STILL-OPEN: only the alpha_boost form saturates here so far; the other forms leave values over 1 to the bloom pass.
 // The output is the gamma value itself. The client blends in gamma space: D3D9 keeps D3DRS_SRGBWRITEENABLE and
 // D3DSAMP_SRGBTEXTURE at their initial 0 (NiDX9RenderState.cpp:132, :209), nothing in the client or engine sets them,
 // so its target holds the values the shaders write and every blend mixes those. The field's colour buffer holds gamma
