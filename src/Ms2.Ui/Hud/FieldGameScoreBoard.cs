@@ -38,6 +38,12 @@ public sealed class FieldGameScoreBoard
         }
     }
 
+    /// <summary>
+    /// The owner closed the bar (the scene leave): forget the stored dialog, so a later packet asks for the dialog again and the owner tracks the one it
+    /// opens. The client keeps m_pDlg and FindObject returns the same instance; here the owner makes a fresh controller for each open.
+    /// </summary>
+    public void DropDialog() => Dialog = null;
+
     void OnOpen(FieldGameScoreBoardPacket p)
     {
         Mode = p.Mode;

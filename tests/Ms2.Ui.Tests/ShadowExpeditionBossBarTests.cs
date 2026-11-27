@@ -113,6 +113,19 @@ public class ShadowExpeditionBossBarTests
     }
 
     [Test]
+    public void TheOwnersDropOfTheClosedDialogMakesTheNextUpdateWaitForAnOpen()
+    {
+        var (board, opened, bar) = Board();
+        board.OnPacket(new FieldGameScoreBoardPacket(FieldGameScoreBoardPacket.Open, 1, "t", 30, 200));
+        board.DropDialog();                       // the scene leave closed the bar: the stored dialog is stale
+        Assert.That(board.Dialog, Is.Null);
+        board.OnPacket(new FieldGameScoreBoardPacket(FieldGameScoreBoardPacket.SetCurrent, 0, "", 90, 0));
+        Assert.That(bar().Cur, Is.EqualTo(30), "no stored dialog: the update has nothing to change");
+        board.OnPacket(new FieldGameScoreBoardPacket(FieldGameScoreBoardPacket.Open, 1, "t", 10, 100));
+        Assert.That(opened.Count, Is.EqualTo(2));
+    }
+
+    [Test]
     public void TheUpdateBeforeAnyOpenChangesNothing()
     {
         var (board, opened, bar) = Board();
