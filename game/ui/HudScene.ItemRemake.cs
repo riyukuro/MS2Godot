@@ -38,6 +38,7 @@ public partial class HudScene
         var c = new ItemRemakeOptionDialogController
         {
             Send = live.SendChangeAttributes,
+            Gms2 = live.GameProfile.IsGms2,
             FindItem = uid => ItemEnchantDialogController.FindHeld(uid, live.Items.Get, live.Me.Equips, table),   // FUN_1419be700
             BagItems = cat => BagItemsOf(live, cat, table),
             WornItems = () => ItemEnchantDialogController.WornLayerItems(live.Me.Equips, table, Ms2Godot.Net.LiveSession.WornLayer),

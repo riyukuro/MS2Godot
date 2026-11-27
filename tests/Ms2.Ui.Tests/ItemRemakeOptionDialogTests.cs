@@ -51,8 +51,9 @@ public class ItemRemakeOptionDialogTests
         public UiModel Model;
         public UiHost Host;
 
-        public Rig()
+        public Rig(bool gms2 = false)
         {
+            C.Gms2 = gms2;
             Packs();
             Model = new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = true };
             if (Model.Tables.Items.Get(ArmourId) == null) Assert.Ignore("the data has no item " + ArmourId);
@@ -115,6 +116,16 @@ public class ItemRemakeOptionDialogTests
     }
 
     static string Stats(Item i) => string.Join(",", i.Record.Options.Stat[2].OrderBy(k => k.Key).Select(k => $"{k.Key}={k.Value}"));
+
+    [Test]
+    public void Gms2LoadKeepsInputOnAndSendsNothing()
+    {
+        // the GMS2 client's OnLoadComplete (@0x1409ea4e0): state 1 (@0x1409ea4f7), no open send, input left on
+        var r = new Rig(gms2: true);
+        Assert.That(r.Sent, Is.Empty);
+        Assert.That((r.C.State, r.C.InputLocked, r.C.IsClosed), Is.EqualTo((1, false, false)));
+        Assert.That(r.Host.Child("m_enchantAni"), Is.Not.Null);
+    }
 
     [Test]
     public void LoadSendsOpenedAndLocksInput()

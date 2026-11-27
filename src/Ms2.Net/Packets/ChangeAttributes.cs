@@ -64,7 +64,7 @@ public readonly record struct RemakeLock(byte Index, short Value);
 /// and 6 (@0x140392300: i64, i32, the KMS mode 8 ForceFill); the upstream server's ChangeAttributesHandler reads the same four.
 /// It has no keep, select or opened send, so modes 3, 4 and 6 are not sent on GMS2 (a GMS2 6 is ForceFill with an i64 and an i32).
 /// STILL-OPEN: the GMS2 dialog's own flow (its mode 5 send and its receive kinds 1, 2, 4, 6 and 9, UIItemRemakeOptionDialog
-/// vfunc_79 @0x1409eaaf0) is not ported; GMS2 uses the KMS flow minus those sends.
+/// vfunc_79 @0x1409eaaf0) is not ported; GMS2 uses the KMS flow minus those sends, with its own open (state 1, input on).
 /// </summary>
 public sealed record ChangeAttributesRequest(byte Mode, long Uid = 0, RemakeLock[] Locks = null) : IProfileOutPacket {
     public Outbound Op => Outbound.ChangeAttributes;

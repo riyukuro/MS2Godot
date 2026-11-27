@@ -47,6 +47,8 @@ public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOw
     public int OptionCount { get; private set; }
 
     public Action<IOutPacket> Send = _ => { };
+    /// <summary>The GMS2 client's dialog: its open (see <see cref="OnLoadComplete"/>).</summary>
+    public bool Gms2;
     /// <summary>FindItemByUid / FUN_1419be700: the inventory's item of the uid, else the worn one.</summary>
     public Func<long, Item> FindItem = _ => null;
     /// <summary>GetItemsInCategory(0) and CollectShownItemsInLayer(list, 0).</summary>
@@ -98,6 +100,9 @@ public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOw
     /// first: initData with the mode (2) and feature 0x86, then without m_enchantAni the window closes (and the rest still runs),
     /// else the debug children are hidden (m_forceEnchant shows only in debug mode). Then state 0, the bag, input off and mode 6
     /// [1] tells the server the window opened. The pet window (0x4f38) the client closes is the HUD's.
+    /// <para>GMS2 (the GMS2 client's OnLoadComplete @0x1409ea4e0): the state is 1 at once (m_state +0x1f0 = 1 @0x1409ea4f7),
+    /// with no open send and input left on. Its input goes off only after the remake send (@0x1409ef1f3, after the mode 0
+    /// writer @0x140391d80) and comes back on with the 0xca answer (vfunc_79 @0x1409eab51).</para>
     /// </summary>
     public override void OnLoadComplete()
     {
@@ -108,8 +113,9 @@ public sealed class ItemRemakeOptionDialogController : UiController, IDragSlotOw
         else
             foreach (var n in new[] { "m_forceEnchant", "m_compareEnchant", "m_debugEnchantCount" })
                 if (Host.Child(n, Ani) is { } c) Host.Set(c, "visible", false);
-        State = 0;
+        State = Gms2 ? 1 : 0;
         FillBag();
+        if (Gms2) return;
         SetInputEnabled(false);
         Send(ChangeAttributesRequest.Opened());
     }
