@@ -43,4 +43,13 @@ public class EffectFogOffTests
     [Test]
     public void Flag0x400ParticleSystemIsFogOff() =>
         Assert.That(NoFog(Load("eff_additional_darkness_keep.nif"), "PArray01"), Is.True);
+
+    /// <summary>The portal effect's PCloud_aura_02 is a mesh-particle system whose file flags carry no 0x400 and whose master
+    /// particle's subtree is fog-off on its own. FUN_141567b60 runs itself on each master particle (unit_141567000.cpp:370-376),
+    /// and each clone takes the system's property state under its own (NiPSMeshParticleSystem.cpp:270
+    /// UpdatePropertiesDownward); the system itself is fog-off by its flag 0x400, so the clones draw without the depth fog
+    /// either way. No master particle is a child in the scene graph or holds an NiFogProperty (restore and GMS2 data).</summary>
+    [Test]
+    public void MeshParticleSystemWithFogOffMasterIsFogOff() =>
+        Assert.That(NoFog(Load("eff_com_portal_c.nif"), "PCloud_aura_02"), Is.True);
 }
