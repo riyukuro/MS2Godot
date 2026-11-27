@@ -374,6 +374,44 @@ public class MessageBoxTests
         }
     }
 
+    /// <summary>
+    /// GitHub issue 13: a focused field of the box holds the hotkeys and the move keys (CUIService::IsTextFieldFocused,
+    /// uiservice.cpp:1364, asks main.gfx's IME manager, sfr_as3_20.cpp:347, which has no visibility test). The layer's movie stays
+    /// drawn while idle, so every way a name box goes away has to take the focus with it, or the keys stay held after it.
+    /// </summary>
+    [Test]
+    public void EveryCloseOfANameBoxTakesItsFieldsFocus()
+    {
+        foreach (var how in new[] { "escape", "enter", "ok", "cancel", "clear", "replaced" })
+        {
+            var (h, c) = Load();
+            var l = new Listener { OnAnswer = MessageBoxQueue.Next };
+            var box = MessageBoxQueue.Create(5, "name", l, "t");
+            box.SetInput(0, "", 16, 0, 0);
+            MessageBoxQueue.Show(box);
+            for (int i = 0; i < 3; i++) h.Player.Tick();
+            var tf = h.Get(h.Get(Box(h), "m_textInput"), "textField") as AsTextField;
+            Assert.That(tf, Is.Not.Null, how + ": the box's field");
+            h.Player.Stage.focus = tf;
+            for (int i = 0; i < 3; i++) h.Player.Tick();
+            h.Set(h.Get(Box(h), "m_textInput"), "text", "abc");
+            for (int i = 0; i < 3; i++) h.Player.Tick();
+            Assert.That(UiStage.TakesIme(h.Player.Focus), Is.True, how + ": the field has the focus");
+            switch (how)
+            {
+                case "escape": case "enter": c.ProcessKey(how); break;
+                case "ok": Click(h, "m_button0"); break;
+                case "cancel": Click(h, "m_button1"); break;
+                case "clear": MessageBoxQueue.Clear(0); break;
+                case "replaced": MessageBoxQueue.ShowMessageBox("notice", 0, null, ""); break;
+            }
+            for (int i = 0; i < 5; i++) h.Player.Tick();
+            TestContext.WriteLine($"{how}: idle {c.IsIdle}, focus {h.Player.Focus?.GetType().Name} onstage {(h.Player.Focus as AsDisplayObject)?.OnStage}");
+            Assert.That(UiStage.TakesIme(h.Player.Focus), Is.False, how + ": the field kept the focus after the box went");
+            MessageBoxQueue.Clear(0);
+        }
+    }
+
     /// <summary>UICharacterListDialog's delete box (uicharacterlistdialog.cpp:2239): CreateMessageBox(0xe, text, this,
     /// "deletePC"), SetInput(2, "", 0, 0, 0), SetCheckbox0(BlockFormat(7), 0). OnMessage @0x1418eb540 splits the answer's
     /// tag into "deletePC" and the typed name.</summary>
