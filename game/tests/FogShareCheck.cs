@@ -13,6 +13,10 @@ namespace Ms2Godot.Tests;
 /// camera's far (equal ends: a step at far + bias), and the fog off (SetFogRange(false)). Each case sets ms2_fog and draws quads at set view depths through a
 /// fog-layer camera; a quad's lower half draws the expected share as a constant, so both halves pass through the same
 /// output and are compared as drawn. Quits with 0 when every quad's halves agree within 2/255, else 1.
+/// This checks the shader's form, not the range rebuild: ShaderFogRange always gives far at or above near, and for those
+/// ranges the earlier form, clamp((z - near - bias) / (far - near)), gives the same share at every depth, so this check
+/// passes on the earlier shader too. The rebuild's fails-on-old checks are field_fog and the mapxblock census
+/// (FieldFogDataTests).
 /// </summary>
 public partial class FogShareCheck : Node
 {
