@@ -366,8 +366,11 @@ public class PanLevelTests
 
     /// <summary>The volume and the panning strength of 32 voices with a pan envelope, half of them stereo, the listener moving
     /// and turning every frame: no allocation, and the cost per voice.</summary>
-    [TestCase(32)]
-    public void PanningAllocatesNothing(int voices)
+    /// With <paramref name="withUp"/> the listener also moves up and down and passes its up, so each voice pays the elevation
+    /// scale (<see cref="Player3DOutput.ElevationScale"/>) too.
+    [TestCase(32, false)]
+    [TestCase(32, true)]
+    public void PanningAllocatesNothing(int voices, bool withUp)
     {
         var c = new DistanceRolloff(new[] { 0f, 1185.5f }, new[] { 1f, 0f }, panLevel: 1,
             panDistance: new[] { 0f, 73.7f, 461.9f }, panValue: new[] { 0f, 0f, 0.523f },
@@ -378,11 +381,11 @@ public class PanLevelTests
         int sets = 0, pans = 0;
         void Frame(int f)
         {
-            var l = new Vector3(13 * f % 1500, 0, 7 * f % 900);
+            var l = new Vector3(13 * f % 1500, withUp ? 11 * f % 600 : 0, 7 * f % 900);
             var right = Vector3.Normalize(new Vector3(MathF.Cos(f * 0.01f), 0, MathF.Sin(f * 0.01f)));   // the listener turning
             for (int i = 0; i < voices; i++)
             {
-                if (g.Update(i, l, right, out _)) sets++;
+                if (withUp ? g.Update(i, l, right, Vector3.UnitY, out _) : g.Update(i, l, right, out _)) sets++;
                 if (g.PanChanged(i, out _)) pans++;
             }
         }
@@ -392,7 +395,7 @@ public class PanLevelTests
         var sw = Stopwatch.StartNew();
         long bytes = AllocatedBytes.LeastOf(runs, Run);
         sw.Stop();
-        TestContext.Out.WriteLine($"{voices} voices: {bytes} B over {frames} frames, {sw.Elapsed.TotalMilliseconds * 1e6 / (runs * frames * (double)voices):F1} ns per voice per frame, {sets} volume sets, {pans} pan sets");
+        TestContext.Out.WriteLine($"{voices} voices{(withUp ? ", with up" : "")}: {bytes} B over {frames} frames, {sw.Elapsed.TotalMilliseconds * 1e6 / (runs * frames * (double)voices):F1} ns per voice per frame, {sets} volume sets, {pans} pan sets");
         Assert.That(bytes, Is.Zero);
         Assert.That(pans, Is.GreaterThan(0));
     }
@@ -475,7 +478,8 @@ public class PanLevelTests
     /// azimuth in the listener's plane (<see cref="Player3DOutput.GodotPanSide"/>), which a pitched listener turns up
     /// (recorded 0.7237, 0.7390, 0.7582, 0.7829 at pitches 0, 30, 45, 60). With the level basis
     /// (<see cref="Player3DOutput.PanBasis"/>) Godot's side is FMOD's at every pitch and yaw; a sound above or below the
-    /// listener still pans by its azimuth in Godot (0.707 at 45 degrees and 30 up, FMOD 0.612).
+    /// listener still pans by its azimuth in Godot (0.707 at 45 degrees and 30 up, FMOD 0.612), which the panning strength
+    /// makes up for (<see cref="ElevationScaleTurnsGodotsSideIntoFmods"/>).
     /// </summary>
     [TestCase(0f, 0.7071f)]
     [TestCase(30f, 0.7559f)]
@@ -505,5 +509,63 @@ public class PanLevelTests
                 Is.EqualTo((0.7071f, 0.6124f)).Using<(float, float)>((x, y) => MathF.Abs(x.Item1 - y.Item1) + MathF.Abs(x.Item2 - y.Item2) < 2e-4f));
         }
         Assert.That(Player3DOutput.PanBasis(Vector3.UnitY, out _, out _, out _), Is.False);
+    }
+    /// <summary>
+    /// A sound above or below the level listener: Godot pans by its azimuth in the listener's plane, FMOD by its side
+    /// component, and the ratio is the direction's part in that plane (<see cref="Player3DOutput.ElevationScale"/>), at every
+    /// azimuth and yaw. The probe's rows: 45 degrees to the side and 30 up or down, Godot's side 0.7071 times 0.8660 is
+    /// FMOD's 0.6124; straight up the scale is 0 (FMOD pans to the centre); with no up it is 1.
+    /// </summary>
+    [TestCase(30f, 0.8660f)]
+    [TestCase(-30f, 0.8660f)]
+    [TestCase(60f, 0.5f)]
+    [TestCase(-75f, 0.2588f)]
+    public void ElevationScaleTurnsGodotsSideIntoFmods(float elDeg, float scale)
+    {
+        foreach (float yawDeg in new[] { 0f, 30f, -135f })
+            foreach (float azDeg in new[] { 0f, 30f, 45f, 90f, -60f, 160f })
+            {
+                float yaw = yawDeg * MathF.PI / 180, az = azDeg * MathF.PI / 180, el = elDeg * MathF.PI / 180;
+                var right = new Vector3(MathF.Cos(yaw), 0, -MathF.Sin(yaw));
+                Assert.That(Player3DOutput.PanBasis(right, out var r, out var u, out _), Is.True);
+                var flatFwd = new Vector3(-MathF.Sin(yaw), 0, -MathF.Cos(yaw));
+                var eye = new Vector3(10, 120, -40);
+                var src = eye + 500 * (MathF.Cos(el) * (MathF.Cos(az) * flatFwd + MathF.Sin(az) * right) + MathF.Sin(el) * Vector3.UnitY);
+                float k = Player3DOutput.ElevationScale(src, eye, u);
+                Assert.That(k, Is.EqualTo(scale).Within(1e-4f), $"yaw {yawDeg} az {azDeg}");
+                Assert.That(Player3DOutput.GodotPanSide(src, eye, r, u) * k, Is.EqualTo(Player3DOutput.Side(src, eye, right)).Within(1e-5f),
+                    $"yaw {yawDeg} az {azDeg}");
+                Assert.That(Player3DOutput.ElevationScale(src, eye, Vector3.Zero), Is.EqualTo(1f));
+            }
+        var at = new Vector3(5, 0, 5);
+        Assert.That(Player3DOutput.ElevationScale(at + new Vector3(0, 300, 0), at, Vector3.UnitY), Is.EqualTo(0f).Within(1e-6f));
+        Assert.That(Player3DOutput.ElevationScale(at, at, Vector3.UnitY), Is.EqualTo(1f));
+        Assert.That(Player3DOutput.ElevationScale(at + new Vector3(400, 0, -300), at, Vector3.UnitY), Is.EqualTo(1f).Within(1e-6f));
+    }
+
+    /// <summary>RolloffGains given the listener's up scales each voice's panning strength by its elevation: the pan level
+    /// times 0.866 at 30 degrees up, unchanged at the listener's height or with no up, and the volume does not move.</summary>
+    [Test]
+    public void PanningStrengthFollowsElevation()
+    {
+        var c = new DistanceRolloff(new[] { 0f, 1185.5f }, new[] { 1f, 0f }, panLevel: 1, shape: new[] { 1, 1 });
+        var g = new RolloffGains(3);
+        var eye = new Vector3(10, 120, -40);
+        var flat = new Vector3(MathF.Sqrt(0.5f), 0, -MathF.Sqrt(0.5f));
+        float el = MathF.PI / 6;
+        g.Set(0, c, 0.8f, eye + 500 * (MathF.Cos(el) * flat + MathF.Sin(el) * Vector3.UnitY));
+        g.Set(1, c, 0.8f, eye + 500 * (MathF.Cos(el) * flat - MathF.Sin(el) * Vector3.UnitY));
+        g.Set(2, c, 0.8f, eye + 500 * flat);
+        float full = Player3DOutput.PanningStrength(c.PanLevelAt(500), float.NaN);
+        for (int i = 0; i < 3; i++)
+        {
+            g.Update(i, eye, Vector3.UnitX, out float flatDb);
+            Assert.That(g.PanChanged(i, out float p0), Is.True);
+            Assert.That(p0, Is.EqualTo(full).Within(1e-5f), "no up");
+            g.Update(i, eye, Vector3.UnitX, Vector3.UnitY, out float upDb);
+            g.PanChanged(i, out float p1);
+            Assert.That(p1, Is.EqualTo(i == 2 ? full : full * 0.8660f).Within(1e-4f), $"voice {i}");
+            Assert.That(upDb, Is.EqualTo(flatDb).Within(1e-5f), "volume");
+        }
     }
 }

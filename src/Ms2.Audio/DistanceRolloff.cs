@@ -310,7 +310,12 @@ public sealed class RolloffGains
 
     /// <summary>The same for a listener whose right is the unit <paramref name="right"/> (zero: not known): a stereo clip's
     /// gain then follows the side the sound is on (<see cref="Player3DOutput.PanLevelGain(float, float, float, float)"/>).</summary>
-    public bool Update(int i, Vector3 listener, Vector3 right, out float volumeDb)
+    public bool Update(int i, Vector3 listener, Vector3 right, out float volumeDb) => Update(i, listener, right, Vector3.Zero, out volumeDb);
+
+    /// <summary>The same for a listener whose unit up as given to Godot is <paramref name="up"/> (zero: not known): the
+    /// panning strength is scaled by <see cref="Player3DOutput.ElevationScale"/>, so a sound above or below the listener pans
+    /// by FMOD's side component and not by Godot's in-plane azimuth.</summary>
+    public bool Update(int i, Vector3 listener, Vector3 right, Vector3 up, out float volumeDb)
     {
         var c = curve[i];
         volumeDb = 0;
@@ -319,7 +324,7 @@ public sealed class RolloffGains
         if (stops[i] && d >= c.Silent != past[i]) { past[i] = !past[i]; crossed[i] = true; }
         float level = c.PanLevelAt(d);
         float rho = stereo[i];
-        pan[i] = Player3DOutput.PanningStrength(level, rho);
+        pan[i] = Player3DOutput.PanningStrength(level, rho) * Player3DOutput.ElevationScale(at[i], listener, up);
         float side = Player3DOutput.Side(at[i], listener, right);
         volumeDb = ToDb(own[i] * c.GainAt(d) * Player3DOutput.PanLevelGain(level, new StereoChannels(rho, share[i]), side));
         float last = appliedDb[i];
@@ -495,6 +500,22 @@ public static class Player3DOutput
         var to = source - listener;
         float x = Vector3.Dot(to, right), y = Vector3.Dot(to, up), h = to.LengthSquared() - y * y;
         return h <= 1e-6f ? float.NaN : x / MathF.Sqrt(h);
+    }
+
+    /// <summary>The panning strength factor that makes Godot's in-plane pan (<see cref="GodotPanSide"/>) FMOD's
+    /// (<see cref="Side"/>) for a sound off the listener's plane: FMOD's side over Godot's, which is the direction's part in
+    /// that plane, sqrt(|d|^2 - (d.up)^2) / |d|, the same at every azimuth (1: <paramref name="up"/> zero or the sound at the
+    /// listener; 0 straight above or below, where FMOD pans to the centre). Godot 4.7's far/near ratio for an in-plane side x
+    /// at strength s is 1 - s * g(x) (mono meso pickup at 500, strengths 1, 0.866 and 0.5 at sides 0.433 to 1: linear in s
+    /// within 0.0004), with g(x) / x from 0.54 at x 0.43 to 0.50 at x 1, so scaling the strength by FMOD's side over Godot's
+    /// gives FMOD's side within 0.003 share at 30 degrees up or down (exact would be about the 0.9th power of this).</summary>
+    public static float ElevationScale(Vector3 source, Vector3 listener, Vector3 up)
+    {
+        var to = source - listener;
+        float dd = to.LengthSquared();
+        if (up == Vector3.Zero || dd <= 1e-6f) return 1f;
+        float y = Vector3.Dot(to, up);
+        return MathF.Sqrt(MathF.Max(0f, 1f - y * y / dd));
     }
 
     /// <summary>The listener basis Godot is given: the camera's <paramref name="cameraRight"/> made level, the world's up,

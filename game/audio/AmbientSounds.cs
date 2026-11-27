@@ -45,13 +45,13 @@ public partial class AmbientSounds : Node3D
     readonly RolloffGains gains = new(16);
 
     /// <summary>The curve gain of every playing ambient player with one, for a listener at <paramref name="listener"/> whose
-    /// right is <paramref name="right"/>; the volume is set only when it moves.</summary>
-    public void RollOff(System.Numerics.Vector3 listener, System.Numerics.Vector3 right)
+    /// right is <paramref name="right"/> and up <paramref name="up"/>; the volume is set only when it moves.</summary>
+    public void RollOff(System.Numerics.Vector3 listener, System.Numerics.Vector3 right, System.Numerics.Vector3 up)
     {
         for (int i = 0; i < rolled.Count; i++)
         {
             var s = rolled[i];
-            if (gains.Update(s.Index, listener, right, out float db)) s.Player.VolumeDb = db;
+            if (gains.Update(s.Index, listener, right, up, out float db)) s.Player.VolumeDb = db;
             if (gains.PanChanged(s.Index, out float pan)) s.Player.PanningStrength = pan;
             if (gains.PastSilentChanged(s.Index, out bool past))
             {
@@ -204,7 +204,7 @@ public partial class AmbientSounds : Node3D
     void Place(Sound s)
     {
         if (GetParent() is FieldAudio fa && fa.HasListener && gains.Update(s.Index, new(fa.ListenerAt.X, fa.ListenerAt.Y, fa.ListenerAt.Z),
-            new(fa.ListenerRight.X, fa.ListenerRight.Y, fa.ListenerRight.Z), out float db))
+            new(fa.ListenerRight.X, fa.ListenerRight.Y, fa.ListenerRight.Z), new(fa.ListenerUp.X, fa.ListenerUp.Y, fa.ListenerUp.Z), out float db))
             s.Player.VolumeDb = db;
         if (gains.PanChanged(s.Index, out float pan)) s.Player.PanningStrength = pan;   // FMOD's pan level (Player3DOutput)
     }
