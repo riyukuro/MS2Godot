@@ -327,7 +327,7 @@ public sealed class TexMap
     public int Clamp = 3;
     /// <summary>The map's filter mode (NiTexturingProperty::FilterMode, its flags' bits 8-11; FILTER_BILERP when the map
     /// sets none, NiTexturingProperty::Map::Map, NiTexturingProperty.cpp:903-911): the renderer samples the map through
-    /// it (NiDX9FragmentShader::SetupTextures, NiDX9FragmentShader.cpp:487; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2266-2286):
+    /// it (NiDX9FragmentShader::SetupTextures, NiDX9FragmentShader.cpp:487; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2197-2217):
     /// 0 NEAREST (point, no mip levels), 1 BILERP (linear, no mip levels), 2 TRILERP (linear between the mip levels).</summary>
     public int Filter = 1;
     public TexTransform Transform;

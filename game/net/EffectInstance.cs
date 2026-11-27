@@ -433,7 +433,7 @@ void light_vert(vec3 n, out vec3 amb, out vec3 dif) {
 
     // A map's sample (MAPDECL): its texture transform's rows (map_uv), then the clamp mode (bit 0 S, bit 1 T) as CLAMP
     // addressing and the filter mode (TexMap.Filter) as the sampler states the client sets from it
-    // (NiDX9FragmentShader::SetupTextures, NiDX9FragmentShader.cpp:487; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2266-2286):
+    // (NiDX9FragmentShader::SetupTextures, NiDX9FragmentShader.cpp:487; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2197-2217):
     // NEAREST (0) point and BILERP (1) linear read the top level only, TRILERP (2) blends the two mip levels the footprint
     // falls between. A clamped axis holds the coordinate half a texel of the level read inside the edge, which is what
     // CLAMP addressing reads; a wrapped trilinear map takes the sampler as it is.
@@ -583,14 +583,28 @@ void fragment() {
         var m = ms.Def.Mesh;
         if (!GlowPass.Wanted || !ms.Def.GlowMask || mb.Texture(m.Textures["glow"]) == null) return;
         var gm = new ShaderMaterial { Shader = MaskShader(m, false, ms.MorphTargets), RenderPriority = ms.Mat.RenderPriority };
-        foreach (var u in gm.Shader.GetShaderUniformList())
+        foreach (var name in MaskUniforms(gm.Shader))
         {
-            var name = u.AsGodotDictionary()["name"].AsStringName();
             var v = ms.Mat.GetShaderParameter(name);
             if (v.VariantType != Variant.Type.Nil) gm.SetShaderParameter(name, v);
         }
         ms.Glow = gm;
         ms.Node.AddChild(new MeshInstance3D { Mesh = ms.Node.Mesh, MaterialOverride = gm, Name = ms.Node.Name + "_glow", Layers = GlowPass.Bit, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+    }
+
+    static readonly Dictionary<Shader, StringName[]> maskUniforms = new();
+
+    // a mask shader's uniform names, read once per shader (GetShaderUniformList builds a new array of dictionaries per call)
+    static StringName[] MaskUniforms(Shader sh)
+    {
+        if (!maskUniforms.TryGetValue(sh, out var names))
+        {
+            var list = sh.GetShaderUniformList();
+            names = new StringName[list.Count];
+            for (int i = 0; i < names.Length; i++) names[i] = list[i].AsGodotDictionary()["name"].AsStringName();
+            maskUniforms[sh] = names;
+        }
+        return names;
     }
 
     static readonly string[] MorphTerms = { "morph_w.x * CUSTOM0.xyz", "morph_w.y * CUSTOM1.xyz", "morph_w.z * CUSTOM2.xyz", "morph_w.w * CUSTOM3.xyz" };

@@ -120,19 +120,23 @@ public class RenderStateTests
     }
 
     /// <summary>Every effect particle system's culled side is the draw mode of the nearest NiStencilProperty on it or above it
-    /// (the default DRAW_CCW_OR_BOTH without one), as for meshes. The census: no system has one, so every system culls its
+    /// (the default DRAW_CCW_OR_BOTH without one), as for meshes, on both data sets. The census: no system has one, so every system culls its
     /// back faces; the fixed-normal and per-particle-normal quads are the ones that can show their back.</summary>
-    [Test]
-    public void EverySystemCullsAsItsInheritedDrawMode()
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EverySystemCullsAsItsInheritedDrawMode(string env)
     {
-        var (packs, spec) = NifEnv.Open();
-        int files = 0, systems = 0;
+        var dir = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) Assert.Ignore($"{env} not set");
+        using var packs = new PackSet(dir);
+        var spec = new NifSpec(NifEnv.NifXml());
+        int files = 0, systems = 0, skipped = 0;
         var census = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var bad = new List<string>();
         foreach (var entry in packs.List(Archive).Where(e => e.EndsWith(".nif")).OrderBy(e => e, StringComparer.Ordinal))
         {
             NifFile nif; EffectScene sc;
-            try { nif = NifFile.Load(spec, packs.Read(Archive, entry)); sc = EffectScene.Load(nif); } catch { continue; }
+            try { nif = NifFile.Load(spec, packs.Read(Archive, entry)); sc = EffectScene.Load(nif); } catch { skipped++; continue; }
             files++;
             var B = nif.Blocks;
             var parent = new Dictionary<int, int>();
@@ -154,7 +158,7 @@ public class RenderStateTests
                 census[key] = census.GetValueOrDefault(key) + 1;
             }
         }
-        TestContext.Progress.WriteLine($"effect NIFs {files}, particle systems {systems}");
+        TestContext.Progress.WriteLine($"{env}: effect NIFs {files} ({skipped} unreadable), particle systems {systems}");
         foreach (var (k, v) in census) TestContext.Progress.WriteLine($"  {v,6} {k}");
         Assert.That(files, Is.GreaterThan(1000));
         Assert.That(systems, Is.GreaterThan(10000));

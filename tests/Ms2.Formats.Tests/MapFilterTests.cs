@@ -7,7 +7,7 @@ namespace Ms2.Formats.Tests;
 
 /// <summary>
 /// An effect map's filter mode (TexMap.Filter): the NiTexturingProperty map flags' bits 8-11, which the renderer turns into
-/// the map's sampler states (NiDX9FragmentShader::SetupTextures; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2266-2286). The
+/// the map's sampler states (NiDX9FragmentShader::SetupTextures; ms_akD3DFilterMapping, NiDX9Renderer.cpp:2197-2217). The
 /// effect shaders take NEAREST, BILERP and TRILERP (MapDecl); every effect map on both data sets is one of those.
 /// </summary>
 [TestFixture]
