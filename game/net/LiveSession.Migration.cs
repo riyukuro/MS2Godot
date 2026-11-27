@@ -53,7 +53,7 @@ public partial class LiveSession
         PortalAction.Current = null;
         // CStateService::FUN_1417e25a0(0x620003b) runs FUN_14151f460(1) before the scene switch (networkservice.cpp:953):
         // no message box stays up over the move
-        Ms2.Ui.Hud.MessageBoxQueue.Clear(1);
+        Ms2.Ui.Hud.SceneChange.StateChanged();
         moveClock.Restart();
         ResetReconnect();
         var old = game;

@@ -158,24 +158,40 @@ public class MessageBoxTests
 
     static RequestFieldEnter FieldEnterPacket(int map, byte error = 0) => new(error, map, 0, 0, 0, 0, default, default, 0);
 
-    /// <summary>The restored client: a box up over a field change (the exit confirmation) is gone in the new field, the keys work.</summary>
+    /// <summary>A same-server field change closes nothing: the field load's UI call (UISceneEntity::vfunc_53) only forwards.</summary>
     [Test]
-    public void ANewFieldClosesTheShownBoxAndGivesTheKeysBack()
+    public void ANewFieldKeepsTheShownBoxAndItsKeys()
     {
         var (h, c) = Load();
         var l = new Listener();
         MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, l, "gameexit");
         h.Player.Tick();
-        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, true)), "the box is up");
         var entry = new Ms2.Net.FieldEntry();
         var r = FieldEnter.Take(entry, FieldEnterPacket(2000001), new BreakableObjects(), new LiftableObjects(), new LiftableTargetBoxes());
         Assert.That(r, Is.EqualTo(FieldEnterResult.NewField));
-        Assert.That(c.IsIdle, Is.True, "the box is closed by the field change");
+        h.Player.Tick();
+        Assert.That(c.IsIdle, Is.False, "the field change leaves the box");
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, true)), "the box still holds the keys");
+        Assert.That(l.Answers, Is.Empty, "the listener heard nothing");
+    }
+
+    /// <summary>The scene changes (the state manager's switch, the game scene's OnLeave) close the shown box with the queue behind it.</summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public void ASceneChangeClosesTheShownBoxAndTheQueue(bool stateChange)
+    {
+        var (h, c) = Load();
+        var l = new Listener();
+        MessageBoxQueue.ShowMessageBox("Second", 0x17, null, "second");
+        MessageBoxQueue.ShowMessageBox("Exit the game?", 0x17, l, "gameexit");   // the one shown now (the newer box shows first)
+        h.Player.Tick();
+        Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((true, true)), "the box is up");
+        if (stateChange) SceneChange.StateChanged(); else SceneChange.GameSceneLeft();
+        h.Player.Tick();
+        Assert.That(c.IsIdle, Is.True, "the box is closed");
         Assert.That(MessageBoxQueue.IsIdle, Is.True, "the queue is empty");
         Assert.That((KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld), Is.EqualTo((false, false)), "the keys are back");
-        h.Player.Tick();
-        // FUN_14151f460(1) → CloseAll(1): the movie's closeAll calls back OnClick for the shown box, so its listener hears
-        // button 1 (the movie's choice: the same with CloseAll(0)); a listener that answers button 1 runs on a field change
+        // FUN_14151f460(1) -> CloseAll(1): the movie's closeAll calls back OnClick for the shown box, so its listener hears button 1
         Assert.That(l.Answers, Is.EqualTo(new[] { (1, "gameexit") }), "the listener hears the close");
     }
 
