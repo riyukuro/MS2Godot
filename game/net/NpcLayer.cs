@@ -42,6 +42,7 @@ public sealed class NpcLayer
         public Func<string, float> SequenceLength;                   // GetAnimationDuration on this body, made on the first spawn
         public float AniSpeed = 1f, TurnCap;      // the Run_ speed (the row's anispeed times ScaleRate) and rotationSpeed (the turn cap, degrees per second)
         public bool Placeholder, Dead;
+        public NpcRow BossRow;                    // a boss's row (CNpcData::IsBoss), whose distances drive the field's boss music; null otherwise
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
         public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
         public float Height = 150;
@@ -218,7 +219,7 @@ public sealed class NpcLayer
         // OnFieldAddNpc for a present object id: WorldService::OnObjectCreated only SetAt's the id maps over the old
         // object (@0x141718cf0); here the old npc is freed, so its id is dropped first like OnFieldRemoveNpc's
         // NotifyRemoveNpc, or a marker keyed by it outlives the npc
-        if (inst.TryGetValue(n.ObjectId, out var old)) { inst.Remove(n.ObjectId); ReleaseOwnerEffect(old); Removed?.Invoke(n.ObjectId); Tags?.Remove(old.Root); Bars?.Remove(old.Root); old.Root.QueueFree(); }
+        if (inst.TryGetValue(n.ObjectId, out var old)) { inst.Remove(n.ObjectId); ReleaseOwnerEffect(old); BossGone(n.ObjectId, old); Removed?.Invoke(n.ObjectId); Tags?.Remove(old.Root); Bars?.Remove(old.Root); old.Root.QueueFree(); }
         var row = table.Find(n.NpcId);
         if (LiveSession.LiveCheck) Godot.GD.Print($"live: npc add object {n.ObjectId} npc {n.NpcId} row {(row == null ? "no" : "yes")}");
         if (row == null) { NoRow++; return; }
@@ -268,6 +269,7 @@ public sealed class NpcLayer
         i.AccumDamage = n.AccumulatedDamage;       // :3577, FUN_141095240, 0 without the tag
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
+        if (row.IsBoss) { i.BossRow = row; FieldAudio.Instance?.BossAdded((ulong)n.ObjectId); }   // CNpc::vfunc_10 (:534): AddCombatBgmTracker
         ActorAdded?.Invoke(n.ObjectId);            // WorldService::OnActorAdded: the field's effect nif of this id (m_848)
         Spawned++;
         Added?.Invoke(i.Talk);
@@ -367,6 +369,7 @@ public sealed class NpcLayer
         if (dead) { Die(id, true); return; }
         if (!inst.Remove(id, out var i)) return;
         ReleaseOwnerEffect(i);                      // CNpc::~CNpc (:519-521)
+        BossGone(id, i);                            // CNpc::vfunc_14 (:613): RemoveCombatBgmTracker
         Removed?.Invoke(id);
         Tags?.Remove(i.Root);
         Bars?.Remove(i.Root);
@@ -934,7 +937,8 @@ public sealed class NpcLayer
     /// StateDeadNPC::vfunc_4 (statedead.cpp:224) plays <see cref="NpcRow.DeadSequence"/> by name; a model without that
     /// sequence plays nothing (PlayAnimation finds no sequence) and counts in <see cref="NoDeathSequence"/>.
     /// With <paramref name="show"/> the npc's dead effect plays before the sound (FUN_141098fb0(0), :2134; <see cref="PlayNpcEffect"/>).
-    /// STILL-OPEN: FUN_141099ab0, the corpse box (m_corpse), the corpse effect and the boss bgm tracker are not ported.
+    /// A boss leaves the field's boss music tracker (:2150, RemoveCombatBgmTracker).
+    /// STILL-OPEN: FUN_141099ab0, the corpse box (m_corpse) and the corpse effect are not ported.
     /// </summary>
     public void Die(int id, bool show)
     {
@@ -947,6 +951,7 @@ public sealed class NpcLayer
         if (show) PlayNpcEffect(i, row, row?.DeadEffect);
         var dead = show ? row?.SoundDead : null;
         if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
+        BossGone(id, i);
         if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
         if (i.Model == null) return;
         var seq = row == null ? null : i.Model.Kfm.ByName(row.DeadSequence(show, i.DeadAction));
@@ -1210,13 +1215,29 @@ public sealed class NpcLayer
     /// <summary>Where the busiest npc is (the one that has had the most sync blocks), for a camera that follows the action.</summary>
     public Godot.Vector3? ActivePosition() => inst.Count == 0 ? null : inst.Values.MaxBy(i => i.Moves).Root.Position;
 
+    /// <summary>A boss npc's RemoveCombatBgmTracker (its death, removal or replacement); nothing for another npc.</summary>
+    static void BossGone(int id, Inst i)
+    {
+        if (i.BossRow != null) FieldAudio.Instance?.BossRemoved((ulong)id);
+    }
+
     public void Process(float dt)
     {
         Now += dt;
         long nowMs = NowMs;
+        var audio = FieldAudio.Instance;
+        Vector3? me = null; bool viewerRead = false;
         foreach (var i in inst.Values)
         {
             i.Face?.Tick(nowMs);                              // PCBase::vfunc_53 (pcbase.cpp:3729): the face first (FUN_14166f940)
+            // CNpc::vfunc_53 (:2354-2359): a live boss's distance from the player (GameObject m_unk_c4, the world update's focus
+            // distance, worldservice_1.cpp:9670-9700) against its bossSoundDistance / bossSoundEndDistance
+            if (i.BossRow != null && !i.Dead && audio != null)
+            {
+                if (!viewerRead) { me = Viewer?.Invoke(); viewerRead = true; }
+                if (me is { } at)
+                    audio.BossDistance((ulong)i.Talk.ObjectId, i.Root.GlobalPosition.DistanceTo(at), i.BossRow.BossSoundDistance, i.BossRow.BossSoundEndDistance);
+            }
             if (i.Eases)
             {
                 var d = i.Target - i.Root.Position;
@@ -1249,6 +1270,8 @@ public sealed class NpcLayer
                 foreach (var m in i.BoostMaterials) m.SetShaderParameter(ShaderParam.ColorBoost, i.Boost.Scale);
             }
         }
+        // the world update after the actors' (worldservice_1.cpp:9717-9731): the field's music again once no boss is in range
+        audio?.BossTick();
     }
 
     /// <summary>

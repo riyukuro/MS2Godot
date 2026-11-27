@@ -48,7 +48,29 @@ public readonly record struct FieldBgmSpec(
     int BossBgmId = 0,
     int BossBgmParam = 0,
     float BossBgmValue = 0f,
-    string EnterSystemSound = "");
+    string EnterSystemSound = "")
+{
+    /// <summary>A &lt;bgm&gt; element read as CFieldDataCli::vfunc_1 reads it (fielddatacli.cpp:242-248, XmlGetAttr: 0 when absent or
+    /// unparsed); default for no element.</summary>
+    public static FieldBgmSpec Parse(System.Xml.Linq.XElement bgm)
+    {
+        if (bgm == null) return default;
+        return new FieldBgmSpec(
+            BgmId: Int(bgm, "id"),
+            BgmParam: Int(bgm, "param"),
+            BgmValue: Float(bgm, "value"),
+            BossBgmId: Int(bgm, "boss"),
+            BossBgmParam: Int(bgm, "bossParam"),
+            BossBgmValue: Float(bgm, "bossValue"),
+            EnterSystemSound: (string)bgm.Attribute("enterSystemSound") ?? "");
+    }
+
+    static int Int(System.Xml.Linq.XElement e, string attr) =>
+        (string)e.Attribute(attr) is { } s && int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int v) ? v : 0;
+
+    static float Float(System.Xml.Linq.XElement e, string attr) =>
+        (string)e.Attribute(attr) is { } s && float.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : 0f;
+}
 
 /// <summary>
 /// Godot-free port of CSoundEventMgr's music state machine and FMOD Ex interactive music segment transitions:
@@ -362,6 +384,22 @@ public sealed class BossBgmTracker
     {
         if (playingBoss && activeByBoss.ContainsKey(entityId)) activeByBoss[entityId] = false;
     }
+
+    /// <summary>
+    /// CNpc::vfunc_53's boss check (@0x1410952f0, unit_14108e1e0_npcactorandvibrate.cpp:2354-2359), each frame for a live boss:
+    /// at <paramref name="distance"/> (the boss's distance from the player, GameObject m_unk_c4) up to
+    /// <paramref name="start"/> (bossSoundDistance) the boss music starts, at <paramref name="end"/> (bossSoundEndDistance) or farther the
+    /// boss counts as out of range; between the two nothing changes. True when the boss music started.
+    /// </summary>
+    public bool Update(ulong entityId, float distance, float start, float end)
+    {
+        if (distance <= start) return EnterBossRange(entityId);
+        if (distance >= end) LeaveBossRange(entityId);
+        return false;
+    }
+
+    /// <summary>Whether a boss of this id is tracked (spawned and not yet dead or removed).</summary>
+    public bool Tracks(ulong entityId) => activeByBoss.ContainsKey(entityId);
 
     /// <summary>WorldService::RemoveCombatBgmTracker (@0x141bc7f10, worldservice_1.cpp:4907): boss died or despawned.</summary>
     public bool RemoveBoss(ulong entityId)

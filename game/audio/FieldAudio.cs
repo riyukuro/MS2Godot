@@ -1,4 +1,3 @@
-using System.Globalization;
 using Godot;
 using Ms2.Audio;
 using Ms2.Formats.Pack;
@@ -400,7 +399,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     /// <summary>The full &lt;bgm&gt; spec of a field's fielddata entry (default environment; CFieldDataCli::vfunc_1 @0x140a55500, fielddatacli.cpp:240-249).</summary>
     public static FieldBgmSpec FieldBgm(PackSet packs, string xblockName) =>
-        ParseBgmElement(FieldData.DefaultEnvironment(FieldData.EntryByXBlock(packs, xblockName))?.Element("bgm"));
+        FieldBgmSpec.Parse(FieldData.DefaultEnvironment(FieldData.EntryByXBlock(packs, xblockName))?.Element("bgm"));
 
     /// <summary>The full &lt;bgm&gt; spec of a field by numeric id (including map 1 which may lack an xblock).</summary>
     public static FieldBgmSpec FieldBgmById(PackSet packs, int fieldId)
@@ -410,30 +409,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         System.Xml.Linq.XElement match = null;
         foreach (var fd in root.Elements("fieldData"))
             if ((int?)fd.Attribute("id") == fieldId) match = fd;
-        return ParseBgmElement(FieldData.DefaultEnvironment(match)?.Element("bgm"));
+        return FieldBgmSpec.Parse(FieldData.DefaultEnvironment(match)?.Element("bgm"));
     }
 
-    static FieldBgmSpec ParseBgmElement(System.Xml.Linq.XElement bgm)
-    {
-        if (bgm == null) return default;
-        return new FieldBgmSpec(
-            BgmId: ParseInt(bgm, "id"),
-            BgmParam: ParseInt(bgm, "param"),
-            BgmValue: ParseFloat(bgm, "value"),
-            BossBgmId: ParseInt(bgm, "boss"),
-            BossBgmParam: ParseInt(bgm, "bossParam"),
-            BossBgmValue: ParseFloat(bgm, "bossValue"),
-            EnterSystemSound: (string)bgm.Attribute("enterSystemSound") ?? "");
-    }
 
     /// <summary>The bgm cue of a field's fielddata entry (default environment), 0 when the field has none.</summary>
     public static int FieldBgmCue(PackSet packs, string xblockName) => FieldBgm(packs, xblockName).BgmId;
-
-    static int ParseInt(System.Xml.Linq.XElement e, string attr) =>
-        (string)e.Attribute(attr) is { } s && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
-
-    static float ParseFloat(System.Xml.Linq.XElement e, string attr) =>
-        (string)e.Attribute(attr) is { } s && float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0f;
 
     /// <summary>
     /// PlayMusic(cue) with optional field parameter, following WorldService (@0x141bc7b80, worldservice_1.cpp:4866-4872)
@@ -516,6 +497,24 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         value = 0f;
         return false;
     }
+
+    /// <summary>
+    /// The boss music's driver (WorldService m_900 / m_910 through <see cref="BossBgm"/>): a boss npc is added at its spawn
+    /// (CNpc::vfunc_10, unit_14108e1e0_npcactorandvibrate.cpp:534), measured each frame while it lives (CNpc::vfunc_53, :2354-2359),
+    /// removed at its death or removal (CNpc::vfunc_125 :2150, CNpc::vfunc_14 :613), and the world's update gives the field's music
+    /// back once no boss is in range (worldservice_1.cpp:9717-9731). A change of cue restarts the music voices on the new one, as
+    /// <see cref="PlayTriggerMusic"/> does.
+    /// </summary>
+    public void BossAdded(ulong id) => BossBgm?.AddBoss(id);
+    public void BossRemoved(ulong id) { int before = BgmCueBefore(); if (BossBgm?.RemoveBoss(id) == true) SyncIfCueChanged(before); }
+    public void BossDistance(ulong id, float distance, float start, float end)
+    {
+        int before = BgmCueBefore();
+        if (BossBgm?.Update(id, distance, start, end) == true) SyncIfCueChanged(before);
+    }
+    public void BossTick() { int before = BgmCueBefore(); if (BossBgm?.Tick() == true) SyncIfCueChanged(before); }
+    int BgmCueBefore() => MusicState?.CurrentCueId ?? 0;
+    void SyncIfCueChanged(int before) { if (MusicState != null && MusicState.CurrentCueId != before) StartCurrentCue(); }
 
     /// <summary>Syncs Godot audio playback to whatever cue/segment <see cref="MusicState"/> currently holds (e.g. after BossBgm switches cues).</summary>
     public bool SyncMusicToState() => StartCurrentCue();

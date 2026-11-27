@@ -110,6 +110,12 @@ public sealed class NpcRow
     public string Portrait;                      // environment portrait (CNpcData m_strPortrait, npcdata.cpp:1467): the dictionary's picture
     public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
+    /// <summary>
+    /// The environment's bossSoundDistance and bossSoundEndDistance (CNpcData::LoadXml, npcdata.cpp:1470-1471; 2000 and 3000 when
+    /// absent, the CNpcData ctor, npcdata.cpp:652-653): a boss within the first of the player starts the field's boss music, one at
+    /// the second or farther lets it go (CNpc::vfunc_53, unit_14108e1e0_npcactorandvibrate.cpp:2354-2359).
+    /// </summary>
+    public float BossSoundDistance = 2000f, BossSoundEndDistance = 3000f;
     /// <summary>The environment's deadEffect and damageEffect (NpcDataCli::LoadXml, npcdatacli.cpp:176-177; null when absent):
     /// the effect xml CNpc::FUN_141098fb0 plays on the npc when it dies with its sound (0) or takes a hit below 0 (1).</summary>
     public string DeadEffect, DamageEffect;
@@ -283,6 +289,7 @@ public sealed class NpcTable
             SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
             DeadEffect = (string)env.Attribute("deadEffect"), DamageEffect = (string)env.Attribute("damageEffect"),
             RegenEffect = (string)env.Attribute("regenEffect"),
+            BossSoundDistance = Flt(env, "bossSoundDistance", 2000f), BossSoundEndDistance = Flt(env, "bossSoundEndDistance", 3000f),
             Kfm = (string)model?.Attribute("kfm"),
             Scale = Flt(model, "scale", 1f),
             // CNpcData::LoadXml reads these four off <model> (npcdata.cpp:1524-1527, 0 when absent). GMS2's npc files keep them in
