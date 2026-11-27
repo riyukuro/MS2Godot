@@ -196,6 +196,10 @@ public class DungeonRewardDialogTests
         Assert.That(Visible(g, "m_rewardGuild"), Is.True);
         Assert.That(Text(g, "m_guildFund"), Is.EqualTo("77"));
         Assert.That(Text(g, "m_guildExp"), Is.EqualTo("66"));
+        var big = Open(Result((int)guild.Id, true, false, 1, 0, new (byte, int)[] { (4, 1234567), (5, 76543) }, none.b, none.a, none.b));
+        Assert.That(Text(big, "m_guildFund"), Is.EqualTo(NumberText.Group("1234567")), "FUN_1409eb450: digits grouped");
+        Assert.That(Text(big, "m_guildFund"), Is.Not.EqualTo("1234567"));
+        Assert.That(Text(big, "m_guildExp"), Is.EqualTo(NumberText.Group("76543")));
         var other = RoomOf(r => r.GroupType > 0 && r.GroupType != DungeonRewardDialogController.GuildRaidGroup, "another room");
         var o = Open(Result((int)other.Id, true, false, 1, 0, none.a, none.b, none.a, none.b));
         Assert.That(Visible(o, "m_rewardGuild"), Is.False);

@@ -38,8 +38,9 @@ public sealed class DungeonLobbyController : UiController
     /// <summary>
     /// OnLoadComplete (@0x140e17990, :77): UIDialog's; the m_webGuideButton and m_title must exist (the client throws a SwfLoad error);
     /// no title without the room in the table; else the title from s_dungeonLobby_title (the group name, the room's name from string table
-    /// 0x14), the sub title from s_dungeonLobby_subTitle, and for a raid or chaos raid (groups 2 and 3) the web guide button right of the
-    /// title, for another group the button hidden.
+    /// 0x14), the sub title from s_dungeonLobby_subTitle, and for a raid or chaos raid (groups 2 and 3) the web guide button moved right of
+    /// the title. The button stays hidden: BindWebGuideButton hides it without a WebGuideTable row for the dialog's type name (none on the
+    /// KMS or NA data), and this function never shows it.
     /// </summary>
     public override void OnLoadComplete()
     {
@@ -47,7 +48,7 @@ public sealed class DungeonLobbyController : UiController
         var web = Host.Child("m_webGuideButton");
         var title = Host.Child("m_title");
         if (web == null || title == null) { Host.RT.NoteMissing("dungeon lobby: m_webGuideButton or m_title"); return; }
-        Host.SetVisible(web, false);                                    // BindWebGuideButton: STILL-OPEN, no WebGuideTable
+        Host.SetVisible(web, false);                                    // BindWebGuideButton (uidialog.cpp:1005): no WebGuideTable row for the lobby, hidden
         var room = Model.Tables.DungeonRooms.GetRoom((uint)RoomId);
         if (room == null) return;
         string group = room.GroupType > 0 && room.GroupType < AchieveController.DungeonGroupKeys.Length
@@ -58,7 +59,7 @@ public sealed class DungeonLobbyController : UiController
             SetText(sub, ClientFormat.Format(Model.Tables.Common("s_dungeonLobby_subTitle") ?? "", (uint)Size));
         if (room.GroupType == 2 || room.GroupType == 3)
         {
-            Host.SetVisible(web, true);
+            // only moved: the client never shows it here, BindWebGuideButton decides the visibility
             double x = Rt.ToNumber(Host.Get(web, "x")), y = Rt.ToNumber(Host.Get(web, "y"));
             x += TextWidth(title) / 2.0 + WebGuideOffset;
             Host.Set(web, "x", x); Host.Set(web, "y", y);

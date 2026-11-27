@@ -319,7 +319,8 @@ public sealed class DungeonRewardDialogController : UiController
         if (Party && leaveButton != null) Host.SetVisible(leaveButton, true);
     }
 
-    /// <summary>The guild reward block of FUN_140e22d70 and FUN_140e23690: shown with the fund and exp for a guild raid's room (the totals add the bonus), hidden for another.</summary>
+    /// <summary>The guild reward block of FUN_140e22d70 and FUN_140e23690: shown with the fund and exp for a guild raid's room (the totals add the bonus), hidden for another.
+    /// The numbers are FUN_1409eb450's text: the %ld text with its digits grouped (FUN_14083cb20, astooltip.cpp:5800).</summary>
     void UpdateGuild(bool withBonus)
     {
         var guild = Host.Child("m_rewardGuild", rewardInfo);
@@ -329,8 +330,8 @@ public sealed class DungeonRewardDialogController : UiController
             Host.SetVisible(guild, true);
             long fund = Main.GetReward(GuildFundKey) + (withBonus ? Bonus.GetReward(GuildFundKey) : 0);
             long exp = Main.GetReward(GuildExpKey) + (withBonus ? Bonus.GetReward(GuildExpKey) : 0);
-            SetText(Host.Child("m_guildFund", guild), ((int)fund).ToString(System.Globalization.CultureInfo.InvariantCulture));
-            SetText(Host.Child("m_guildExp", guild), ((int)exp).ToString(System.Globalization.CultureInfo.InvariantCulture));
+            SetText(Host.Child("m_guildFund", guild), NumberText.Group(((int)fund).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            SetText(Host.Child("m_guildExp", guild), NumberText.Group(((int)exp).ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
         else Host.SetVisible(guild, false);
     }

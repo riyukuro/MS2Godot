@@ -89,12 +89,12 @@ public class DungeonLobbyTests
     }
 
     [Test]
-    public void TheWebGuideButtonIsRightOfTheTitleForARaidAndHiddenForAnotherGroup()
+    public void TheWebGuideButtonMovesRightOfTheTitleForARaidAndStaysHiddenForEveryGroup()
     {
         var raid = RoomOfGroup(g => g == 2 || g == 3);
         Open((int)raid.Id, 1, out var hr);
         var web = hr.Child("m_webGuideButton");
-        Assert.That(Rt.ToBoolean(hr.Get(web, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(hr.Get(web, "visible")), Is.False, "BindWebGuideButton hides it: no WebGuideTable row for the lobby");
         double x = Rt.ToNumber(hr.Get(web, "x")), titleX = Rt.ToNumber(hr.Get(hr.Child("m_title"), "x"));
         Assert.That(x, Is.GreaterThan(titleX));
 

@@ -13,6 +13,9 @@ public class DungeonWaitingPacketTests {
     public void TheOpIsTheClientsRecvOp() => Assert.That((ushort)Inbound.DungeonWaiting, Is.EqualTo(0xF0));
 
     [Test]
+    public void TheGms2OpIsTheServersSendOp() => Assert.That(RcLane.Gms2Inbound(Inbound.DungeonWaiting), Is.EqualTo((ushort)0xF2));
+
+    [Test]
     public void ItReadsTheRoomIdAndTheSecondValue() =>
         Assert.That(DungeonWaiting.Read(R(w => { w.WriteInt(21001001); w.WriteInt(3); })), Is.EqualTo(new DungeonWaiting(21001001, 3)));
 
