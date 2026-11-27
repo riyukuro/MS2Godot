@@ -516,6 +516,36 @@ public class DungeonRoomPanelTests
     }
 
     [Test]
+    public void EachMissionLabelShowsTheMissionsNameAndTopScoreFromTheTable()
+    {
+        // Refresh @0x1412a78a0: DungeonMissionDataTable.GetMission(id) names the label and gives its top score
+        var room = Room(r => r.GroupType > 0 && r.HasMissions && r.Missions().All(id => Tables().DungeonMissions.GetMission(id) != null), "missions in the table");
+        var e = Make(room, before: x => { x.Model.Features.Add(0x71); x.C.Hooks.Mission = Tables().DungeonMissionInfo; });
+        var panel = Sub(e, "m_subPanel3");
+        var ids = room.Missions();
+        var shown = new List<(string, string)>();
+        int n = (int)Rt.ToNumber(e.Host.Get(panel, "numChildren"));
+        for (int i = 0; i < n; i++)
+        {
+            var ch = e.Host.Invoke(panel, "getChildAt", i);
+            if (e.Host.Child("titleText", ch) != null && e.Host.Child("scoreText", ch) != null && Rt.ToBoolean(e.Host.Get(ch, "visible")))
+                shown.Add((Text(e, e.Host.Child("titleText", ch)), Text(e, e.Host.Child("scoreText", ch))));
+        }
+        Assert.That(shown, Has.Count.EqualTo(ids.Count));
+        var want = ids.Select(id => (Tables().DungeonMissionName(id), Tables().DungeonMissions.GetMission(id).MaxScore.ToString())).ToList();
+        Assert.That(shown, Is.EqualTo(want));
+    }
+
+    [Test]
+    public void TheMissionInfoIsTheTablesNameAndMaxScoreAndNullForAnUnknownId()
+    {
+        var t = Tables();
+        foreach (var m in t.DungeonMissions.All)
+            Assert.That(t.DungeonMissionInfo(m.Id), Is.EqualTo((t.DungeonMissionName(m.Id), (int)m.MaxScore)), "mission " + m.Id);
+        Assert.That(t.DungeonMissionInfo(uint.MaxValue), Is.Null);
+    }
+
+    [Test]
     public void TheSeasonRewardClipsAreSpreadByTheirCountAndTheRestHidden()
     {
         var room = Room(r => r.GroupType > 0 && r.SeasonRankRewardId != 0 && Rooms().GetRankReward(r.SeasonRankRewardId) is { MaxRank: > 0 }, "a season rank reward");

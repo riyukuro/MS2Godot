@@ -44,7 +44,7 @@ public sealed class DungeonRoomHooks
     /// <summary>The achievement of limitAchieveID: completed, and its name (AchieveTexts.Name).</summary>
     public Func<int, bool?> AchieveCompleted;
     public Func<int, string> AchieveName;
-    /// <summary>DungeonMissionDataTable.GetMission(id): the mission's name and top score. STILL-OPEN: no table in the repo.</summary>
+    /// <summary>DungeonMissionDataTable.GetMission(id): the mission's name and top score (GameTables.DungeonMissionInfo).</summary>
     public Func<uint, (string Name, int MaxScore)?> Mission;
     /// <summary>FUN_140719b50: the score text. STILL-OPEN: the formatter is unidentified.</summary>
     public Func<int, string> ScoreText;
@@ -936,7 +936,7 @@ public sealed class DungeonRoomInfoPanel
         }
 
         /// <summary>Refresh (@0x1412a78a0): feature 0x71; the mission labels, then the room's best score and rank, then the season score.
-        /// STILL-OPEN: the mission names and top scores (no DungeonMissionDataTable), FUN_140719b50's score text and the season score text.</summary>
+        /// STILL-OPEN: FUN_140719b50's score text and the season score text.</summary>
         public void Refresh(DungeonRoomData room)
         {
             if (panel == null || !p.FeatureOn(0x71)) return;

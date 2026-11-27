@@ -365,6 +365,10 @@ public sealed class GameTables
     /// <summary>The name of a dungeon mission (string table 0x3c, dungeonMissionName.xml, by the mission id), "" when unknown.</summary>
     public string DungeonMissionName(uint id) => Lazy(ref dungeonMissionNames, "dungeonmissionname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
 
+    /// <summary>DungeonMissionDataTable.GetMission(id) as the room panel's mission label reads it (uidungeonroomdialog.cpp Refresh @0x1412a78a0):
+    /// the mission's name (string table 0x3c) and its top score; null for an id the table lacks.</summary>
+    public (string Name, int MaxScore)? DungeonMissionInfo(uint id) => DungeonMissions.GetMission(id) is { } m ? (DungeonMissionName(id), m.MaxScore) : null;
+
     /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown; names
     /// holding "$" get the object words (e.g. "$map:02000302$ Treasure Key"), as CStringTable::Load @0x141810f70 does for
     /// every table at load (stringtable.cpp:640).</summary>
