@@ -41,13 +41,14 @@ public class MusicSegmentHeadSweepTests
     /// <summary>
     /// Headers only, about 1 s a data set: every segment resolves (a segment a cue reaches must), opens as a frame run with
     /// at least the bank's length, and is counted on the head path or as decoded whole; the longest segment's head and rest
-    /// are timed. KMS2_DEV 317 segments (316 a cue reaches), GMS2 313 (312).
+    /// are timed, and every bank they are in is a stream bank (the client's FMOD plays them as it reads them).
+    /// KMS2_DEV 317 segments (316 a cue reaches), GMS2 313 (312), in MS2Sound_BGM to BGM4: flags 0x80, 10 streams each.
     /// </summary>
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
     public void EverySegmentTakesTheHeadPathOrIsDecodedWhole(string variable)
     {
-        var list = Segments(variable, out _);
+        var list = Segments(variable, out var lib);
         var reasons = new SortedDictionary<string, List<int>>(StringComparer.Ordinal);
         var problems = new List<string>();
         var unreached = new List<int>();
@@ -91,6 +92,12 @@ public class MusicSegmentHeadSweepTests
             + $"({headSeconds / 60:0.0} min, {headPcm / 1048576.0:0.0} MB of PCM, longest {longest:0.0} s); {list.Count - head} not:");
         foreach (var (reason, ids) in reasons)
             TestContext.Progress.WriteLine($"  {reason}: {ids.Count} ({string.Join(" ", ids)})");
+        // the banks' load modes as the FEV gives them, against every other bank's: the client loads MS2Sound.fev with a
+        // zeroed load info (CSoundService::FUN_1417aee20), so they decide how a segment opens; the music banks are
+        // FMOD_CREATESTREAM (0x80), the effect banks FMOD_CREATECOMPRESSEDSAMPLE (0x200)
+        var musicBanks = list.Select(x => x.Seg.Bank).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var b in lib.Fev.BankTable.OrderBy(b => !musicBanks.Contains(b.Name)).ThenBy(b => b.Name, StringComparer.Ordinal))
+            TestContext.Progress.WriteLine($"  bank {b.Name}{(musicBanks.Contains(b.Name) ? " (music)" : "")}: flags 0x{b.Flags:x}, max streams {b.MaxStreams}");
         if (longestMp3 != null)
         {
             // the rest of the longest segment has to be in before its head has played (the "head ran out" restart otherwise)
@@ -104,6 +111,9 @@ public class MusicSegmentHeadSweepTests
         }
         Assert.That(list.Count, Is.GreaterThan(0));
         Assert.That(head, Is.GreaterThan(0));
+        const uint CreateStream = 0x80;
+        Assert.That(lib.Fev.BankTable.Where(b => musicBanks.Contains(b.Name)).Select(b => (b.Name, Stream: (b.Flags & CreateStream) != 0)),
+            Has.All.Matches<(string Name, bool Stream)>(b => b.Stream), "the client streams every music bank, which the head then rest stands in for");
         Assert.That(problems, Is.Empty, string.Join("\n", problems.Take(60)));
     }
 
