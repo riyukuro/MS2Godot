@@ -161,6 +161,20 @@ public class KeyInputTests
     }
 
     [Test]
+    public void ALayerLeftByATornDownHudIsGivenBackAndTheNextModalReleasesThePc()
+    {
+        // a bill shown when the HUD leaves the tree: its hide never runs
+        var gone = (ModalDialogController)RuntimeHelpers.GetUninitializedObject(typeof(BillDialogController));
+        gone.SetEntityVisible(true);
+        KeyInput.ReleaseAll();
+        Assert.That((KeyInput.ActionKeyMode, KeyInput.Shared.MoveHeld, KeyInput.Shared.AttackHeld, flags), Is.EqualTo((1, false, false, 0u)), "the next login reads the action keys");
+        var next = (ModalDialogController)RuntimeHelpers.GetUninitializedObject(typeof(ItemGetOptionDialogController));
+        next.SetEntityVisible(true);
+        next.SetEntityVisible(false);
+        Assert.That((InputBlock.OwnKeysBlocked, InputBlock.ActionKeys), Is.EqualTo((false, true)), "the next modal's close gives the pc back");
+    }
+
+    [Test]
     public void ASecondModalDialogKeepsTheHoldWhenTheFirstCloses()
     {
         var a = (ModalDialogController)RuntimeHelpers.GetUninitializedObject(typeof(BillDialogController));

@@ -214,6 +214,9 @@ public partial class HudScene : Node, IUiStageHost
     {
         GameOptions.GamepadEnabledChanged -= OnGamepadEnabled;
         GameOptions.GamepadSearchNotice -= OnGamepadSearchNotice;
+        // the dialogs go with the scene without their hide (UiHost.Unload fires no Unloaded): the layers they hold are given
+        // back here, or the next login starts with the action keys off and the next modal leaves the own pc frozen
+        KeyInput.ReleaseAll();
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
             if (livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;

@@ -95,6 +95,17 @@ public sealed class KeyInputLayers
         move.Clear(); skill.Clear(); attack.Clear();
         nAttack = 0; nMove = 0; nSkill = 0;
     }
+
+    /// <summary>The HUD leaves the tree (a logout or the way back to the lobby): every layer still held is given back through
+    /// its channel, as the shown dialog's hide (UIModalDialog vfunc_8(0), uimodaldialog.cpp:32) would have. Unlike
+    /// <see cref="Clear"/> the action keys' mode goes back to 1 and the pc's flag comes off, so no layer outlives the scene
+    /// that took it.</summary>
+    public void ReleaseAll()
+    {
+        foreach (var l in move.ToArray()) Move(true, l);
+        foreach (var l in skill.ToArray()) Skill(true, l);
+        foreach (var l in attack.ToArray()) Attack(true, l);
+    }
 }
 
 /// <summary>The client's one s_keyInput (<see cref="KeyInputLayers"/>) and its free functions (FUN_141901310 ... FUN_141901470).</summary>
@@ -122,4 +133,7 @@ public static class KeyInput
 
     /// <summary>FUN_141901310 (@0x141901310).</summary>
     public static void Channels(bool release, uint channels, int layer) => Shared.Channels(release, channels, layer);
+
+    /// <summary>Every held layer given back (<see cref="KeyInputLayers.ReleaseAll"/>), at the HUD's teardown.</summary>
+    public static void ReleaseAll() => Shared.ReleaseAll();
 }
