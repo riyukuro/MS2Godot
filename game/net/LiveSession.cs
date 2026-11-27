@@ -4381,6 +4381,14 @@ public partial class LiveSession : Node
                     sent = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(cmd);
                     GD.Print($"live: move {n}: {cmd} {(sent ? "sent" : "no chat window")}, {live.Migrations} GameToGame move(s) so far");
                 }
+                else if (step == "finder" && tree.CurrentScene is Ui.HudScene fh)
+                {
+                    // "finder": the dungeon finder opened through its HUD route, its state logged and a shot of it, then left open
+                    sent = fh.DungeonControlCenterScripted();
+                    await Frames(90);
+                    MoveShot($"move_{n}_finder.png");
+                    GD.Print($"live: move {n}: finder {fh.DungeonControlCenterText()}");
+                }
                 else if ((step.StartsWith("portal:") || step.StartsWith("gated:")) && tree.GetFirstNodeInGroup(FieldContents.Group) is FieldContents fc)
                 {
                     // portal:<id|any> walks into a server-listed portal the action key goes to; gated:<id|any> into one it

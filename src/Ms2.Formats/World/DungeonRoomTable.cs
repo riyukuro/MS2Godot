@@ -437,13 +437,32 @@ public sealed class DungeonRoomData
         return a.Id.CompareTo(b.Id);
     });
 
+    /// <summary>
+    /// The groupType attribute. The KMS build reads it as a number (XmlValue, dungeonroom.cpp:378) and the KMS2 and restore tables hold numbers.
+    /// The GMS2 table holds the group's name ("normal", "raid", ...), which XmlValueByName (@0x140179060, additionalactionadditional.cpp:471)
+    /// turns into the number with Parse_140218c20 (commonenum.cpp:449, <see cref="DungeonCategoryTable.GroupTypeByName"/>).
+    /// STILL-OPEN: the GMS2 client's own DungeonRoom::Load is not recovered; a name is read by the same name table, a number as the KMS build does.
+    /// </summary>
+    static int ReadGroupType(XElement e, int current)
+    {
+        string s = XmlAttr.Str(e, "groupType");
+        if (s == null) return current;
+        string t = s.TrimStart();
+        if (t.Length > 0 && (char.IsAsciiDigit(t[0]) || t[0] == '-' || t[0] == '+'))
+        {
+            XmlAttr.Int(e, "groupType", ref current);
+            return current;
+        }
+        return DungeonCategoryTable.GroupTypeByName(s);
+    }
+
     public static DungeonRoomData Load(XElement e, ClientConstants constants)
     {
         var r = new DungeonRoomData();
         XmlAttr.UInt(e, "dungeonRoomID", ref r.Id);
         XmlAttr.UShort(e, "dungeonLevel", ref r.DungeonLevel);
         XmlAttr.Bool(e, "limitEnter", ref r.LimitEnter);
-        XmlAttr.Int(e, "groupType", ref r.GroupType);
+        r.GroupType = ReadGroupType(e, r.GroupType);
         XmlAttr.Int(e, "clearKillNpc", ref r.ClearKillNpc);
         XmlAttr.Int(e, "cooldownValue", ref r.CooldownValue);
         XmlAttr.Int(e, "sortOrder", ref r.SortOrder);

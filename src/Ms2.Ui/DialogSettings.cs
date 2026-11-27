@@ -61,6 +61,8 @@ public sealed class DialogSettings
 
     /// <summary>XmlSetAttr (bool): an attribute on the root element itself, "true" or "false".</summary>
     public void SetAttr(string name, bool value) => Root.SetAttributeValue(name, value ? "true" : "false");
+    /// <summary>XmlSetAttr (string): an attribute on the root element itself.</summary>
+    public void SetAttr(string name, string value) => Root.SetAttributeValue(name, value);
     /// <summary>XmlSetAttr (int): an attribute on the root element itself.</summary>
     public void SetAttr(string name, int value) => Root.SetAttributeValue(name, value.ToString(CultureInfo.InvariantCulture));
 
@@ -81,6 +83,9 @@ public sealed class DialogSettings
     {
         if ((string)Root.Attribute(name) is string s && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)) value = v;
     }
+
+    /// <summary>The root element's attribute text, null when missing (XmlTokenList reads it).</summary>
+    public string GetAttrText(string name) => (string)Root.Attribute(name);
 
     /// <summary>StringEqual (tinyxml.cpp) with ignoreCase: the attribute starts with the tag.</summary>
     static bool Prefix(string s, string tag) => s.StartsWith(tag, StringComparison.OrdinalIgnoreCase);

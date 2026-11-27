@@ -152,12 +152,15 @@ public sealed class DungeonRoomDialogController : UiController
     };
 
     /// <summary>FUN_140e14520 (uidungeonhelper.cpp:303): the feature switch each dungeon group type needs; true for the others.</summary>
-    public bool IsGroupAvailable(int type) => type switch
+    public bool IsGroupAvailable(int type) => GroupAvailable(type, Model.IsFeatureEnabled);
+
+    /// <summary>FUN_140e14520 over a feature test (the control center and the search dialogs call it too).</summary>
+    public static bool GroupAvailable(int type, Func<int, bool> feature) => type switch
     {
-        3 => Model.IsFeatureEnabled(0x80), 4 => Model.IsFeatureEnabled(0x76), 5 => Model.IsFeatureEnabled(0xcb),
-        6 => Model.IsFeatureEnabled(0x79), 7 => Model.IsFeatureEnabled(5), 8 => Model.IsFeatureEnabled(0xaa),
-        12 => Model.IsFeatureEnabled(0xab), 9 => Model.IsFeatureEnabled(0x4c), 10 => Model.IsFeatureEnabled(0x4b),
-        11 => Model.IsFeatureEnabled(0x55), 13 => Model.IsFeatureEnabled(0xf0), 14 => Model.IsFeatureEnabled(0x103),
+        3 => feature(0x80), 4 => feature(0x76), 5 => feature(0xcb),
+        6 => feature(0x79), 7 => feature(5), 8 => feature(0xaa),
+        12 => feature(0xab), 9 => feature(0x4c), 10 => feature(0x4b),
+        11 => feature(0x55), 13 => feature(0xf0), 14 => feature(0x103),
         _ => true,
     };
 

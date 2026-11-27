@@ -2129,9 +2129,12 @@ public partial class HudScene : Node, IUiStageHost
         { ToggleSkillCompact(); return true; }   // action 400031: ToggleDialog(0x4ef6), no default key
         if (actions && DungeonRoomDialogController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
         { ToggleDungeonRoom(); return true; }    // action 400037 (DIK 40): ToggleDialog(0x4ebd), keytable.cpp:828
+        if (actions && DungeonControlCenterController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
+        { ToggleDungeonSearch(); return true; }  // action 400018: ToggleDialog(0x4f84 or 0x4f1c), keytable.cpp:806-808
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         if (k.Keycode == Key.Escape && DungeonRoomOpen) { dungeonRoom.Close(); return true; }
+        if (k.Keycode == Key.Escape && DungeonControlCenterOpen) { dungeonControlCenter.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
         if (k.Keycode == Key.Escape && PcInfoOpen) { pcInfo.Close(); return true; }
@@ -3423,6 +3426,7 @@ public partial class HudScene : Node, IUiStageHost
             else if (def.Action == GameMenuActions.ToggleSystemShop) ToggleShopTab(9);   // uigamemenudialog.cpp:2209
             else if (def.Action == GameMenuActions.ToggleChangeJob) ToggleChangeJob();   // FUN_14193d590, uigamemenudialog.cpp:2200
             else if (def.Action == GameMenuActions.ToggleFamePointBoard) FamePointBoardMenu();   // FUN_14193cea0, uigamemenudialog.cpp:2101
+            else if (def.Action == GameMenuActions.ToggleDungeonSearch) ToggleDungeonSearch();   // FUN_14193d5e0, uigamemenudialog.cpp:2213
         };
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         slot.AddSibling(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));

@@ -60,3 +60,31 @@ public sealed record PartyDungeonSearchCancelRequest(byte ClubBuffType) : IOutPa
     public Outbound Op => Outbound.Party;
     public void Write(ByteWriter w) { w.WriteByte(0x22); w.WriteByte(ClubBuffType); }
 }
+
+// The outbound packets of UIDungeonControlCenter (uidungeoncategory.cpp); FUN_140710590 sends each one.
+
+/// <summary>UIDungeonControlCenter::SendPartyMode32 @0x140c0cc30 (uidungeoncategory.cpp:603), the find button's match: Party u8 0x20, u8 1,
+/// the bookmarked room ids as i32 count then u32 each (the set's order), bool false.</summary>
+public sealed record PartyDungeonMatchRequest(IReadOnlyCollection<uint> RoomIds) : IOutPacket {
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(0x20); w.WriteByte(1);
+        w.WriteInt(RoomIds.Count);
+        foreach (uint id in RoomIds) w.WriteInt((int) id);
+        w.WriteBool(false);
+    }
+}
+
+/// <summary>UIDungeonControlCenter::SendPartyMode34 @0x140c0ccc0 (uidungeoncategory.cpp:615), the find button's cancel: Party u8 0x22, u8 1.</summary>
+public sealed record PartyDungeonMatchCancelRequest : IOutPacket {
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w) { w.WriteByte(0x22); w.WriteByte(1); }
+}
+
+/// <summary>UIDungeonControlCenter::SendRoomDungeon @0x140c0ce20 (uidungeoncategory.cpp:668), a lobby's enter button: RoomDungeon u8 lobby
+/// (DungeonControlCenterController.LobbyOfGroup in Ms2.Ui).</summary>
+public sealed record RoomDungeonLobbyRequest(byte Lobby) : IOutPacket {
+    public Outbound Op => Outbound.RoomDungeon;
+    public void Write(ByteWriter w) => w.WriteByte(Lobby);
+}

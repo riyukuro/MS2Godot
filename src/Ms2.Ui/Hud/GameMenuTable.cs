@@ -24,6 +24,9 @@ public static class GameMenuActions
     /// <summary>The fame entry's handler: the warn2 notice without an open alliance, else ToggleDialog(0x4f54)
     /// (@0x14193cea0, uigamemenudialog.cpp:2101).</summary>
     public const string ToggleFamePointBoard = "FUN_14193cea0";
+    /// <summary>The dungeonSearch entry's handler: ToggleDialog(0x4f84) while feature 0xf9 is on, else ToggleDialog(0x4f1c)
+    /// (@0x14193d5e0, uigamemenudialog.cpp:2213; the key action 400018 does the same, keytable.cpp:806-808).</summary>
+    public const string ToggleDungeonSearch = "FUN_14193d5e0";
 }
 
 /// <summary>One CGameMenuItem: a table/gamemenu.xml menu or child, with its filter.</summary>

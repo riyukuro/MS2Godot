@@ -346,6 +346,9 @@ public sealed class GameTables
     /// <summary>CFameTable's fameDef.xml part (the officer npcs' alliance symbols); empty without data.</summary>
     public FameTable Fame { get; } = FameTable.Empty;
 
+    DungeonCategoryTable dungeonCategories;
+    /// <summary>The sub tabs of the dungeon finder (UIDungeonCategoryTable, Table/dungeonCategory.xml), read on the first use; empty without data.</summary>
+    public DungeonCategoryTable DungeonCategories => dungeonCategories ??= DungeonCategoryTable.Load(packs);
     DungeonRoomTable dungeonRooms;
     /// <summary>The dungeon room tables (CDungeonRoomTable: dungeonroom.cpp, dungeonrewardcoupon.cpp), read on the first use; empty without data.</summary>
     public DungeonRoomTable DungeonRooms => dungeonRooms ??= packs == null

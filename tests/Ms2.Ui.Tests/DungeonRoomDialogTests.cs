@@ -10,8 +10,8 @@ using NUnit.Framework;
 namespace Ms2.Ui.Tests;
 
 /// <summary>The dungeon room window on its movie (needs MS2_DATA): the group list, the room list and its texts, the opening calls and
-/// the party level (uidungeonroomdialog.cpp). Rooms are compared by id and count; the GMS2 room table has no groups, so those tests
-/// ignore there.</summary>
+/// the party level (uidungeonroomdialog.cpp). Rooms are compared by id and count; a table without groups makes those tests
+/// ignore.</summary>
 public class DungeonRoomDialogTests
 {
     static PackSet packs;
