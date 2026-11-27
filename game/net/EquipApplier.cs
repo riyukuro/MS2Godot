@@ -207,6 +207,19 @@ public sealed class EquipApplier
         public readonly List<WeaponBinding> Bindings = new();   // its weapon hooks (a weapon's rig)
         public int Subtype;                                 // the weapon subtype of an RH / LH item
         public bool LinksLh;                                // an RH item whose model also has an LH group (bows, cannons, knuckles)    // node names of its models (a parent node of an idle effect can be one of these)
+        public readonly List<SelfRoot> Roots = new();       // the nodes its self nodes place (GetRoots, equipmodel.cpp:906)
+        public readonly List<(MeshInstance3D Node, ModelMesh Mesh)> Picks = new();   // its meshes with their file triangles (the cap pick)
+        public float? CapScale;                             // the first model part's capscale (ModelPart +0x40, itemdatastruct.cpp:311)
+    }
+
+    /// <summary>
+    /// A node a worn model's self node (a root of the model, GetRoots @equipmodel.cpp:906) places: the node's transform on its
+    /// attach node is <c>Prefix * Local * Rel</c>, where Prefix is the target node's offset and the dummy (the attach node),
+    /// Local the root's own local transform and Rel the node relative to the root. Nodes of one root share its Key.
+    /// </summary>
+    sealed class SelfRoot
+    {
+        public string Key; public Node3D Node; public Transform3D Prefix, Local, Rel;
     }
 
     /// <summary>What a built character keeps so one slot can change without rebuilding the body.</summary>
@@ -239,6 +252,7 @@ public sealed class EquipApplier
         var list = Visible(items);
         foreach (var item in list) AddPart(look, item);
         Hide(look);
+        PlaceCap(look);
         look.Keys = WornEquips.Shown(list);
         SaveRig(visual, look);
         PlayIdleEffects(visual, look, items);
@@ -270,6 +284,7 @@ public sealed class EquipApplier
             if (item != null) AddPart(look, item);
         }
         Hide(look);
+        PlaceCap(look);
         // the effects after every changed slot is built, against this character's nodes only (as a fresh Apply)
         if (model != null)
         {
@@ -280,6 +295,186 @@ public sealed class EquipApplier
         }
         SaveRig(visual, look);
         look.Keys = now;
+        return true;
+    }
+
+    /// <summary>
+    /// CEquipment::FUN_1411e5c10 (@0x1411e5c10, equipment.cpp:2794-2917), which FUN_1411e6ab0 (equipment.cpp:1716-1726) runs
+    /// each time the character's models are on: a cap (slot CP) whose item model's customize has capAttach
+    /// (ItemModelHead::Load @0x140546a90, itemdatastruct.cpp:944; IsCapAttach @0x1405471b0) sits on the worn hair (slot HR).
+    /// <list type="number">
+    /// <item>Each root of each cap model takes the local transform {scale: the capscale of the hair's first model part
+    /// (ModelPart +0x40, itemdatastruct.cpp:311); rotation: FromEulerAnglesXYZ of the hair's customize capTransform rotation, as
+    /// stored (radians); translate: its position}. The cap record's rotation (degrees) and position (CCapExtraData +0x80 and
+    /// +0x74, the item's appearance floats 9-11 and 6-8) replace those when not zero. A hair without a capTransform leaves the
+    /// roots as they are.</item>
+    /// <item>From each root a ray goes along the root's world -Z, starting 400 units out on +Z (kOrigin = T - kDir * 400), and
+    /// picks the hair's meshes (FUN_141424d00 @0x141424d00, itemugcmesh.cpp:846: front faces only, triangles, world
+    /// coordinates; NiCollisionUtils::IntersectTriangle). The root moves to the hit nearest to the ray's origin, keeping its
+    /// world rotation and scale (SetLocalFromWorldTransform). A hair with meshes and no hit puts the root back at the
+    /// hair's capTransform, without the record's override; a hair with no mesh leaves step 1's transform.</item>
+    /// </list>
+    /// The pick here tests every mesh of the hair's models (the client walks the meshes under the hair's roots), posed as
+    /// drawn: a skinned mesh through its skeleton's current pose.
+    /// GMS2's item files keep the flag and the transform as customize/CP@attach and customize/CP/transform (the layout of
+    /// that data; there is no GMS2 client to cite).
+    /// STILL-OPEN: a cap without capAttach (FUN_1411ef2e0, equipment.cpp:2450: the record's position and rotation, the
+    /// capscale through vfunc_22, the record's "Editable Mesh" morph weight) keeps its own transform.
+    /// </summary>
+    void PlaceCap(BuiltLook look)
+    {
+        if (!look.Parts.TryGetValue(EquipSlot.CP, out var cap) || cap.CapScale == null) return;
+        if (!look.Parts.TryGetValue(EquipSlot.HR, out var hair) || hair.CapScale is not { } fScale) return;
+        if (!CapAttach(FindItem(cap.Item.Id)?.Element("customize"))) return;
+        var capTransform = CapTransformOf(FindItem(hair.Item.Id)?.Element("customize"));
+        var roots = cap.Roots.Where(r => GodotObject.IsInstanceValid(r.Node)).GroupBy(r => r.Key).ToList();
+        if (capTransform is { } ct)
+        {
+            var k = CapLocal(fScale, ct.Rot, ct.Pos);
+            var a = cap.Item.Appearance;
+            if (a is { Length: >= 12 })
+            {
+                if (a[9] != 0 || a[10] != 0 || a[11] != 0)
+                    k.Basis = ModelBuilder.ToGodot(new Xform(new Vec3(0, 0, 0), DummyWorld.EulerXyz(a[9], a[10], a[11]), fScale)).Basis;
+                if (a[6] != 0 || a[7] != 0 || a[8] != 0) k.Origin = new Vector3(a[6], a[7], a[8]);
+            }
+            foreach (var g in roots) foreach (var r in g) r.Node.Transform = r.Prefix * k * r.Rel;
+        }
+        foreach (var g in roots)
+        {
+            var first = g.First();
+            var onAttach = InSkeleton(first.Node.GetParent(), look.Skel) * first.Prefix;
+            var world = onAttach * first.Prefix.AffineInverse() * first.Node.Transform * first.Rel.AffineInverse();
+            var dir = world.Basis.Orthonormalized() * new Vector3(0, 0, -1);
+            var origin = world.Origin - dir * 400f;
+            Transform3D? local = null;
+            if (PickMeshes(hair, look.Skel, origin, dir, out var hit, out bool empty))
+                local = onAttach.AffineInverse() * new Transform3D(world.Basis, hit);
+            else if (!empty)
+                local = capTransform is { } ct2 ? CapLocal(fScale, ct2.Rot, ct2.Pos) : new Transform3D(Basis.Identity.Scaled(new Vector3(fScale, fScale, fScale)), Vector3.Zero);
+            if (local is { } l) foreach (var r in g) r.Node.Transform = r.Prefix * l * r.Rel;
+        }
+    }
+
+    /// <summary>{fScale, FromEulerAnglesXYZ(rotation in radians), position}: the root transform of a cap on a hair.</summary>
+    static Transform3D CapLocal(float scale, double[] rot, double[] pos)
+    {
+        const double toDeg = 180.0 / 3.1415927f;     // EulerXyz turns degrees back with the client's float pi
+        return ModelBuilder.ToGodot(new Xform(new Vec3(pos[0], pos[1], pos[2]), DummyWorld.EulerXyz(rot[0] * toDeg, rot[1] * toDeg, rot[2] * toDeg), scale));
+    }
+
+    /// <summary>ItemModelHead capAttach (customize@capAttach; GMS2 customize/CP@attach).</summary>
+    static bool CapAttach(XElement customize) =>
+        (string)customize?.Attribute("capAttach") == "1" || (string)customize?.Element("CP")?.Attribute("attach") == "1";
+
+    /// <summary>The customize capTransform (MsTransform::LoadXml @0x1405468d0: position, rotation; GMS2 customize/CP/transform), null when absent.</summary>
+    static (double[] Pos, double[] Rot)? CapTransformOf(XElement customize)
+    {
+        var t = customize?.Element("capTransform") ?? customize?.Element("CP")?.Element("transform");
+        return t == null ? null : (Floats((string)t.Attribute("position")), Floats((string)t.Attribute("rotation")));
+    }
+
+    /// <summary>ModelPart's capscale (itemdatastruct.cpp:311), 1 when the asset has none.</summary>
+    static float CapScaleOf(XElement asset) =>
+        float.TryParse((string)asset.Attribute("capscale"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f) ? f : 1f;
+
+    /// <summary>A node's transform in the space of <paramref name="skel"/>, a bone attachment standing at its bone's pose.</summary>
+    static Transform3D InSkeleton(Node n, Skeleton3D skel)
+    {
+        var t = Transform3D.Identity;
+        while (n != null && n != skel)
+        {
+            if (n is BoneAttachment3D ba && ba.GetParent() is Skeleton3D s)
+            {
+                int b = s.FindBone(ba.BoneName);
+                if (b >= 0) t = s.GetBoneGlobalPose(b) * t;
+                n = s;
+                continue;
+            }
+            if (n is Node3D n3) t = n3.Transform * t;
+            n = n.GetParent();
+        }
+        return t;
+    }
+
+    /// <summary>
+    /// FUN_141424d00's pick over a part's meshes in the skeleton's space: the front-facing triangle hits of the ray, the nearest
+    /// to the origin in <paramref name="nearest"/> (the first of equals, as equipment.cpp:2878-2884 keeps it).
+    /// <paramref name="empty"/> is false when the part has any mesh to test.
+    /// </summary>
+    static bool PickMeshes(Part part, Skeleton3D skel, Vector3 origin, Vector3 dir, out Vector3 nearest, out bool empty)
+    {
+        empty = true; nearest = default;
+        bool any = false; float best = 0;
+        foreach (var (mi, m) in part.Picks)
+        {
+            if (!GodotObject.IsInstanceValid(mi) || mi.IsQueuedForDeletion()) continue;
+            empty = false;
+            if (m.Positions == null || m.Indices == null) continue;
+            var p = SkeletonPositions(mi, m, skel);
+            for (int i = 0; i + 2 < m.Indices.Length; i += 3)
+            {
+                if (!IntersectFront(origin, dir, p[m.Indices[i]], p[m.Indices[i + 1]], p[m.Indices[i + 2]], out var hit)) continue;
+                float d = (hit - origin).Length();
+                if (!any || best > d) { nearest = hit; best = d; }
+                any = true;
+            }
+        }
+        return any;
+    }
+
+    /// <summary>A mesh's vertices in the skeleton's space as drawn (a skinned one through its skeleton's pose and binds).</summary>
+    static Vector3[] SkeletonPositions(MeshInstance3D mi, ModelMesh m, Skeleton3D skel)
+    {
+        int nv = m.Positions.Length / 3;
+        var o = new Vector3[nv];
+        if (m.Skinned && mi.Skin is { } skin && mi.GetNodeOrNull<Skeleton3D>(mi.Skeleton) is { } s && m.Joints != null && m.Weights != null)
+        {
+            var toSkel = InSkeleton(s, skel);
+            var mats = new Transform3D[skin.GetBindCount()];
+            for (int j = 0; j < mats.Length; j++)
+            {
+                int b = skin.GetBindBone(j);
+                mats[j] = toSkel * (b >= 0 && b < s.GetBoneCount() ? s.GetBoneGlobalPose(b) : Transform3D.Identity) * skin.GetBindPose(j);
+            }
+            for (int v = 0; v < nv; v++)
+            {
+                var pos = new Vector3(m.Positions[v * 3], m.Positions[v * 3 + 1], m.Positions[v * 3 + 2]);
+                var acc = Vector3.Zero;
+                for (int k = 0; k < 4; k++)
+                {
+                    float w = m.Weights[v * 4 + k];
+                    int j = m.Joints[v * 4 + k];
+                    if (w != 0 && j >= 0 && j < mats.Length) acc += mats[j] * pos * w;
+                }
+                o[v] = acc;
+            }
+            return o;
+        }
+        var t = InSkeleton(mi, skel);
+        for (int v = 0; v < nv; v++) o[v] = t * new Vector3(m.Positions[v * 3], m.Positions[v * 3 + 1], m.Positions[v * 3 + 2]);
+        return o;
+    }
+
+    /// <summary>NiCollisionUtils::IntersectTriangle (NiCollisionUtils.inl:73) with culling: a front face (det at least the
+    /// tolerance) hit at r >= 0 along the ray.</summary>
+    static bool IntersectFront(Vector3 origin, Vector3 dir, Vector3 v1, Vector3 v2, Vector3 v3, out Vector3 hit)
+    {
+        const float tolerance = 1e-05f, epsilon = 1e-10f;
+        hit = default;
+        var e1 = v2 - v1; var e2 = v3 - v1;
+        var pt = dir.Cross(e2);
+        float det = e1.Dot(pt);
+        if (det < tolerance) return false;
+        var sv = origin - v1;
+        float s = sv.Dot(pt);
+        if (s < -epsilon || s > det) return false;
+        var q = sv.Cross(e1);
+        float t = dir.Dot(q);
+        if (t < -epsilon || s + t > det) return false;
+        float r = e2.Dot(q);
+        if (r < -epsilon) return false;
+        hit = origin + (r * (1.0f / det)) * dir;
         return true;
     }
 
@@ -359,8 +554,9 @@ public sealed class EquipApplier
             else
             {
                 List<WeaponHook> hooks = null;
-                var made = isNif ? Attach(skel, body, md, asset, item, gender, subtype, out hooks) : AttachKfm(part, skel, body, asset, item, gender, -1);
+                var made = isNif ? Attach(part, skel, body, md, asset, item, gender, subtype, out hooks) : AttachKfm(part, skel, body, asset, item, gender, -1);
                 if (made == null) { MissingIds.Add(item.Id); continue; }
+                part.CapScale ??= CapScaleOf(asset);
                 if (hooks != null) AddWeaponBindings(part.Bindings, skel, body, asset, slotName, item, gender, subtype, hooks);
                 if (md != null) NoteNodes(part, md);
                 if (DyeOf(item, im) is { } dye)
@@ -374,6 +570,7 @@ public sealed class EquipApplier
             {
                 var p = AttachKfm(part, skel, body, pony, item, gender, ponyIndex++);
                 if (p == null) continue;
+                part.CapScale ??= CapScaleOf(pony);
                 if (DyeOf(item, im) is { } pd)
                     foreach (var n in p) SetColors(n, false, pd.Primary, pd.Secondary, pd.Tertiary);
                 Skin(look, p);
@@ -565,7 +762,7 @@ public sealed class EquipApplier
         return v;
     }
 
-    List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender,
+    List<MeshInstance3D> Attach(Part part, Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender,
         int subtype, out List<WeaponHook> weaponHooks)
     {
         var made = new List<MeshInstance3D>();
@@ -630,7 +827,8 @@ public sealed class EquipApplier
                 string target = sheathedTarget ?? "Bip01 Head";
                 string bone = target;
                 var targetLocal = Transform3D.Identity;     // the target node relative to its bone
-                var rel = SelfRelative(md, m, selfName);
+                var root = SelfRootOf(md, m, selfName);
+                Transform3D? rel = root is { } sr ? sr.Local * sr.Rel : null;
                 if (skel.FindBone(bone) < 0 && replace && rel != null)
                     bone = "Bip01 Head";
                 else if (skel.FindBone(bone) < 0)
@@ -648,10 +846,11 @@ public sealed class EquipApplier
                 var baseLocal = rel is { } r ? r : (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 mi.Transform = targetLocal * dummy * baseLocal;
                 att.AddChild(mi);
+                if (root is { } ro) part.Roots.Add(new SelfRoot { Key = ro.Key, Node = mi, Prefix = targetLocal * dummy, Local = ro.Local, Rel = ro.Rel });
                 if (!selfNodesMade && rel != null)
                 {
                     selfNodesMade = true;
-                    SelfNodes(att, md, selfName, targetLocal * dummy);
+                    SelfNodes(part, att, md, selfName, targetLocal * dummy);
                 }
                 Transform3D? point = pointBone >= 0
                     ? (parentWorld * ModelBuilder.ToGodot(m.Local)).AffineInverse() * ModelBuilder.ToGodot(md.Bones[pointBone].World) : null;
@@ -659,6 +858,7 @@ public sealed class EquipApplier
             }
             ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name), mb);
             made.Add(mi);
+            part.Picks.Add((mi, m));
         }
         return made;
     }
@@ -978,6 +1178,9 @@ public sealed class EquipApplier
         }
         var made = root.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
         foreach (var mi in made) mi.SetMeta("mesh", mi.Name.ToString());
+        // ModelBuilder.Build names each mesh node after its ModelMesh
+        foreach (var mi in made)
+            if (md.Meshes.FirstOrDefault(x => x.Name == mi.Name.ToString()) is { } mm) part.Picks.Add((mi, mm));
         return made;
     }
 
@@ -990,7 +1193,7 @@ public sealed class EquipApplier
     /// named in <see cref="ItemNodeMeta"/>: an attach type 2 effect part names such a node (FUN_14154d410 walks the
     /// owner's nodes for the name) and hangs on its parent at it. Freed with the attach node.
     /// </summary>
-    static void SelfNodes(BoneAttachment3D att, ModelData md, string selfName, Transform3D onAttach)
+    static void SelfNodes(Part part, BoneAttachment3D att, ModelData md, string selfName, Transform3D onAttach)
     {
         bool Self(int b) => md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal);
         bool Under(int b) { for (int u = md.Bones[b].Parent; u >= 0; u = md.Bones[u].Parent) if (Self(u)) return true; return false; }
@@ -1001,26 +1204,29 @@ public sealed class EquipApplier
             var n = new Node3D { Name = $"{att.Name}_node_{name}".ValidateNodeName(), Transform = onAttach * ModelBuilder.ToGodot(md.Bones[b].Rest) };
             n.SetMeta(ItemNodeMeta, name);
             att.AddChild(n);
+            part.Roots.Add(new SelfRoot { Key = "bone:" + md.Bones[b].Name, Node = n, Prefix = onAttach, Local = ModelBuilder.ToGodot(md.Bones[b].Rest), Rel = Transform3D.Identity });
         }
     }
 
     /// <summary>
     /// A rigid mesh relative to its self node's attach point (the client's self-node collection): the outermost node on
     /// the mesh's path, the mesh included, whose name starts with selfName keeps its local transform and carries the
-    /// rest. Null when no node on the path matches.
+    /// rest: the root (Key), its local transform and the mesh relative to it (the placement is Local * Rel). Null when no
+    /// node on the path matches.
     /// </summary>
-    static Transform3D? SelfRelative(ModelData md, ModelMesh m, string selfName)
+    static (string Key, Transform3D Local, Transform3D Rel)? SelfRootOf(ModelData md, ModelMesh m, string selfName)
     {
         if (string.IsNullOrEmpty(selfName)) return null;
         var local = ModelBuilder.ToGodot(m.Local);
         var parentWorld = m.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[m.ParentBone].World) : Transform3D.Identity;
-        if (md.RootName == selfName) return ModelBuilder.ToGodot(md.RootLocal) * parentWorld * local;
+        if (md.RootName == selfName) return ("root", ModelBuilder.ToGodot(md.RootLocal), parentWorld * local);
         int top = -1;
         for (int b = m.ParentBone; b >= 0; b = md.Bones[b].Parent)
             if (md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal)) top = b;
         if (top >= 0)
-            return ModelBuilder.ToGodot(md.Bones[top].Rest) * ModelBuilder.ToGodot(md.Bones[top].World).AffineInverse() * parentWorld * local;
-        if (m.FileName != null && m.FileName.StartsWith(selfName, StringComparison.Ordinal)) return local;
+            return ("bone:" + md.Bones[top].Name, ModelBuilder.ToGodot(md.Bones[top].Rest),
+                ModelBuilder.ToGodot(md.Bones[top].World).AffineInverse() * parentWorld * local);
+        if (m.FileName != null && m.FileName.StartsWith(selfName, StringComparison.Ordinal)) return ("mesh:" + m.Name, local, Transform3D.Identity);
         return null;
     }
 }
