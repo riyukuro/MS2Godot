@@ -178,6 +178,7 @@ static class Gms2Opcodes {
         [Inbound.SetCraftMode] = 0x6A,
         [Inbound.MinimapPing] = 0x123,
         [Inbound.CharacterAbility] = 0xE1,
+        [Inbound.ShadowExpedition] = 0xE3,
         [Inbound.UserEnv] = 0xAA,
         [Inbound.Mastery] = 0xCF,
         [Inbound.HomeCommand] = 0xB9,

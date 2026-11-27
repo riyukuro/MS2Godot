@@ -182,6 +182,7 @@ public enum Inbound : ushort {
     MinimapPing = 0x121,    // RecvOp MinimapPing (commonfiles/opcodes.h:288): CSceneStateGame::OnMinimapPing
     NpcSkillSpread = 0x130, // no RecvOp name (commonfiles/opcodes.h): CSceneStateGame::FUN_141720c60 (scenestategame.cpp:1533, :7677), a debug range shape
     CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
+    ShadowExpedition = 0xE1,    // RecvOp ShadowExpedition (commonfiles/opcodes.h:230): FieldGameScoreBoardCli::FUN_140f9c300 @0x140f9c300 (uishadowexpeditionbossbar.cpp, registered in its ctor @0x140f9c1e0)
     UserEnv = 0xA8,
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery
     HomeCommand = 0xB7,

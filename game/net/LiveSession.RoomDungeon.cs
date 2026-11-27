@@ -54,6 +54,9 @@ public partial class LiveSession
     /// <summary>UIDungeonLobby::OnRoomPacket (@0x140e17930): the server's DungeonWaiting packet, the lobby's room and size.</summary>
     public event Action<Ms2.Net.Packets.DungeonWaiting> DungeonWaitingReceived;
 
+    /// <summary>FieldGameScoreBoardCli::FUN_140f9c300 (@0x140f9c300, uishadowexpeditionbossbar.cpp): the server's ShadowExpedition packet, the boss bar's open, update and close.</summary>
+    public event Action<Ms2.Net.Packets.FieldGameScoreBoardPacket> ShadowExpeditionReceived;
+
     /// <summary>UIDungeonRewardDialog::OnPacket (@0x140e22130): the server's DungeonReward packet.</summary>
     public event Action<Ms2.Net.Packets.DungeonRewardPacket> DungeonRewardReceived;
 

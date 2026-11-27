@@ -3086,6 +3086,12 @@ public partial class LiveSession : Node
                 GD.Print($"live: dungeon waiting room {dw.RoomId} size {dw.Size}");
                 DungeonWaitingReceived?.Invoke(dw);
             }
+            else if (game.Is(p, Inbound.ShadowExpedition))
+            {
+                var se = Ms2.Net.Packets.FieldGameScoreBoardPacket.Read(p.Reader());   // FieldGameScoreBoardCli::FUN_140f9c300 (uishadowexpeditionbossbar.cpp)
+                GD.Print($"live: shadow expedition type {se.Type} mode {se.Mode} {se.Cur}/{se.Max}");
+                ShadowExpeditionReceived?.Invoke(se);
+            }
             else if (game.Is(p, Inbound.DungeonReward))
             {
                 var dr = Ms2.Net.Packets.DungeonRewardPacket.Read(p.Reader());   // UIDungeonRewardDialog::OnPacket (uidungeonrewarddialog.cpp:386)

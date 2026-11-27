@@ -1651,6 +1651,7 @@ public partial class HudScene : Node, IUiStageHost
         damageText?.ClearAll();                      // FUN_141ad9dc0 -> UIDamageText::ClearAll
         RoomTimerMapChange();
         CloseDungeonLobby();                         // STILL-OPEN: what closes UIDungeonLobby is not traced (HudScene.DungeonLobby.cs)
+        CloseBossBar();                              // STILL-OPEN: what closes the boss bar is not traced (HudScene.ShadowExpeditionBossBar.cs)
         WorldUnLoadComplete();
         CloseHomeMenuOnLeave();
         if (fieldScene != null && IsInstanceValid(fieldScene))
