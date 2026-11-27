@@ -10,11 +10,9 @@ namespace Ms2Godot;
 /// "(distance)" curve from the listener (<see cref="DistanceRolloff"/>, see FieldAudio.Rolloff.cs), set by <see cref="RollOff"/>;
 /// a 2D event (Tria's town ambience AMB/11100015) is not attenuated or panned; a 3D event without a curve keeps Godot's
 /// inverse distance from 60 (or its min) to its max (or SoundRadius).
-/// The field load creates them for every MS2Sound entity with a sound event except the trigger objects (WorldService's entity
-/// add, worldservice_1.cpp:10336-10350, skips an entity whose model contains MS2TriggerObject): a trigger sound of kind AMB
-/// starts only on its Trigger packet event (<see cref="SetTriggerSound"/>).
-/// STILL-OPEN: the same load skips an entity with timeShowEnabled set (the day / night ambience, MS2TimeAmbSetting), which is not
-/// ported; those still play from the load here.
+/// The field load creates them for the MS2Sound entities with a sound event that <see cref="EnvironmentSounds.MadeAtLoad"/>
+/// accepts (WorldService's entity add, worldservice_1.cpp:10336-10350): not a trigger object, and timeShowEnabled not set.
+/// A trigger sound of kind AMB starts only on its Trigger packet event (<see cref="SetTriggerSound"/>).
 /// </summary>
 public partial class AmbientSounds : Node3D
 {
@@ -87,7 +85,7 @@ public partial class AmbientSounds : Node3D
     {
         foreach (var e in map.Entities)
         {
-            if (!e.HasMixin("MS2Sound") || e.HasMixin("MS2TriggerObject")) continue;
+            if (!EnvironmentSounds.MadeAtLoad(e)) continue;
             Create(e);
         }
     }
