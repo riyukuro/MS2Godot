@@ -87,6 +87,14 @@ public partial class LiveSession
         remote?.HitCandidates(into);
     }
 
+    /// <summary>Another player of the field as a hit candidate (<see cref="RemoteLayer.TryPcCandidate"/>); false for any
+    /// other id and before the field is built.</summary>
+    public bool TryPcCandidate(int id, out HitCandidate c)
+    {
+        c = default;
+        return remote != null && remote.TryPcCandidate(id, out c);
+    }
+
     /// <summary>The cast id of a new own cast: GenerateUniqueId over the server time (offline the local clock).</summary>
     public static long NewCastId() =>
         Ms2.Net.Packets.UniqueId.Next(Instance?.GameSession?.ServerTime ?? System.DateTimeOffset.UtcNow.ToUnixTimeSeconds());

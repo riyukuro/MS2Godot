@@ -617,17 +617,28 @@ public sealed partial class RemoteLayer : Node3D
     {
         var party = LiveSession.Instance?.Party;
         foreach (var (id, r) in users)
-        {
-            if (r.Pc == null) continue;
-            var p = r.Pc.Position;
-            long partyId = party is { PartyId: not 0 } && party.Find(r.CharacterId) != null ? party.PartyId : 0;
-            into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
-                Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId,
-                PvpOnOff = r.Buffs.IsPvpOnOff,
-                ForceApplyTarget = r.Buffs.ForceApplyTarget, Hidden = r.Buffs.IsHidden,
-                StateId = r.Pc.States.Cur, Invincible = r.Buffs.Invincible });
-        }
+            if (r.Pc != null) into.Add(PcCandidate(id, r, party));
         npcs.HitCandidates(into);
+    }
+
+    static Ms2.Ui.Skills.HitCandidate PcCandidate(int id, Remote r, PartyBook party)
+    {
+        var p = r.Pc.Position;
+        long partyId = party is { PartyId: not 0 } && party.Find(r.CharacterId) != null ? party.PartyId : 0;
+        return new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
+            Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId,
+            PvpOnOff = r.Buffs.IsPvpOnOff,
+            ForceApplyTarget = r.Buffs.ForceApplyTarget, Hidden = r.Buffs.IsHidden,
+            StateId = r.Pc.States.Cur, Invincible = r.Buffs.Invincible };
+    }
+
+    /// <summary>Another player of the field as <see cref="HitCandidates"/> has it (WorldService::FUN_141bd1200 finding a PC);
+    /// false for any other id.</summary>
+    public bool TryPcCandidate(int id, out Ms2.Ui.Skills.HitCandidate c)
+    {
+        if (users.TryGetValue(id, out var r) && r.Pc != null) { c = PcCandidate(id, r, LiveSession.Instance?.Party); return true; }
+        c = default;
+        return false;
     }
 
     /// <summary>The object kind of a remote object id: PCBase 3 for a user (pcbase.cpp:1092), an npc's 5 or 6, else 0.</summary>

@@ -507,6 +507,20 @@ public static class SkillHit
     [ThreadStatic] static List<int> pickScratch;
 
     /// <summary>
+    /// PC::vfunc_122 @0x14165f5d0 (pc.cpp:3112) of PC <paramref name="self"/> on PC <paramref name="other"/>. With the field's
+    /// <paramref name="pkMode"/> it is hostile unless it is the PC itself, the two share a nonzero party id (FUN_141661bc0), or
+    /// either has pvp on/off set. Without it, a HasPvPPoint mismatch is never hostile, and otherwise the teams decide
+    /// (PCBase::vfunc_122 @0x1416781c0, pcbase.cpp:2784: vfunc_116 differs).
+    /// </summary>
+    public static bool PcHostile(in HitCandidate self, in HitCandidate other, bool pkMode)
+    {
+        if (pkMode)
+            return self.Id != other.Id && !(self.PartyId != 0 && self.PartyId == other.PartyId) && !self.PvpOnOff && !other.PvpOnOff;
+        if (self.PvPPoint != other.PvPPoint) return false;
+        return self.Team != other.Team;
+    }
+
+    /// <summary>
     /// The world query's filter FilterTarget @0x1409ff8d0 (basecollision.cpp:784): can <paramref name="self"/> target
     /// <paramref name="other"/>. Flags: 1 hostile, 2 friendly, 4 the hidden ones too, 8 owner-less pets; a set bit of
     /// <paramref name="npcKinds"/> (applyTargetIgnoreNpcRanks) drops an npc of that class. Hostile means the caster's team is 2 or
@@ -526,9 +540,8 @@ public static class SkillHit
         if (other.Kind == HitKind.Pet) return (flags & 8) != 0 && !other.PetOwned;
         if (self.Kind == HitKind.Pc && other.Kind == HitKind.Pc && self.PvPPoint != other.PvPPoint) return false;
         if (npcKinds != 0 && other.Kind == HitKind.Npc && (npcKinds & (1 << other.NpcClass)) != 0) return false;
-        bool hostile = self.Team == 2 || (pkMode && self.Kind == HitKind.Pc && other.Kind == HitKind.Pc
-            ? self.Id != other.Id && !(self.PartyId != 0 && self.PartyId == other.PartyId)
-                && !self.PvpOnOff && !other.PvpOnOff
+        bool hostile = self.Team == 2 || (self.Kind == HitKind.Pc && other.Kind == HitKind.Pc
+            ? PcHostile(self, other, pkMode)
             : self.Team != other.Team);
         if ((flags & 1) != 0 && hostile)
         {

@@ -60,10 +60,11 @@ public sealed class DamageTarget(Node3D root, Func<Vector3> point, bool pc, Func
 /// The DamageMovie: the Exp glyph before the digits (no such class in the KR Live or the restore movie: preGradeText
 /// reads its x of null, the init throws and an exp gain shows nothing), the Meso glyph after them (moved to child 0), the item's icon
 /// (the ItemMovie's "icon" with the item image fitted to its width) before them; the ani's mesoeff at child 0.</item>
+/// <item>Target name: another player's number is User or Monster by its bUser (<see cref="DamageTextNames.TargetUser"/>,
+/// the PvP and pk hostility and the caster's forceApplyTarget bit 2), the own PC's always User, an npc's Monster.</item>
 /// </list>
-/// STILL-OPEN: a summon's numbers as the own (bMySummon),
-/// observer mode, PC::vfunc_122's pvp and pk rules and the caster's forceApplyTarget bit 2 (another PC is always User
-/// here), m_nRepeat (a dev repeat, 1).
+/// STILL-OPEN: a summon's numbers as the own (bMySummon: no summon owner reaches the port), observer mode,
+/// HasPvPPoint (not fed, so equal on every PC), m_nRepeat (a dev repeat, 1).
 /// </summary>
 public sealed partial class DamageText : CanvasLayer
 {
@@ -339,7 +340,7 @@ public sealed partial class DamageText : CanvasLayer
     public void OnNpc(FieldNpcs.Placed n, long value, int grade, bool casterMe = true, int gem = 0)
     {
         if (!Ready() || n?.Root == null) return;
-        Spawn(NpcTarget(n), value, grade, casterMe, gem);
+        Spawn(NpcTarget(n), value, grade, casterMe, gem, true);
     }
 
     /// <summary>CNpc::FlushDamageText (@0x141093910): an npc's exp at the end of its death sequence, FUN_141912a80 type 0 on
@@ -358,19 +359,20 @@ public sealed partial class DamageText : CanvasLayer
         return t;
     }
 
-    /// <summary>A number on another player (RemoteLayer's target for it); <paramref name="casterMe"/> when the local player dealt it.</summary>
-    public void OnPc(DamageTarget pc, long value, int grade, bool casterMe, int gem = 0)
+    /// <summary>A number on another player (RemoteLayer's target for it); <paramref name="casterMe"/> when the local player dealt it,
+    /// <paramref name="user"/> its bUser (<see cref="DamageTextNames.TargetUser"/>): the User look, else the Monster one.</summary>
+    public void OnPc(DamageTarget pc, long value, int grade, bool casterMe, int gem = 0, bool user = true)
     {
         if (!Ready() || pc == null || pc.Gone) return;
         if (!targets.TryGetValue(pc.Root, out var t) || t.Gone) targets[pc.Root] = t = pc;
-        Spawn(t, value, grade, casterMe, gem);
+        Spawn(t, value, grade, casterMe, gem, user);
     }
 
     /// <summary>A number on the own PC.</summary>
     public void OnPlayer(long value, int grade)
     {
         if (!Ready() || self == null) return;
-        Spawn(self, value, grade, false, 0);
+        Spawn(self, value, grade, false, 0, true);
     }
 
     /// <summary>
@@ -428,14 +430,14 @@ public sealed partial class DamageText : CanvasLayer
     /// (@0x1419175c0): recover grades go to the followers, the others to the normals, the own numbers appended
     /// (bAppend = myDamage), the clip hidden until its first placement.
     /// </summary>
-    void Spawn(DamageTarget t, long value, int grade, bool casterMe, int gem)
+    void Spawn(DamageTarget t, long value, int grade, bool casterMe, int gem, bool user)
     {
         if (!WithinShowDistance(t)) return;
         var pos = t.Point();
         if (camera.IsPositionBehind(pos)) return;       // world -> screen failed: nothing is created
         bool targetMe = t == self;
         bool mine = targetMe || casterMe;
-        string target = DamageTextNames.TargetKindName(DamageTextNames.TargetKind(t.Pc), true);
+        string target = DamageTextNames.TargetKindName(DamageTextNames.TargetKind(t.Pc), targetMe || user);
         int len = DamageTextNames.ValueChars(value, grade, text);
         string kind = DamageTextNames.ValueKind(grade);
         // obj.gem: the id's text, which the factory finds only once the font is loaded (DamageTextCommon[key + gem])

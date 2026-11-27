@@ -34,6 +34,48 @@ public class DamageTextRulesTests
         Assert.That(DamageTextNames.QuestExp(0xc1e) || DamageTextNames.QuestExp(0xc23) || DamageTextNames.QuestExp(0), Is.False);
     }
 
+    /// <summary>
+    /// A number on another player names its target User or Monster by bUser (uidamagetext.cpp:356-372): the target's
+    /// PC::vfunc_122 on a PC caster (pc.cpp:3112, pcbase.cpp:2784) and the caster's forceApplyTarget bit 2, the own PC always
+    /// User. Every branch of both, with the field's pkMode on and off.
+    /// </summary>
+    [Test]
+    public void TargetUserEveryCase()
+    {
+        static Ms2.Ui.Skills.HitCandidate Pc(int id, long party = 0, bool pvp = false, bool point = false, int team = 1, int fat = 0) =>
+            new() { Id = id, Kind = Ms2.Ui.Skills.HitKind.Pc, Team = team, PartyId = party, PvpOnOff = pvp, PvPPoint = point, ForceApplyTarget = fat };
+        string Name(Ms2.Ui.Skills.HitCandidate target, Ms2.Ui.Skills.HitCandidate caster, bool pk, bool targetMe = false, bool casterPc = true)
+        {
+            bool hostile = Ms2.Ui.Skills.SkillHit.PcHostile(target, caster, pk);
+            return DamageTextNames.TargetKindName(DamageTextNames.TargetKind(true),
+                DamageTextNames.TargetUser(targetMe, casterPc, hostile, caster.ForceApplyTarget));
+        }
+        var cases = new (string what, Ms2.Ui.Skills.HitCandidate target, Ms2.Ui.Skills.HitCandidate caster, bool pk, bool targetMe, bool casterPc, string name)[]
+        {
+            ("same team, no pk", Pc(1), Pc(2), false, false, true, "User"),
+            ("forceApplyTarget 2", Pc(1), Pc(2, fat: 2), false, false, true, "Monster"),
+            ("forceApplyTarget 1", Pc(1), Pc(2, fat: 1), false, false, true, "User"),
+            ("forceApplyTarget 3", Pc(1), Pc(2, fat: 3), false, false, true, "Monster"),
+            ("the target's forceApplyTarget is not read", Pc(1, fat: 2), Pc(2), false, false, true, "User"),
+            ("other team, no pk", Pc(1, team: 0), Pc(2), false, false, true, "Monster"),
+            ("other PvP point, no pk", Pc(1, point: true, team: 0), Pc(2), false, false, true, "User"),
+            ("pk, no party", Pc(1), Pc(2), true, false, true, "Monster"),
+            ("pk, both party 0", Pc(1, party: 0), Pc(2, party: 0), true, false, true, "Monster"),
+            ("pk, same party", Pc(1, party: 7), Pc(2, party: 7), true, false, true, "User"),
+            ("pk, other party", Pc(1, party: 7), Pc(2, party: 8), true, false, true, "Monster"),
+            ("pk, target pvp on/off", Pc(1, pvp: true), Pc(2), true, false, true, "User"),
+            ("pk, caster pvp on/off", Pc(1), Pc(2, pvp: true), true, false, true, "User"),
+            ("pk, the PC itself", Pc(1), Pc(1), true, false, true, "User"),
+            ("pk, a PvP point mismatch does not matter", Pc(1, point: true), Pc(2), true, false, true, "Monster"),
+            ("pk, same party with forceApplyTarget 2", Pc(1, party: 7), Pc(2, party: 7, fat: 2), true, false, true, "Monster"),
+            ("the own PC, hostile", Pc(1), Pc(2, fat: 2), true, true, true, "User"),
+            ("a caster that is no PC", Pc(1), Pc(2, fat: 2), true, false, false, "User"),
+        };
+        foreach (var c in cases)
+            Assert.That(Name(c.target, c.caster, c.pk, c.targetMe, c.casterPc), Is.EqualTo(c.name), c.what);
+        Assert.That(DamageTextNames.TargetKindName(DamageTextNames.TargetKind(false), false), Is.EqualTo("Monster"), "an npc target");
+    }
+
     [Test]
     public void FactoryPicks()
     {

@@ -550,13 +550,21 @@ public partial class HudScene
         if (live == null) hitObjects.Clear();
         var g = me.GlobalPosition;
         var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
-        hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, me.FacingRotZ), IsOwner = true,
-            Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0,
-            PvpOnOff = ownBuffs?.IsPvpOnOff ?? false,
-            ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0, Hidden = ownBuffs?.IsHidden ?? false,
-            StateId = live?.OwnCurStateId(OwnSkillStateRuns()) ?? 0, Invincible = ownBuffs?.Invincible ?? 0 });
+        var own = OwnPcRelation(live);
+        own.Position = pos; own.Body = SkillHit.PlayerBody(pos, me.FacingRotZ); own.IsOwner = true; own.Hp = 1;
+        own.Hidden = ownBuffs?.IsHidden ?? false;
+        own.StateId = live?.OwnCurStateId(OwnSkillStateRuns()) ?? 0; own.Invincible = ownBuffs?.Invincible ?? 0;
+        hitObjects.Add(own);
         return pos;
     }
+
+    /// <summary>The own PC's side of PC::vfunc_122 and its forceApplyTarget: its id, a pc of team 1, its party id
+    /// (PC::FUN_141661bc0) and its buff list's pvp on/off and forceApplyTarget bits.</summary>
+    HitCandidate OwnPcRelation(Net.LiveSession live) => new()
+    {
+        Id = live?.SelfObjectId ?? 0, Kind = HitKind.Pc, Team = 1, PartyId = live?.Party?.PartyId ?? 0,
+        PvpOnOff = ownBuffs?.IsPvpOnOff ?? false, ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0,
+    };
 
     /// <summary>vfunc_104(1, 1, 1) at the end step: this frame's press, else the key held (<see cref="PollOwnKey"/>); the queued
     /// cooling record for its own key and skill, but not a continue round queued at the loopend (a new record replaces it);

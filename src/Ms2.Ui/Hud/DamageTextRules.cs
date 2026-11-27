@@ -83,6 +83,20 @@ public static class DamageTextNames
         _ => "",
     };
 
+    /// <summary>
+    /// A hit's bUser (UIDamageText::FUN_141911e90, uidamagetext.cpp:356-372), the <see cref="TargetKindName"/> flag: User when
+    /// the target is the own PC; else, for a PC caster, User only when the target is not hostile to it
+    /// (pTarget->vfunc_122(pCaster) == 0, <paramref name="hostile"/>) and the caster's forceApplyTarget
+    /// (AdditionalCliList::GetForceApplyTarget, additionalcli_2.cpp:593) has no bit 2; any other caster gives User.
+    /// STILL-OPEN: the observer's observed PC (m_bObserver, :366-371), as observer mode is not ported.
+    /// </summary>
+    public static bool TargetUser(bool targetMe, bool casterPc, bool hostile, int casterForceApplyTarget)
+    {
+        if (targetMe) return true;
+        if (!casterPc) return true;
+        return !hostile && (casterForceApplyTarget & 2) == 0;
+    }
+
     /// <summary>FUN_141914890 (@0x141914890): the value of a gain, type 0 exp and 1 meso the number, 2 item "+" and the count.</summary>
     public static string GainValueText(int value, int type) => type switch
     {

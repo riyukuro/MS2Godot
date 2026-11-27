@@ -30,7 +30,7 @@ public partial class HudScene
             int gem = DamageTextNames.GemShows(n.Grade, targetMe) ? World.NpcEmoticons.Live?.WornGemId(n.CasterId, 2) ?? 0 : 0;
             if (targetMe) damageText.OnPlayer(n.Value, n.Grade);
             else if (npc != null) damageText.OnNpc(npc, n.Value, n.Grade, casterMe, gem);
-            else if (pc != null) damageText.OnPc(pc, n.Value, n.Grade, casterMe, gem);
+            else if (pc != null) damageText.OnPc(pc, n.Value, n.Grade, casterMe, gem, TargetUser(live, n.TargetId, n.CasterId, casterMe));
         };
         Action<int> font = id => damageText?.LoadDamageFont(id);
         Action<long, int> exp = (v, type) => damageText?.OnExp(v, type);
@@ -44,5 +44,20 @@ public partial class HudScene
         live.ItemGained += item;
         World.NpcEmoticons.DamageFontAsked += font;
         unwatchDamage = () => { World.NpcEmoticons.DamageFontAsked -= font; live.DamageNumbered -= on; live.ExpGained -= exp; live.NpcExpShown -= npcExp; live.MesoGained -= meso; live.ItemGained -= item; };
+    }
+    /// <summary>
+    /// The bUser of a number on another player (uidamagetext.cpp:356-372, <see cref="DamageTextNames.TargetUser"/>): the
+    /// caster found as a PC (WorldService::FUN_141bd1200, GetTargetKind 0), the own PC or another player, then the target's
+    /// PC::vfunc_122 on it (<see cref="Ms2.Ui.Skills.SkillHit.PcHostile"/> with the field's pkMode) and the caster's
+    /// forceApplyTarget; a caster that is no PC of the field gives User.
+    /// </summary>
+    bool TargetUser(Net.LiveSession live, int targetId, int casterId, bool casterMe)
+    {
+        if (!live.TryPcCandidate(targetId, out var target)) return true;
+        Ms2.Ui.Skills.HitCandidate caster;
+        if (casterMe) caster = OwnPcRelation(live);
+        else if (!live.TryPcCandidate(casterId, out caster)) return true;
+        bool hostile = Ms2.Ui.Skills.SkillHit.PcHostile(target, caster, (slotField?.PkMode ?? 0) != 0);
+        return DamageTextNames.TargetUser(false, true, hostile, caster.ForceApplyTarget);
     }
 }
