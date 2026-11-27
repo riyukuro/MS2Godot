@@ -288,7 +288,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors = null;
         CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
         GuideEvent?.Hide();                 // UIGuideEvent::vfunc_3 (:877): the tips are dropped with the scene
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null; liveSession.DungeonRecords.Rooms = null;
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.SetVisibleUiOf = null; liveSession.DungeonRoomOf = null; liveSession.DungeonRecords.Rooms = null;
             liveSession.GuideKeysOf = null; liveSession.GuideKeyDownOf = null; if (liveSession.GuideHud == this) liveSession.GuideHud = null; }
         unwatchNotices?.Invoke();
         unwatchNotices = null;
@@ -1005,6 +1005,7 @@ public partial class HudScene : Node, IUiStageHost
                 guideDialogLookup = name => Ms2.Ui.Guide.GuideDialogLookup.Resolve(name, open);
             }
             live.FindDialogOf = guideDialogLookup;      // the guide's dialog conditions over the HUD's dialogs
+            live.SetVisibleUiOf = (state, names) => Ms2.Ui.Hud.TriggerVisibleUi.Apply(state, names, MovieDialog.Live, ChatLog);
             live.OwnSkillStateRunsOf = OwnSkillStateRuns;      // the guide's state id while the own cast runs (this HUD)
             live.GuideKeysOf = () => hudModel?.Keys;           // the guide's key conditions (this HUD's key table, which HudModel replaces)
             live.GuideKeyDownOf = GuideKeyDown;

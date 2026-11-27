@@ -34,6 +34,11 @@ public partial class LiveSession
     /// tables hold names the dialog by, an id always with its name.
     /// </summary>
     public Func<string, GuideDialog> FindDialogOf { get; set; }
+    /// <summary>
+    /// The trigger's SetVisibleUI (type 0x14, FUN_141862d30, triggerservice.cpp:707-722) over the HUD's UI objects: the state
+    /// and the comma list, giving the names that found an object; null before the HUD runs.
+    /// </summary>
+    public Func<int, string, List<string>> SetVisibleUiOf { get; set; }
     /// <summary>Whether the own skill state runs (the HUD's cast), for the guide's state id (<see cref="OwnCurStateId"/>).</summary>
     public Func<bool> OwnSkillStateRunsOf { get; set; }
     /// <summary>The HUD's key table (CKeyTable, GetKeyTable), which the guide's key conditions read; null before the HUD runs.</summary>

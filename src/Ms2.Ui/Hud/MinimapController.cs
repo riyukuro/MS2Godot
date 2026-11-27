@@ -23,6 +23,7 @@ public sealed partial class MinimapController : UiController
 
     /// <summary>UIMinimapDialog's ctor sets the flag 0 (uiminimapentity.cpp:1082): vfunc_56, an always-on one.</summary>
     public override bool AlwaysOn => true;
+    public override string TypeName => "MinimapDialog";     // GetTypeName @0x141a35ba0 (uiminimapentity.cpp:1099)
 
     /// <summary>OnWorldMap: CUIService::ToggleDialog(0x4e42), the world map.</summary>
     public event Action WorldMap;

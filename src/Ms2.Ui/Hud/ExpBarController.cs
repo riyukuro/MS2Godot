@@ -8,6 +8,7 @@ public sealed class ExpBarController : UiController
     public override string Movie => "uiexpbar";
     protected override string EntityMethod => "setExp";
     protected override bool IsDialog => false;          // a UIObject, not a UIDialog
+    public override string TypeName => "ExpBar";        // GetTypeName @0x141931f90 (uiexpbar.cpp:94)
 
     /// <summary>CGameOption status m_bShowPoint: the percent label on the bar.</summary>
     public bool ShowPoint = true;

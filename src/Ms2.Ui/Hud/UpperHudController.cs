@@ -7,6 +7,7 @@ namespace Ms2.Ui.Hud;
 public sealed class UpperHudController : UiController
 {
     protected override bool IsDialog => false;          // UIHeadUpDisplay is a UIObject, not a UIDialog (uiheadupdisplay.h)
+    public override string TypeName => "UpperHudDialog";    // GetTypeName @0x141353e80 (uiupperhuddialog.cpp:245)
 
     public override string Movie => "uiupperhuddialog";
     protected override string EntityMethod => "arrangePos";

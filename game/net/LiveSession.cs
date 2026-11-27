@@ -1917,7 +1917,17 @@ public partial class LiveSession : Node
                     if (SidePopupReceived != null) SidePopupReceived(popup); else TriggerNotApplied(type, popup.Kind);
                     return true;
                 }
-                case TriggerObjects.SetVisibleUi: TriggerNotApplied(type, TriggerObjects.ReadSetVisibleUi(r).State); return true;
+                case TriggerObjects.SetVisibleUi:
+                {
+                    var v = TriggerObjects.ReadSetVisibleUi(r);
+                    if (SetVisibleUiOf is { } apply)
+                    {
+                        var found = apply(v.State, v.Names);
+                        GD.Print($"live: set visible ui {v.State} '{v.Names}' -> {(found.Count == 0 ? "no object" : string.Join(",", found))}");
+                    }
+                    else TriggerNotApplied(type, v.State);
+                    return true;
+                }
                 case TriggerObjects.DuelHpBar: { var bar = TriggerObjects.ReadDuelHpBar(r); if (DuelHpBarReceived != null) DuelHpBarReceived(bar); else TriggerNotApplied(type, bar.Show ? (byte)1 : (byte)0); return true; }
                 default: return false;
             }
