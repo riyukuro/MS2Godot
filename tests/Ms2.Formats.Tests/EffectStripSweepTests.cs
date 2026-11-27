@@ -180,7 +180,7 @@ public class EffectStripSweepTests
                 }
             }
         }
-        int withSystems = 0, notFirst = 0;
+        int withSystems = 0, notFirst = 0, zeroAlpha = 0;
         var spec = new Ms2.Formats.Nif.NifSpec(NifEnv.NifXml());
         foreach (var nif in swooshNifs)
         {
@@ -194,6 +194,18 @@ public class EffectStripSweepTests
                 continue;
             }
             if (n.Blocks[w.Block].Type != "NiMesh" || sc.Meshes.Any(m => m.Master && m.Mesh.Block == w.Block)) bad.Add($"swoosh nif {nif}: walked mesh {w.Name} is {n.Blocks[w.Block].Type} or a master");
+            // The swoosh copies the walked mesh's own properties (swoosheffectparam.cpp:371-390): its NiMaterialProperty with
+            // the controllers set to their begin key, and its NiVertexColorProperty over a white COLOR stream (:606-608).
+            // SwooshEffect draws the static material alpha as the opacity, which is the client's while no material
+            // controller moves it and the vertex colour does not stand in for the opacity (ModelMesh.VertexColors: source
+            // EMISSIVE under LIGHTING_E, or AMB_DIFF under E_A_D).
+            int vcSrc = (w.VertexColorFlags >> 4) & 3;
+            bool lightingE = w.VertexColorFlags >= 0 && (w.VertexColorFlags & 8) == 0;
+            if (w.VertexColorFlags >= 0 && (vcSrc == 1 && lightingE || vcSrc == 2 && !lightingE)) bad.Add($"swoosh nif {nif}: walked mesh {w.Name} takes its opacity from the vertex colour (flags {w.VertexColorFlags})");
+            foreach (var pi in n.Blocks[w.Block].TryGetValue("Properties", out var pv) && pv is long[] pl ? pl : Array.Empty<long>())
+                if (pi >= 0 && n.Blocks[(int)pi].Type == "NiMaterialProperty" && n.Blocks[(int)pi].IntOr("Controller", -1) >= 0)
+                    bad.Add($"swoosh nif {nif}: walked mesh {w.Name} has a material controller");
+            if (w.MaterialAlpha <= 0) { zeroAlpha++; TestContext.Out.WriteLine($"  swoosh nif {nif}: walked mesh {w.Name} has material alpha {w.MaterialAlpha} (drawn unseen, as the client)"); }
             if (sc.Meshes.Count == 0 || w.Block != sc.Meshes[0].Mesh.Block)
             {
                 notFirst++;
@@ -201,7 +213,7 @@ public class EffectStripSweepTests
                 TestContext.Out.WriteLine($"  swoosh nif {nif}: walked mesh {w.Name} (block {w.Block}{(sc.Meshes.Any(m => m.Mesh.Block == w.Block) ? "" : ", culled")}: base {w.Textures.GetValueOrDefault("base")}, blend {w.Blend}, alpha {w.MaterialAlpha}), not {f?.Name} (base {f?.Textures.GetValueOrDefault("base")}, blend {f?.Blend}, alpha {f?.MaterialAlpha})");
             }
         }
-        TestContext.Out.WriteLine($"{env}: {swooshNifs.Count} swoosh nifs, {withSystems} with a particle system, {notFirst} whose walked mesh is not the scene's first");
+        TestContext.Out.WriteLine($"{env}: {swooshNifs.Count} swoosh nifs, {withSystems} with a particle system, {notFirst} whose walked mesh is not the scene's first, {zeroAlpha} at material alpha 0");
         string Of(string k) => $"{count.GetValueOrDefault(k)} parts / {xmlsOf.GetValueOrDefault(k)?.Count ?? 0} xmls";
         TestContext.Out.WriteLine($"{env}: {xmls} xmls ({unreadable} unreadable); swoosh {Of("swoosh")}, ribbon {Of("ribbon")}, lightning {Of("lightning")}, beam {Of("beam")}, afterImage {Of("afterImage")}, status {Of("status")}; {nested} nested, {notMade} not made (no loop, duration 0)");
         TestContext.Out.WriteLine($"{env}: swoosh: {swooshTex} texture, {swooshNif} nif, {swooshNeither} neither; quality cut to 4 on {qualityCut}, sampling cut to 60 on {samplingCut}; alpha swoosh/standard/add {alpha[0]}/{alpha[1]}/{alpha[2]}; step 3 makes {step3}, step 2 makes none of {step2None}; most curve samples {maxCurve}");
