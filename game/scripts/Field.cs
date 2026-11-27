@@ -46,6 +46,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
     Ms2Bloom bloom;
     GlowPass glow;
     Godot.Environment environment;
+    XDocument mapXBlock;         // the field's mapxblock, whose minimap a trigger backdrop moves by too
     DirectionalLight3D sunLight;
     float baseAmbient, baseSunDim, lightScale = 1f;
     Color ambientColor, sunColor, sunAmbient, sunSpecular;
@@ -437,6 +438,23 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
         frameClock.Restart();
     }
 
+    /// <summary>
+    /// The trigger's ChangeBackground (RecvOp 0xFE, CSceneStateGame::OnChangeBackground @0x14173b380, scenestategame.cpp:6675):
+    /// CUIService::LoadBackground (@0x141ad9a60, uiservice.cpp:545) does nothing for an empty name; otherwise it makes a
+    /// GFxMovieBackground(name, 1, 1), so the new picture scrolls with the camera's pitch and slides with the player's minimap
+    /// x whatever the field's &lt;ui&gt; flags, and GFxManager::LoadBackgroundMovie (@0x1422adc90, gfxmanager.cpp:174) puts it in
+    /// the background slot in place of the field's own. Returns the picture's entry, or null when none is shown.
+    /// STILL-OPEN: the client's later reloads of the field's own background (the UI toggle, scenestategame.cpp:6982; the
+    /// screenshot scene, uiscenegame.cpp:1739; uiservice.cpp:2951) put the bgDay picture back; they are not ported.
+    /// </summary>
+    public string ChangeBackground(string name)
+    {
+        if (string.IsNullOrEmpty(name) || environment == null) return null;
+        backdrop?.Free();
+        backdrop = FieldBackdrop.Load(this, environment, packs, name, true, true, mapXBlock);
+        return backdrop?.Entry;
+    }
+
     /// <summary>A Node3D's visibility does not reach canvas layers: the field's own (the backdrop) are hidden one by one.
     /// The layers are tracked as they enter the field (StagedLayers), not searched for in the whole field every frame.</summary>
     void HideLayers() => (layers ??= new StagedLayers(this)).Hide();
@@ -668,6 +686,7 @@ public partial class Field : Node3D, World.ITargetCamera, World.ILocalCameraFoll
             TonemapMode = Godot.Environment.ToneMapper.Linear,
         };
         AddChild(new WorldEnvironment { Environment = env });
+        mapXBlock = x;
         backdrop = FieldBackdrop.Add(this, env, packs, x, fieldData);
         // The field shader draws the sun itself (ms2_sun_*); from this light it reads only the shadow, which scales the
         // shader's own sun term (field_lit.gdshader light()), so the sun is counted once. Its shadow is the light's

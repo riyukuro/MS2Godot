@@ -1,3 +1,6 @@
+using System.Xml.Linq;
+using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 using Ms2.Formats.World;
 using NUnit.Framework;
 
@@ -72,4 +75,75 @@ public class FieldBackgroundTests
         var forest = FieldData.FindByXBlock(packs, "02000004_bf");    // no flags: CFieldDataCli's default 1
         Assert.That((forest.VScroll, forest.HScroll), Is.EqualTo((1, 1)));
     }
+
+    /// <summary>GFxMovieBackground::GetBackgroundName (gfxmoviebackground.cpp:942): only a name holding ".png" or ".dds" (a
+    /// case-sensitive Find) becomes a BG/ picture; anything else goes to loadBG unchanged.</summary>
+    [Test]
+    public void OnlyAPngOrDdsNameIsABgPicture()
+    {
+        Assert.That(FieldBackground.ImageEntry("BG_Cave_D.dds"), Is.EqualTo("bg/bg_cave_d.dds"));
+        Assert.That(FieldBackground.ImageEntry("SW_BG_Iceage_C.png"), Is.EqualTo("bg/sw_bg_iceage_c.png"));
+        Assert.That(FieldBackground.ImageEntry("BG_Cave_D.DDS"), Is.Null);
+        Assert.That(FieldBackground.ImageEntry("Background"), Is.Null);
+        Assert.That(FieldBackground.ImageEntry(""), Is.Null);
+        Assert.That(FieldBackground.ImageEntry(null), Is.Null);
+    }
+
+    static string Attr(XElement e, string name) =>
+        (string)e.Attributes().FirstOrDefault(a => a.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase)) ?? "";
+
+    static bool IsDds(byte[] b) => b.Length >= 128 && b[0] == (byte)'D' && b[1] == (byte)'D' && b[2] == (byte)'S' && b[3] == (byte)' '
+        && BitConverter.ToInt32(b, 4) == 124;
+
+    /// <summary>
+    /// Every ChangeBackground of the trigger xmls (the Maple2 server sends its dds name as is): the name is a BG picture by
+    /// GetBackgroundName and Image.m2d holds it as a DDS. And every field's own bgDay names the same entry through
+    /// GetBackgroundName as the old bg/ lookup found, so the field backdrop shows what it showed.
+    /// </summary>
+    static void EveryUse(string variable)
+    {
+        using var packs = new PackSet(RcGap.Data(variable));
+        int uses = 0, files = 0;
+        var names = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("trigger/", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e, StringComparer.Ordinal))
+        {
+            var bytes = packs.Read("Xml", entry);
+            if (bytes.AsSpan().IndexOf("ChangeBackground"u8) < 0) continue;
+            XDocument doc;
+            try { doc = PackXml.Parse(bytes); } catch (System.Xml.XmlException) { continue; }
+            var acts = doc.Descendants("action").Where(a => Attr(a, "name").Equals("ChangeBackground", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (acts.Count == 0) continue;
+            files++;
+            foreach (var a in acts)
+            {
+                string name = Attr(a, "dds");
+                uses++;
+                names[name] = names.GetValueOrDefault(name) + 1;
+                string img = FieldBackground.ImageEntry(name);
+                Assert.That(img, Is.Not.Null, $"{entry}: '{name}' is not a picture name");
+                Assert.That(packs.Exists("Resource/Image", img), Is.True, $"{entry}: {img} not in Image.m2d");
+                Assert.That(IsDds(packs.Read("Resource/Image", img)), Is.True, $"{entry}: {img} is not a DDS");
+            }
+        }
+        int fields = 0, pictures = 0;
+        foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("mapxblock/", StringComparison.OrdinalIgnoreCase)))
+        {
+            XDocument x;
+            try { x = PackXml.Parse(packs.Read("Xml", entry)); } catch (System.Xml.XmlException) { continue; }
+            var first = ((string)x.Root?.Element("clientProperty")?.Attribute("bgDay"))?.Split(',')[0].Trim();
+            if (string.IsNullOrEmpty(first)) continue;
+            fields++;
+            string old = "bg/" + first.ToLowerInvariant();
+            if (!packs.Exists("Resource/Image", old)) continue;
+            pictures++;
+            Assert.That(FieldBackground.ImageEntry(first), Is.EqualTo(old), $"{entry}: bgDay '{first}'");
+        }
+        TestContext.Progress.WriteLine($"{variable}: {uses} ChangeBackground uses in {files} files ({string.Join(", ", names.Select(kv => $"{kv.Key} {kv.Value}"))}); "
+            + $"{fields} fields with a bgDay, {pictures} of them on an Image.m2d picture");
+        Assert.That(uses, Is.GreaterThan(0));
+        Assert.That(pictures, Is.GreaterThan(0));
+    }
+
+    [Test] public void EveryKmsUse() => EveryUse("MS2_DATA");
+    [Test] public void EveryGms2Use() => EveryUse("MS2_GMS2_DATA");
 }

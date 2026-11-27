@@ -197,6 +197,7 @@ public enum Inbound : ushort {
     OneTimeEffect = 0xF1,       // RecvOp::OneTimeEffect (commonfiles/opcodes.h:244): CSceneStateGame::OnOneTimeEffect @0x14173a420
     CameraInterpolation = 0xF2, // RecvOp::CameraInterpolation (commonfiles/opcodes.h:245): OnCameraInterpolation @0x14173a5b0, the trigger's camera reset
     TimeScale = 0xF3,           // RecvOp::TimeScale (commonfiles/opcodes.h:246): CSceneStateGame::OnTimeScale @0x14173a5e0
+    ChangeBackground = 0xFE,    // RecvOp::ChangeBackground (commonfiles/opcodes.h:256): CSceneStateGame::OnChangeBackground @0x14173b380 (scenestategame.cpp:6675)
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
     GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates
     DynamicChannel = 0xA7,  // RecvOp DynamicChannel (commonfiles/opcodes.h): CNetworkService::OnDynamicChannel @0x14153c4b0 (networkservice.cpp:977)

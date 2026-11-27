@@ -191,6 +191,7 @@ static class Gms2Opcodes {
         [Inbound.OneTimeEffect] = 0xF3,
         [Inbound.CameraInterpolation] = 0xF4,
         [Inbound.TimeScale] = 0xF5,
+        [Inbound.ChangeBackground] = 0x100,
         [Inbound.GuideRecord] = 0x8B,
         [Inbound.DynamicChannel] = 0xA9,
         [Inbound.ChatStamp] = 0x128,

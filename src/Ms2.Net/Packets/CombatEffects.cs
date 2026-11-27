@@ -55,6 +55,18 @@ public sealed record TimeScale(bool Start, float From, float To, float DurationM
 }
 
 /// <summary>
+/// RecvOp::ChangeBackground 0xFE: CSceneStateGame::OnChangeBackground @0x14173b380 (scenestategame.cpp:6675) reads one narrow
+/// string (CInPacket::ReadString, vtable +0x38 at 0x14173b3bb) and hands it to CUIService::LoadBackground; the body ends there.
+/// </summary>
+public sealed record ChangeBackground(string Name) {
+    public static ChangeBackground Read(ByteReader r) {
+        var p = new ChangeBackground(r.ReadString());
+        r.ExpectEnd("ChangeBackground");
+        return p;
+    }
+}
+
+/// <summary>
 /// SendOp::StateSkill 0x21: StateSkill::UseStateSkill @0x1417eb3a0 (stateskill.cpp:2045-2070), a skill whose action kind
 /// (CSkill::FUN_1407e9bd0) names a player state, sent after the own player enters that state: u8 0, i64 the cast id, i32 the
 /// record's tick, i32 skill id, i16 level, i32 the state, i32 the client's elapsed time (CMainSystem::GetElapsedTime), i64 the

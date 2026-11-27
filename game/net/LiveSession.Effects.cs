@@ -8,7 +8,7 @@ using Ms2Godot.World;
 
 namespace Ms2Godot.Net;
 
-// The combat effects of the scene: InvincibleEffect 0x83, OneTimeEffect 0xF1, TimeScale 0xF3, and the own player's invincible
+// The combat effects of the scene: InvincibleEffect 0x83, OneTimeEffect 0xF1, TimeScale 0xF3, ChangeBackground 0xFE, and the own player's invincible
 // time after a revival.
 public partial class LiveSession
 {
@@ -44,7 +44,17 @@ public partial class LiveSession
         try { return FieldContents.Constants(PackSet.Shared(Settings.DataDir)); } catch { return null; }
     }
 
-    void ClearFieldEffects() => OneTimeEffectLog.Clear();
+    void ClearFieldEffects() { OneTimeEffectLog.Clear(); pendingBackground = null; }
+
+    /// <summary>A ChangeBackground that came before the field was built; null when none.</summary>
+    string pendingBackground;
+
+    /// <summary>The trigger's background on the field (<see cref="Field.ChangeBackground"/>).</summary>
+    void ShowBackground(Field field, string name)
+    {
+        string entry = field.ChangeBackground(name);
+        if (LiveCheck) GD.Print($"live: background '{name}' -> {(entry ?? (string.IsNullOrEmpty(name) ? "nothing (empty name)" : "no picture"))}");
+    }
 
     bool HandleCombatEffect(Ms2.Net.Wire.RawPacket p)
     {
@@ -68,6 +78,13 @@ public partial class LiveSession
             var t = TimeScale.Read(p.Reader());
             bool set = t.Start ? TimeScaleRamp.Start(t.From, t.To, t.DurationMs, t.Curve, TickMs) : TimeScaleRamp.Stop();
             if (set) GameClock.SetScale(TimeScaleRamp.Scale);
+        }
+        else if (game.Is(p, Inbound.ChangeBackground))
+        {
+            // OnChangeBackground @0x14173b380 (scenestategame.cpp:6675): CUIService::LoadBackground of the name
+            var m = ChangeBackground.Read(p.Reader());
+            if (triggerField != null && GodotObject.IsInstanceValid(triggerField)) ShowBackground(triggerField, m.Name);
+            else pendingBackground = m.Name;      // the field is not built yet: it shows once it is (OnFieldBuilt)
         }
         else return false;
         return true;

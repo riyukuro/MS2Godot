@@ -1956,6 +1956,7 @@ public partial class LiveSession : Node
         if (field.TriggerCamera != null) field.TriggerCamera.LocalCamerasOn = FieldProperties.LocalCamerasOn;   // CameraMgr m_24c is not the field's: the list's kind 10 may have come first
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
+        if (pendingBackground != null) { ShowBackground(field, pendingBackground); pendingBackground = null; }
         regionSkills.Clear(); RegionSkillLog.Clear();
         HitEffects.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, HotTimes = HotTimes, ItemExists = id => ItemExists?.Invoke(id) ?? true, HitEffects = HitEffects, SightRange = () => FieldProperties.SightRange, NpcTalking = () => IsTalking(), OwnPosition = () => ClientPositionOf(player) };

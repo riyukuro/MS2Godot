@@ -51,6 +51,20 @@ public class CombatEffectPacketTests
         Assert.Throws(Is.InstanceOf<Exception>(), () => LocalCamera.Read(R(w => { w.WriteInt(1); w.WriteBool(true); w.WriteInt(0); w.WriteByte(0); })));
     }
 
+    /// <summary>OnChangeBackground @0x14173b380 (scenestategame.cpp:6675) reads one narrow string (vtable +0x38 at 0x14173b3bb), as
+    /// the Maple2 server's ChangeBackground writes it (WriteString: a 16-bit length and the bytes); 0xFE on KMS, 0x100 on GMS2.</summary>
+    [Test]
+    public void ChangeBackgroundIsOneNarrowString()
+    {
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.ChangeBackground), Is.EqualTo((ushort)0xFE));
+        Assert.That(ProtocolProfile.Gms2.Number(Inbound.ChangeBackground), Is.EqualTo((ushort)0x100));
+        var bytes = Convert.FromHexString("0D00" + Convert.ToHexString("BG_Cave_D.dds"u8.ToArray()));
+        Assert.That(ChangeBackground.Read(new ByteReader(bytes)).Name, Is.EqualTo("BG_Cave_D.dds"));
+        Assert.That(ChangeBackground.Read(R(w => w.WriteString(""))).Name, Is.EqualTo(""));
+        Assert.That(() => ChangeBackground.Read(R(w => w.WriteUnicodeString("BG_Cave_D.dds"))), Throws.Exception, "a wide string is not this body");
+        Assert.That(() => ChangeBackground.Read(R(w => { w.WriteString("BG_Tria.dds"); w.WriteByte(0); })), Throws.Exception);
+    }
+
     [Test]
     public void OneTimeEffectReadsTheNameOnlyOnAdd()
     {

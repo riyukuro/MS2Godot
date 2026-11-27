@@ -89,4 +89,16 @@ public static class FieldBackground
         if (contentWidth < stageWidth) return 0;
         return Interpolation(0, stageWidth - contentWidth, Clamp01(screenX / 300));
     }
+
+    /// <summary>
+    /// GFxMovieBackground::GetBackgroundName (@0x14127be10, gfxmoviebackground.cpp:942): a name holding ".png" or ".dds" (a
+    /// case-sensitive Find) is joined under the BG resource folder, which is Image.m2d's bg/ (entries kept lower case); any
+    /// other name goes to loadBG unchanged, so it names no picture here (null).
+    /// </summary>
+    public static string ImageEntry(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        if (!name.Contains(".png", StringComparison.Ordinal) && !name.Contains(".dds", StringComparison.Ordinal)) return null;
+        return "bg/" + name.ToLowerInvariant();
+    }
 }
