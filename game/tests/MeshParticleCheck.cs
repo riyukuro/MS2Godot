@@ -29,7 +29,7 @@ public partial class MeshParticleCheck : Node
         Ambient = new float[] { 0, 0, 0 }, Diffuse = new float[] { 0, 0, 0 }, Emissive = new float[] { 1, 1, 1 },
     };
 
-    static EffectScene Scene(double stop, bool animated = false)
+    static EffectScene Scene(double stop, bool animated = false, bool quads = false)
     {
         var sc = new EffectScene { Duration = 10 };
         // the system node turned a quarter about +Z (row-major: X goes to +Y)
@@ -61,6 +61,13 @@ public partial class MeshParticleCheck : Node
             },
         };
         sc.Systems.Add(d);
+        // a quad system after it (the mirrored case): its material is set after the mesh-particle system's clones
+        if (quads)
+            sc.Systems.Add(new ParticleSystemDef
+            {
+                Node = 0, Name = "quads", MaxParticles = 8, Material = new EffectMesh { Node = 0, Mesh = Quad("quads") },
+                Emitters = { new EmitterDef { Kind = EmitterKind.Box, Speed = 1, Size = 1, Lifespan = 1, Rate = _ => 4, RateCtl = new TimeCtl { Stop = 10 } } },
+            });
         return sc;
     }
 
@@ -74,10 +81,10 @@ public partial class MeshParticleCheck : Node
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
 
-    EffectInstance Start(double stop, bool animated = false)
+    EffectInstance Start(double stop, bool animated = false, bool quads = false, Node parent = null)
     {
-        var fx = new EffectInstance(Scene(stop, animated), new ModelBuilder(null, null), 10, 1);
-        AddChild(fx);
+        var fx = new EffectInstance(Scene(stop, animated, quads), new ModelBuilder(null, null), 10, 1);
+        (parent ?? this).AddChild(fx);
         fx.FileSpace = Transform3D.Identity;
         return fx;
     }
@@ -151,5 +158,39 @@ public partial class MeshParticleCheck : Node
             if (bytes != 0) fails.Add($"{path}: steps reusing pooled clones allocated {bytes} B");
             fx.QueueFree();
         }
+
+        // A mirrored world (an x-mirrored parent): the effect's culled sides swap when it enters the tree (_EnterTree). A
+        // mesh-particle system builds no quad material, so the quad pass skips it and goes on to the quad system after it;
+        // the clones made so far take the mirrored cull of their master meshes, and later ones take it as they are made.
+        fx = Start(10, quads: true);
+        for (int f = 0; f < 20; f++) fx._Process(0.02);
+        int before = Shown(fx, fails).Count;
+        var flip = new Node3D { Transform = new Transform3D(new Basis(new Vector3(-1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 1)), Vector3.Zero) };
+        AddChild(flip);
+        RemoveChild(fx);
+        flip.AddChild(fx);
+        Mirrored(fx, "clones made before the move", fails);
+        for (int f = 0; f < 50; f++) fx._Process(0.02);
+        Mirrored(fx, "clones made after it", fails);
+        GD.Print($"mesh particle: mirrored: {before} clones before the move, {Shown(fx, fails).Count} after 50 steps");
+        if (before == 0) fails.Add("mirrored: no clone made before the move");
+        flip.QueueFree();
+    }
+
+    /// <summary>Every shown clone mesh and the quad system's material cull the front faces (a back-culled mesh under a
+    /// mirrored world, FaceCull.UnderWorld).</summary>
+    static void Mirrored(EffectInstance fx, string what, List<string> fails)
+    {
+        var z = fx.GetChild<Node3D>(0);
+        int quads = 0;
+        for (int i = 0; i < z.GetChildCount(); i++)
+        {
+            ShaderMaterial mat = null;
+            if (z.GetChild(i) is MeshInstance3D m && m.Visible) mat = m.MaterialOverride as ShaderMaterial;
+            else if (z.GetChild(i) is MultiMeshInstance3D q) { quads++; mat = (q.Multimesh.Mesh as PrimitiveMesh)?.Material as ShaderMaterial; }
+            if (mat != null && !mat.Shader.Code.Contains("cull_front"))
+                fails.Add($"mirrored ({what}): {z.GetChild(i).Name} keeps its unmirrored cull");
+        }
+        if (quads != 1) fails.Add($"mirrored: {quads} quad systems drawn, want 1");
     }
 }
