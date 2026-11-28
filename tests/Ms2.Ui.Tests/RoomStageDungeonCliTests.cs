@@ -129,4 +129,20 @@ public class RoomStageDungeonCliTests
         Assert.That(s.FindMission(2).IsMaxScore, Is.True);
         Assert.That(s.FindMission(2).IsPenaltyCleared, Is.False, "the client's test needs a step count below 0");
     }
+
+    [Test]
+    public void EveryMissionOfEveryRoomHasAClientClass()
+    {
+        // The whole list: DungeonMissionCli.Create (@0x140b1dd30) gives null for a type the client has no class of, and the stage's packet list stops there.
+        var d = System.Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !System.IO.Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        using var packs = new Ms2.Formats.Pack.PackSet(d);
+        var missions = new DungeonMissionTable(packs);
+        var rooms = new DungeonRoomTable(packs, new Ms2.Formats.World.ClientConstants(System.Array.Empty<KeyValuePair<string, string>>()));
+        var used = new SortedSet<uint>();
+        foreach (var room in rooms.RoomList)
+            foreach (uint id in room.Missions()) used.Add(id);
+        Assert.That(used, Is.Not.Empty);
+        Assert.That(used.Where(id => DungeonMissionCli.Create(missions, id) == null).ToList(), Is.Empty, "missions a room names that the client cannot create");
+    }
 }

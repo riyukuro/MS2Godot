@@ -80,4 +80,23 @@ public class DungeonMissionTableTests
             Assert.That(m.GetScore(m.ApplyCount), Is.EqualTo(m.IsPenaltyType ? (short)0 : m.MaxScore), "mission " + m.Id);
         }
     }
+
+    [Test]
+    public void EveryMissionOfEveryRoomResolvesInTheTableWithAType()
+    {
+        // The whole list: DungeonRoomData.Missions() (the party missions, then the user missions) of every room names rows the table has.
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        using var packs = new PackSet(d);
+        var missions = new DungeonMissionTable(packs);
+        var rooms = new DungeonRoomTable(packs, new ClientConstants(Array.Empty<KeyValuePair<string, string>>()));
+        var used = new SortedSet<uint>();
+        foreach (var room in rooms.RoomList)
+            foreach (uint id in room.Missions()) used.Add(id);
+        Assert.That(used, Is.Not.Empty, "a data set whose rooms name missions");
+        var missing = used.Where(id => missions.GetMission(id) == null).ToList();
+        var typeless = used.Where(id => missions.GetMission(id) is { Type: "" }).ToList();
+        Assert.That(missing, Is.Empty, "mission ids a room names that the table lacks");
+        Assert.That(typeless, Is.Empty, "mission rows without a type");
+    }
 }
