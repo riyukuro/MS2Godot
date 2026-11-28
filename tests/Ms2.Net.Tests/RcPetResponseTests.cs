@@ -156,6 +156,29 @@ public class RcPetResponseTests {
     [Test] public void EveryRecordedGms2SummonReadsToTheEndWithTheItemData() =>
         Gms2Sniffs.WithGms2ItemData(() => SweepModes(m => m == 0, new byte[] { 0 }));
 
+    // The upstream server's summon (PetPacket.Summon: owner, pet object, WritePetItem) ends with the item body: no i64 after it, as the
+    // KMS client's reader stops there (pc.cpp:3357). The pet name is replaced.
+    [Test] public void Gms2SummonWithoutTheTrailerReadsTheItem() =>
+        Gms2Sniffs.WithGms2ItemData(() => {
+            var r = Hex(
+            "00 81 96 98 00 83 96 98 00 01 01 87 93 03 88 22 4A A9 D1 01 00 00 01 00 00 00 01 00 00 00 00 00 00 00 FF FF FF FF 65 ED 0A 6B 00 00 00 00 00 00",
+            "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+            "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+            "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00",
+            "00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00",
+            "00 0E 00 00 00 00 00 00 00 00 00 00 00 00 00 01 01 00 C8 17 A8 04 00 00 00 08 00 41 00 42 00 43 00 44 00 45 00 46 00 47 00 48 00 00 00 00 00 00",
+            "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00");
+            var m = Read(r);
+            Assert.That(m.Kind, Is.EqualTo(PetResponseKind.Summoned));
+            Assert.That(m.OwnerId, Is.EqualTo(10000001));
+            Assert.That(m.Value, Is.EqualTo(10000003));
+            Assert.That(m.Item.ItemId, Is.EqualTo(60000001));
+            Assert.That(m.Item.Uid, Is.EqualTo(2000000000648L));
+            Assert.That(m.Item.Item, Is.Not.Null);
+            Assert.That(m.TrailerUid, Is.EqualTo(0));
+            Assert.That(r.Available, Is.EqualTo(0));
+        });
+
     [Test] public void NumberOnBothProfiles() {
         Assert.That(ProtocolProfile.Kms2525.Number(Inbound.ResponsePet), Is.EqualTo((ushort) 0xCC));
         Assert.That(ProtocolProfile.Gms2.Number(Inbound.ResponsePet), Is.EqualTo((ushort) 0xCE));

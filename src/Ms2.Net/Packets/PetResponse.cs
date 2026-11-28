@@ -101,7 +101,7 @@ public sealed record PetResponse(
 {
     /// <summary>
     /// GMS2 Summoned only: the i64 that follows the item body in every recorded summon (it equals the item's uid in all of them); 0 when
-    /// absent. STILL-OPEN: the KMS client's reader (pc.cpp:3357) stops after the body, so what the GMS2 client does with it is unknown.
+    /// the packet ends after the body. STILL-OPEN: the KMS client's reader (pc.cpp:3357) stops after the body, so what the GMS2 client does with it is unknown.
     /// </summary>
     public long TrailerUid { get; init; }
 
@@ -167,7 +167,9 @@ public sealed record PetResponse(
                 int value = r.ReadInt();
                 var item = ReadPetItem(r, profile);
                 long trailer = 0;
-                if (item?.Item != null && profile.IsGms2) trailer = r.ReadLong();
+                // The client reads up to the item body (pc.cpp:3357); a packet that ends there (the upstream server's
+                // PetPacket.Summon) is read the same way.
+                if (item?.Item != null && profile.IsGms2 && r.Available > 0) trailer = r.ReadLong();
                 if (item == null || item.Item != null) r.ExpectEnd("ResponsePet summoned");
                 return o with { OwnerId = owner, Value = value, Item = item, TrailerUid = trailer };
             }
