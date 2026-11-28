@@ -4635,7 +4635,8 @@ public partial class LiveSession : Node
             long Other() => pl.Party.Members.FirstOrDefault(m => m.CharacterId != pl.CharacterId)?.CharacterId ?? 0;
             await Frames(240);
             // a new character's opening cut scene movie covers the field: the HUD's Esc skips it, as in the movie scene's own run
-            await Until(() => pl.Movie.IsPlaying, 60 * 20);
+            var movieClock = System.Diagnostics.Stopwatch.StartNew();   // a slow run (two clients) must not wait 20 s of frames for a cut scene that never plays
+            await Until(() => pl.Movie.IsPlaying || movieClock.Elapsed.TotalSeconds > 25, 60 * 20);
             if (pl.Movie.IsPlaying)
             {
                 ph.Escape();
@@ -5051,6 +5052,9 @@ public partial class LiveSession : Node
                     bool joined = await Joined(true, 60);
                     GD.Print($"live: party A: invite answered, in party {joined}, window {ph.PartyWindowShown}, leader {pl.Party.LeaderId} self {pl.CharacterId}");
                     PShot("party");
+                    // the room has a minimum level (and a gear score: a character without it is refused with a chat line): the GM level command first
+                    ph.SubmitChatLine("/player level 60");
+                    await Frames(180);
                     bool typed = ph.SubmitChatLine("/dungeon " + gRoom + " --party");
                     GD.Print($"live: party A: /dungeon {gRoom} --party {(typed ? "typed" : "no chat window")}");
                 }
