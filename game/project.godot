@@ -67,6 +67,10 @@ ms2_sun_dir={
 "type": "vec3",
 "value": Vector3(0, -1, 0)
 }
+ms2_sun_shadow={
+"type": "float",
+"value": 0.0
+}
 ms2_fog={
 "type": "vec4",
 "value": Vector4(5276, 20000, 1200, 0)

@@ -840,6 +840,8 @@ public sealed class ModelBuilder
             sm.SetShaderParameter(ShaderParam.Glass, m.ActiveMaterial == "MS2GlassMaterial");
             sm.SetShaderParameter(ShaderParam.AlphaBoost, m.AlphaBoost);
             sm.SetShaderParameter(ShaderParam.NoFog, m.NoFog);
+            // field_lit.gdshader per_vertex: lit per pixel even without a shadow map (ModelMesh.PixelLit)
+            sm.SetShaderParameter(ShaderParam.PixelLit, m.PixelLit);
             int flipSlot = m.FlipSlot == "base" ? 0 : m.FlipSlot == "dark" ? 1 : -1;
             var flip = flipSlot >= 0 ? FlipArray(m.FlipFrames) : null;
             if (flip != null)

@@ -698,6 +698,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
         SetSunAndAmbient(k);
         RenderingServer.GlobalShaderParameterSet("ms2_sun_dir", d);
+        // no shadow map: the field meshes light per vertex (field_lit.gdshader, NiStandardMaterial's PERVERTEXFORLIGHTS)
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_shadow", sun.ShadowEnabled ? 1f : 0f);
     }
 
     void SpawnPlayer(ModelBuilder builder, FieldMap map)

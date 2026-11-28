@@ -18,12 +18,21 @@
 // the final colour and opacity in every form but FADE. A fourth form, SHELL (with BLEND), is the depth-only
 // first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell).
 // The field's point and spot lights are added to the
-// diffuse term (ms2_lights.gdshaderinc), but for those the instance's ms2_light_off masks out (FieldLightSet.Unlit). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
+// diffuse term (ms2_lights.gdshaderinc), but for those the instance's ms2_light_off masks out (FieldLightSet.Unlit). The lit forms take the sun's shadow from Godot's DirectionalLight3D (Field.cs)
 // and nothing else: light() scales the sun's share of the colour above by the shadow, so the sun is counted once. The
 // blended forms (BLEND, ADD, FADE) take it the same way: the client's receiver list (ms2shadowclickgenerator.cpp:914-975)
-// and material descriptor do not filter on alpha, and a light with a shadow map turns per-vertex lighting off
-// (NiStandardMaterial.cpp:652-666, SHADOWMAPFORLIGHT -> PERVERTEXFORLIGHTS 0), so a blended receiver lights per pixel like
-// the opaque form; a blended copy that receives no shadow (ms2_receive 0) keeps the per-vertex env uv and no sun specular.
+// and material descriptor do not filter on alpha.
+// Per-vertex or per-pixel (NiStandardMaterial::GenerateDescriptor, NiStandardMaterial.cpp:648-666): the lights are
+// evaluated per pixel (PERVERTEXFORLIGHTS 0) only when a light has a shadow map for the mesh (SHADOWMAPFORLIGHT), when
+// the material forces per-pixel lighting (MS2StandardMaterial::Init does that for the character types 1-3 alone,
+// ms2standardmaterial.cpp:1850-1851; field meshes are type 0), or when the mesh has a normal or parallax map with tangents
+// (NORMALMAPCOUNT / PARALLAXMAPCOUNT, set only with NORMAL_NBT, NiStandardMaterialDescriptor.cpp:695-728). Otherwise the
+// vertex shader lights the vertices and the pixel shader multiplies the interpolated colour by the textures. So a mesh lights
+// per pixel here only when the sun casts a shadow map (ms2_sun_shadow) that it receives (ms2_receive), or with pixel_lit;
+// else per vertex, with the per-vertex env uv and no sun specular (see fragment()). A capture of 02000016 at shadow
+// level 0 shows that form on every field draw: vs_3_0 with o1 = c9 * (c13 N.L att + c12 (1 - N.L) + c17 N.L_sun +
+// c16 (1 - N.L_sun)) + c10 * c11 + c8 per vertex (material diffuse, point light, sun, material ambient * ambient,
+// emissive) and the pixel shader's base * o1.
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
 // evenly over flip_period, looping; a uv translation (NiTextureTransformController, translate U or V) moves linearly
 // between its first and last key over the controller's start..stop range, looping.
@@ -62,7 +71,6 @@ render_mode ambient_light_disabled, specular_disabled, blend_add, depth_draw_nev
 render_mode ambient_light_disabled, specular_disabled, blend_mix, depth_draw_never, MS2_CULL;
 #else
 render_mode ambient_light_disabled, specular_disabled, MS2_CULL;
-#define POINT_LIT
 #endif
 #endif
 #endif
@@ -121,6 +129,11 @@ uniform bool alpha_boost = false;
 // the client's fog-off subtrees (ModelMesh.NoFog: a "nofog" tag, flag 0x400 or an additive alpha property; FUN_141567b60
 // @0x141567b60): no depth fog. The height fog keeps its own switch.
 uniform bool no_fog = false;
+// a normal or parallax map with tangents (NORMAL_NBT): the client lights the mesh per pixel whatever the shadow (see the top)
+uniform bool pixel_lit = false;
+// 1 when the field's sun casts a shadow map (Field.cs: the DirectionalLight3D's shadow), else 0: no light has a shadow
+// map, so no field mesh lights per pixel unless pixel_lit
+global uniform float ms2_sun_shadow;
 uniform vec3 mat_ambient = vec3(0.7058824);
 uniform vec3 mat_diffuse = vec3(0.7058824);
 uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -144,9 +157,7 @@ varying vec3 world_pos;
 varying vec4 vcolor;
 varying vec3 env_u_world;
 varying vec3 env_v_world;
-#ifndef POINT_LIT
 varying vec2 env_uv;
-#endif
 // Declared first and outside every #ifdef: instance uniforms of one name must have the same index in every shader form
 // (a fluid mesh draws SHELL with a BLEND colour pass as next_pass), so ms2_light_off is index 0 in all of them.
 // The field lights that do not reach this copy, one bit per light in FieldLights order (FieldLightSet.Unlit: the client's
@@ -157,7 +168,36 @@ varying vec3 sun_share;  // the sun's part of the output colour (gamma), which t
 // 0 for copies the client takes out of the shadow's receiver list (ShadowReceivers: IsReceivingShadow off, or a
 // UseShellRender instancing batch below shadow level 4): the sun's share is then not scaled by the shadow
 instance uniform float ms2_receive = 1.0;
+// the per-vertex form: the lit colour and the same in the sun's full shadow, from the vertex shader
+varying vec3 vert_lit;
+varying vec3 vert_lit0;
+
+// The lights are evaluated per vertex (PERVERTEXFORLIGHTS 1, see the top).
+bool per_vertex() {
+	return !pixel_lit && (ms2_sun_shadow < 0.5 || ms2_receive < 0.5);
+}
 #endif
+
+// The ambient and diffuse colour (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor): the vertex colours for
+// AMB_DIFF, else the instance colour (alpha above 0.5: the entity's MaterialColor), else the material's.
+void amb_dif(vec4 inst, vec4 vc, out vec3 amb, out vec3 dif) {
+	amb = vcolor_amb_diff ? vc.rgb : inst.a > 0.5 ? inst.rgb : mat_ambient;
+	dif = vcolor_amb_diff ? vc.rgb : inst.a > 0.5 ? inst.rgb : mat_diffuse;
+#ifdef FADE
+	if (fade_vc_swap) {
+		amb = has_vcolor ? vc.rgb : inst.a > 0.5 ? inst.rgb : mat_ambient;
+		dif = inst.a > 0.5 ? inst.rgb : mat_diffuse;
+	}
+#endif
+}
+
+// MS2Light's sum for normal n at p (see fragment()): lit, and unsun / lit0 without the sun's direct share.
+void ms2_light(vec3 p, vec3 n, vec3 amb, vec3 dif, out vec3 lit, out vec3 lit0) {
+	float ndl = max(dot(n, -ms2_sun_dir), 0.0);
+	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(p, n, int(ms2_light_off));
+	lit = unsun + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl));
+	lit0 = unsun + dif * ms2_sun_ambient;
+}
 
 // The SPHERICAL texture effect uv (NiStandardMaterial::HandleTextureEffectUVSetGen): the world reflection
 // R = normalize(reflect(-(CameraPos - WorldPos), normalize(WorldNrm))) (CalculateViewVector, WorldReflect) projected by
@@ -190,10 +230,17 @@ void vertex() {
 	fog_share = no_fog ? 0.0 : ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
 	env_u_world = normalize((MODEL_MATRIX * vec4(env_u, 0.0)).xyz);
 	env_v_world = normalize((MODEL_MATRIX * vec4(env_v, 0.0)).xyz);
-#ifndef POINT_LIT
-	// unshadowed (blended) meshes light per vertex (PERVERTEXFORLIGHTS), and the sphere-map uv is then made in the
-	// vertex shader too (NiStandardMaterial, ENVMAPTYPE on the vertex descriptor without a normal map)
+	// per-vertex lighting (PERVERTEXFORLIGHTS) makes the sphere-map uv in the vertex shader too (NiStandardMaterial,
+	// ENVMAPTYPE on the vertex descriptor without a normal map)
 	env_uv = env_sphere_uv(world_pos, world_normal, INV_VIEW_MATRIX[3].xyz, env_u_world, env_v_world);
+#ifdef LIT
+	vert_lit = vec3(0.0);
+	vert_lit0 = vec3(0.0);
+	if (per_vertex()) {
+		vec3 amb, dif;
+		amb_dif(COLOR, vcolor, amb, dif);
+		ms2_light(world_pos, normalize(world_normal), amb, dif, vert_lit, vert_lit0);
+	}
 #endif
 }
 
@@ -238,27 +285,21 @@ void fragment() {
 	vec3 spec = vec3(0.0);
 	if (has_env) {
 		vec2 euv = env_sphere_uv(world_pos, world_normal, INV_VIEW_MATRIX[3].xyz, normalize(env_u_world), normalize(env_v_world));
-#ifndef POINT_LIT
 #ifdef LIT
-		if (ms2_receive < 0.5) {
-			euv = env_uv;   // no shadow map: per-vertex lighting, the uv from the vertex shader
+		if (per_vertex()) {
+			euv = env_uv;   // per-vertex lighting: the uv from the vertex shader
 		}
 #else
 		euv = env_uv;
-#endif
 #endif
 		spec = clamp(texture(env_tex, euv).rgb, 0.0, 1.0);
 		if (has_gloss) {
 			spec *= clamp(texture(gloss_tex, UV).rgb, 0.0, 1.0);
 		}
-#ifdef POINT_LIT
-		spec *= ms2_sun_specular;
-#else
 #ifdef LIT
-		if (ms2_receive >= 0.5) {
+		if (!per_vertex()) {
 			spec *= ms2_sun_specular;
 		}
-#endif
 #endif
 	}
 	// MS2GlassMaterial::HandleMS2FinalPixelOutputs (ms2glassmaterial.cpp, 0x142774510): the opacity (the faded one too) is
@@ -269,25 +310,25 @@ void fragment() {
 	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
-	vec3 amb = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_ambient;
-	vec3 dif = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_diffuse;
-#ifdef FADE
-	if (fade_vc_swap) {
-		amb = has_vcolor ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_ambient;
-		dif = COLOR.a > 0.5 ? COLOR.rgb : mat_diffuse;
-	}
-#endif
-	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
-	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(world_pos, normalize(world_normal), int(ms2_light_off));
+	vec3 amb, dif;
+	amb_dif(COLOR, vcolor, amb, dif);
 	// Field meshes are MS2StandardMaterial type 0, whose light node is "MS2Light", not Gamebryo's "Light"
 	// (MS2StandardMaterial::HandleMS2Light, ms2standardmaterial.cpp:852-875). MS2Light (ms2materialnodelibrary.cpp:316-328)
 	// puts the light's ambient into the diffuse accumulator, not the ambient one:
 	// DiffuseAccumOut += LightDiffuse * LightIntensity * Attenuate; DiffuseAccumOut += LightAmbient * (1 - LightIntensity * Shadow)
 	// with LightIntensity = max(0, N.L) and Attenuate = Shadow for a directional light. Lit: sun * N.L + sun ambient * (1 - N.L);
 	// fully in shadow: sun ambient alone.
-	vec3 lit = unsun + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl));
+	// lit0: the same colour fully in the sun's shadow (Shadow = 0)
+	vec3 lit, lit0;
+#ifdef LIT
+	if (per_vertex()) {
+		lit = vert_lit;
+		lit0 = vert_lit0;
+	} else
+#endif
+	ms2_light(world_pos, normalize(world_normal), amb, dif, lit, lit0);
 	vec3 c = lit * t.rgb;
-	vec3 c0 = (unsun + dif * ms2_sun_ambient) * t.rgb;   // the same colour fully in the sun's shadow (Shadow = 0)
+	vec3 c0 = lit0 * t.rgb;
 	if (has_glow) {
 		vec3 g = texture(glow_tex, glow_uv).rgb;
 		c += g;

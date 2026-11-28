@@ -67,6 +67,7 @@ static class ShaderParam
         MatDiffuse = "mat_diffuse",
         MatSpecular = "mat_specular",
         NormalTex = "normal_tex",
+        PixelLit = "pixel_lit",
         ShadowTex = "shadow_tex",
         Skin = "skin",
         SpecPower = "spec_power",

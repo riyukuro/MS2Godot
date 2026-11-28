@@ -202,6 +202,10 @@ public sealed class ModelMesh
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, decal0, shaderN
     public Dictionary<string, TexMap> Maps = new();       // the same keys: each map's uv set, clamp and filter modes and static transform
+    /// <summary>A normal or parallax map with a tangent frame (the descriptor's NORMAL_NBT, NiStandardMaterialDescriptor.cpp:695-728):
+    /// the client lights the mesh per pixel even without a shadow map (NiStandardMaterial.cpp:657-659, NORMALMAPCOUNT /
+    /// PARALLAXMAPCOUNT turn PERVERTEXFORLIGHTS off); other field meshes light per vertex.</summary>
+    public bool PixelLit => Tangents != null && (Textures.ContainsKey("normal") || Textures.ContainsKey("parallax"));
     public string FlipSlot;               // texture slot an NiFlipController cycles (base, dark, ...), or null
     public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
     public float FlipPeriod;
