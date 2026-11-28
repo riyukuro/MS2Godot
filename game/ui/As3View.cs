@@ -813,13 +813,14 @@ public partial class As3View : Node2D
         }
         // Flag_NeedMouseUpdate (set after each advanced frame, sfr_gfx_01i.cpp:4107): the mouse's top-most entity is found
         // again at its last position (a drag keeps its own). The answer can only differ when this movie's display objects
-        // were marked (its runtime's DisplayMarks; the script-mask re-marks after other movies' marks are not counted), the
-        // view moved on screen, or another movie's object came over the mouse or left it, so only then is it searched again.
+        // were marked (its runtime's DisplayMarks; the script-mask re-marks after other movies' marks are not counted), an
+        // object's hit-test disable or a bitmap's size changed (HitMarks: the top-most search reads both), the view moved on
+        // screen, or another movie's object came over the mouse or left it, so only then is it searched again.
         if (Player.Dragging || !Player.MouseActivated) return;
         bool covered = Covered(vp);
-        long seen = Player.RT.DisplayMarks;
-        if (seen == retestMarks && moves == retestMoves && covered == retestCovered) return;
-        retestMarks = seen; retestMoves = moves; retestCovered = covered;
+        long seen = Player.RT.DisplayMarks, seenOther = Player.RT.HitMarks;
+        if (seen == retestMarks && seenOther == retestOther && moves == retestMoves && covered == retestCovered) return;
+        retestMarks = seen; retestOther = seenOther; retestMoves = moves; retestCovered = covered;
         Retests++;
         long r0 = System.Diagnostics.Stopwatch.GetTimestamp();
         // the retest's mouseOut / rollOut and mouseOver / rollOver carry the keyboard state as it is now (GenerateMouseEvents
@@ -909,7 +910,7 @@ public partial class As3View : Node2D
     }
 
     long moves;                                             // the syncs that found the view moved on screen (a deep sync)
-    long retestMarks = -1, retestMoves;                     // DisplayMarks and moves at the last retest
+    long retestMarks = -1, retestOther, retestMoves;        // DisplayMarks, HitMarks and moves at the last retest
     Vector2 hitPoint;                                       // the stage point, DisplayMarks, HitMarks and moves at the last
     long hitMarks = -1, hitOther, hitMoves;                 // mouse-over shape test (hitMarks -1: none to reuse), and the
     Ms2.Avm2.Runtime hitRuntime;                            // runtime they were read from

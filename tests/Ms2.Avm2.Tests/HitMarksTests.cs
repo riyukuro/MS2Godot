@@ -87,4 +87,44 @@ public class HitMarksTests
         bd.height = 10;
         Assert.That(rt.HitMarks, Is.EqualTo(hits));
     }
+
+    /// <summary>The mouse's top-most search reads the hit-test disable flag too, and setting it draws nothing (no display
+    /// mark): a view retesting the mouse only on DisplayMarks kept a disabled object under a still cursor in its over state.
+    /// HitMarks moves, and the retest then sends the rollOut.</summary>
+    [Test]
+    public void HitTestDisableUnderAStillMouseShowsOnlyInHitMarksAndTheRetestRollsOut()
+    {
+        static JsonObject Square() => new()
+        {
+            ["kind"] = "shape", ["bounds"] = new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 100, ["h"] = 100 },
+            ["paths"] = new JsonArray(new JsonObject { ["pts"] = new JsonArray(0.0, 0.0, 100.0, 0.0, 100.0, 100.0, 0.0, 100.0) }),
+        };
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject
+            {
+                ["1"] = Square(),
+                ["2"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1, ["children"] = new JsonArray(new JsonObject { ["id"] = 1, ["depth"] = 1, ["first"] = 0 }) } },
+            },
+            ["root"] = new JsonObject { ["frames"] = 1, ["children"] = new JsonArray(new JsonObject { ["id"] = 2, ["depth"] = 1, ["first"] = 0, ["name"] = "button" }) },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        Assert.That(p.Start(), Is.True);
+        var button = ((AsContainer)p.Root).Children.Single(c => c.InstanceName == "button");
+        var seen = new List<string>();
+        foreach (var type in new[] { "rollOver", "rollOut" })
+            button.addEventListener(type, new AsPlainFunction(rt, new NativeMethod("f", (t, a) => { seen.Add(type); return Rt.Undef; })));
+        p.MouseMove(50, 50);
+        Assert.That(seen, Is.EqualTo(new[] { "rollOver" }));
+
+        long marks = rt.DisplayMarks, hits = rt.HitMarks;
+        button.HitTestDisabled = true;
+        Assert.That(rt.DisplayMarks, Is.EqualTo(marks), "nothing to redraw");
+        Assert.That(rt.HitMarks, Is.GreaterThan(hits), "the retest has to run again");
+        p.MouseRetest(false);
+        Assert.That(seen, Is.EqualTo(new[] { "rollOver", "rollOut" }));
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }
