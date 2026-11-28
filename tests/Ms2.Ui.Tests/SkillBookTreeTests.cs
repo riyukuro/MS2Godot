@@ -612,6 +612,52 @@ public class SkillBookTreeTests
         finally { Interp.OnCall -= Count; }
     }
 
+    /// <summary>The quick slot's cooldown text counts down on real time when frames are dropped. BaseSlot.onCooldownStart keeps
+    /// getTimer(), and each flash.utils.Timer fire in updateCooldownData takes the real ms since the last one off the time left,
+    /// then setCooldownRemainTime shows "N" + the seconds word, "0.x" under 1 s and "" under 0.01 s. getTimer is real ms
+    /// (GetASTimerMs, sfr_gfx_01i.cpp:1169), so a slow client still clears the slot when the cooldown ends; counted in frames
+    /// the text lagged ("1sec" long after the end, no "0.x" step).</summary>
+    [Test]
+    public void TheQuickSlotCooldownCountsDownOnRealTimeWhenFramesAreDropped()
+    {
+        var (bh, book, _) = Load();
+        book.OnSkillBookTree(NoTabs());
+        var m = bh.Model;
+        var names = book.GetBagSlotBindings(SkillBookTreeController.BagName);
+        string from = names.First(n => m.Tables.Skills.GetSkillData(book.BookSkillId(n)) is { IsPassive: false, Condition.UseCoolDownShowUI: true });
+        uint skill = book.BookSkillId(from);
+        var (h, bar, _, _) = QuickSlotBar(m);
+        bar.SlotWorld = () => new SlotWorld
+        {
+            Tables = m.Tables.Skills, ItemData = m.Tables.Items.Get, Level = 99, HasPc = true, IsRiding = true,
+            CooldownRemain = (_, _) => 2f, CooldownTotal = _ => (2f, true),
+        };
+        bar.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".3", from, book);
+        var p = h.Player;
+        double now = 0;
+        p.Clock = () => now;                    // the real clock; the frames below run at a third of the movie's rate
+        var slot = (AsObject)bar.SlotObject(3);
+        string Text() => Rt.ToString(h.Get((AsObject)h.Get((AsObject)h.Get(slot, "m_cooldown"), "textField"), "text"));
+        bar.OnCooldownStarted(m.Tables.Skills.GetSkillData(skill).CooldownKey);
+        var seen = new List<(double Ms, string Text)> { (0, Text()) };
+        while (now < 4000)
+        {
+            now += 100;                         // 100 ms pass per frame: two of every three ticks are dropped
+            p.Tick();
+            if (Text() != seen[^1].Text) seen.Add((now, Text()));
+        }
+        string steps = string.Join(", ", seen.Select(x => $"{x.Ms}:{x.Text}"));
+        Assert.That(seen[0].Text, Does.StartWith("2"), steps);
+        int one = seen.FindIndex(x => x.Text.StartsWith("1", StringComparison.Ordinal));
+        int tenths = seen.FindIndex(x => x.Text.StartsWith("0.", StringComparison.Ordinal));
+        int clear = seen.FindIndex(x => x.Text.Length == 0);
+        Assert.That(one, Is.GreaterThan(0), "1 s left: " + steps);
+        Assert.That(tenths, Is.GreaterThan(one), "then tenths under 1 s: " + steps);
+        Assert.That(clear, Is.GreaterThan(tenths), "then clear: " + steps);
+        // the last Timer fire is at most one 100 ms delay (getCooltimeTimerDelay under 1 s) plus a frame past the end
+        Assert.That(seen[clear].Ms, Is.InRange(2000, 2300), "cleared at the real end: " + steps);
+    }
+
     [Test]
     public void ABookSkillDroppedWithNoKeyTablePageShowsOnItsSlotUntilTheServerPagesComeIn()
     {
