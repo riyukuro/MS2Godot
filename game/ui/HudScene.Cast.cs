@@ -653,7 +653,7 @@ public partial class HudScene
     Action<int> ReleaseOwnEffect => releaseOwnTagEffect ??= h =>
     {
         if (OwnFxTrace) GD.Print($"fx: own release {h} at {Time.GetTicksMsec()}");
-        Net.LiveSession.Instance?.ReleaseKeptEffect(h);
+        Net.LiveSession.Instance?.ReleaseStateEffect(h);
     };
     /// <summary>FUN_1411a49c0 on the player (SetActor, object kind 1: no sight test for the own PC): the kept id, 0 for none.</summary>
     Func<string, int> KeepOwnEffect => keepOwnEffect ??= fx =>
@@ -662,11 +662,12 @@ public partial class HudScene
         if (OwnFxTrace) { GD.Print($"fx: own keep {fx} -> {h} at {Time.GetTicksMsec()}"); OwnEffectKept?.Invoke(fx); }
         return h;
     };
-    /// <summary>InsertEffect on the player, kept by nothing.</summary>
+    /// <summary>InsertEffect on the player, kept by nothing: let go of at once as an insert, so no state release reaches it
+    /// and its attach type 1 parts stay on the player (not <see cref="ReleaseOwnEffect"/>, which leaves them in the world).</summary>
     Action<string> InsertOwnEffect => insertOwnEffect ??= fx =>
     {
         if (OwnFxTrace) GD.Print($"fx: own insert {fx} at {Time.GetTicksMsec()}");
-        ReleaseOwnEffect(KeepOwnEffect(fx));
+        Net.LiveSession.Instance?.ReleaseKeptEffect(KeepOwnEffect(fx));
     };
 
     // MyPC::FUN_141525580's view of the own pc, made once; its delegates read the live session and the buff list

@@ -144,8 +144,10 @@ public partial class LiveSession
         public void Stop(int id) => s.remote?.BuffEffects.Stop(id);
         public bool OwnerShown(int ownerId) => s.remote?.BuffEffects.OwnerShown(ownerId) == true;
     }
-    /// <summary>A kept effect released (CEffectService::FUN_1411a69e0).</summary>
+    /// <summary>A kept effect let go of, as an insert (<see cref="RemoteLayer.ReleaseKeptEffect"/>).</summary>
     public void ReleaseKeptEffect(int id) => remote?.ReleaseKeptEffect(id);
+    /// <summary>A skill state's kept effect released (<see cref="RemoteLayer.ReleaseStateEffect"/>).</summary>
+    public void ReleaseStateEffect(int id) => remote?.ReleaseStateEffect(id);
 
     /// <summary>The same turned by a full rotation (godot space), as an own magic's end effect.</summary>
     public void PlayFieldEffect(string effect, Vector3 at, Basis rotation, int casterKind)

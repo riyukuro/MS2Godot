@@ -211,7 +211,7 @@ public sealed partial class RemoteLayer
     void EndNpcSkill(int id, NpcSkillEffects e, byte next)
     {
         stopKept ??= StopKeptEffect;
-        releaseKept ??= ReleaseKeptEffect;
+        releaseKept ??= ReleaseStateEffect;
         insertNpcEffect ??= fx => ReleaseKeptEffect(SpawnKeptEffect(fx, insertNpcRoot, insertNpcKind));
         bool gone = e.Root == null || !GodotObject.IsInstanceValid(e.Root);
         insertNpcRoot = gone ? null : e.Root; insertNpcKind = e.Kind;

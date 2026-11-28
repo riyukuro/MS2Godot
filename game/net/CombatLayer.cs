@@ -127,9 +127,9 @@ void fragment() {
     ///   weapon's Point01 node, through a SeparateNode for partial update bits (<see cref="EffectAttach"/>), so they follow
     ///   that node and go with the actor at once; one the client makes no target for is not made.
     /// Sound and light parts play at its place now.
-    /// STILL-OPEN: vfunc_11 (:946) is skipped: on a stop, a type 1 part still inside its duration moves to the world root and
-    /// plays on (unless the param's +0x30 flag is set). onGround is not applied to type 0 parts (EffectNode::UpdateWorldData,
-    /// effectservice.cpp:971).
+    /// These are inserts, kept by no id, so no release reaches them: vfunc_11 (:946), which leaves a type 1 part in the world
+    /// on a skill state's release, is RegionSkills.ReleaseFromState's.
+    /// STILL-OPEN: onGround is not applied to type 0 parts (EffectNode::UpdateWorldData, effectservice.cpp:971).
     /// </summary>
     public void PlayEffectOn(string xmlPath, Node3D actor, int casterKind)
     {

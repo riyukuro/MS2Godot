@@ -41,6 +41,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     // the sounds of each kept effect: stopped with it (CSoundEventEffect::vfunc_5), left to play on when it is released
     readonly Dictionary<int, List<(int Voice, bool DoNotStop)>> keptSounds = new();
     readonly HashSet<int> looping = new();   // kept effects with a part whose param loops (CEffect m_b2c, the "loop" attribute)
+    // each kept effect's attach type 1 nif parts hung on its actor: the parts CNifEffect::vfunc_11 moves to the world on a
+    // skill state's release (ReleaseFromState)
+    readonly Dictionary<int, List<EffectInstance>> onNode = new();
 
     /// <summary>An effect xml's light part (CLightEffect, lighteffectparam.cpp:363-377): it adds its light at its start delay
     /// and the effect's end destroys it (FieldLights.Start / End), as CombatLayer's lights. The light entity is added at Init
@@ -303,19 +306,45 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     static readonly Xform Identity = new(new Vec3(0, 0, 0), new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 }, 1);
 
-    /// <summary>
-    /// CEffectService::FUN_1411a69e0 (@0x1411a69e0, effectservice.cpp:1510-1528): a kept effect released. A part whose param
-    /// loops (CEffect::vfunc_11 returns 0 for m_b2c, :427-431) stops the whole effect at once (FUN_1411a6060); otherwise its
-    /// parts play to their own ends and the handle goes.
-    /// STILL-OPEN: CNifEffect::vfunc_11 (nifeffectparam.cpp:946-967) moves an attach type 1 part still inside its duration
-    /// to the world root, keeping its place; here the parts on an actor stay under it.
-    /// </summary>
     /// <summary>Whether a kept effect's handle still names live parts (for the live checks).</summary>
     public bool IsKept(int handle) => kept.ContainsKey(handle);
 
+    /// <summary>
+    /// A kept effect let go of with no release, as the client's InsertEffect keeps no id (the spawn-then-release inserts):
+    /// its parts play to their own ends where they are, those on the actor on it. A looping part stops the whole effect at
+    /// once, as a release would (<see cref="ReleaseFromState"/>).
+    /// </summary>
     public void Release(int handle)
     {
         if (looping.Contains(handle)) { FadeOut(handle, 0); return; }
+        kept.Remove(handle);
+        keptSounds.Remove(handle);
+        onNode.Remove(handle);
+    }
+
+    /// <summary>
+    /// CEffectService::FUN_1411a69e0 (@0x1411a69e0, effectservice.cpp:1510-1528), called only by StateSkill::vfunc_5
+    /// (stateskill.cpp:521-524) for the skill state's motion and tag effects: each part's vfunc_11 runs in order. A part whose
+    /// param loops returns 0 (CEffect::vfunc_11 and CNifEffect::vfunc_11 for m_b2c, effectservice.cpp:427-431,
+    /// nifeffectparam.cpp:948-949), which stops the whole effect at once (FUN_1411a6060). Otherwise CNifEffect::vfunc_11
+    /// (@0x14154b1b0, nifeffectparam.cpp:946-967) takes an attach type 1 part (attachToNode or attachType Node) still before
+    /// its start + duration (m_dStartTime is the spawn plus startDelay, effectservice.cpp:365) off its node: a new node at the
+    /// node's world transform now holds it under the world effect root (GetLeastLoadedRoot), so it plays on in place and no
+    /// longer follows the actor. Types 0 and 2-4 stay as they are. The parts play to their own ends and the handle goes.
+    /// </summary>
+    public void ReleaseFromState(int handle)
+    {
+        if (looping.Contains(handle)) { FadeOut(handle, 0); return; }
+        if (onNode.Remove(handle, out var parts))
+            foreach (var fx in parts)
+                if (IsInstanceValid(fx) && !fx.Finished && fx.IsInsideTree() && fx.GetParent() is { } host && host != this)
+                {
+                    // the place set before it enters the tree again, so its _EnterTree reads the world basis it keeps
+                    var world = fx.GlobalTransform;
+                    host.RemoveChild(fx);
+                    fx.Transform = GlobalTransform.AffineInverse() * world;
+                    AddChild(fx);
+                }
         kept.Remove(handle);
         keptSounds.Remove(handle);
     }
@@ -343,6 +372,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     public void FadeOut(int handle, float seconds)
     {
         looping.Remove(handle);
+        onNode.Remove(handle);
         if (keptSounds.Remove(handle, out var sounds))
             foreach (var (voice, doNotStop) in sounds) FieldAudio.Instance?.StopEffectSound(voice, doNotStop);
         foreach (var l in lights)
@@ -513,6 +543,11 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 fx.FileSpace = hung.OwnTransform ? ModelBuilder.ToGodot(at.Compose(local)) : Transform3D.Identity;
                 fx.Transform = hung.Place;
                 hung.Host.AddChild(fx);
+                if (keep && part.AttachKind == 1 && !part.Loop)
+                {
+                    if (!onNode.TryGetValue(handle, out var on)) onNode[handle] = on = new();
+                    on.Add(fx);
+                }
             }
             else
             {

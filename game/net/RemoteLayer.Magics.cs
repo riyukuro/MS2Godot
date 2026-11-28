@@ -199,7 +199,7 @@ public sealed partial class RemoteLayer
         st.EventSound = key => FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), r.Gender,
             r.Pc.JobGroup, false, Ms2.Audio.SoundMusicEffectState.CasterOtherPc, r.Visual.GlobalPosition, npcs.Viewer?.Invoke());   // GetObjectKind 3 (effectservice.cpp:1381)
         st.StopEffect = FxTrace ? h => { GD.Print($"fx: remote stop {h} at {Time.GetTicksMsec()}"); StopKeptEffect(h); } : StopKeptEffect;
-        st.ReleaseEffect = FxTrace ? h => { GD.Print($"fx: remote release {h} at {Time.GetTicksMsec()}"); ReleaseKeptEffect(h); } : ReleaseKeptEffect;
+        st.ReleaseEffect = FxTrace ? h => { GD.Print($"fx: remote release {h} at {Time.GetTicksMsec()}"); ReleaseStateEffect(h); } : ReleaseStateEffect;
     }
 
     /// <summary>A kept effect on an actor (FUN_1411a49c0, SetActor): its id, 0 when it did not spawn. <paramref name="noCull"/>
@@ -212,8 +212,11 @@ public sealed partial class RemoteLayer
         RegionFx?.Spawn(effect, new Ms2.Formats.Model.Xform(new Ms2.Formats.Model.Vec3(at.X, at.Y, at.Z), Ms2.Formats.Model.Xform.Identity.R, 1), true, 0) ?? 0;
     /// <summary>CEffectService::FUN_1411a6060: a kept effect stops at once.</summary>
     public void StopKeptEffect(int id) => RegionFx?.FadeOut(id, 0);
-    /// <summary>CEffectService::FUN_1411a69e0: a kept effect released.</summary>
+    /// <summary>A kept effect let go of, as the client's InsertEffect keeps no id (<see cref="RegionSkills.Release"/>).</summary>
     public void ReleaseKeptEffect(int id) => RegionFx?.Release(id);
+    /// <summary>CEffectService::FUN_1411a69e0 from a skill state's end (StateSkill::vfunc_5, stateskill.cpp:521-524): a kept
+    /// effect released, its attach type 1 parts left in the world (<see cref="RegionSkills.ReleaseFromState"/>).</summary>
+    public void ReleaseStateEffect(int id) => RegionFx?.ReleaseFromState(id);
     /// <summary>The field's region skill node the kept effect ids belong to (a new field's node numbers them again).</summary>
     public object KeptEffectScope => RegionFx;
     /// <summary>Whether a kept effect of the field's effect layer is still in (for the live checks).</summary>
