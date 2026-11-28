@@ -205,8 +205,12 @@ public partial class HudScene
         };
         if (partyLayer == null) AddChild(partyLayer = new CanvasLayer { Layer = 10 });
         var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
+        // OnLoadComplete's RegisterHandler(0x100) (uipartydialog.cpp:600), dropped by vfunc_26 at the unload (:617).
+        Action<Maple2.PacketLib.Tools.ByteReader> missionHandler = c.OnDungeonMissionPacket;
+        live?.DungeonMissionHandlers.Register(missionHandler);
         c.Unloaded += () =>
         {
+            live?.DungeonMissionHandlers.Unregister(missionHandler);
             m.Host.Unload();
             m.QueueFree();
             if (partyMovie == m) { partyMovie = null; party = null; }

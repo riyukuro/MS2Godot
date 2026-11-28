@@ -1,4 +1,5 @@
 using System.Globalization;
+using Maple2.PacketLib.Tools;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
@@ -79,8 +80,9 @@ public sealed class PartyController : UiController
     static bool SessionHidesDungeon => false;
 
     /// <summary>OnLoadComplete @0x141a75a80 (:560): the bottom buttons and the dungeon name, the vote page, the click handlers,
-    /// RefreshAll. Its 0x53 handler is <see cref="OnPartyMessage"/> (the host calls it); the 0x100 one touches only the give
-    /// up button (not fed).</summary>
+    /// RefreshAll. Its 0x53 handler is <see cref="OnPartyMessage"/> and its 0x100 one
+    /// <see cref="OnDungeonMissionPacket"/>; the host registers both (the client does at the end of OnLoadComplete, so the
+    /// order against the stage's own 0x100 handler is the order of registration, <see cref="Ms2.Net.PacketHandlerList"/>).</summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
@@ -403,6 +405,21 @@ public sealed class PartyController : UiController
 
     /// <summary>UpdateCreateClubButton @0x141a79770 (:1152): with feature 0x56, shown to the leader.</summary>
     void UpdateCreateClubButton() => Show("m_createClub", Model.IsFeatureEnabled(0x56) && Party.IsLeader(SelfCharacterId));
+
+    /// <summary>
+    /// FUN_141a77a40 (uipartydialog.cpp:845), the party window's handler of the DungeonMission packet (0x100, registered at :600,
+    /// dropped at :617): reads the mode byte only; modes 3 (stage) and 4 (flag) run UpdateGiveUpDungeonButton and
+    /// ArrangeBottomButton. It reads the stage as it stands when it runs: a stage whose own handler is registered earlier has
+    /// applied the packet already; one registered later has not.
+    /// </summary>
+    public void OnDungeonMissionPacket(ByteReader r)
+    {
+        if (!open || Host == null) return;
+        byte mode = r.ReadByte();
+        if (mode != 3 && mode != 4) return;
+        UpdateGiveUpDungeonButton();
+        ArrangeBottomButton();
+    }
 
     /// <summary>UpdateGiveUpDungeonButton @0x141a79840 (:1168): shown to the leader while the character's stage has its flag set
     /// (RoomStageDungeonCli::IsStageFlagSet: stage 0 and the flag), else hidden.</summary>

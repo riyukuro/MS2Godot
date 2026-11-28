@@ -1,5 +1,6 @@
 using Godot;
 using Maple2.PacketLib.Tools;
+using Ms2.Net;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 
@@ -17,17 +18,43 @@ public partial class LiveSession
     /// <summary>CMyCharacter::GetStage (@0x140d9f4e0): null while no stage exists.</summary>
     public RoomStageDungeonCli Stage { get; private set; }
 
+    /// <summary>The DungeonMission packet's (0x100) handler list in PacketHandlerManager. The stage registers its own when it is
+    /// created and drops it when it goes; the party window registers its own while it is loaded. They run in that order of
+    /// registration (<see cref="PacketHandlerList"/>).</summary>
+    public PacketHandlerList DungeonMissionHandlers { get; } = new();
+    Action<ByteReader> stageHandler;
+
+    /// <summary>The stage ctor's RegisterHandler(0x100) (roomstagedungeoncli.cpp:46) and, as the stage goes, the dtor's UnregisterHandler.</summary>
+    void SetStage(RoomStageDungeonCli stage)
+    {
+        var old = stageHandler;
+        stageHandler = null;
+        if (stage != null)
+        {
+            // CMyCharacter::CreateStage (notifydebugstate.cpp:188) builds the new stage, whose ctor registers, before the old one is released.
+            stageHandler = r =>
+            {
+                stage.OnPacket(r);
+                GD.Print($"live: dungeon mission: {stage.Missions.Count} mission(s) score {stage.Score}/{stage.MaxScore} rank {stage.Rank} stage {stage.Stage} flag {stage.Flag}");
+                StageChanged?.Invoke();
+            };
+            DungeonMissionHandlers.Register(stageHandler);
+        }
+        if (old != null) DungeonMissionHandlers.Unregister(old);
+        Stage = stage;
+    }
+
     /// <summary>Raised after the stage was created, cleared or changed by a mission packet.</summary>
     public event Action StageChanged;
 
     void OnRoomStageDungeon(RoomStageDungeonPacket m)
     {
         if (m == null) return;   // a kind the client has no case for
-        if (!m.Create) { Stage = null; GD.Print("live: dungeon stage cleared"); StageChanged?.Invoke(); return; }
+        if (!m.Create) { SetStage(null); GD.Print("live: dungeon stage cleared"); StageChanged?.Invoke(); return; }
         var t = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage);
         var stage = new RoomStageDungeonCli(unchecked((uint)m.RoomId), m.Stage, m.Flag, t.DungeonRooms, t.DungeonMissions);
         stage.GaveUp += () => SystemNoticeSink?.Invoke(MessageBoxData.CommonByKey("s_party_notify_dungeon_giveup") ?? "");   // OnGiveUp (@0x140c9d670): FUN_1412751b0 type 0x14
-        Stage = stage;
+        SetStage(stage);
         GD.Print($"live: dungeon stage created room {m.RoomId} stage {m.Stage} flag {m.Flag} known room {stage.Room != null}");
         StageChanged?.Invoke();
     }
@@ -37,17 +64,16 @@ public partial class LiveSession
     void ClearStageAtServerEnter()
     {
         if (Stage == null) return;
-        Stage = null;
+        SetStage(null);
         GD.Print("live: dungeon stage cleared at the server enter");
         StageChanged?.Invoke();
     }
 
-    /// <summary>RoomStageDungeonCli::OnPacket (@0x140c9d0c0) for the DungeonMission packet; nothing listens while no stage exists.</summary>
-    void OnDungeonMission(ByteReader r)
+    /// <summary>PacketHandlerManager::Dispatch(0x100) (@0x140da52f0): the handlers in registration order, each on the packet rewound to
+    /// its body; with no stage and no party window nothing listens.</summary>
+    void OnDungeonMission(Func<ByteReader> body)
     {
-        if (Stage == null) { GD.Print("live: dungeon mission packet without a stage"); return; }
-        Stage.OnPacket(r);
-        GD.Print($"live: dungeon mission: {Stage.Missions.Count} mission(s) score {Stage.Score}/{Stage.MaxScore} rank {Stage.Rank} stage {Stage.Stage} flag {Stage.Flag}");
-        StageChanged?.Invoke();
+        if (DungeonMissionHandlers.Count == 0) { GD.Print("live: dungeon mission packet without a listener"); return; }
+        DungeonMissionHandlers.Dispatch(body);
     }
 }

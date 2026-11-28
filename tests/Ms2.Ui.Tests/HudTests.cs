@@ -3950,4 +3950,81 @@ public partial class HudTests
         c.OnPartyMessage(new PartyOtherMode(0x11));
         Assert.That(Shown(), Is.False, "not the leader");
     }
+
+    static Maple2.PacketLib.Tools.ByteReader MissionBody(params byte[] body) => new(body);
+
+    [Test]
+    public void TheGiveUpButtonFollowsTheDungeonMissionPacketThroughTheHandlerOrder()
+    {
+        // FUN_141a77a40 (uipartydialog.cpp:845): the party window's own 0x100 handler refreshes the button on modes 3 and 4. PacketHandlerManager::Dispatch
+        // (@0x140da52f0) calls the handlers in registration order, so the stage's handler (roomstagedungeoncli.cpp:46) before the window's has applied
+        // the flag already; after it, the window reads the old flag.
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var rooms = new Ms2.Formats.World.DungeonRoomTable(f => null, null, null, null);
+        var missions = new Ms2.Formats.World.DungeonMissionTable(new System.Xml.Linq.XElement("ms2"), null);
+        var stage = new RoomStageDungeonCli(21001001, 0, false, rooms, missions);
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, MapName = _ => "Field", GetStage = () => stage };
+        var h = Load(c, m);
+        bool Shown() => Rt.ToBoolean(h.Get(h.Child("m_giveUpDungeon"), "visible"));
+        Assert.That(Shown(), Is.False, "the flag is not set");
+
+        var stageFirst = new Ms2.Net.PacketHandlerList();
+        stageFirst.Register(stage.OnPacket);
+        stageFirst.Register(c.OnDungeonMissionPacket);
+        stageFirst.Dispatch(() => MissionBody(4, 1));
+        Assert.That(stage.Flag, Is.True);
+        Assert.That(Shown(), Is.True, "mode 4 with the stage's handler first: the button shows at once");
+        stageFirst.Dispatch(() => MissionBody(4, 0));
+        Assert.That(Shown(), Is.False, "and goes with the flag");
+
+        var windowFirst = new Ms2.Net.PacketHandlerList();
+        windowFirst.Register(c.OnDungeonMissionPacket);
+        windowFirst.Register(stage.OnPacket);
+        windowFirst.Dispatch(() => MissionBody(4, 1));
+        Assert.That(stage.Flag, Is.True);
+        Assert.That(Shown(), Is.False, "the window's handler ran before the stage's: it read the old flag");
+        windowFirst.Dispatch(() => MissionBody(3, 0));
+        Assert.That(Shown(), Is.True, "the next mode 3 or 4 packet catches up");
+    }
+
+    [Test]
+    public void TheGiveUpButtonIgnoresTheOtherDungeonMissionModes()
+    {
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var rooms = new Ms2.Formats.World.DungeonRoomTable(f => null, null, null, null);
+        var missions = new Ms2.Formats.World.DungeonMissionTable(new System.Xml.Linq.XElement("ms2"), null);
+        RoomStageDungeonCli stage = null;
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, MapName = _ => "Field", GetStage = () => stage };
+        var h = Load(c, m);
+        bool Shown() => Rt.ToBoolean(h.Get(h.Child("m_giveUpDungeon"), "visible"));
+        Assert.That(Shown(), Is.False, "no stage at the load");
+        stage = new RoomStageDungeonCli(21001001, 0, true, rooms, missions);
+        Assert.That(Shown(), Is.False, "no refresh since the stage was made");
+        foreach (byte mode in new byte[] { 0, 1, 2, 5, 6 })
+        {
+            c.OnDungeonMissionPacket(MissionBody(mode));
+            Assert.That(Shown(), Is.False, $"mode {mode} does not refresh the button");
+        }
+        c.OnDungeonMissionPacket(MissionBody(3));
+        Assert.That(Shown(), Is.True, "mode 3 does");
+    }
+
+    [Test]
+    public void TheHandlerListKeepsRegistrationOrderAndDropsTheFirstEqualHandler()
+    {
+        var log = new List<string>();
+        var l = new Ms2.Net.PacketHandlerList();
+        Action<Maple2.PacketLib.Tools.ByteReader> a = r => log.Add("a" + r.ReadByte()), b = r => log.Add("b" + r.ReadByte());
+        l.Register(a); l.Register(b); l.Register(a);
+        l.Dispatch(() => MissionBody(7));
+        Assert.That(log, Is.EqualTo(new[] { "a7", "b7", "a7" }), "each handler reads the body from its start");
+        l.Unregister(a);
+        log.Clear();
+        l.Dispatch(() => MissionBody(8));
+        Assert.That(log, Is.EqualTo(new[] { "b8", "a8" }), "the first equal handler left");
+        l.Unregister(b); l.Unregister(a); l.Unregister(a);
+        Assert.That(l.Count, Is.Zero);
+    }
 }
