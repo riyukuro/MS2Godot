@@ -544,7 +544,7 @@ public static class Interp
     {
         var b = SuperBinding(rt, m, n);
         if (b == null) { rt.SetProperty(obj, n, v); return; }
-        if (b.Kind == BindingKind.Accessor) { b.Setter?.Invoke(obj, new[] { v }); return; }
+        if (b.Kind == BindingKind.Accessor) { b.Setter?.Invoke1(obj, v); return; }
         if (b.Kind is BindingKind.Slot or BindingKind.Const) ((AsObject)obj).Slots[b.Slot] = v;
     }
 

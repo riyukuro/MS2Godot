@@ -124,7 +124,7 @@ public class AsEventDispatcher : AsObject
             for (int i = 0; i < n; i++)
             {
                 if (e.StoppedNow) break;
-                try { ls[i].F.Call(null, new object[] { e }); }
+                try { ls[i].F.Call1(null, e); }
                 catch (AsThrow t) { RT.OutputError("listener", e.type, t); return false; }
             }
         }

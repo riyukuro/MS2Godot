@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Ms2.Avm2;
 
@@ -22,6 +23,29 @@ abstract class NativeCall
     public abstract object Call(object self, object[] a);
 
     protected abstract void Bind(MethodInfo mi);
+
+    /// <summary>The member's parameter names (for a coercion's TypeError).</summary>
+    protected string[] names;
+
+    /// <summary>Calls a typed member with AS3 values: each argument is coerced to its parameter's type as
+    /// <see cref="Runtime.FromAs"/> does, and the result converted as <see cref="Runtime.ToAs"/> does (Rt.Undef for void),
+    /// without an argument array or a box per coerced value. <paramref name="a"/> holds at least one value per parameter
+    /// (extra ones are ignored). Only for a <see cref="Typed"/> call whose parameters <see cref="Runtime.Direct"/> takes.</summary>
+    public virtual object CallAs(Runtime rt, object self, object[] a) => throw new NotSupportedException(method?.Name);
+
+    /// <summary><see cref="CallAs"/> for a member of 0 or 1 parameters called with one value (a setter, a listener).</summary>
+    public virtual object CallAs1(Runtime rt, object self, object x) => throw new NotSupportedException(method?.Name);
+
+    /// <summary>A result as <see cref="Runtime.ToAs"/> converts it, without boxing a value type first.</summary>
+    protected static object Ret<TR>(TR r)
+    {
+        if (typeof(TR) == typeof(double)) return Rt.Num(Unsafe.As<TR, double>(ref r));
+        if (typeof(TR) == typeof(int)) return Rt.Box(Unsafe.As<TR, int>(ref r));
+        if (typeof(TR) == typeof(bool)) return Rt.Box(Unsafe.As<TR, bool>(ref r));
+        if (typeof(TR) == typeof(uint)) return Rt.Uint(Unsafe.As<TR, uint>(ref r));
+        if (typeof(TR) == typeof(float)) return Rt.Num(Unsafe.As<TR, float>(ref r));
+        return Runtime.ToAs(r);
+    }
 
     /// <summary>False when the member goes through <see cref="MethodBase.Invoke(object, object[])"/> (a shape without an adapter).</summary>
     internal bool Typed => this is not Reflected;
@@ -94,6 +118,7 @@ abstract class NativeCall
         }
         c ??= new Reflected();
         c.method = mi;
+        c.names = Array.ConvertAll(ps, p => p.Name);
         return c;
     }
 
@@ -182,6 +207,8 @@ abstract class NativeCall
         Func<TS, TR> f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<TS, TR>>();
         public override object Call(object self, object[] a) => f((TS)self);
+        public override object CallAs(Runtime rt, object self, object[] a) => Ret(f((TS)self));
+        public override object CallAs1(Runtime rt, object self, object x) => Ret(f((TS)self));
     }
 
     sealed class I0V<TS> : NativeCall where TS : class
@@ -189,6 +216,8 @@ abstract class NativeCall
         Action<TS> f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Action<TS>>();
         public override object Call(object self, object[] a) { f((TS)self); return null; }
+        public override object CallAs(Runtime rt, object self, object[] a) { f((TS)self); return Rt.Undef; }
+        public override object CallAs1(Runtime rt, object self, object x) { f((TS)self); return Rt.Undef; }
     }
 
     sealed class I1<TS, TR, T1> : NativeCall where TS : class
@@ -196,6 +225,8 @@ abstract class NativeCall
         Func<TS, T1, TR> f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<TS, T1, TR>>();
         public override object Call(object self, object[] a) => Arg(a[0], out T1 x) ? f((TS)self, x) : Slow(self, a);
+        public override object CallAs(Runtime rt, object self, object[] a) => CallAs1(rt, self, a[0]);
+        public override object CallAs1(Runtime rt, object self, object x) => Ret(f((TS)self, rt.From<T1>(x, names[0])));
     }
 
     sealed class I1V<TS, T1> : NativeCall where TS : class
@@ -207,6 +238,8 @@ abstract class NativeCall
             if (!Arg(a[0], out T1 x)) return Slow(self, a);
             f((TS)self, x); return null;
         }
+        public override object CallAs(Runtime rt, object self, object[] a) => CallAs1(rt, self, a[0]);
+        public override object CallAs1(Runtime rt, object self, object x) { f((TS)self, rt.From<T1>(x, names[0])); return Rt.Undef; }
     }
 
     sealed class I2<TS, TR, T1, T2> : NativeCall where TS : class
@@ -215,6 +248,8 @@ abstract class NativeCall
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<TS, T1, T2, TR>>();
         public override object Call(object self, object[] a) =>
             Arg(a[0], out T1 x) && Arg(a[1], out T2 y) ? f((TS)self, x, y) : Slow(self, a);
+        public override object CallAs(Runtime rt, object self, object[] a) =>
+            Ret(f((TS)self, rt.From<T1>(a[0], names[0]), rt.From<T2>(a[1], names[1])));
     }
 
     sealed class I2V<TS, T1, T2> : NativeCall where TS : class
@@ -226,6 +261,10 @@ abstract class NativeCall
             if (!Arg(a[0], out T1 x) || !Arg(a[1], out T2 y)) return Slow(self, a);
             f((TS)self, x, y); return null;
         }
+        public override object CallAs(Runtime rt, object self, object[] a)
+        {
+            f((TS)self, rt.From<T1>(a[0], names[0]), rt.From<T2>(a[1], names[1])); return Rt.Undef;
+        }
     }
 
     sealed class I3<TS, TR, T1, T2, T3> : NativeCall where TS : class
@@ -234,6 +273,8 @@ abstract class NativeCall
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<TS, T1, T2, T3, TR>>();
         public override object Call(object self, object[] a) =>
             Arg(a[0], out T1 x) && Arg(a[1], out T2 y) && Arg(a[2], out T3 z) ? f((TS)self, x, y, z) : Slow(self, a);
+        public override object CallAs(Runtime rt, object self, object[] a) =>
+            Ret(f((TS)self, rt.From<T1>(a[0], names[0]), rt.From<T2>(a[1], names[1]), rt.From<T3>(a[2], names[2])));
     }
 
     sealed class I3V<TS, T1, T2, T3> : NativeCall where TS : class
@@ -245,6 +286,10 @@ abstract class NativeCall
             if (!Arg(a[0], out T1 x) || !Arg(a[1], out T2 y) || !Arg(a[2], out T3 z)) return Slow(self, a);
             f((TS)self, x, y, z); return null;
         }
+        public override object CallAs(Runtime rt, object self, object[] a)
+        {
+            f((TS)self, rt.From<T1>(a[0], names[0]), rt.From<T2>(a[1], names[1]), rt.From<T3>(a[2], names[2])); return Rt.Undef;
+        }
     }
 
     sealed class S0<TR> : NativeCall
@@ -252,6 +297,8 @@ abstract class NativeCall
         Func<TR> f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<TR>>();
         public override object Call(object self, object[] a) => f();
+        public override object CallAs(Runtime rt, object self, object[] a) => Ret(f());
+        public override object CallAs1(Runtime rt, object self, object x) => Ret(f());
     }
 
     sealed class S0V : NativeCall
@@ -259,6 +306,8 @@ abstract class NativeCall
         Action f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Action>();
         public override object Call(object self, object[] a) { f(); return null; }
+        public override object CallAs(Runtime rt, object self, object[] a) { f(); return Rt.Undef; }
+        public override object CallAs1(Runtime rt, object self, object x) { f(); return Rt.Undef; }
     }
 
     sealed class S1<TR, T1> : NativeCall
@@ -266,6 +315,8 @@ abstract class NativeCall
         Func<T1, TR> f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<T1, TR>>();
         public override object Call(object self, object[] a) => Arg(a[0], out T1 x) ? f(x) : Slow(self, a);
+        public override object CallAs(Runtime rt, object self, object[] a) => CallAs1(rt, self, a[0]);
+        public override object CallAs1(Runtime rt, object self, object x) => Ret(f(rt.From<T1>(x, names[0])));
     }
 
     sealed class S1V<T1> : NativeCall
@@ -277,6 +328,8 @@ abstract class NativeCall
             if (!Arg(a[0], out T1 x)) return Slow(self, a);
             f(x); return null;
         }
+        public override object CallAs(Runtime rt, object self, object[] a) => CallAs1(rt, self, a[0]);
+        public override object CallAs1(Runtime rt, object self, object x) { f(rt.From<T1>(x, names[0])); return Rt.Undef; }
     }
 
     sealed class S2<TR, T1, T2> : NativeCall
@@ -284,6 +337,7 @@ abstract class NativeCall
         Func<T1, T2, TR> f;
         protected override void Bind(MethodInfo mi) => f = mi?.CreateDelegate<Func<T1, T2, TR>>();
         public override object Call(object self, object[] a) => Arg(a[0], out T1 x) && Arg(a[1], out T2 y) ? f(x, y) : Slow(self, a);
+        public override object CallAs(Runtime rt, object self, object[] a) => Ret(f(rt.From<T1>(a[0], names[0]), rt.From<T2>(a[1], names[1])));
     }
 
     sealed class S2V<T1, T2> : NativeCall
@@ -294,6 +348,10 @@ abstract class NativeCall
         {
             if (!Arg(a[0], out T1 x) || !Arg(a[1], out T2 y)) return Slow(self, a);
             f(x, y); return null;
+        }
+        public override object CallAs(Runtime rt, object self, object[] a)
+        {
+            f(rt.From<T1>(a[0], names[0]), rt.From<T2>(a[1], names[1])); return Rt.Undef;
         }
     }
 }

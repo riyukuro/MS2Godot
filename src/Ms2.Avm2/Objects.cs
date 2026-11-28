@@ -5,13 +5,18 @@ public abstract class MethodImpl
 {
     public string Name;
     public abstract object Invoke(object self, object[] args);
+    /// <summary><see cref="Invoke"/> with one argument (a setter, a listener). A native member may take it without an
+    /// array; otherwise the callee gets a fresh one, which it may keep.</summary>
+    public virtual object Invoke1(object self, object arg) => Invoke(self, new[] { arg });
     public override string ToString() => Name;
 }
 
 public sealed class NativeMethod : MethodImpl
 {
     readonly Func<object, object[], object> fn;
-    public NativeMethod(string name, Func<object, object[], object> fn) { Name = name; this.fn = fn; }
+    /// <summary>The same call for exactly one argument, without an array (null: <see cref="Invoke1"/> makes one).</summary>
+    readonly Func<object, object, object> fn1;
+    public NativeMethod(string name, Func<object, object[], object> fn, Func<object, object, object> fn1 = null) { Name = name; this.fn = fn; this.fn1 = fn1; }
     /// <summary>Sees every native call on this thread before it runs (the equivalence tests trace the interpreter and the
     /// compiled code; per thread, so a test's observer never sees another thread's movies).</summary>
     [ThreadStatic] public static Action<NativeMethod, object, object[]> Observer;
@@ -20,6 +25,8 @@ public sealed class NativeMethod : MethodImpl
         Observer?.Invoke(this, self, args);
         return fn(self, args);
     }
+    public override object Invoke1(object self, object arg) =>
+        fn1 != null && Observer == null ? fn1(self, arg) : Invoke(self, new[] { arg });
 }
 
 /// <summary>Any AS3 object: traits of its class (slots, methods, accessors), dynamic properties and the prototype chain.</summary>
@@ -173,6 +180,8 @@ public sealed class AsClass : AsObject
 public abstract class AsFunction : AsObject
 {
     public abstract object Call(object self, object[] args);
+    /// <summary><see cref="Call"/> with one argument (<see cref="MethodImpl.Invoke1"/>).</summary>
+    public virtual object Call1(object self, object arg) => Call(self, new[] { arg });
     public virtual AsObject Construct(object[] args)
     {
         var rt = Class.Runtime;
@@ -192,6 +201,7 @@ public sealed class AsMethodClosure : AsFunction
     public readonly MethodImpl Method;
     public AsMethodClosure(Runtime rt, object receiver, MethodImpl m) { Receiver = receiver; Method = m; if (rt != null) Init(rt.FunctionClass); }
     public override object Call(object self, object[] args) => Method.Invoke(Receiver, args);
+    public override object Call1(object self, object arg) => Method.Invoke1(Receiver, arg);
     public bool SameAs(AsMethodClosure o) => ReferenceEquals(Method, o.Method) && Rt.StrictEquals(Receiver, o.Receiver);
     public override string ToString() => "closure " + Method.Name;
 }
@@ -202,6 +212,7 @@ public sealed class AsPlainFunction : AsFunction
     public readonly MethodImpl Method;
     public AsPlainFunction(Runtime rt, MethodImpl m) { Method = m; Init(rt.FunctionClass); }
     public override object Call(object self, object[] args) => Method.Invoke(self, args);
+    public override object Call1(object self, object arg) => Method.Invoke1(self, arg);
     public override string ToString() => "function " + Method.Name;
 }
 

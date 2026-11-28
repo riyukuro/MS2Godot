@@ -282,7 +282,7 @@ public sealed partial class Runtime
                         o.Slots[b.Slot] = CoerceTo(b.TypeName, value); return;
                     case BindingKind.Accessor:
                         if (b.Setter == null) throw ReferenceError($"Illegal write to read-only property {n.Local} on {o.Class?.Name}.");
-                        b.Setter.Invoke(o, new[] { value }); return;
+                        b.Setter.Invoke1(o, value); return;
                     case BindingKind.Method:
                         throw ReferenceError($"Cannot assign to a method {n.Local} on {o.Class?.Name}.");
                 }
