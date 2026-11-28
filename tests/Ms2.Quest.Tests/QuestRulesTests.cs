@@ -192,4 +192,23 @@ public class QuestRulesTests
         Assert.That(QuestRules.IsComplete(q, 1, new long[] { 2, 1 }), Is.False);
         Assert.That(QuestRules.IsComplete(q, 2, new long[] { 3, 1 }), Is.False);
     }
+
+    /// <summary>
+    /// CConditionCommonData starts its goal at 1 (conditionutil.cpp:287) and Load only reads "value" when it is there
+    /// (:330), so a condition without a value needs one count: quest 50001670's interact_object condition has none, and a
+    /// goal of 0 read the quest complete the moment it was taken, which closed its object's quest mask.
+    /// </summary>
+    [Test]
+    public void AConditionWithoutValueNeedsOneCount()
+    {
+        var c = QuestCondition.Load(XElement.Parse("<condition type=\"interact_object\" code=\"10001229\" />"));
+        Assert.That(c.Goal, Is.EqualTo(1));
+        Assert.That(QuestCondition.Load(XElement.Parse("<condition type=\"npc\" code=\"7\" value=\"3\" />")).Goal, Is.EqualTo(3));
+        Assert.That(QuestCondition.Load(XElement.Parse("<condition type=\"npc\" code=\"7\" value=\"0\" />")).Goal, Is.EqualTo(0), "a written 0 stays 0");
+        Assert.That(new QuestCondition().Goal, Is.EqualTo(1), "a trophy grade without a condition element (achievedata.cpp:701)");
+        var q = new QuestData { Id = 50001670 };
+        q.Conditions.Add(c);
+        Assert.That(QuestRules.IsComplete(q, 1, new long[] { 0 }), Is.False, "taken, the object not used yet");
+        Assert.That(QuestRules.IsComplete(q, 1, new long[] { 1 }), Is.True);
+    }
 }

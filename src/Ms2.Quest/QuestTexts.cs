@@ -67,16 +67,20 @@ public sealed class ConditionParam
     public long FirstValue => (Flags & 1) != 0 && Ranges.Count > 0 ? Ranges[0].Start : (Flags & 2) != 0 && Ids.Count > 0 ? Ids[0] : 0;
 }
 
-/// <summary>CConditionCommonData: one quest condition, its type, goal (value), code and target.</summary>
+/// <summary>CConditionCommonData: one quest or trophy grade condition, its type, goal (value), code and target.</summary>
 public sealed class QuestCondition
 {
     public int Type;
-    public long Goal;
+    /// <summary>m_nGoal: the constructor sets 1 (CConditionCommonData::CConditionCommonData, conditionutil.cpp:287), also
+    /// for a trophy grade without a condition element (CAchieveGradeData::CAchieveGradeData, achievedata.cpp:701).</summary>
+    public long Goal = 1;
     public ConditionParam Code = new(), Target = new();
 
     /// <summary>
-    /// CConditionCommonData::Load: a condition whose type name is unknown (ConditionTypeFromName 0) does not load. code
-    /// and target are parsed unless empty or "0".
+    /// CConditionCommonData::Load (@0x14029ea20, conditionutil.cpp:322-330): a condition whose type name is unknown
+    /// (ConditionTypeFromName 0) does not load. code and target are parsed unless empty or "0". The goal keeps the
+    /// constructor's m_nGoal(1) (:287) and XmlGetAttr only writes it when "value" is there (XmlQueryInt,
+    /// tinyxmlhelper.cpp:57-63), so a condition without a value has goal 1: one interact, talk or kill completes it.
     /// </summary>
     public static QuestCondition Load(XElement e)
     {
