@@ -246,7 +246,7 @@ public class ShadowExpeditionTests
     /// </summary>
     static void EveryUse(string variable)
     {
-        using var data = new PackSet(RcGap.Data(variable));
+        using var data = new PackSet(variable == "MS2_DATA" ? RcGap.KmsData() : RcGap.Data(variable));
         var strings = new GameTables(data, "en").TriggerStrings;
         int opens = 0, closes = 0, points = 0, files = 0, keyed = 0;
         var shapes = new SortedDictionary<string, int>(StringComparer.Ordinal);

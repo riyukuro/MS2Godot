@@ -74,7 +74,7 @@ public class TriggerSweepTests
         var used = new HashSet<(string, string)>();
         foreach (var variable in new[] { "MS2_DATA", "MS2_GMS2_DATA" })
         {
-            using var packs = new PackSet(RcGap.Data(variable));
+            using var packs = new PackSet(variable == "MS2_DATA" ? RcGap.KmsData() : RcGap.Data(variable));
             foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("trigger/", StringComparison.OrdinalIgnoreCase)))
             {
                 System.Xml.Linq.XDocument doc;
