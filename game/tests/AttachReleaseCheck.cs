@@ -28,6 +28,10 @@ namespace Ms2Godot.Tests;
 ///   effect stops at once and nothing is left;
 /// - a looping effect (Jet Boots, attach type 1 loop parts) released by the state stops whole (vfunc_11 returns 0,
 ///   FUN_1411a6060), its type 0 part with it;
+/// - a dash cancel: the remote's Flame Wave cast (its cast effect kept as the motion effect) cut by another cast. The new
+///   sequence skill enters StateSkill forced (vfunc_59(0x10, 0, 0, 1), mypc.cpp:1216, StateSkill::PlayCastStartEffect
+///   stateskill.cpp:1828), so CStateManager::ChangeState (statemanager.cpp:291-316) runs the old record's StateSkill::vfunc_5
+///   (stateskill.cpp:501-540) and its FUN_1411a69e0 release: the part stays where it was cast while the actor dashes on;
 /// - the own player's cast (HudScene's KeepOwnEffect / ReleaseOwnEffect / InsertOwnEffect through the live session): the
 ///   state's release leaves the Flame Wave part in the world as well, and the motion's insert (the end effect, the loop
 ///   keep's end) stays on the player.
@@ -74,6 +78,7 @@ public partial class AttachReleaseCheck : Node3D
         Check(owner != null && root != null && states?.ReleaseEffect != null, "no remote body, root or release for the other player");
         if (owner != null) { var at = EffectView.Client(owner.GlobalPosition); fx.ViewerOf = () => at; }
         if (fails.Count == 0) Run();
+        if (fails.Count == 0) RunDashCancel();
         if (fails.Count == 0) RunExits();
         if (fails.Count == 0) RunOwn(layer);
 
@@ -116,6 +121,32 @@ public partial class AttachReleaseCheck : Node3D
         states.ReleaseEffect(hl);
         Check(!kept.Contains(hl), "the late release left the handle kept");
         GD.Print($"attach release: released part stayed at {released} (actor moved by {Step}), inserted part followed to {followed}, type 0 stayed at {released0}");
+    }
+
+    /// <summary>The skill state's exit by another cast (a dash cancel), through RemotePcStates.Cast on the field's real
+    /// effect service, not the natural end.</summary>
+    void RunDashCancel()
+    {
+        // the stub user comes in with no health, so OnAddUser marked it dead, and a dead owner's skill exit stops its effects
+        // (StateSkill::vfunc_5, stateskill.cpp:515-524): alive here, as OnRevival leaves it
+        states.SetDead(false);
+        var had = new HashSet<EffectInstance>(PartsOn(owner));
+        states.Cast(10001001, false, System.Numerics.Vector3.Zero, 90f,
+            effects: new SkillTagEffects.MotionEffects(FlameWave, null, null, null, null));
+        EffectInstance part = null;
+        foreach (var e in PartsOn(owner)) if (!had.Contains(e)) { part = e; break; }
+        Check(part != null, "the remote's Flame Wave cast kept no part on the actor");
+        if (part == null) return;
+        var cast = part.GlobalPosition;
+        var onActor = Move(part);
+        Check(onActor.DistanceTo(cast + Step) < 0.01f, $"the running cast's Flame Wave part did not follow the actor: {cast} -> {onActor}");
+        states.Cast(10001002, false, new System.Numerics.Vector3(100, 0, 0), 270f);
+        Check(states.Cur == RemotePcStates.StateSkill, "the dash cast did not enter the skill state");
+        var after = Move(part);
+        Check(GodotObject.IsInstanceValid(part) && part.GetParent() == fx && after.DistanceTo(onActor) < 0.01f,
+            $"the dash-cancelled Flame Wave part did not stay where it was: {onActor} -> {after}");
+        GD.Print($"attach release: dash cancel left the Flame Wave part at {after} (actor moved on by {Step})");
+        states.ChangeState(RemotePcStates.StateIdle);
     }
 
     /// <summary>The review's gaps: the split's whole transform and its end, the real state exits (soft and hard) through

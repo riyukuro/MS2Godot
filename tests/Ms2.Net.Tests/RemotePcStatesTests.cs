@@ -997,6 +997,32 @@ public class RemotePcStatesTests {
         }
     }
 
+    [Test] public void ACastCancelledByAnotherCastReleasesItsEffects() {
+        // a dash cancel: a new sequence skill enters StateSkill forced (vfunc_59(0x10, 0, 0, 1), mypc.cpp:1216 and
+        // StateSkill::PlayCastStartEffect stateskill.cpp:1828), so CStateManager::ChangeState (statemanager.cpp:291-316)
+        // skips the same-state return and runs the old record's StateSkill::vfunc_5(0x10) (stateskill.cpp:501-540) before
+        // the new vfunc_4: the old motion and tag effects are released (left in the world), not stopped and not kept
+        var b = new Body();
+        b.CastKeys["e0"] = 0.1f;
+        var sm = new RemotePcStates(b);
+        var kept = new List<string>(); var stopped = new List<int>(); var released = new List<int>();
+        int next = 40;
+        sm.KeepEffect = fx => { kept.Add(fx); return ++next; };
+        sm.TagEffect = (_, _) => ++next;
+        sm.StopEffect = stopped.Add;
+        sm.ReleaseEffect = released.Add;
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10001001, false, Vector3.Zero, 90f, tagEffects: new Dictionary<string, string> { ["e0"] = "t.xml" },
+            effects: new SkillTagEffects.MotionEffects("flame.xml", null, null, null, null));
+        sm.CastTextKey("e0", 0.1f);
+        Assert.That(kept, Is.EqualTo(new[] { "flame.xml" }));
+        sm.Cast(10001002, false, new Vector3(100, 0, 0), 270f, effects: new SkillTagEffects.MotionEffects("dash.xml", null, null, null, null));
+        Assert.That(released, Is.EquivalentTo(new[] { 41, 42 }), "the cancelled cast's motion and tag effects are released");
+        Assert.That(stopped, Is.Empty);
+        Assert.That(kept, Is.EqualTo(new[] { "flame.xml", "dash.xml" }));
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+    }
+
     [Test] public void ACastOnWaterGivesWayToTheSwim() {
         // StateSkill::vfunc_3: FUN_141675ed0 (the hit report's entity is water) -> vfunc_7(0x1b)
         var b = new Body();

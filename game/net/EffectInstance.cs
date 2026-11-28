@@ -64,6 +64,9 @@ public sealed partial class EffectInstance : Node3D
         public bool ClonesOk;                                     // the kernel that ran is ported (SetupClones)
         public bool Refused, Shown = true;                        // the quads' generator refuses the system; Node.Visible as last set
         public double LastScaled = double.NegativeInfinity;      // the reset controller's last scaled time (ParticleSystemDef.ResetCtl)
+        // a local-space system whose node moves in the file (a keyframed or billboard node on the way to the root): its
+        // particles are carried with the node (Carry), from the node's place in this effect's space at the last step
+        public bool FollowNode, HaveSys; public Transform3D LastSys;
     }
 
     /// <summary>One particle's clone of a master particle (NiPSMeshParticleSystem::InitializeParticle,
@@ -87,6 +90,8 @@ public sealed partial class EffectInstance : Node3D
     readonly bool[] hidden, hidDone; readonly bool visDyn;
     readonly bool needCam;               // a billboard node or a particle system reads the camera
     readonly bool needAxes;              // a system has NiPSAlignedQuadGenerator quads, or is a world-space mesh-particle system
+    readonly bool anyWorld;              // a system with particles is a world-space one (KeepWorld)
+    Transform3D lastZg; bool haveZg;     // z's world transform at the last step in the tree (KeepWorld)
     readonly bool useLighting;           // the part's <attachInfo useLighting> (the constructor's)
     Vector3 worldX = new(1, 0, 0), worldZ = new(0, 0, 1);
     bool inTree, shown = true;           // shown: z's Visible as last set (a new node is visible)
@@ -659,6 +664,7 @@ void fragment() {
         dynNodes = Enumerable.Range(0, scene.Nodes.Count).Where(Dyn).ToArray();
         needCam = scene.Nodes.Any(n => n.Billboard) || scene.Systems.Any(d => d.Emitters.Count > 0);
         needAxes = scene.Systems.Any(d => d.Aligned || (d.MeshParticles && d.WorldSpace));
+        anyWorld = scene.Systems.Any(d => d.WorldSpace && d.Emitters.Count > 0);
         AddChild(z);
         foreach (var em in scene.Meshes)
         {
@@ -674,7 +680,7 @@ void fragment() {
         foreach (var d in scene.Systems)
         {
             if (d.Emitters.Count == 0) continue;
-            var ps = new PSys { Def = d };
+            var ps = new PSys { Def = d, FollowNode = !d.WorldSpace && Dyn(d.Node) };
             int n = d.MaxParticles;
             ps.Pos = new Vector3[n]; ps.Vel = new Vector3[n]; ps.Age = new float[n]; ps.Life = new float[n]; ps.Size = new float[n]; ps.Rot = new float[n]; ps.RotSpeed = new float[n]; ps.Variance = new float[n]; ps.Tex = new AlignedQuad.TexAnim(d);
             ps.Accum = new double[d.Emitters.Count];
@@ -1127,8 +1133,9 @@ void fragment() {
         long q0 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var cam = needCam ? FrameCamera() : null;
         // the effect's world transform, fetched once for the camera and the aligned quads below
-        bool zIn = needAxes && z.IsInsideTree();
+        bool zIn = (needAxes || anyWorld) && z.IsInsideTree();
         var zg = cam != null || zIn ? z.GlobalTransform : Transform3D.Identity;
+        if (anyWorld && zIn) KeepWorld(zg);
         var camLocal = cam != null ? zg.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
         // the camera's right and up in this effect's space (file space), for the facing particle quads
         Vector3 camRight = new(1, 0, 0), camUp = new(0, 0, 1), camDir = new(0, 1, 0);
@@ -1190,6 +1197,42 @@ void fragment() {
         }
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
+    /// <summary>
+    /// A world-space system's particles stay where they are in the world when the effect moves (an attach type 1 part on a
+    /// moving actor): NiPSParticleSystem with "World Space" on (nif.xml NiPSParticleSystem, default true) keeps its particles
+    /// in world coordinates and is drawn with the identity rotation and translate (NiPSParticleSystem::UpdateWorldData,
+    /// NiPSParticleSystem.cpp:509-520); its emitters emit at the emitter object's world place (NiPSBoxEmitter.cpp:100-103), so
+    /// only new particles start from the moved emitter. The particles are kept in this effect's space here, so when z's world
+    /// transform changes the live ones are brought back by the change (old world to new local), their velocities turned with
+    /// it. A local-space system's particles move with the effect, as they live in its space.
+    /// </summary>
+    void KeepWorld(in Transform3D zg)
+    {
+        if (haveZg && zg != lastZg && Invertible(zg.Basis))
+        {
+            var delta = zg.AffineInverse() * lastZg;
+            foreach (var ps in systems) if (ps.Def.WorldSpace && ps.Count > 0) Carry(ps, delta);
+        }
+        lastZg = zg; haveZg = true;
+    }
+
+    /// <summary>Not a collapsed basis (a node keyed to scale 0): its inverse is finite.</summary>
+    static bool Invertible(in Basis b) => Mathf.Abs(b.Determinant()) > 1e-12f;
+
+    /// <summary>The live particles moved by <paramref name="m"/>: positions by the whole transform, velocities by its basis.</summary>
+    static void Carry(PSys ps, in Transform3D m)
+    {
+        Vector3[] pos = ps.Pos, vel = ps.Vel;
+        var b = m.Basis; var o = m.Origin;
+        float xx = b.X.X, xy = b.X.Y, xz = b.X.Z, yx = b.Y.X, yy = b.Y.Y, yz = b.Y.Z, zx = b.Z.X, zy = b.Z.Y, zz = b.Z.Z;
+        for (int i = 0, n = ps.Count; i < n; i++)
+        {
+            var p = pos[i]; var v = vel[i];
+            pos[i] = new Vector3(xx * p.X + yx * p.Y + zx * p.Z + o.X, xy * p.X + yy * p.Y + zy * p.Z + o.Y, xz * p.X + yz * p.Y + zz * p.Z + o.Z);
+            vel[i] = new Vector3(xx * v.X + yx * v.Y + zx * v.Z, xy * v.X + yy * v.Y + zy * v.Z, xz * v.X + yz * v.Y + zz * v.Z);
+        }
+    }
+
     /// <summary>A mesh's controllers at time t: the colours and alpha (or an _HO block's), the uv transforms, the morph weights
     /// and the flipbook frame. started: every uv controller runs (a clone's, AnimateUv).</summary>
     void Animate(MeshState ms, float t, bool started)
@@ -1311,6 +1354,14 @@ void fragment() {
         // are kept in the effect's space, so the system node's scale multiplies their size, emitted speed and the forces.
         var sysWorld = World(d.Node, t, camLocal);
         float psScale = sysWorld.Basis.Scale.X;
+        // A local-space system's particles live in the system node's space (NiPSParticleSystem with "World Space" off is drawn
+        // with its world transform, UpdateWorldData NiPSParticleSystem.cpp:509-520), so a node keyframed in the file carries
+        // the live particles with it; kept in this effect's space here, they are moved by the node's change since the last step.
+        if (ps.FollowNode)
+        {
+            if (ps.HaveSys && ps.Count > 0 && sysWorld != ps.LastSys && Invertible(ps.LastSys.Basis)) Carry(ps, sysWorld * ps.LastSys.AffineInverse());
+            ps.LastSys = sysWorld; ps.HaveSys = true;
+        }
         // Forces on at this time. A bomb or drag takes its object's position and its object's rotation times its axis
         // (NiPSBombForce::Update, NiPSBombForce.cpp:59-80; NiPSDragForce::Update, NiPSDragForce.cpp:57-78); without an
         // object, or a drag with Percentage <= 0, it is left out (NiPSSimulatorForcesStep.cpp:186-226). The system's
