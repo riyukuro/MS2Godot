@@ -188,6 +188,7 @@ namespace Ms2.Avm2.Flash
         /// <summary>Constructs the document class (or a plain MovieClip) with the root timeline, on the stage. Returns false on an AS error.</summary>
         public bool Start()
         {
+            started = true;
             return RT.Guard("construct root", () =>
             {
                 // the movies carry an authoring switch (CommonPath.flash, true by default) that runs demo data when played
@@ -1597,16 +1598,40 @@ namespace Ms2.Avm2.Flash
 
         static readonly System.Diagnostics.Stopwatch wallClock = System.Diagnostics.Stopwatch.StartNew();
 
+        // MovieImpl::StartTickMs of the group root movies (main, HUD, tooltip, cursor, post display), which
+        // GFxManager::Initialize builds once at UI start-up (gfxmanager.cpp:111-152); every UI swf is loaded into one of
+        // them (UISwfEntityManager::LoadSwf, uiswfentitymanager.cpp:162-200), so no dialog has a start of its own. The
+        // first Player stands in for that start; -1 until it is built.
+        static long groupRootStartMs = -1;
+
+        static long GroupRootStartMs()
+        {
+            System.Threading.Interlocked.CompareExchange(ref groupRootStartMs, (long)wallClock.Elapsed.TotalMilliseconds, -1);
+            return System.Threading.Interlocked.Read(ref groupRootStartMs);
+        }
+
         Func<double> clock = () => wallClock.Elapsed.TotalMilliseconds;
-        long startTickMs = (long)wallClock.Elapsed.TotalMilliseconds;
+        long startTickMs = GroupRootStartMs();
+        bool started;   // Start has run: the document class and its tweens may have read getTimer
 
         /// <summary>
         /// The real clock in ms, Timer::GetTicks()/1000 (GetTicks counts microseconds). The double click reads it as a UInt32
-        /// (GenerateMouseEvents, sfr_as3_17.cpp:7134), and getTimer reads it less the movie start (<see cref="ASTimerMs"/>).
-        /// Both are real time, not the frame count, which falls behind when frames are dropped. Tests set their own; setting
-        /// one also restarts the movie clock at its current reading, as if the movie started then.
+        /// (GenerateMouseEvents, sfr_as3_17.cpp:7134), and getTimer reads it less the group root's start
+        /// (<see cref="ASTimerMs"/>). Both are real time, not the frame count, which falls behind when frames are dropped.
+        /// Tests set their own. Set before <see cref="Start"/>, the movie's getTimer starts at the new clock's reading, so a
+        /// test sees the same numbers every run. Set after it, getTimer carries on from where it was, as it never goes back
+        /// in the client.
         /// </summary>
-        public Func<double> Clock { get => clock; set { clock = value; startTickMs = (long)Math.Floor(value()); } }
+        public Func<double> Clock
+        {
+            get => clock;
+            set
+            {
+                long now = (long)Math.Floor(value());
+                startTickMs = started ? now - ASTimerMs : now;
+                clock = value;
+            }
+        }
 
         /// <summary>
         /// For a test host whose runs must give the same frames every time: the clock each new Player starts on, else null for
@@ -1619,9 +1644,12 @@ namespace Ms2.Avm2.Flash
         /// <summary>
         /// getTimer: GlobalObjectCPP::getTimer (@0x142428d70, sfr_as3_04.cpp:2943) gives (SInt32)MovieImpl::GetASTimerMs
         /// (@0x14256ee60, sfr_gfx_01i.cpp:1169) = Timer::GetTicks()/1000 - StartTickMs, real ms since the movie started.
-        /// StartTickMs is the ctor's GetTicks()/1000 (sfr_gfx_01i.cpp:1879); here the Player's construction, or the
-        /// moment a test sets <see cref="Clock"/>. The setTimeout / Timer clock (<see cref="Runtime.TimerMs"/>) is a different
-        /// one and stays as it is.
+        /// StartTickMs is the ctor's GetTicks()/1000 (sfr_gfx_01i.cpp:1879), and the movie that reads it is the group root
+        /// the swf was loaded into, built at UI start-up, not the dialog: a dialog opened late reads the time since then.
+        /// Here it is the first Player's construction, or the moment a test sets <see cref="Clock"/> before Start.
+        /// The world map's tile click shows why: IconTile.onMouseClickTile takes a click within 300 ms of
+        /// m_lastClickTime (0 at first) as a double click and sends OnCashTaxi; counted from each dialog's own start, a
+        /// first click just after the map opens would be one.
         /// STILL-OPEN: MovieImpl::SetPause (@0x1425762f0, sfr_gfx_01i.cpp:1196) moves StartTickMs on by the paused time,
         /// so getTimer stops while paused. No pause of a movie is ported (no caller found in the game code), so none is
         /// applied here. The TestStream record/play branch of GetASTimerMs is a Scaleform test tool and is not ported.
