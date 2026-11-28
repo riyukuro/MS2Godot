@@ -515,13 +515,16 @@ public partial class HudScene
         return true;
     }
 
-    /// <summary>PCBase::vfunc_100 (pcbase.cpp:2561) on a next cast in the skill state: <see cref="SkillCast.Aim"/> from where
-    /// the player is and faces now, not where it was at the press (a continue skill again keeps the running record's aim), then
+    /// <summary>PCBase::vfunc_100 (pcbase.cpp:2561) on the press and on a next cast in the skill state: <see cref="SkillCast.Aim"/>
+    /// from where the player is now and the move keys held now (<see cref="Player.CastAimDirection"/>), else the facing now, not
+    /// where it was at the press (a continue skill again keeps the running record's aim), then
     /// the auto target (<see cref="AutoTargetOwn"/>); <paramref name="turn"/> is vfunc_100's n.</summary>
     void AimOwn(CastRecord r, bool turn)
     {
         var g = player.GlobalPosition;
-        SkillCast.Aim(r, new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ, ownCast, hudModel.IsFeatureEnabled(0xca));
+        var k = player.CastAimDirection();      // the move keys held now (FUN_141683900), godot axes
+        SkillCast.Aim(r, new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ, new System.Numerics.Vector3(k.X, -k.Z, 0),
+            ownCast, hudModel.IsFeatureEnabled(0xca));
         AutoTargetOwn(r, turn);
     }
 

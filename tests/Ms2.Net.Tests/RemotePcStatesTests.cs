@@ -32,17 +32,20 @@ public class RemotePcStatesTests {
         public void StartJump(float height, Vector3 dir, float speed) { v0 = MathF.Sqrt(2f * 2f * height * -Gravity); jumpT = 0; jumpH = 0; Jumping = true; kVel = dir * speed; }
         public void SetVelocity(Vector3 v) => kVel = v;
         public readonly List<(Vector3 move, uint exclude)> Moves = new();   // each vfunc_68 with its nFlags
-        public void Move(Vector3 move, float dt, uint exclude) {
+        public readonly List<(bool keepDrift, bool noVelocity)> MoveFlags = new();
+        public void Move(Vector3 move, float dt, bool keepDrift, bool noVelocity, uint exclude) {
             Moves.Add((move, exclude));
+            MoveFlags.Add((keepDrift, noVelocity));
             var d = move;
-            if (Jumping) {
+            if (noVelocity) { }
+            else if (Jumping) {
                 jumpT += dt;
                 float h = v0 * jumpT + 0.5f * Gravity * jumpT * jumpT;
                 d.Z += h - jumpH; jumpH = h;
-                d.X += kVel.X * dt; d.Y += kVel.Y * dt;
+                if (keepDrift) { d.X += kVel.X * dt; d.Y += kVel.Y * dt; }
             } else if (fallRunning || Position.Z > 0) {
                 d.Z += Gravity * fallTime * dt + 0.5f * Gravity * dt * dt;
-                if (move == Vector3.Zero && InAirFor(0)) { d.X += kVel.X * dt; d.Y += kVel.Y * dt; }
+                if (keepDrift && move == Vector3.Zero && InAirFor(0)) { d.X += kVel.X * dt; d.Y += kVel.Y * dt; }
             }
             var p = Position + d;
             if (p.Z <= 0 && d.Z <= 0) {
@@ -133,6 +136,28 @@ public class RemotePcStatesTests {
         Assert.That(SyncRecord.UnpackMove(0 + 4, 0, 0), Is.EqualTo(new Vector2(-1, -1)));
         Assert.That(SyncRecord.UnpackMove(1 + 8, 0, 0), Is.EqualTo(Vector2.Zero));
         Assert.That(SyncRecord.UnpackMove(3 + 0, 0, 0), Is.EqualTo(Vector2.Zero));   // 3 and 0 name no value: both stay 0
+    }
+
+    [Test] public void MoveFlagsCoverTheNineKeyDirections() {
+        // FUN_140836250 / FUN_1408365d0 (statesyncobject.cpp:202-220, 243-257) over GetMoveDirection's keys
+        // (unit_141682f80.cpp:313-335: left x +1, right x -1, up y +1, down y -1, camera relative)
+        var table = new (string Keys, Vector2 Move, byte Flags)[]
+        {
+            ("none", new(0, 0), 9), ("right", new(-1, 0), 8), ("down-right", new(-1, -1), 4), ("down", new(0, -1), 5),
+            ("down-left", new(1, -1), 6), ("left", new(1, 0), 10), ("up-left", new(1, 1), 14), ("up", new(0, 1), 13),
+            ("up-right", new(-1, 1), 12),
+        };
+        foreach (var (keys, move, flags) in table)
+        {
+            Assert.That(SyncRecord.PackMove(move.X, move.Y, out float f1, out float f2), Is.EqualTo(flags), keys);
+            Assert.That((f1, f2), Is.EqualTo((0f, 0f)), keys);
+            Assert.That(SyncRecord.UnpackMove(flags, 0, 0), Is.EqualTo(move), keys);
+            Assert.That(flags & 3, Is.EqualTo(move.X < 0 ? 0 : move.X == 0 ? 1 : 2), keys);           // bits 0-1: right 0, none 1, left 2
+            Assert.That(flags >> 2, Is.EqualTo(move.Y < 0 ? 1 : move.Y == 0 ? 2 : 3), keys);          // bits 2-3: down 1, none 2, up 3
+        }
+        // a direction off the nine (a stick or click move) goes as 0x80 with its floats
+        Assert.That(SyncRecord.PackMove(0.6f, -0.8f, out float g1, out float g2), Is.EqualTo(0x80));
+        Assert.That(SyncRecord.UnpackMove(0x80, g1, g2), Is.EqualTo(new Vector2(0.6f, -0.8f)));
     }
 
     [Test] public void QueueKeepsTheLast100Ms() {
@@ -819,6 +844,56 @@ public class RemotePcStatesTests {
         var d = Vector3.Normalize(b.Position - p0);
         var facing30 = new Vector3(MathF.Sin(MathF.PI / 6), -MathF.Cos(MathF.PI / 6), 0);
         Assert.That(Vector3.Distance(d, facing30), Is.LessThan(1e-3f), "the step follows the facing after the first turn (sin 30, -cos 30)");
+    }
+
+    [Test] public void KeepsDriftFollowsTheClientsStateTest() {
+        // PCBase::vfunc_68 (pcbase.cpp:1783-1788): states 2, 5 and 6 keep the velocity's horizontal part, 0x10 only while
+        // jumping, every other state drops it
+        foreach (int st in new[] { RemotePcStates.StateWalk, RemotePcStates.StateFall, RemotePcStates.StateJump })
+            Assert.That((RemotePcStates.KeepsDrift(st, false), RemotePcStates.KeepsDrift(st, true)), Is.EqualTo((true, true)), $"state {st}");
+        Assert.That((RemotePcStates.KeepsDrift(RemotePcStates.StateSkill, false), RemotePcStates.KeepsDrift(RemotePcStates.StateSkill, true)), Is.EqualTo((false, true)));
+        foreach (int st in new[] { RemotePcStates.StateIdle, RemotePcStates.StateLand, RemotePcStates.StateHit, RemotePcStates.StateSwim })
+            Assert.That(RemotePcStates.KeepsDrift(st, true), Is.False, $"state {st}");
+    }
+
+    [Test] public void FadeAwayRecordsKeepTheJumpDriftThroughTheCast() {
+        // the retail fade away: walk (moving, dir 1), jump (moving, dir 1), jump (anim3 9, dir 1), the cast at dir 2
+        // (pcskill, anim3 9), idle. In the skill state the jump's horizontal velocity stays while the controller is in
+        // the jump (pcbase.cpp:1783-1788) and the body takes the cast's rotation at once (stateskill.cpp:446-448)
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        var cam = new Vector3(57, 90, 0);
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(1, 0), 0f, yaw: 90, cam: cam));
+        Run(sm, 0.2f);
+        sm.Push(Rec(6, 0x21, b.Position, new Vector2(1, 0), 0f, yaw: 90, cam: cam));
+        Run(sm, 0.1f);
+        sm.Push(Rec(6, 0x21, b.Position, Vector2.Zero, 0f, yaw: 90, cam: cam));
+        var a = b.Position; Run(sm, 0.1f);
+        var jumpStep = b.Position - a;
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateJump));
+        Assert.That(new Vector2(jumpStep.X, jumpStep.Y).Length(), Is.GreaterThan(10f), "the jump drifts");
+        sm.Cast(10200001, false, b.Position, 270f);
+        b.MoveFlags.Clear();
+        a = b.Position; Run(sm, 0.1f);
+        var castStep = b.Position - a;
+        Assert.That((sm.Cur, b.Jumping, b.RotationZ), Is.EqualTo((RemotePcStates.StateSkill, true, 270f)));
+        Assert.That(b.MoveFlags, Has.All.EqualTo((true, false)));
+        Assert.That(castStep.X * jumpStep.X + castStep.Y * jumpStep.Y, Is.GreaterThan(0.8f * (jumpStep.X * jumpStep.X + jumpStep.Y * jumpStep.Y)),
+            $"the cast keeps the jump's drift: jump {jumpStep}, cast {castStep}");
+    }
+
+    [Test] public void ArcMotionSkipsTheVelocityStep() {
+        // FUN_1417edc20 (stateskill.cpp:2865): bNoVelocity = the controller's m_nType, 1 for the arc controller alone
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 90f, move: new CastMove(1, 0, 200f, 0, 0, false, false, default));
+        b.MoveFlags.Clear(); Run(sm, 0.1f);
+        Assert.That(b.MoveFlags, Has.Some.EqualTo((false, true)));
+        sm.Cast(10200001, false, Vector3.Zero, 90f, move: Linear(300f));
+        b.MoveFlags.Clear(); Run(sm, 0.1f);
+        Assert.That(b.MoveFlags.Select(f => f.noVelocity), Has.None.True);
     }
 
     [Test] public void ArcMotionReachesItsDistanceInFourTenthsOfASecond() {

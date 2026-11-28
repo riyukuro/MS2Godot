@@ -2272,7 +2272,13 @@ public partial class LiveSession : Node
         Send(pk);
         var l = records[^1].Record;
         if (LogPackets) GD.Print($"live: {(ride ? "RideSync" : "UserSync")} sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
+        if (SyncTrace)
+            foreach (var (r, tick) in records)
+                GD.Print($"live: sync out state 0x{r.State:x2} sub {r.SubState} move flags {r.Animation} rotation {r.Rotation} pos ({r.Position.X},{r.Position.Y},{r.Position.Z}) tick {tick} frame {Engine.GetProcessFrames()}");
     }
+
+    /// <summary>MS2_LIVE_SYNC_TRACE=1: each own sync record sent is logged (state, sub state, move direction flags, rotation).</summary>
+    static readonly bool SyncTrace = System.Environment.GetEnvironmentVariable("MS2_LIVE_SYNC_TRACE") == "1";
 
     /// <summary>Field property 3's apply or unapply on the local player (GetLocalPlayer null: nothing, fieldpropertycli.cpp:149).</summary>
     void OnHideMyPC(bool on)

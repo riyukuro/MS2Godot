@@ -199,6 +199,26 @@ public class SkillCastTests
     }
 
     [Test]
+    public void AHeldMoveKeyAimsTheCastNotTheFacing()
+    {
+        // PCBase::vfunc_105 (pcbase.cpp:2812-2825): the move keys held at the cast (FUN_141683900) give the rotation
+        // (FUN_14166dad0, pcbase.cpp:1487-1497); the facing counts only with none held. The fade away: the body still faces
+        // left (rotZ 90, forward +x) while right (-x) is held on the cast's frame
+        var w = World(Skills(Attack, JumpAttack));
+        var c = new CastWorld();
+        var r = SkillCast.Request(w, c, Req(100), _ => 100).Record;
+        SkillCast.Aim(r, new Vector3(1, 2, 3), 90, new Vector3(-1, 0, 0), null, false);
+        Assert.That(r.Rotation.Z, Is.EqualTo(270f).Within(1e-4f), "aimed at the held key");
+        Assert.That(r.Direction.X, Is.EqualTo(-1f).Within(1e-6f));
+        Assert.That(r.Direction.Y, Is.EqualTo(0f).Within(1e-6f));
+        SkillCast.Aim(r, new Vector3(1, 2, 3), 90, Vector3.Zero, null, false);
+        Assert.That(r.Rotation, Is.EqualTo(new Vector3(0, 0, 90)), "no key held: the facing");
+        foreach (var (move, z) in new[] { (new Vector3(0, -1, 0), 0f), (new Vector3(1, 0, 0), 90f), (new Vector3(0, 1, 0), 180f),
+                     (new Vector3(-0.7071068f, -0.7071068f, 0), 315f) })
+            Assert.That(SkillCast.AimRotZ(12, move), Is.EqualTo(z).Within(1e-3f), $"{move}");
+    }
+
+    [Test]
     public void AContinueSkillAgainKeepsTheRunningRecordsAim()
     {
         // PCBase::vfunc_100 (pcbase.cpp:2575-2591) in the skill state

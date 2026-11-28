@@ -405,14 +405,29 @@ public static class SkillCast
     /// <summary>
     /// PCBase::vfunc_100 @0x141672910 (pcbase.cpp:2561-2603) on a record cast later than its press (StateSkill's m_spNext at
     /// the end step, stateskill.cpp:2939, and at the chain, :3170): m_k50, the Skill packet's position (FUN_1417ebc00), is the
-    /// owner's position now (vfunc_18, :2602); m_k5c and m_k68 are aimed again (vfunc_105, :2593) as the press aims them, the
-    /// facing <paramref name="rotZ"/> (degrees) as the direction and the rotation (0, 0, <paramref name="rotZ"/>).
+    /// owner's position now (vfunc_18, :2602); m_k5c and m_k68 are aimed again (vfunc_105, :2593) as the press aims them.
     /// In the skill state (:2575-2591), a continue skill (kinds continue, +0x34) cast again under the running record
     /// <paramref name="running"/> of the same skill keeps that record's direction and rotation instead, with stateAttr
     /// moveType (+0x88) 0, or 2 with feature 0xca (<paramref name="feature0xca"/>); the position is still the owner's now.
     /// The auto target (vfunc_101, :2598-2599) is <see cref="AutoTarget"/>, which the caller runs after this.
+    /// This form is the aim with no move key held: the facing <paramref name="rotZ"/> (degrees).
     /// </summary>
-    public static void Aim(CastRecord r, Vector3 position, float rotZ, CastRecord running, bool feature0xca)
+    public static void Aim(CastRecord r, Vector3 position, float rotZ, CastRecord running, bool feature0xca) =>
+        Aim(r, position, rotZ, Vector3.Zero, running, feature0xca);
+
+    /// <summary>
+    /// <see cref="Aim(CastRecord, Vector3, float, CastRecord, bool)"/> with the move input. PCBase::vfunc_105 (@0x141673a10,
+    /// pcbase.cpp:2812-2825) aims from Unk_PCMove::FUN_141683900 (:2569; unit_141682f80.cpp:426-436), the move keys held at
+    /// the moment of the cast: <paramref name="moveDir"/> is their world direction (CalcMoveDirection, pcbase.cpp:2828-2839,
+    /// MS2 axes, unit length), zero with no key held. With a key held the rotation is (0, 0, its yaw) (FUN_14166dad0,
+    /// pcbase.cpp:1487-1497, in [0, 360)), not the body's facing <paramref name="rotZ"/>, which counts only with no key held
+    /// (vfunc_20 with x and y cleared). So a key pressed on the frame of the cast aims the cast that way while the body
+    /// still faces the old way (the skill state's enter then turns the body to it, Player.PlaySkillSequence).
+    /// STILL-OPEN: with no key held the client's m_k5c is CalcMoveDirection's ZERO; the port keeps the facing's forward
+    /// there (the server reads the Skill packet's direction, and no retail capture shows a zero one).
+    /// TryGetFixedZRotation (the additional effect that fixes the rotation, :2824) is not ported.
+    /// </summary>
+    public static void Aim(CastRecord r, Vector3 position, float rotZ, Vector3 moveDir, CastRecord running, bool feature0xca)
     {
         r.Position = position;
         var d = r.Skill;
@@ -423,9 +438,22 @@ public static class SkillCast
             r.Rotation = running.Rotation;
             return;
         }
+        rotZ = AimRotZ(rotZ, moveDir);
         float rad = rotZ * (MathF.PI / 180f);
         r.Direction = new Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0);
         r.Rotation = new Vector3(0, 0, rotZ);
+    }
+
+    /// <summary>The rotation z <see cref="Aim(CastRecord, Vector3, float, Vector3, CastRecord, bool)"/> gives: the yaw of the held
+    /// move direction <paramref name="moveDir"/> (FUN_14166dad0, pcbase.cpp:1487-1497: forward (sin z, -cos z), in [0, 360)),
+    /// else the facing <paramref name="rotZ"/>.</summary>
+    public static float AimRotZ(float rotZ, Vector3 moveDir)
+    {
+        if (moveDir.X == 0 && moveDir.Y == 0) return rotZ;
+        rotZ = MathF.Atan2(moveDir.X, -moveDir.Y) * (180f / MathF.PI);
+        if (rotZ < 0f) rotZ += 360f;
+        if (rotZ >= 360f) rotZ -= 360f;
+        return rotZ;
     }
 
     static readonly Func<int> NoRand = () => 0;

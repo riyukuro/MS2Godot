@@ -204,15 +204,17 @@ public sealed partial class RemotePc : IRemotePc
     /// PCBase::vfunc_68 (@0x14166e100, pcbase.cpp:1763-1823): standing still on an entity with no fall time takes no
     /// velocity; else GameObjectController's velocity part (the jump curve, or gravity g t dt + g dt^2 / 2 with the
     /// horizontal velocity only when the fall timer runs and the state's move is zero, the local player's Integrate),
-    /// with the horizontal part dropped outside StateWalk / StateFall / StateJump; then the controller's move without the
-    /// groups of <paramref name="exclude"/> (nFlags, the skill motion's ignoreCollisionGroups).
+    /// with the horizontal part dropped unless <paramref name="keepDrift"/> (RemotePcStates.KeepsDrift); then the
+    /// controller's move without the groups of <paramref name="exclude"/> (nFlags, the skill motion's
+    /// ignoreCollisionGroups). <paramref name="skipVelocity"/> is the caller's bNoVelocity (an arc skill motion), which
+    /// the still frame's test (:1778-1780) can only add to.
     /// </summary>
-    public void Move(System.Numerics.Vector3 moveMs2, float dt, uint exclude)
+    public void Move(System.Numerics.Vector3 moveMs2, float dt, bool keepDrift, bool skipVelocity, uint exclude)
     {
         var move = G(moveMs2);
         bool zero = move == Vector3.Zero;
         // :1778-1780: no collider change this world update (FUN_141bc9a80) either, the same flag the own player reads
-        bool noVelocity = OnGround && !fallTimerRunning && !SceneChange.Read() && hitOwner != 0 && zero;
+        bool noVelocity = skipVelocity || OnGround && !fallTimerRunning && !SceneChange.Read() && hitOwner != 0 && zero;
         var disp = move;
         if (!noVelocity)
         {
@@ -231,8 +233,7 @@ public sealed partial class RemotePc : IRemotePc
                 v.Y = (gravity * airTime + 0.5f * gravity * dt) * dt;
                 if (InAirFor(0) && zero) { v.X = kVel.X * dt; v.Z = kVel.Z * dt; }
             }
-            int s = States.Cur;
-            if (s != RemotePcStates.StateWalk && s != RemotePcStates.StateFall && s != RemotePcStates.StateJump) { v.X = 0; v.Z = 0; }
+            if (!keepDrift) { v.X = 0; v.Z = 0; }
             disp += v;
         }
         // the ride (:1797-1817): the stood-by marker's move joins the frame's move, or an upward one is set at once

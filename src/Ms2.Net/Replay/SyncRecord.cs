@@ -85,6 +85,23 @@ public sealed class SyncRecord
     }
 
     /// <summary>
+    /// FUN_140836250 (statesyncobject.cpp:202-220), the writer's half of <see cref="UnpackMove"/>: m_vel3c (the move buffer's
+    /// m_pos98, Unk_PCMove::GetMoveDirection, unit_141682f80.cpp:313-335: x +1 the left key, -1 the right key; y +1 the up key,
+    /// -1 the down key, in the camera's frame, not the world's) packs x -1 / 0 / 1 to 0 / 1 / 2 and y -1 / 0 / 1 to
+    /// +4 / +8 / +12 when both are one of those three values; else 0x80 and the two floats carry it. No input is 1 + 8 = 9;
+    /// right 8, down-right 4, down 5, down-left 6, left 10, up-left 14, up 13, up-right 12.
+    /// </summary>
+    public static byte PackMove(float x, float y, out float f1, out float f2)
+    {
+        static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
+        int ax = Axis(x), ay = Axis(y);
+        f1 = f2 = 0f;
+        if (ax >= 0 && ay >= 0) return (byte)(ax + 4 * (ay + 1));
+        f1 = x; f2 = y;
+        return 0x80;
+    }
+
+    /// <summary>
     /// FUN_1408365d0 (statesyncobject.cpp:243-257): with bit 0x80 the two floats are the direction; else bits 0-1 give x
     /// (0, 1, 2 = -1, 0, 1) and bits 2-3 give y (4, 8, 12 = -1, 0, 1). A value the switch does not name leaves the
     /// component at the record's initial 0.

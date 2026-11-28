@@ -1962,6 +1962,43 @@ public partial class LiveSession
                 GD.Print($"live: combat {step}: idle interval {live.IdleTimer.IntervalMs} ms, deadline {live.IdleTimer.DeadlineTick}, idle {live.IdleTimer.Idle}");
                 continue;
             }
+            // fadeaway:<skill id>:<walk frames>:<air frames>[:<cast offset>]: walk left, jump (C) still holding left, let go of
+            // left in the air, then press right and cast. Offset 0 casts from the right key's own press (the scene's key
+            // dispatch, before the frame's physics step: the same frame), -1 one frame before the press, 1 one frame after.
+            // With MS2_LIVE_SYNC_TRACE=1 the sync records sent are logged.
+            if (step.StartsWith("fadeaway:"))
+            {
+                var fp = step[9..].Split(':');
+                uint sid = uint.Parse(fp[0]);
+                int walk = int.Parse(fp[1]), air = int.Parse(fp[2]), off = fp.Length > 3 ? int.Parse(fp[3]) : 0;
+                static void KeyEv(Key k, bool down) => Input.ParseInputEvent(new InputEventKey { Keycode = k, PhysicalKeycode = k, Pressed = down });
+                ulong castFrame = 0, rightFrame = 0;
+                bool cast = false;
+                void Cast() { castFrame = Engine.GetProcessFrames(); cast = hud.CastSkillScripted(sid); }
+                GD.Print($"live: combat {step}: start at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
+                KeyEv(Key.Left, true); await frames(walk);
+                KeyEv(Key.C, true); await frames(2); KeyEv(Key.C, false);
+                await frames(air); KeyEv(Key.Left, false); await frames(2);
+                if (off < 0) { Cast(); await frames(1); }
+                Ui.HudScene.ScriptedInput = e =>
+                {
+                    if (e is not InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.Right }) return;
+                    rightFrame = Engine.GetProcessFrames();
+                    Ui.HudScene.ScriptedInput = null;
+                    if (off == 0) Cast();
+                };
+                KeyEv(Key.Right, true); await frames(1);
+                Ui.HudScene.ScriptedInput = null;
+                if (off > 0) Cast();
+                var at = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                Shot($"fadeaway{off}_0.png");
+                await frames(6); Shot($"fadeaway{off}_1.png");
+                await frames(6); KeyEv(Key.Right, false);
+                await frames(60);
+                var end = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                GD.Print($"live: combat {step}: {(cast ? "cast" : "refused")} at frame {castFrame}, right pressed at frame {rightFrame}, cast at {at}, end {end}");
+                continue;
+            }
             if (step.StartsWith("holdkey:"))      // holdkey:<Left|Right|Up|Down|C>:<frames>: the key held down for N frames, as the player's
             {
                 var kp = step[8..].Split(':');

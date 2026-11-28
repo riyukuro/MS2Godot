@@ -56,6 +56,7 @@ public partial class Player
     {
         public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw; public Vector3 CamEuler;
         public byte Sub; public int Tick;
+        public bool Skill;                           // made in the own cast's skill state (0x10, PlayerSkill)
         public int HoldId; public string HoldNode;   // StateHoldData::vfunc_1: m_n90 and m_str98
         public int Emotion;                          // StateEmotionData / StateEmotionIdleData::vfunc_1: m_n64
         public byte[] CoupleTail; public int CoupleAni;   // StateSyncObjectCoupleEmotion's fields (statesyncobject.cpp:294-302)
@@ -209,14 +210,18 @@ public partial class Player
         // m_bDF8 (Ridee::vfunc_110, ridee.cpp:633: the push control moved it, pcbase.cpp:1820-1822, 3738-3741) forces a record
         // as MyPC's m_b15d5 does (MyPC::vfunc_110, mypc.cpp:1054); neither is modelled
         bool onFoot = Mount == null;
-        if (!(force || syncPushed || current == null || State != current.State || moveDir != current.Dir
-              || onFoot && (syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw) || StateVfunc22()))
+        // the own cast's skill state is the state manager's current state while it plays (StateSkill, 0x10): its records name
+        // it whatever move state the body had, and its vfunc_22 is m_bMoved (stateskill.cpp:596-601), the frame's motion or
+        // controller step moved the body (FUN_1417edc20 :2859-2873; PCBase::vfunc_68's bMoved, pcbase.cpp:1863-1870)
+        bool skillNow = SkillSequencePlaying();
+        if (!(force || syncPushed || current == null || State != current.State || skillNow != current.Skill || moveDir != current.Dir
+              || onFoot && (syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw) || (skillNow ? skillMoved : StateVfunc22())))
             return;
         syncPushed = false;
         bool flushAfter = false;
         if (current != null)
         {
-            if (current.State == MoveState.Walk && State != MoveState.Walk) flushAfter = true;   // gosWalk (2) left
+            if (current.State == MoveState.Walk && !current.Skill && (State != MoveState.Walk || skillNow)) flushAfter = true;   // gosWalk (2) left
             else Flush();
         }
         // mypc.cpp:2353-2366: m_nA0, the record's last int, is the cube's cell when the hit report's entity is a MS2CubeProp
@@ -231,17 +236,20 @@ public partial class Player
             // on the mount the camera field is the Ridee's m_posBF4, which Ridee::vfunc_67 (ridee.cpp:819-823) takes from the
             // camera whenever the mount's move direction or look yaw is worked out (PCBase::CalcMoveDirection, pcbase.cpp:2834;
             // UpdateTargetYawFromLook, :1424); ours reads the camera when the record is made, mounted or not
-            rec.State = State; rec.Dir = moveDir; rec.Yaw = targetYawDeg; rec.BodyYaw = yawDeg; rec.CamEuler = CameraEuler; rec.Sub = SubOf(State);
+            rec.State = State; rec.Dir = moveDir; rec.Yaw = targetYawDeg; rec.BodyYaw = yawDeg; rec.CamEuler = CameraEuler;
+            rec.Skill = skillNow; rec.Sub = skillNow ? (byte)SkillSubState : SubOf(State);
             rec.Tick = ServerTick?.Invoke() ?? 0; rec.Made = syncClock;
             // State::vfunc_26 after the fields above (mypc.cpp:2333-2334): StateHoldData::vfunc_1 (stateholddata.cpp:113-127)
             // adds the target and node, and with the held PC's ridee its feet z replaces the position's
             rec.HoldId = 0; rec.HoldNode = null;
-            rec.Emotion = EmotionId;   // StateEmotionData::vfunc_1 (stateemotionidle.cpp:181-185), StateEmotionIdleData's the same (:631-635)
+            // StateSkill takes no state data (PlayCastStartEffect's vfunc_59(0x10, NULL, 0, 1), State::vfunc_4 / vfunc_26,
+            // state.cpp:600-602, 760-764): no skill id or level in its records; the 0x3b state's held actor is not ported
+            rec.Emotion = skillNow ? 0 : EmotionId;   // StateEmotionData::vfunc_1 (stateemotionidle.cpp:181-185), StateEmotionIdleData's the same (:631-635)
             // StateCoupleEmotionData::vfunc_1 (statecoupleemotion.cpp:174-186): m_n64 the emotion, and the couple fields
             rec.CoupleTail = null;
-            if (State == MoveState.CoupleEmotion && Couple.Active) { rec.Emotion = (int)Couple.Emotion; rec.CoupleTail = Couple.SyncTail(); rec.CoupleAni = Couple.Ani; }
-            if (State == MoveState.TriggerFollowNpc) rec.Emotion = followNpc;   // StateDataTriggerFollowNpc::vfunc_1 (stateemotionidle.cpp:473-476): the npc id
-            if (State == MoveState.Hold)
+            if (!skillNow && State == MoveState.CoupleEmotion && Couple.Active) { rec.Emotion = (int)Couple.Emotion; rec.CoupleTail = Couple.SyncTail(); rec.CoupleAni = Couple.Ani; }
+            if (!skillNow && State == MoveState.TriggerFollowNpc) rec.Emotion = followNpc;   // StateDataTriggerFollowNpc::vfunc_1 (stateemotionidle.cpp:473-476): the npc id
+            if (!skillNow && State == MoveState.Hold)
             {
                 rec.HoldId = holdTargetId; rec.HoldNode = holdNode;
                 if (HoldLookup?.Invoke(holdTargetId, holdNode) is { HasRidee: true } held) rec.Pos.Z = (short)held.RideeZ;
@@ -347,13 +355,13 @@ public partial class Player
         float vx = q.Dir.X, vy = q.Dir.Y;
         var rec = new Ms2.Net.Packets.StateSync
         {
-            State = StateId(q.State), SubState = q.Sub,
+            State = q.Skill ? (byte)Ms2.Net.Replay.ActorCast.SkillState : StateId(q.State), SubState = q.Sub,
             Position = new Ms2.Net.Packets.Vector3S((short)q.Pos.X, (short)q.Pos.Y, (short)q.Pos.Z),
             Rotation = (short)(q.BodyYaw * 10f), Rotation2 = (short)(q.Yaw * 10f), SyncNumber = q.Cell,
             Speed = new Ms2.Net.Packets.Vector3S((short)q.CamEuler.X, (short)q.CamEuler.Y, (short)q.CamEuler.Z), /* camera field: see LiveRecord doc */ Unknown1 = 2,
             Unknown3 = (short)(q.Time * 1000f),   // WriteShortDivScaled(m_fTime, 1000), the record's age in ms (statesyncobject.cpp:126)
         };
-        if (q.State == MoveState.Hold)
+        if (!q.Skill && q.State == MoveState.Hold)
         {
             // StateSkillData::vfunc_1 (state.cpp:2058-2063) with StateHoldData's skill 20000031 level 1 (stateholddata.cpp:106-110):
             // m_n64 and m_n6c; m_n90 / m_str98 the target and node. FUN_140836250 sets each optional bit for a non-zero value.
@@ -368,10 +376,8 @@ public partial class Player
             rec.Flags |= Ms2.Net.Packets.StateSync.Flag.Flag1;
             rec.Flag1Value = q.Emotion;
         }
-        static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
-        int ax = Axis(vx), ay = Axis(vy);
-        if (ax >= 0 && ay >= 0) rec.Animation = (byte)(ax + 4 * (ay + 1));
-        else { rec.Animation = 0x80; rec.Float1 = vx; rec.Float2 = vy; }
+        rec.Animation = Ms2.Net.Replay.SyncRecord.PackMove(vx, vy, out float f1, out float f2);
+        if (rec.Animation == 0x80) { rec.Float1 = f1; rec.Float2 = f2; }
         return rec;
     }
 

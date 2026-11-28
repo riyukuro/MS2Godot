@@ -266,6 +266,14 @@ public partial class Player : CharacterBody3D
     /// <see cref="FacingRotZ"/> convention (MS2 Z rotation, degrees).</summary>
     public float TargetRotZ => targetYawDeg;
 
+    /// <summary><see cref="Face"/> by an MS2 Z rotation in degrees (the <see cref="FacingRotZ"/> convention): PCBase's
+    /// SetTargetYaw with vfunc_21, the facing and the target yaw at once.</summary>
+    public void FaceRotZ(float rotZ)
+    {
+        yawDeg = targetYawDeg = rotZ;
+        (Mount?.Visual ?? Visual).Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
+    }
+
     public void Face(Vector3 dir)
     {
         if (dir.LengthSquared() < 1e-6f) return;
@@ -514,6 +522,7 @@ public partial class Player : CharacterBody3D
                 break;
         }
         prevRawInput = rawInput;
+        skillMoved = false;
 
         // the couple state places the body itself (SyncWithPartner) and stands still otherwise; the follow npc state stands where its npc is
         if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Revival or MoveState.Hold or MoveState.TriggerEmotion or MoveState.CoupleEmotion
@@ -733,6 +742,8 @@ public partial class Player : CharacterBody3D
     /// <summary>The frame's controller move; <paramref name="skillMove"/> is the own cast's motion (<see cref="SkillMotionMove"/>),
     /// added to the sweep, and <paramref name="exclude"/> the groups the move leaves out (vfunc_68's nFlags: the skill
     /// motion's ignoreCollisionGroups, <see cref="SkillIgnoreGroups"/>).</summary>
+    bool skillMoved;   // the last Integrate ran in the own cast's skill state and moved the body (StateSkill m_bMoved)
+
     void Integrate(float dt, Vector3 skillMove, uint exclude = 0)
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
@@ -743,14 +754,27 @@ public partial class Player : CharacterBody3D
         // time is a timer (GetFallTime) and runs on. The push is in field units here, as the body moves; the client's 0.01 is
         // its PhysX scale.
         // STILL-OPEN: in the jump and fall states the client's horizontal drift is part of that step too, and goes with it.
+        // the skill state (StateSkill::FUN_1417edc20, stateskill.cpp:2854-2865): vfunc_68 clears the controller step's x / y in
+        // state 0x10 unless the body is jumping (pcbase.cpp:1783-1788; IsJumping holds from StartJump to the landing's
+        // StopJump), so a cast in the air keeps the jump's drift and one on the ground or in a fall moves by its motion only;
+        // the motion controller's vfunc_6 (m_nType, motioncontroller.cpp:168-171: 1 for CArcMotionController, 0 for the others)
+        // is bNoVelocity, so an arc motion skips the controller step whole (no drift, gravity or jump clock); with
+        // magicControl (m_n10 0x3c, :2854) the state calls no vfunc_68 at all.
+        // STILL-OPEN: magicControl's frames still take the force zone's push here; a moveType 2 / 3 skill's second
+        // vfunc_68 (:2873) runs the controller step a second time in the client
+        bool skillCast = SkillSequencePlaying();
+        if (skillCast && !jumping) { v.X = 0; v.Z = 0; }
+        bool skillNoVelocity = skillCast && (skillMotion.NoMove || skillMotion.NoVelocity);
         var push = ForcePush(dt, out bool lifted, out bool pushed);
         // :1778-1780: on the ground (IsOnGround: Down, not jumping, not on a lift), the fall timer at 0, no collider change
         // this world update (FUN_141bc9a80), an entity in the hit report and no move of its own: the step is skipped, so a
-        // body standing still makes no controller move at all and its flags stay as they were.
+        // body standing still makes no controller move at all and its flags stay as they were. It sets the same bNoVelocity
+        // the skill state passes in (an arc motion, above), so either skips the step.
         bool changed = SceneChange.Read();
         bool still = !lifted && Grounded && !jumping && !lift.Active && airTime == 0f && !changed && hitOwner != 0
                      && v == Vector3.Zero && skillMove == Vector3.Zero;
-        if (still) { }
+        if (skillNoVelocity) v = Vector3.Zero;
+        else if (still) { }
         else if (lifted)
         {
             if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
@@ -776,9 +800,13 @@ public partial class Player : CharacterBody3D
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
         var delta = v * dt + skillMove + push;
+        // bMoved compares the end position with the one vfunc_68 started from (kOldPos, pcbase.cpp:1765, 1863), so the
+        // ride's upward set (below) counts as a move
+        var before = GlobalPosition;
         delta += Carry(ref pushed);
         // :1822: the controller moves only when the frame's move is not ZERO; a still frame keeps the last move's flags
         var firstHit = delta == Vector3.Zero ? nxHit : MoveStep(delta, dt, exclude);
+        skillMoved = skillCast && GlobalPosition != before;   // StateSkill's m_bMoved: vfunc_68's bMoved (pcbase.cpp:1863-1870)
         if (pushed && delta != Vector3.Zero) syncPushed = true;   // vfunc_68: a zone that acted, on a frame that moves, calls vfunc_110 (pcbase.cpp:1772-1775, 1820-1823)
 
         // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)

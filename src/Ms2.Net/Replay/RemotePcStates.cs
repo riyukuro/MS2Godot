@@ -27,10 +27,12 @@ public interface IRemotePc : ISkillMotionOwner
     /// <summary>GameObjectController::SetKVelocity (units/s).</summary>
     void SetVelocity(Vector3 v);
     /// <summary>PCBase::vfunc_68's controller part (pcbase.cpp:1763-1862): gravity, the move and the world box, by
-    /// <paramref name="move"/> (units) over <paramref name="dt"/> seconds, leaving the groups of <paramref name="exclude"/>
-    /// (nFlags, :1820 and :1853) out of the controller's moves; the turn toward the target yaw is
-    /// <see cref="RemotePcStates"/>'s.</summary>
-    void Move(Vector3 move, float dt, uint exclude);
+    /// <paramref name="move"/> (units) over <paramref name="dt"/> seconds; the turn toward the target yaw is
+    /// <see cref="RemotePcStates"/>'s. <paramref name="keepDrift"/> keeps the velocity's horizontal part
+    /// (<see cref="RemotePcStates.KeepsDrift"/>); <paramref name="noVelocity"/> skips the velocity step
+    /// (FUN_1412407f0) for the move alone (bNoVelocity, an arc skill motion); the groups of <paramref name="exclude"/>
+    /// (nFlags, :1820 and :1853) are left out of the controller's moves.</summary>
+    void Move(Vector3 move, float dt, bool keepDrift, bool noVelocity, uint exclude);
     /// <summary>StateLand::vfunc_4 (stateland.cpp:83-93): the ray from 30 above the feet, 50 down, puts a hit entity in the
     /// hit report, then vfunc_93(true) refreshes the stored ground material.</summary>
     void LandRefresh();
@@ -1359,7 +1361,7 @@ public sealed class RemotePcStates
         bool input = skillMotion.TakesInput;
         skillMotion.Step(pc, dt, MoveDirection());
         uint ignore = skillMotion.Move.IgnoreCollisionGroups;
-        MoveBy(skillMotion.Displacement, dt, ignore);
+        MoveBy(skillMotion.Displacement, dt, ignore, skillMotion.NoVelocity);
         // CalcMoveDirectionNoYaw after the controller's vfunc_68 (stateskill.cpp:2866-2869), whose turn toward the target
         // yaw a camera mode 0xe direction reads
         if (input) MoveBy(MoveDirection() * (EffectiveSpeed * dt), dt, ignore);
@@ -1369,9 +1371,17 @@ public sealed class RemotePcStates
     public float CastDuration => skillMotion.Duration;
     public float CastElapsed => skillMotion.Elapsed;
 
-    void MoveBy(Vector3 move, float dt, uint exclude = 0)
+    /// <summary>
+    /// PCBase::vfunc_68 (pcbase.cpp:1783-1788): the velocity's horizontal part stays in StateWalk, StateFall and StateJump,
+    /// and in StateSkill while the controller is jumping (a cast in the air keeps the jump's momentum); any other state
+    /// drops it.
+    /// </summary>
+    public static bool KeepsDrift(int state, bool jumping) =>
+        state is StateWalk or StateFall or StateJump || state == StateSkill && jumping;
+
+    void MoveBy(Vector3 move, float dt, uint exclude = 0, bool noVelocity = false)
     {
-        pc.Move(move, dt, exclude);
+        pc.Move(move, dt, KeepsDrift(Cur, pc.Jumping), noVelocity, exclude);
         // PCBase::vfunc_68 (@0x14166e100, pcbase.cpp:1864-1869): skipped for a non-target PC while the viewer's camera
         // (CameraMgr::IsLocalTargetMode) is in local-target mode.
         // STILL-OPEN: viewer camera local-target mode is not ported yet, so TurnTowardTargetYaw always runs.

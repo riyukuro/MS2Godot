@@ -143,17 +143,20 @@ public partial class PlatformNpcCheck : Node3D
         return new Vector3(d.X, markerMove.Y != 0 ? d.Y : 0, d.Z);
     }
 
+    // what RemotePcStates hands its move: the horizontal velocity by the state (pcbase.cpp:1783-1788); no bNoVelocity
+    static bool Drift(RemotePc pc) => Ms2.Net.Replay.RemotePcStates.KeepsDrift(pc.States.Cur, pc.Jumping);
+
     Vector3 RideRemote(RemotePc pc, Ride r, uint exclude, out Vector3 markerMove)
     {
         pc.Platforms = r.Markers;
         pc.Body.GlobalPosition = G(r.Marker.Position) + new Vector3(0, 0.5f, 300);
-        for (int i = 0; i < 10; i++) pc.Move(i == 0 ? new System.Numerics.Vector3(0, 0, -2) : System.Numerics.Vector3.Zero, Dt, exclude);
+        for (int i = 0; i < 10; i++) pc.Move(i == 0 ? new System.Numerics.Vector3(0, 0, -2) : System.Numerics.Vector3.Zero, Dt, Drift(pc), false, exclude);
         var p0 = pc.Body.GlobalPosition;
         var m0 = G(r.Marker.Position);
         for (long ms = 0; ms <= 3000; ms += 1000 / 60)
         {
             Tick(r, ms);
-            pc.Move(System.Numerics.Vector3.Zero, Dt, exclude);
+            pc.Move(System.Numerics.Vector3.Zero, Dt, Drift(pc), false, exclude);
         }
         markerMove = G(r.Marker.Position) - m0;
         var d = pc.Body.GlobalPosition - p0;

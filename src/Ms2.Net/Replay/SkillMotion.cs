@@ -41,6 +41,12 @@ public sealed class SkillMotion
     public float Duration, Elapsed;
     /// <summary>StateSkill m_n10 == 0x3c: magicControl without a held actor, FUN_1417edc20 moves nothing.</summary>
     public bool NoMove;
+    /// <summary>
+    /// FUN_1417edc20's bNoVelocity for the controller's vfunc_68 (stateskill.cpp:2865): the motion controller's vfunc_6,
+    /// its m_nType (motioncontroller.cpp:168-171), non-zero for CArcMotionController alone: an arc motion carries the body
+    /// itself, with no gravity or jump drift.
+    /// </summary>
+    public bool NoVelocity => !NoMove && Move.MotionMoveType == 1;
     bool move0, move2;
     // the motion controller's m_kDir, m_fSpeed (m) and m_kMove (units)
     Vector3 dir, move; float speed;

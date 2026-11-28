@@ -2021,10 +2021,15 @@ public partial class HudScene : Node, IUiStageHost
 
     const int AttackAction = 0x49401;
 
+    /// <summary>A live check's look at each key the scene gets, before its own dispatch (the fade away step casts on the
+    /// right key's press, in the same frame as the press). Null outside the live steps.</summary>
+    internal static System.Action<InputEvent> ScriptedInput;
+
     /// <summary>The scene's keys: the chat windows first, then the dialogs, then the own casts.</summary>
     public override void _Input(InputEvent e)
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
+        ScriptedInput?.Invoke(e);
         // the held-state trackers see every key, also while the debug item browser is open: a release that arrives then
         // must not leave the pickup or the left Ctrl held after the window closes
         TrackPickupKey(e);

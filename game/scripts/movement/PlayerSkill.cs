@@ -35,7 +35,11 @@ public partial class Player : ISkillMotionOwner
         skillSequence = key;
         skillSpeed = speed;
         skillHeld = false;
-        kVel = Vector3.Zero;   // the state's enter, vfunc_4 (stateskill.cpp:437): the owner's velocity 0 (the vertical one is kept here)
+        // the state's enter, vfunc_4 (stateskill.cpp:438-449): the move direction (m_pos98) is cleared, not the controller's
+        // velocity, so a jump's drift goes on (Integrate keeps it while the body is jumping, PCBase::vfunc_68); the body
+        // takes the record's rotation at once, its target yaw and its facing (SetTargetYaw, vfunc_21; camera mode 10's aim
+        // is not ported), not at the turn rate
+        FaceRotZ(rotZ);
         skillMotion.Record(move, speed, rotZ);
         skillMotion.Enter(this, false);
         return true;
@@ -45,6 +49,26 @@ public partial class Player : ISkillMotionOwner
     /// FUN_1417edc20 hands both of its vfunc_68 calls (stateskill.cpp:2862-2874); 20 (groups 2 and 4) lets a rush pass
     /// the PCs and the npcs. 0 with magicControl (m_n10 0x3c), where the state makes no move.</summary>
     uint SkillIgnoreGroups => SkillSequencePlaying() && !skillMotion.NoMove ? skillMotion.Move.IgnoreCollisionGroups : 0;
+
+    /// <summary>
+    /// The move input a cast aims by (PCBase::vfunc_100, pcbase.cpp:2569: Unk_PCMove::FUN_141683900, unit_141682f80.cpp:426-436)
+    /// as a godot world direction (CalcMoveDirection, pcbase.cpp:2828-2839: camera relative, unit length), zero with none.
+    /// It reads the keys at the moment it is asked, not the frame's stored move: MyPC::vfunc_53 (mypc.cpp:2942-2966) runs the
+    /// state's update (vfunc_3) before its input step (vfunc_8), which casts, so a key pressed on the cast's frame aims the
+    /// cast while the jump still moves by the last frame's input. Nothing while the keys are held back (FUN_141683ef0, here
+    /// <see cref="MoveInput.Read"/> and the field move's cover); with no direction key down (FUN_1416839b0) while a
+    /// diagonal is held (UpdateMoveDirection's 50 ms timer or m_moving), the held diagonal (m_dir); else GetMoveDirection: the
+    /// keys, else the click move.
+    /// STILL-OPEN: the additional effect that mirrors m_dir (FUN_140970a40, :486-488) is not ported.
+    /// </summary>
+    public Vector3 CastAimDirection()
+    {
+        if (Ms2.Ui.FieldMoveCover.Up) return Vector3.Zero;
+        var keys = ScriptDriven ? Input2 : MoveInput.Read().Move;
+        if (keys == Vector2.Zero && diagHold > 0) keys = diagDir;
+        if (keys == Vector2.Zero) keys = MouseInput;
+        return WorldDir(keys);
+    }
 
     /// <summary>The own cast's skill state holds the walk, jump and click-move input: the state moves by its motion and, for a
     /// moveType 2 / 3 skill, the input it reads itself (<see cref="SkillMotionMove"/>, stateskill.cpp:2855-2874). Asked
