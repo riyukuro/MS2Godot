@@ -257,6 +257,8 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>WorldService::FindNpcById: whether an npc of the object id is here.</summary>
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
+    /// <summary>WorldService::FUN_141bd3ae0: every npc's quest mask again (the quest manager's dirty flag).</summary>
+    public void UpdateNpcQuestVisibility() => npcs.UpdateQuestVisibility();
     /// <summary>The trigger's face emotion on the npc of that object id (<see cref="NpcLayer.TriggerFace"/>); false when none.</summary>
     public bool TriggerNpcFace(int objectId, string name) => npcs.TriggerFace(objectId, name);
     /// <summary>The npc's face emotion by object id (a live check's view); null when there is none.</summary>
@@ -438,6 +440,7 @@ public sealed partial class RemoteLayer : Node3D
         npcs = new NpcLayer(packs, mb, table, this)
         {
             SpawnAnimation = id => field.SpawnPoints?.Find(id),
+            QuestMasks = () => LiveSession.Instance?.NpcQuestMasks,
             CameraEye = () => IsInsideTree() && GetViewport().GetCamera3D() is { } cam ? cam.GlobalPosition : null,
             // CNpc::AttachOwnerEffect: FindPCById (the own pc's visual or another player's), kept in the region skill node
             FindPc = id => id == 0 ? null : id == Tracker.SelfObjectId ? LiveSession.Instance?.OwnPlayer?.Visual

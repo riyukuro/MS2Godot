@@ -31,6 +31,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         public Node3D Root; public Func<Vector3> Anchor; public MovieClipNode Node; public float Offset;
         public float Extra;                           // a pc's m_f170 (the emotion states' offsetNameTag)
         public NpcRow Row; public bool Dead;          // npcs
+        public bool Hidden;                           // npcs: the actor's hidden flag (m_unk_b0, its hide reasons)
         public long CharacterId; public bool Self;    // players
         public int ObjectId;                          // players: the FieldAddUser object id
         public Color Color;
@@ -119,6 +120,13 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
             Root = root, Node = node, Offset = npcOffset, Row = row, Color = color,
             Anchor = () => DummyAnchor.Point(row.EffectDummies, "Eff_UI", model, "Scene Root") ?? root.GlobalPosition,
         });
+    }
+
+    /// <summary>The npc's hidden flag (GameObject::FUN_14123c660, m_unk_b0): UIHudEntity::Entity::vfunc_8
+    /// (uihudentity.cpp:200-210) hides the tag of a hidden actor that rides nothing.</summary>
+    public void SetHidden(Node3D root, bool hidden)
+    {
+        if (tags.TryGetValue(root, out var t)) t.Hidden = hidden;
     }
 
     /// <summary>A hostile npc died: its tag turns NameTagColorDead (the tag stays with the body).</summary>
@@ -322,7 +330,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
             }
             var head = t.Anchor();
             float d = eye.DistanceTo(t.Root.GlobalPosition);
-            bool on = layer && Shown(t) && t.Ride is not { NameTagHide: true } && NpcPresence.InRange(d) && !camera.IsPositionBehind(head);
+            bool on = layer && !t.Hidden && Shown(t) && t.Ride is not { NameTagHide: true } && NpcPresence.InRange(d) && !camera.IsPositionBehind(head);
             t.Node.Visible = on;
             if (!on) continue;
             t.Node.Modulate = new Color(1, 1, 1, NpcPresence.TagAlpha(d));

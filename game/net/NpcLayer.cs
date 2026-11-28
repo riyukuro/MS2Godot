@@ -45,6 +45,8 @@ public sealed class NpcLayer
         public Func<string, float> SequenceLength;                   // GetAnimationDuration on this body, made on the first spawn
         public float AniSpeed = 1f, TurnCap;      // the Run_ speed (the row's anispeed times ScaleRate) and rotationSpeed (the turn cap, degrees per second)
         public bool Placeholder, Dead;
+        public bool QuestMasked;                  // m_nEB8: the field's quest mask table has a mask for the npc (CNpc init, :2106)
+        public int HideReasons;                   // PCBase m_unk_c08: the hide reasons the npc root's visibility follows (bit 5: the quest mask)
         public NpcRow BossRow;                    // a boss's row (CNpcData::IsBoss), whose distances drive the field's boss music; null otherwise
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
         public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
@@ -251,6 +253,9 @@ public sealed class NpcLayer
         parent.AddChild(root);
         root.Position = i.Target;
         Tags?.AddNpc(root, i.Placeholder ? null : i.Visual, row);
+        // CNpc init (:2106) keeps whether the field's quest mask table has the npc; CNpc::vfunc_10 (:542) runs the mask once
+        i.QuestMasked = QuestMasks?.Invoke() is { } qm && qm.HasMask(n.NpcId);
+        UpdateQuestVisibility(i);
         if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
         i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
         // the actor's vfunc_10 anchor, its Eff_UI dummy (the hp bar's and the buff balloon's): the point is memoized per model
@@ -1125,6 +1130,38 @@ public sealed class NpcLayer
         i.SequenceLength ??= name => i.Model?.Kfm.ByName(name) is { } seq ? (float)(Anim(i.Model, seq.Id)?.Length ?? 0) : 0f;
         SpawnHidden(i, true);
         if (LiveSession.LiveCheck) GD.Print($"live: npc {b.ObjectId} spawn state, point {id}, sequence {i.Spawn.Animation ?? "none"}, hidden {i.Spawn.Delay} ms");
+    }
+
+    /// <summary>The current field's live npc quest masks (<see cref="Ms2.Ui.NpcQuestVisibility"/>); null or a null answer:
+    /// no masks.</summary>
+    public Func<Ms2.Ui.NpcQuestVisibility> QuestMasks;
+
+    /// <summary>CNpc::UpdateQuestVisibility (@0x141094e60, unit_14108e1e0_npcactorandvibrate.cpp:1528-1538): an npc the
+    /// table has a mask for is hidden with reason 5 while the mask fails and shown again when it passes.</summary>
+    void UpdateQuestVisibility(Inst i)
+    {
+        if (!i.QuestMasked || QuestMasks?.Invoke() is not { } qm) return;
+        SetHideReason(i, Ms2.Ui.NpcQuestVisibility.HideReasonQuest, !qm.Shows(i.NpcId));
+    }
+
+    /// <summary>WorldService::FUN_141bd3ae0 (worldservice_1.cpp:7152-7158): every npc's quest mask again, on the quest
+    /// manager's dirty flag.</summary>
+    public void UpdateQuestVisibility()
+    {
+        foreach (var i in inst.Values) UpdateQuestVisibility(i);
+    }
+
+    /// <summary>PCBase::AddHideReason / RemoveHideReason, then ApplyHideReasons (pcbase.cpp:1188-1203): vfunc_23 sets the
+    /// hidden flag (m_unk_b0) and the entity's visible property, here the root's Visible, which takes the body, the simple
+    /// shadow and the root's effects with it; the talk (actionkeyobject.cpp:1385), the click and the minimap read it, and the
+    /// name tag hides with it (UIHudEntity::Entity::vfunc_8, uihudentity.cpp:200).</summary>
+    void SetHideReason(Inst i, int reason, bool on)
+    {
+        if (!Ms2.Ui.NpcQuestVisibility.SetHideReason(ref i.HideReasons, reason, on)) return;
+        bool shown = i.HideReasons == 0;
+        i.Root.Visible = shown;
+        Tags?.SetHidden(i.Root, !shown);
+        if (LiveSession.LiveCheck) GD.Print($"live: npc {i.NpcId} hide reason {reason} {(on ? "on" : "off")}, {(shown ? "shown" : "hidden")}");
     }
 
     /// <summary>PCBase::AddHideReason / RemoveHideReason of the spawn state's reason, with the simple shadow (statespawn.cpp:72-73, :88-89).</summary>

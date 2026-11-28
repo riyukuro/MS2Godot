@@ -26,6 +26,10 @@ public partial class LiveSession
     /// <summary>The RequestMoveField / RoomDungeon packets the portal action sent (a scripted run counts them).</summary>
     public int PortalSends { get; private set; }
 
+    /// <summary>The current field's live npc quest masks (CNpc::UpdateQuestVisibility's table and quest standing), null
+    /// before the first field entry.</summary>
+    public NpcQuestVisibility NpcQuestMasks { get; private set; }
+
     /// <summary>A new field entry: an empty portal list for <paramref name="mapId"/>; its messages wait for the field's entities.</summary>
     void NewFieldPortals(int mapId)
     {
@@ -33,13 +37,15 @@ public partial class LiveSession
         QuestMaskTable masks = null;
         try { masks = FieldContents.Masks(packs); } catch (Exception e) { GD.Print($"live: quest masks unavailable ({e.Message})"); }
         Portals = LivePortals.ForPacks(packs, mapId, masks, QuestStatusOf);
+        NpcQuestMasks = new NpcQuestVisibility(masks, mapId, QuestStatusOf);
         PortalAction.Portals = Portals;
         PortalAction.Current = null;
         if (!portalQuestsWatched)
         {
             portalQuestsWatched = true;
-            // the quest manager's dirty flag runs every portal's mask again (WorldService FUN_141bd3880)
-            Quests.Changed += _ => Portals?.RefreshMasks();
+            // the quest manager's dirty flag runs every portal's mask again (WorldService FUN_141bd3880), then every npc's
+            // (FUN_141bd3ae0, worldservice_1.cpp:9833-9839)
+            Quests.Changed += _ => { Portals?.RefreshMasks(); remote?.UpdateNpcQuestVisibility(); };
         }
     }
 
