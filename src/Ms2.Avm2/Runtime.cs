@@ -141,7 +141,6 @@ public sealed partial class Runtime
         foreach (var si in abc.Scripts)
         {
             var so = new ScriptObject { Ctx = ctx, Info = si, Traits = new TraitTable() };
-            so.Init(null); so.Traits = new TraitTable();
             ctx.ApplyTraits(so.Traits, si.Traits, new Scope(so, false, null), null, isStatic: true);
             so.Slots = so.Traits.NewSlots();
             so.Class = ObjectClass;

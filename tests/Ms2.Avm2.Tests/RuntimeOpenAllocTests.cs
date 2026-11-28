@@ -41,6 +41,6 @@ public class RuntimeOpenAllocTests
         for (int i = 0; i < 10; i++) Open();
         double ms = sw.Elapsed.TotalMilliseconds / 10;
         TestContext.WriteLine($"second open of uiquestdialog: {bytes} B, {ms:F3} ms");
-        Assert.That(bytes, Is.LessThan(3_000_000));   // 2894848 B (Release)
+        Assert.That(bytes, Is.LessThan(2_750_000));   // 2671168 B (Release)
     }
 }
