@@ -161,8 +161,9 @@ public partial class LiveSession
             GD.Print($"live: pvp {step}: kill notices {got}, own dead {Me.Dead}, body {(player != null && IsInstanceValid(player) ? player.State : null)}, " +
                 $"row 1 [{row}], chat 0x14 lines {lines.Count}: {string.Join(" | ", lines.Select(l => l.Length > 160 ? l[..160] : l))}");
             shot("pvpdied.png");
+            // Other 0x14 system lines (a trophy the server grants for the death) share the kind: count the killer's line.
             check($"the server's kill notice of the own death shows {a[0]}'s row, logs it and the own PC is dead",
-                got == 1 && Me.Dead && row.Contains($"attacker \"{a[0]}\"") && row.Contains($"target \"{me}\"") && lines.Count == 1 && lines[0].Contains(a[0]));
+                got == 1 && Me.Dead && row.Contains($"attacker \"{a[0]}\"") && row.Contains($"target \"{me}\"") && lines.Count(l => l.Contains(a[0])) == 1);
             return true;
         }
         bool HandleLocal(Ms2.Net.Wire.RawPacket p) { Handle(p); return true; }
