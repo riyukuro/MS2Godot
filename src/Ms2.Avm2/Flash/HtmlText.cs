@@ -440,9 +440,20 @@ public static class HtmlText
         return stops.ToArray();
     }
 
+    // one Regex per attribute name, made once: Regex.Match(string, pattern) rebuilt the pattern string per call and its
+    // shared cache (15 entries) is smaller than the attribute names here
+    static readonly Dictionary<string, Regex> AttributeRegex = new[]
+    {
+        "href", "color", "size", "align", "indent", "blockindent", "leading", "leftmargin", "rightmargin", "tabstops",
+        "width", "height", "src", "id", "vspace", "hspace",
+    }.ToDictionary(n => n, AttributePattern);
+
+    static Regex AttributePattern(string name) =>
+        new("\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>/]+))", RegexOptions.IgnoreCase);
+
     static string Attribute(string attrs, string name)
     {
-        var m = Regex.Match(attrs, "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>/]+))", RegexOptions.IgnoreCase);
+        var m = (AttributeRegex.TryGetValue(name, out var r) ? r : AttributePattern(name)).Match(attrs);
         if (!m.Success) return null;
         return m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
     }
