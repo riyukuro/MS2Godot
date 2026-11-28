@@ -223,6 +223,45 @@ public sealed record RideOffRecallRequest(long Target) : IOutPacket
     }
 }
 
+/// <summary>Outbound RequestRide mode 1 with a RideOffActionSummonPetOn (commonfiles/rideonaction.cpp:514-539, writer @0x14077fea0):
+/// u8 1, u8 type 9, u8 argument 0, i64 the pet item's uid (m_n28), u8 m_n30 (always 0 here). MyPC::FUN_14152aa90 sends it when no pet
+/// is summoned and the own pc rides (mypc.cpp:3773-3779); the answer's type 9 runs the summon checks FUN_14152b2d0 with that uid
+/// (mypc.cpp:3474-3479).</summary>
+public sealed record RideOffSummonPetOnRequest(long ItemUid) : IOutPacket
+{
+    public const byte ActionType = 9;
+
+    public Outbound Op => Outbound.RequestRide;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(ActionType);
+        w.WriteByte(0);
+        w.WriteLong(ItemUid);
+        w.WriteByte(0);
+    }
+}
+
+/// <summary>Outbound RequestRide mode 1 with a RideOffActionSummonPetTransfer (commonfiles/rideonaction.cpp:540-560, writer
+/// @0x14077fff0): u8 1, u8 type 10, u8 argument 0, i64 the new pet item's uid (m_n28). MyPC::FUN_14152aa90 sends it when another pet
+/// is summoned and the own pc rides (mypc.cpp:3787-3793); the answer's type 10 runs the transfer checks FUN_14152b8d0 with that uid
+/// (mypc.cpp:3481-3486).</summary>
+public sealed record RideOffSummonPetTransferRequest(long ItemUid) : IOutPacket
+{
+    public const byte ActionType = 10;
+
+    public Outbound Op => Outbound.RequestRide;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(ActionType);
+        w.WriteByte(0);
+        w.WriteLong(ItemUid);
+    }
+}
+
 /// <summary>Outbound RequestRide mode 1 with a RideOffActionCashCall (rideonaction.cpp:386-415, writer @0x14077f8d0): u8 1, u8 type 4,
 /// u8 argument 0, i32 the field (m_n28), u8 the call kind (m_n2c), i64 the ticket item's uid (m_n30, 0 for none).
 /// CCashCallManager::FUN_140b030b0 sends it when the own pc rides (exe 0x140b033f0-0x140b034af); the answer's type 4 starts

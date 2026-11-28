@@ -266,6 +266,7 @@ public enum Outbound : ushort {
     BuddyBadge = 0xA4,      // SendOp::BuddyBadge (commonfiles/opcodes.h:467): CoupleEffectSystem's couple badge effect sends
     Attendance = 0x66,      // SendOp::Attendance: UIAttendGiftDialog's mode 2, 3, 4 and 8 sends (uiattendgiftdialog.cpp); GMS2 0x67
     Job = 0x25,                 // SendOp::Job (commonfiles/opcodes.h:342): UISkillBookTreeDialog::RequestJob, JobSystemCli::RequestReset
+    RequestPet = 0x78,          // SendOp::RequestPet (commonfiles/opcodes.h:425): the summon state, MyPC::SendRequestPet, the pet attack toggle
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
     CheckCharName = 0x7D,       // SendOp::CheckCharName (commonfiles/opcodes.h:430): UIMessageBox::HandleChangeCharNameButton
     NpcTalk = 0x22,
