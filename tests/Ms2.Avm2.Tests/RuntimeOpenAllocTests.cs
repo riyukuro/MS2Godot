@@ -41,6 +41,30 @@ public class RuntimeOpenAllocTests
         for (int i = 0; i < 10; i++) Open();
         double ms = sw.Elapsed.TotalMilliseconds / 10;
         TestContext.WriteLine($"second open of uiquestdialog: {bytes} B, {ms:F3} ms");
-        Assert.That(bytes, Is.LessThan(2_750_000));   // 2671168 B (Release)
+        Assert.That(bytes, Is.LessThan(2_650_000));   // 2589464 B (Release)
+    }
+
+    [Test]
+    public void ABlockLoadedTwiceIntoOneRuntimeHasItsOwnPrivateNamespaces()
+    {
+        // the namespaces are kept per block for the process; a second load into the same runtime must not share the first
+        // load's private namespace (each load's private members are its own), while a load into another runtime may
+        var abc = new Ms2.Swf.Abc.AbcFile
+        {
+            Ints = new int[1], Uints = new uint[1], Doubles = new double[1], Strings = new[] { "", "p", "pkg" },
+            Namespaces = new[] { new Ms2.Swf.Abc.Namespace { Name = "*" }, new Ms2.Swf.Abc.Namespace { Kind = 0x05, Name = "p" },
+                                 new Ms2.Swf.Abc.Namespace { Kind = 0x16, Name = "pkg" } },
+            NsSets = new[] { System.Array.Empty<int>() }, Multinames = new[] { new Ms2.Swf.Abc.Multiname { Kind = 0, Name = "*" } },
+            Methods = new Ms2.Swf.Abc.MethodInfo[0], Instances = new Ms2.Swf.Abc.InstanceInfo[0],
+            Classes = new Ms2.Swf.Abc.ClassInfo[0], Scripts = new Ms2.Swf.Abc.ScriptInfo[0], Hash = "load-twice-test",
+        };
+        var rt = new Runtime();
+        var first = rt.Load(abc, "m:a");
+        var second = rt.Load(abc, "m:b");
+        Assert.That(first.NsAt(1).Kind, Is.EqualTo(NsKind.Private));
+        Assert.That(second.NsAt(1), Is.Not.SameAs(first.NsAt(1)));
+        Assert.That(second.NsAt(2), Is.SameAs(first.NsAt(2)));
+        var other = new Runtime().Load(abc, "m:a");
+        Assert.That(other.NsAt(1).Kind, Is.EqualTo(NsKind.Private));
     }
 }

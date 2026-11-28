@@ -25,14 +25,15 @@ public sealed class AbcContext
     {
         Rt = rt; Abc = abc; Label = label;
         MovieKey = label == null ? null : label.IndexOf(':') is int colon and >= 0 ? label[..colon] : label;
-        ns = new Ns[abc.Namespaces.Length];
-        for (int i = 1; i < ns.Length; i++) ns[i] = Ns.FromAbc(abc.Namespaces[i].Kind, abc.Namespaces[i].Name);
-        ns[0] = Ns.Public;
-        sets = new Ns[abc.NsSets.Length][];
-        for (int i = 0; i < sets.Length; i++) sets[i] = abc.NsSets[i].Select(x => ns[x]).ToArray();
+        var sh = Shared.GetValue(abc, a => new BlockCache(a));
+        // the block's namespaces are the block's in any runtime, but loaded twice into one runtime each load has its own
+        // private namespaces
+        bool again = false;
+        foreach (var c in rt.Abcs) if (ReferenceEquals(c.Abc, abc)) { again = true; break; }
+        if (again) (ns, sets) = BlockCache.Namespaces(abc);
+        else { ns = sh.Ns; sets = sh.Sets; }
         names = new Name?[abc.Multinames.Length];
         Classes = new AsClass[abc.Instances.Length];
-        var sh = Shared.GetValue(abc, a => new BlockCache(a));
         typeNames = sh.TypeNames; code = sh.Code; constOperands = sh.ConstOperands;
         activationTraits = new TraitTable[abc.Methods.Length];
         CompiledBodies = GeneratedCode.Find(abc.Hash);
@@ -198,8 +199,9 @@ public sealed class AbcContext
 
     /// <summary>
     /// What a block's contexts work out from the block alone, kept per block for the process (each open of a movie makes a
-    /// new runtime and contexts, the block is MovieSource's): decoded bodies, pool operands and type names. Names stay
-    /// per context, since each context has its own private namespaces. The entries are written once and only read
+    /// new runtime and contexts, the block is MovieSource's): decoded bodies, pool operands, type names, namespaces and
+    /// namespace sets. A runtime that loads the same block again makes its own namespaces for that load (its private
+    /// namespaces must differ from the first load's). Names stay per context. The entries are written once and only read
     /// after; two threads filling the same entry store equal values.
     /// </summary>
     sealed class BlockCache
@@ -207,9 +209,27 @@ public sealed class AbcContext
         public readonly Code[] Code;
         public readonly int[][] ConstOperands;
         public readonly string[] TypeNames;
+        public readonly Ns[] Ns;          // read only
+        public readonly Ns[][] Sets;      // read only
         public BlockCache(AbcFile abc)
         {
             Code = new Code[abc.Methods.Length]; ConstOperands = new int[abc.Methods.Length][]; TypeNames = new string[abc.Multinames.Length];
+            (Ns, Sets) = Namespaces(abc);
+        }
+
+        public static (Ns[], Ns[][]) Namespaces(AbcFile abc)
+        {
+            var ns = new Ns[abc.Namespaces.Length];
+            for (int i = 1; i < ns.Length; i++) ns[i] = Avm2.Ns.FromAbc(abc.Namespaces[i].Kind, abc.Namespaces[i].Name);
+            ns[0] = Avm2.Ns.Public;
+            var sets = new Ns[abc.NsSets.Length][];
+            for (int i = 0; i < sets.Length; i++)
+            {
+                var src = abc.NsSets[i];
+                var set = sets[i] = new Ns[src.Length];
+                for (int j = 0; j < set.Length; j++) set[j] = ns[src[j]];
+            }
+            return (ns, sets);
         }
     }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AbcFile, BlockCache> Shared = new();
