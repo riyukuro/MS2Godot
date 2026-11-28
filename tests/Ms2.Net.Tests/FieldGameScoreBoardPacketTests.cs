@@ -44,4 +44,17 @@ public class FieldGameScoreBoardPacketTests
         var p = FieldGameScoreBoardPacket.Read(R(w => { w.WriteByte(9); w.WriteInt(5); }));
         Assert.That((p.Type, p.Cur, p.Max, p.Title), Is.EqualTo(((byte)9, 0, 0, "")));
     }
+
+    [Test]
+    public void ANarrowTitleIsNotTheClientsLayout()
+    {
+        // The open's title is the wide string (u16 length, two bytes a char): one written narrow runs the body short.
+        string title = "$52100031_qd__MADRICANSIEGE__0$";
+        var body = new List<byte> { 0, 1 };
+        body.AddRange(BitConverter.GetBytes((ushort)title.Length));
+        body.AddRange(System.Text.Encoding.ASCII.GetBytes(title));
+        body.AddRange(BitConverter.GetBytes(0));
+        body.AddRange(BitConverter.GetBytes(35));
+        Assert.That(() => FieldGameScoreBoardPacket.Read(new ByteReader(body.ToArray())), Throws.Exception);
+    }
 }

@@ -11,9 +11,11 @@ namespace Ms2.Ui.Hud;
 /// "UIScoreGaugeTypeB" (no title), initialises it (its "m_gauge" child must exist) and puts it on the dialog's root; every refresh
 /// (<see cref="Refresh"/>, vfunc_85 @0x140f9d2a0) is the gauge's FUN_140f9ca30 (@0x140f9ca30, :228): the gauge's setValue(cur, max, true),
 /// the title text and the progress text, the percent clamped to 0..100 (string id 0x98e).
-/// STILL-OPEN: a most of 0 divides by zero in the client's percent (the client faults); this port leaves the gauge as it is then.
+/// The ctor (@0x140f9cc60) turns the tween on and sets flag 1 (<see cref="NotClosable"/>).
+/// STILL-OPEN: a most of 0 divides by zero in the client's percent (the client faults); this port leaves the gauge as it is then and logs it
+/// (<see cref="NotApplied"/>).
 /// </summary>
-public sealed class ShadowExpeditionBossBarController : UiController
+public sealed class ShadowExpeditionBossBarController : UiController, IScoreBoardDialog
 {
     public const int UiId = 0x4f0e;
     /// <summary>The library symbols of ASScoreBoardGauge (OnLoadComplete :190).</summary>
@@ -27,6 +29,8 @@ public sealed class ShadowExpeditionBossBarController : UiController
     protected override string EntityMethod => "alignment";
     /// <summary>GetTypeName (@0x140f9cdb0).</summary>
     public override string TypeName => "ShadowExpeditionBossBar";
+    /// <summary>SetFlag(1, 1) in the ctor: CloseAllDialogs and the Esc key pass it by.</summary>
+    public override bool NotClosable => true;
 
     /// <summary>m_nCur and m_nMax (the constructor zeroes them) and m_strTitle.</summary>
     public int Cur { get; private set; }
@@ -38,6 +42,9 @@ public sealed class ShadowExpeditionBossBarController : UiController
 
     /// <summary>The gauge clip, for the tests and the scripted runs.</summary>
     public object Gauge => gauge;
+
+    /// <summary>Called when the gauge would divide by a most of 0 (the client's integer divide faults there).</summary>
+    public Action<string> NotApplied;
 
     public ShadowExpeditionBossBarController()
     {
@@ -89,7 +96,11 @@ public sealed class ShadowExpeditionBossBarController : UiController
     /// <summary>ASScoreBoardGauge::FUN_140f9ca30 (@0x140f9ca30, :228).</summary>
     void ShowValue()
     {
-        if (Max == 0) return;                                                // STILL-OPEN: the client's int division faults
+        if (Max == 0)                                                        // STILL-OPEN: the client's int division faults
+        {
+            NotApplied?.Invoke($"shadow expedition boss bar: most 0 (cur {Cur}), the client divides by zero");
+            return;
+        }
         int percent = Math.Clamp(unchecked(Cur * 100) / Max, 0, 100);        // FUN_140f1ffe0 clamp; nCur * 100 is a 32 bit product in the client
         Host.Invoke(gaugeBar, "setValue", Cur, Max, true);
         SetText("m_title", Title);
@@ -107,6 +118,7 @@ public sealed class ShadowExpeditionBossBarController : UiController
     /// <summary>vfunc_26 (@0x140f9d0f0): the gauge leaves the root and the title is cleared; the count and the most stay.</summary>
     void OnUnloaded()
     {
+        if (gauge != null && Host?.Entity != null) Host.RT.Guard("remove gauge", () => Host.Invoke(Host.Entity, "removeChild", gauge));
         gauge = null; gaugeBar = null;
         Title = "";
     }

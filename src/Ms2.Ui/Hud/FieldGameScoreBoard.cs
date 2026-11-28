@@ -2,15 +2,31 @@ using Ms2.Net.Packets;
 
 namespace Ms2.Ui.Hud;
 
+/// <summary>The two dialogs the field game score board drives, by the members it calls on them.</summary>
+public interface IScoreBoardDialog
+{
+    /// <summary>vfunc_84: the current points.</summary>
+    void SetCur(int cur);
+    /// <summary>vfunc_85: the view again from the dialog's values.</summary>
+    void Refresh();
+    /// <summary>FUN_141924630 is 0: the dialog is closed.</summary>
+    bool IsClosed { get; }
+    /// <summary>vfunc_67: CloseDialog.</summary>
+    void Close();
+}
+
 /// <summary>
 /// FieldGameScoreBoardCli (uishadowexpeditionbossbar.cpp, ctor @0x140f9c1e0), the listener of the ShadowExpedition packet: it keeps the mode
-/// of the last open (m_nMode) and the board it drives (m_pDlg). Open (@0x140f9c3a0) reads the packet, translates the title through
+/// of the last open (m_nMode) and the dialog it drives (m_pDlg). Open (@0x140f9c3a0) reads the packet, translates the title through
 /// the trigger string group and runs FUN_140f9c610 (@0x140f9c610): mode 1 finds the boss bar dialog (id 0x4f0e) and gives it the points and
-/// the title; the dialog then opens (FUN_141924680) when it is not open (FUN_141924630 = 0), else refreshes (vfunc_85). The update (@0x140f9c520)
-/// sets the current points of the stored dialog and refreshes it; the close (@0x140f9c5b0) closes the stored dialog when it is open.
-/// STILL-OPEN: modes 2 and 3 drive the dark stream score dialog (UIDarkStreamScoreDialog, id 0x4ee4; a different window), which is not
-/// ported here, so those modes find no dialog and change nothing (the client's own result when the dialog is not found); where the client
-/// creates the boss bar's instance for FindObject (a dialog nothing opens by itself) is not traced, the owner's <see cref="FindBossBar"/> makes it.
+/// the title; modes 2 and 3 find the dark stream score dialog (id 0x4ee4) and give it the points, then offset 0 and align 1 (the top centre)
+/// or offset -80 and align 6 (the top right); another mode keeps the earlier dialog. The dialog then opens (FUN_141924680) when it is not
+/// open (FUN_141924630 = 0), else refreshes (vfunc_85). The update (@0x140f9c520) sets the current points of the stored dialog and refreshes
+/// it; the close (@0x140f9c5b0) closes the stored dialog when it is open, and a dialog closed by something else stays the stored one.
+/// Both dialogs set flag 1 in their ctors: CloseAllDialogs passes them by (CUIService::IsDialogClosable, uiservice.cpp:1001), the scene
+/// leave closes them (CloseClosableDialogs, uiservice.cpp:1496, skips flag 2 only).
+/// STILL-OPEN: where the client creates the dialogs' instances for FindObject (dialogs nothing opens by themselves) is not traced; the
+/// owner's <see cref="FindBossBar"/> and <see cref="FindScoreDialog"/> make them.
 /// </summary>
 public sealed class FieldGameScoreBoard
 {
@@ -18,14 +34,16 @@ public sealed class FieldGameScoreBoard
     public int Mode { get; private set; }
 
     /// <summary>The stored dialog (m_pDlg).</summary>
-    public ShadowExpeditionBossBarController Dialog { get; private set; }
+    public IScoreBoardDialog Dialog { get; private set; }
 
     /// <summary>GetShadowExpeditionBossBar(0x4f0e) (@0x140f9d940): the dialog's instance, null when there is none.</summary>
     public Func<ShadowExpeditionBossBarController> FindBossBar = () => null;
+    /// <summary>GetDarkStreamScoreDialog(0x4ee4): the dialog's instance, null when there is none.</summary>
+    public Func<DarkStreamScoreDialogController> FindScoreDialog = () => null;
     /// <summary>CServerStringGroup::GetString of the trigger group (the title's translation).</summary>
     public Func<string, string> ServerString = s => s;
     /// <summary>FUN_141924680: open the dialog (a no-op without a local player; the owner decides).</summary>
-    public Action<ShadowExpeditionBossBarController> Open = _ => { };
+    public Action<UiController> Open = _ => { };
 
     /// <summary>FUN_140f9c300 (@0x140f9c300): the type picks open, update or close; another type does nothing.</summary>
     public void OnPacket(FieldGameScoreBoardPacket p)
@@ -39,23 +57,39 @@ public sealed class FieldGameScoreBoard
     }
 
     /// <summary>
-    /// The owner closed the bar (the scene leave): forget the stored dialog, so a later packet asks for the dialog again and the owner tracks the one it
+    /// The owner closed the dialogs (the scene leave): forget the stored dialog, so a later packet asks for the dialog again and the owner tracks the one it
     /// opens. The client keeps m_pDlg and FindObject returns the same instance; here the owner makes a fresh controller for each open.
     /// </summary>
     public void DropDialog() => Dialog = null;
 
+    /// <summary>FUN_140f9c610 (@0x140f9c610).</summary>
     void OnOpen(FieldGameScoreBoardPacket p)
     {
         Mode = p.Mode;
         string title = ServerString(p.Title) ?? "";
-        if (Mode == 1 && FindBossBar() is { } bar)
+        switch (Mode)
         {
-            bar.SetCurMax(p.Cur, p.Max);
-            bar.SetTitle(title);
-            Dialog = bar;
+            case 1:
+                if (FindBossBar() is { } bar)
+                {
+                    bar.SetCurMax(p.Cur, p.Max);
+                    bar.SetTitle(title);
+                    Dialog = bar;
+                }
+                break;
+            case 2:
+            case 3:
+                if (FindScoreDialog() is { } score)
+                {
+                    score.SetCur(p.Cur);
+                    score.SetOffsetY(Mode == 2 ? 0 : -80);
+                    score.SetAlign(Mode == 2 ? 1 : 6);
+                    Dialog = score;
+                }
+                break;
         }
         if (Dialog == null) return;
-        if (Dialog.IsClosed) Open(Dialog);
+        if (Dialog.IsClosed) Open((UiController)Dialog);
         else Dialog.Refresh();
     }
 

@@ -52,12 +52,18 @@ public class ShadowExpeditionBossBarTests
 
     // ---- the listener (no data) ----
 
-    static (FieldGameScoreBoard board, List<ShadowExpeditionBossBarController> opened, Func<ShadowExpeditionBossBarController> bar) Board(bool exists = true)
+    static (FieldGameScoreBoard board, List<UiController> opened, Func<ShadowExpeditionBossBarController> bar) Board(bool exists = true)
+        => Board(out _, exists);
+
+    static (FieldGameScoreBoard board, List<UiController> opened, Func<ShadowExpeditionBossBarController> bar) Board(out DarkStreamScoreDialogController score, bool exists = true)
     {
         var board = new FieldGameScoreBoard();
-        var opened = new List<ShadowExpeditionBossBarController>();
+        var opened = new List<UiController>();
         var bar = new ShadowExpeditionBossBarController();
+        var dialog = new DarkStreamScoreDialogController();
+        score = dialog;
         board.FindBossBar = () => exists ? bar : null;
+        board.FindScoreDialog = () => exists ? dialog : null;
         board.Open = c => opened.Add(c);
         return (board, opened, () => bar);
     }
@@ -68,6 +74,11 @@ public class ShadowExpeditionBossBarTests
         Assert.That(new ShadowExpeditionBossBarController().TypeName, Is.EqualTo("ShadowExpeditionBossBar"));
         Assert.That(ShadowExpeditionBossBarController.UiId, Is.EqualTo(0x4f0e));
         Assert.That(ShadowExpeditionBossBarController.TopOffset, Is.EqualTo(0x8c));
+        Assert.That(new DarkStreamScoreDialogController().TypeName, Is.EqualTo("DarkStreamScoreDialog"));
+        Assert.That(DarkStreamScoreDialogController.UiId, Is.EqualTo(0x4ee4));
+        Assert.That(DarkStreamScoreDialogController.TopOffset, Is.EqualTo(0x82));
+        // SetFlag(1, 1) in both ctors (@0x140f9cc60, @0x140f35340): CloseAllDialogs and the Esc key pass them by
+        Assert.That((new ShadowExpeditionBossBarController().NotClosable, new DarkStreamScoreDialogController().NotClosable), Is.EqualTo((true, true)));
     }
 
     [Test]
@@ -91,15 +102,17 @@ public class ShadowExpeditionBossBarTests
     }
 
     [Test]
-    public void TheDarkStreamModesDriveNoBossBar()
+    public void TheDarkStreamModesDriveTheScoreDialogNotTheBossBar()
     {
-        foreach (byte mode in new byte[] { 2, 3 })
+        foreach (var (mode, offset, align) in new (byte, int, int)[] { (2, 0, 1), (3, -80, 6) })
         {
-            var (board, opened, bar) = Board();
+            var (board, opened, bar) = Board(out var score);
             board.OnPacket(new FieldGameScoreBoardPacket(FieldGameScoreBoardPacket.Open, mode, "t", 30, 200));
-            Assert.That(opened, Is.Empty, "mode " + mode);
+            Assert.That(opened, Is.EqualTo(new UiController[] { score }), "mode " + mode);
+            Assert.That((score.Score, score.OffsetY, score.Align), Is.EqualTo((30, offset, align)), "mode " + mode);
             Assert.That(bar().Max, Is.EqualTo(0));
             Assert.That(board.Mode, Is.EqualTo(mode));
+            Assert.That(board.Dialog, Is.SameAs(score));
         }
     }
 

@@ -37,6 +37,8 @@ public class DialogTweenTests
         (typeof(CubeBillDialogController), "UIUGCCubeBillDialog @ uiugccubebilldialog.cpp:63"),
         (typeof(HomeSaveSlotDialogController), "UIHomeSaveSlotDialog @0x140fa9eb0 :143"),
         (typeof(LapenshardSystemController), "UILapenshardSystemDialog @ uilapenshardsystemdialog.cpp:694"),
+        (typeof(ShadowExpeditionBossBarController), "UIShadowExpeditionBossBar @0x140f9cc60 uishadowexpeditionbossbar.cpp:243"),
+        (typeof(DarkStreamScoreDialogController), "UIDarkStreamScoreDialog @0x140f35340 uidarkstreamscoredialog.cpp:36"),
     };
 
     static bool TweenOf(Type t)
