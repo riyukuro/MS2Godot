@@ -4522,6 +4522,14 @@ public partial class LiveSession : Node
                     GD.Print($"live: move {n}: room entry {step[10..]} sent");
                     sent = true;
                 }
+                else if (step == "roomfield")
+                {
+                    // "roomfield": from the room's lobby into its first field (RoomDungeon 10, the server's EnterField), for a server whose
+                    // lobby sends no DungeonWaiting; sent by the harness, not by a client window
+                    live.SendParty(new Ms2.Net.Packets.RoomDungeonLobbyRequest(10));
+                    GD.Print($"live: move {n}: room field entry sent");
+                    sent = true;
+                }
                 else if (step.StartsWith("chat:"))
                 {
                     // "chat:<line>": a chat line (a GM command) typed in, no field move awaited (a /kill all in a dungeon, say)
@@ -4595,7 +4603,7 @@ public partial class LiveSession : Node
             bool joinLink = pp[0] == "joinlink";                                 // the dungeon join links run: one client
             bool dpsRun = pp[0] is "askdps" or "answerdps";                     // the party damage meter run: two clients
             bool dungeonRun = pp[0] == "dungeonroom";                            // the dungeon room window run: one client
-            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch" or "askdps";
+            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote" or "asksearch" or "askdps" or "askgiveup";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
             string partyShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_SHOTS");
@@ -5025,6 +5033,49 @@ public partial class LiveSession : Node
                     await Frames(60 * 10);
                     PShot("before_quit");
                     GD.Print("live: party B: quitting");
+                }
+            }
+            else if (pp[0] is "askgiveup" or "answergiveup" or "watchgiveup")
+            {
+                // MS2_LIVE_PARTY "askgiveup:<name>:<room>" (the leader) and "answergiveup": the leader invites, the answerer accepts, the
+                // leader makes the dungeon room for the party (the GM /dungeon command with --party); both follow it. The leader's
+                // stage, its flag and the party window's give-up button are logged every 3 s for two minutes, with a shot at each change.
+                if (asker)
+                {
+                    string gRoom = pp.Length > 2 ? pp[2] : "";
+                    UserBlock who = null;
+                    await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == partner)) != null, 60 * 120);
+                    GD.Print($"live: party A: {partner} {(who != null ? "is in the field" : "never came")}");
+                    await Frames(120);
+                    ph.PartyLinkClick("inviteParty," + partner);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party A: invite answered, in party {joined}, window {ph.PartyWindowShown}, leader {pl.Party.LeaderId} self {pl.CharacterId}");
+                    PShot("party");
+                    bool typed = ph.SubmitChatLine("/dungeon " + gRoom + " --party");
+                    GD.Print($"live: party A: /dungeon {gRoom} --party {(typed ? "typed" : "no chat window")}");
+                }
+                else if (pp[0] == "answergiveup")
+                {
+                    // the first box can be the opening cut scene's skip question (answered yes); the invite comes after it
+                    await Box("invite", 120);
+                    if (!pl.Party.IsInParty) await Box("invite", 120);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party B: joined {joined}, window {ph.PartyWindowShown}");
+                }
+                string last = "";
+                for (int t = 0; t < 40; t++)
+                {
+                    await Frames(180);
+                    var st = pl.Stage;
+                    var gHud = tree.CurrentScene as Ui.HudScene;      // the field move rebuilt the HUD: ph is the old one
+                    string now = $"stage {(st == null ? "none" : $"room {st.Room?.Id} stage {st.Stage} flag {st.Flag}")}, in party {pl.Party.IsInParty}, leader {pl.Party.LeaderId} self {pl.CharacterId}, window {gHud?.PartyWindowShown}, giveup button {gHud?.PartyGiveUpShown}, field {pl.FieldId}";
+                    GD.Print($"live: party {role}: t={t * 3}s {now}");
+                    if (now != last)
+                    {
+                        last = now;
+                        if (!string.IsNullOrEmpty(partyShots))
+                            flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(partyShots, $"{role}_t{t * 3:D3}.png"));
+                    }
                 }
             }
             else if (asker)

@@ -33,6 +33,9 @@ public partial class HudScene
     /// <summary>Scripted runs: the party window is up.</summary>
     public bool PartyWindowShown => PartyWindowOpen;
 
+    /// <summary>Scripted runs: the party window's give-up dungeon button is visible.</summary>
+    public bool PartyGiveUpShown => PartyWindowOpen && party.GiveUpDungeonShown;
+
     /// <summary>Scripted runs: a click on a chat party link, as the messenger's hyperLinkLeft runs it (for example "inviteParty,Name").</summary>
     public void PartyLinkClick(string text) => ChatLog.PartyLinks?.Handle(text);
 

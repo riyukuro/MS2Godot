@@ -425,6 +425,9 @@ public sealed class PartyController : UiController
     /// (RoomStageDungeonCli::IsStageFlagSet: stage 0 and the flag), else hidden.</summary>
     void UpdateGiveUpDungeonButton() => Show("m_giveUpDungeon", GetStage() is { IsStageFlagSet: true } && Party.IsLeader(SelfCharacterId));
 
+    /// <summary>Scripted live runs: the give-up dungeon button is visible in the movie.</summary>
+    public bool GiveUpDungeonShown => Host?.Child("m_giveUpDungeon") is { } c && Avm2.Rt.ToBoolean(Host.Get(c, "visible"));
+
     /// <summary>ArrangeBottomButton @0x141a75a20 (:552).</summary>
     public void ArrangeBottomButton() { if (Host?.Entity != null) Host.Invoke(Host.Entity, "arrangeBottomButton"); }
 
