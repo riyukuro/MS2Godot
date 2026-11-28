@@ -353,7 +353,10 @@ public sealed class UiHost
     public object Invoke(object target, string method, params object[] args)
     {
         if (Rt.IsNullish(target)) return null;
-        return Player.Call(target, method, args.Select(ToAs).ToArray());
+        // a fresh array: the callee owns it and may keep it
+        var a = args.Length == 0 ? Array.Empty<object>() : new object[args.Length];
+        for (int i = 0; i < a.Length; i++) a[i] = ToAs(args[i]);
+        return Player.Call(target, method, a);
     }
 
     /// <summary>True when the movie's object has the member (a method or property). The KMS2 movies carry members the

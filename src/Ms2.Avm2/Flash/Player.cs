@@ -968,10 +968,15 @@ namespace Ms2.Avm2.Flash
         /// <summary>Calls a method on an AS object the way GFx::Value::Invoke does (errors recorded, undefined on failure).</summary>
         public object Call(object target, string method, params object[] args)
         {
-            object result = Rt.Undef;
-            RT.Guard("invoke " + method, () => result = RT.CallProperty(target, Name.Public(method), args));
-            return result;
+            // the state goes in as an argument and the label is made only on an error (no closure or string per call); a
+            // call nested in this one writes callResult first, so it is read only when this call itself finished
+            bool ok = RT.Guard("invoke", method, (this, target, method, args),
+                static s => s.Item1.callResult = s.Item1.RT.CallProperty(s.target, Name.Public(s.method), s.args));
+            var r = ok ? callResult : Rt.Undef;
+            callResult = null;
+            return r;
         }
+        object callResult;
 
         /// <summary>A plain AS object with the given members (the ASObj the C++ side builds for Invoke arguments).</summary>
         public AsObject NewObject(params (string Key, object Value)[] members)

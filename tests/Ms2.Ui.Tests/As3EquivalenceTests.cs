@@ -293,6 +293,34 @@ public class As3EquivalenceTests
         Assert.That(perTick, Is.LessThan(MaxHudTickBytes), "bytes allocated per HUD tick");
     }
 
+    /// <summary>
+    /// What a call from the C# side into a loaded movie costs on its own: an Invoke with two arguments (the converted
+    /// arguments go to the callee as a fresh array, which it may keep). 440 B per call when each call built its arguments
+    /// with LINQ and its error label and closure up front; 144 B since.
+    /// </summary>
+    [Test]
+    public void HostInvokeAllocatesLittle()
+    {
+        var d = Dialogs["mainplayerinfo"];
+        var c = d.Make();
+        var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); }, c.Libraries);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var h = new UiHost(p, c, Model());
+        d.Pre?.Invoke(c);
+        h.Load();
+        d.Post?.Invoke(c);
+        const int n = 1000;
+        object one = 1;
+        h.Invoke("hasOwnProperty", one, "a");
+        long invoke = Alloc.Least(() => { for (int i = 0; i < n; i++) h.Invoke("hasOwnProperty", one, "a"); }) / n;
+        TestContext.WriteLine($"host Invoke with 2 arguments: {invoke} B per call");
+        Assert.That(rt.Errors, Is.Empty);
+        Assert.That(invoke, Is.LessThan(MaxInvokeBytes), "bytes allocated per host Invoke");
+    }
+
+    const long MaxInvokeBytes = 200;
+
     const long MaxHudTickBytes = 1300;   // 1269 B at this commit (restore and GMS2 data, Debug and Release; a new one-element array (32 B) per tick trips it, a single 24 B box does not), for the two movies together (1461 B before the typed native calls, 5073 B when the play-list sort ran every tick)
 
     /// <summary>Every movie with code: its document class and 5 frames (no C++ side), then a mouse sweep.</summary>
