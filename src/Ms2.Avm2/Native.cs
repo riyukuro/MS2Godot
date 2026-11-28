@@ -66,7 +66,7 @@ public sealed partial class Runtime
     public static void Const(AsClass c, string name, object v)
     {
         var b = c.Traits.AddSlot(Ns.Public, name, 0, v, null, true);
-        var s = c.Slots; Array.Resize(ref s, c.Traits.SlotCount); s[b.Slot] = v; c.Slots = s;
+        c.Slots = TraitTable.GrowSlots(c.Slots, c.Traits, b.Slot, v);
     }
 
     public void Function(string qname, Func<object[], object> f) => DefineGlobal(qname, new AsPlainFunction(this, new NativeMethod(qname, (s, a) => f(a))));

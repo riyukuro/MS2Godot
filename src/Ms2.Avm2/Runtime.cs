@@ -82,9 +82,7 @@ public sealed partial class Runtime
         var ns = Ns.Get(NsKind.Public, dot < 0 ? "" : qname[..dot]);
         var local = dot < 0 ? qname : qname[(dot + 1)..];
         var b = nativeTable.AddSlot(ns, local, 0, value, null, true);
-        nativeGlobals.Slots = nativeTable.NewSlots();
-        // keep earlier values (NewSlots resets to defaults, which hold the values)
-        _ = b;
+        nativeGlobals.Slots = TraitTable.GrowSlots(nativeGlobals.Slots, nativeTable, b.Slot, value);
     }
 
     // a qualified name's lookup name, split once: the callers pass the same few class names on every event and display object

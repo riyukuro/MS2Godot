@@ -137,6 +137,25 @@ public sealed class TraitTable
         return b;
     }
 
+    /// <summary>
+    /// <paramref name="slots"/> with <paramref name="value"/> in the new slot <paramref name="slot"/> of
+    /// <paramref name="table"/>, for an object whose slots are added one at a time (the native globals, a native class's
+    /// constants). The array grows by doubling, so it may be longer than <see cref="SlotCount"/>; a slot past the count has
+    /// no binding and is never read. Earlier slots keep their values.
+    /// </summary>
+    public static object[] GrowSlots(object[] slots, TraitTable table, int slot, object value)
+    {
+        int n = table.SlotCount;
+        if (n > slots.Length)
+        {
+            int old = slots.Length;
+            Array.Resize(ref slots, Math.Max(n, Math.Max(16, old * 2)));
+            for (int i = old; i < n; i++) slots[i] = i < table.SlotDefaults.Count ? table.SlotDefaults[i] : Rt.Undef;
+        }
+        slots[slot] = value;
+        return slots;
+    }
+
     public object[] NewSlots()
     {
         var s = new object[SlotCount];
