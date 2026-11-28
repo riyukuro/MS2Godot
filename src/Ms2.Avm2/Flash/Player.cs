@@ -666,20 +666,34 @@ namespace Ms2.Avm2.Flash
         {
             if (o is AsMovieClip mc && mc.CanAdvance) RegisterPlaying(mc);
             o.Send("flash.events.Event", "addedToStage");
-            if (o is AsContainer c) foreach (var ch in c.Children.ToList()) EnterStage(ch);
+            if (o is not AsContainer c || c.Children.Count == 0) return;
+            // a listener may change the children: walk them as they were, from a rented copy (one per level)
+            var (kids, n) = RentCopy(c.Children);
+            try { for (int i = 0; i < n; i++) EnterStage(kids[i]); }
+            finally { ReturnCopy(kids, n); }
         }
 
-        internal void AddedToStage(AsDisplayObject o) => RT.Guard("addedToStage", () => EnterStage(o));
-
-        internal void RemovedFromStage(AsDisplayObject o)
+        static void Leave(AsDisplayObject x)
         {
-            void Leave(AsDisplayObject x)
-            {
-                x.Send("flash.events.Event", "removedFromStage");
-                if (x is AsContainer c) foreach (var ch in c.Children.ToList()) Leave(ch);
-            }
-            RT.Guard("removedFromStage", () => Leave(o));
+            x.Send("flash.events.Event", "removedFromStage");
+            if (x is not AsContainer c || c.Children.Count == 0) return;
+            var (kids, n) = RentCopy(c.Children);
+            try { for (int i = 0; i < n; i++) Leave(kids[i]); }
+            finally { ReturnCopy(kids, n); }
         }
+
+        static (AsDisplayObject[], int) RentCopy(ChildList l)
+        {
+            var a = System.Buffers.ArrayPool<AsDisplayObject>.Shared.Rent(l.Count);
+            l.CopyTo(a, 0);
+            return (a, l.Count);
+        }
+
+        static void ReturnCopy(AsDisplayObject[] a, int n) { Array.Clear(a, 0, n); System.Buffers.ArrayPool<AsDisplayObject>.Shared.Return(a); }
+
+        internal void AddedToStage(AsDisplayObject o) => RT.Guard("addedToStage", null, (this, o), static s => s.Item1.EnterStage(s.o));
+
+        internal void RemovedFromStage(AsDisplayObject o) => RT.Guard("removedFromStage", null, o, Leave);
 
         // ---- frame loop --------------------------------------------------------------------------------------
 
@@ -1618,9 +1632,14 @@ namespace Ms2.Avm2.Flash
                 if (t != null)
                 {
                     MouseEv(t, "mouseOver", old);
-                    var chain = new List<AsInteractiveObject>();
-                    for (var o = (AsDisplayObject)t; o != null && !Contains(o, old); o = o.Parent) if (o is AsInteractiveObject io) chain.Add(io);
-                    for (int i = chain.Count - 1; i >= 0; i--) MouseEv(chain[i], "rollOver", old);
+                    // the rollOver chain is fixed before its events run (a listener may move the objects): a rented copy
+                    int n = 0;
+                    for (var o = (AsDisplayObject)t; o != null && !Contains(o, old); o = o.Parent) if (o is AsInteractiveObject) n++;
+                    var chain = System.Buffers.ArrayPool<AsInteractiveObject>.Shared.Rent(n);
+                    n = 0;
+                    for (var o = (AsDisplayObject)t; o != null && !Contains(o, old); o = o.Parent) if (o is AsInteractiveObject io) chain[n++] = io;
+                    try { for (int i = n - 1; i >= 0; i--) MouseEv(chain[i], "rollOver", old); }
+                    finally { Array.Clear(chain, 0, n); System.Buffers.ArrayPool<AsInteractiveObject>.Shared.Return(chain); }
                 }
             }
         }
