@@ -80,14 +80,15 @@ public sealed class QuestCondition
     /// CConditionCommonData::Load (@0x14029ea20, conditionutil.cpp:322-330): a condition whose type name is unknown
     /// (ConditionTypeFromName 0) does not load. code and target are parsed unless empty or "0". The goal keeps the
     /// constructor's m_nGoal(1) (:287) and XmlGetAttr only writes it when "value" is there (XmlQueryInt,
-    /// tinyxmlhelper.cpp:57-63), so a condition without a value has goal 1: one interact, talk or kill completes it.
+    /// tinyxmlhelper.cpp:57-63) when it reads a number, so a condition without a value, or with an empty one, has goal 1: one
+    /// interact, talk or kill completes it (<see cref="FieldMissions.Goal"/>).
     /// </summary>
     public static QuestCondition Load(XElement e)
     {
         int type = ConditionTypes.FromName((string)e.Attribute("type") ?? "");
         if (type == 0) return null;
         var c = new QuestCondition { Type = type };
-        if ((string)e.Attribute("value") is { } v) c.Goal = FieldMissions.Long(v);
+        c.Goal = FieldMissions.Goal((string)e.Attribute("value"));
         string code = (string)e.Attribute("code") ?? "", target = (string)e.Attribute("target") ?? "";
         if (code.Length != 0 && code != "0") c.Code = ConditionParam.Parse(code);
         if (target.Length != 0 && target != "0") c.Target = ConditionParam.Parse(target);

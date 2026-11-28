@@ -148,7 +148,7 @@ public sealed class FieldMissions
                 int id = Int((string)basic?.Attribute("questID"));
                 if (id == 0 || Int((string)basic.Attribute("questType")) != 4 || quests.ContainsKey(id)) continue;
                 var conds = q.Elements("condition")
-                    .Select(c => ((string)c.Attribute("type") ?? "", Long((string)c.Attribute("value"))))
+                    .Select(c => ((string)c.Attribute("type") ?? "", Goal((string)c.Attribute("value"))))
                     .Where(c => c.Item1.Length > 0).ToArray();
                 var fields = Tokens((string)q.Element("progressMap")?.Attribute("progressMap"), ",").Select(Int).ToArray();
                 quests[id] = new Mission(id, conds);
@@ -251,6 +251,20 @@ public sealed class FieldMissions
 
     /// <summary>atoi: leading spaces, a sign and the digits, 0 when none.</summary>
     public static int Int(string s) => (int)Long(s);
+
+    /// <summary>
+    /// A condition's goal from its "value" attribute (null when missing): CConditionCommonData's constructor sets m_nGoal to 1
+    /// (conditionutil.cpp:287) and Load writes it only when XmlQueryInt succeeds (tinyxmlhelper.cpp:57-63), which TinyXML's
+    /// QueryIntAttribute does only when sscanf "%d" reads a number; a missing value, an empty one or one without digits keeps 1.
+    /// </summary>
+    public static long Goal(string value)
+    {
+        if (value == null) return 1;
+        int i = 0;
+        while (i < value.Length && char.IsWhiteSpace(value[i])) i++;
+        if (i < value.Length && (value[i] == '-' || value[i] == '+')) i++;
+        return i < value.Length && value[i] >= '0' && value[i] <= '9' ? Long(value) : 1;
+    }
 
     public static long Long(string s)
     {

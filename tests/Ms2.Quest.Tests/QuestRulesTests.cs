@@ -205,6 +205,8 @@ public class QuestRulesTests
         Assert.That(c.Goal, Is.EqualTo(1));
         Assert.That(QuestCondition.Load(XElement.Parse("<condition type=\"npc\" code=\"7\" value=\"3\" />")).Goal, Is.EqualTo(3));
         Assert.That(QuestCondition.Load(XElement.Parse("<condition type=\"npc\" code=\"7\" value=\"0\" />")).Goal, Is.EqualTo(0), "a written 0 stays 0");
+        Assert.That(QuestCondition.Load(XElement.Parse("<condition type=\"npc\" code=\"7\" value=\"\" />")).Goal, Is.EqualTo(1), "an empty value: QueryIntAttribute fails, the goal stays 1");
+        Assert.That(QuestCondition.Load(XElement.Parse("<condition type=\"npc\" code=\"7\" value=\" 2x\" />")).Goal, Is.EqualTo(2), "sscanf reads the leading number");
         Assert.That(new QuestCondition().Goal, Is.EqualTo(1), "a trophy grade without a condition element (achievedata.cpp:701)");
         var q = new QuestData { Id = 50001670 };
         q.Conditions.Add(c);

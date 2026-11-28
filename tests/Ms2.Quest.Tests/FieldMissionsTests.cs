@@ -102,4 +102,24 @@ public class FieldMissionsTests
         Assert.That(order, Is.EquivalentTo(keys));
         Assert.That(order.Select(k => k % 53).ToList(), Is.Ordered);
     }
+
+    /// <summary>
+    /// A field mission's condition without a value needs one count, as every quest condition (CConditionCommonData's m_nGoal(1),
+    /// conditionutil.cpp:287): the panel shows "(0/1)" and the goal is met at a progress of 1, not on an empty record.
+    /// </summary>
+    [Test]
+    public void AMissionConditionWithoutValueNeedsOneCount()
+    {
+        var m = new FieldMissions("KR", _ => true);
+        m.AddQuests(XDocument.Parse(@"<ms2><environment><quest>
+            <basic questID=""9101"" questType=""4"" /><progressMap progressMap=""400"" /><condition type=""run"" /><condition type=""swim"" value="""" /></quest></environment></ms2>"));
+        m.BuildIndex();
+        m.AddDescriptions(XDocument.Parse(@"<ms2><quest questID=""9101"" manual=""Run|Swim"" count=""1|1"" /></ms2>"));
+        m.CountFormat = "{0} ({1}/{2})";
+        Assert.That(m.ConditionText(9101, 0), Is.EqualTo("Run (0/1)"));
+        Assert.That(m.ConditionText(9101, 1), Is.EqualTo("Swim (0/1)"));
+        Assert.That(FieldMissions.Goal(null), Is.EqualTo(1));
+        Assert.That(FieldMissions.Goal("0"), Is.EqualTo(0), "a written 0 stays 0");
+        Assert.That(FieldMissions.Goal("-"), Is.EqualTo(1), "no digits: the read fails");
+    }
 }
