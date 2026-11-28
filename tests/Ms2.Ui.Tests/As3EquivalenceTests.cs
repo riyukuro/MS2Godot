@@ -293,7 +293,7 @@ public class As3EquivalenceTests
         Assert.That(perTick, Is.LessThan(MaxHudTickBytes), "bytes allocated per HUD tick");
     }
 
-    const long MaxHudTickBytes = 1350;   // 1269 B at this commit, for the two movies together (1461 B before the typed native calls, 5073 B when the play-list sort ran every tick)
+    const long MaxHudTickBytes = 1300;   // 1269 B at this commit (restore and GMS2 data, Debug and Release; a single new box per tick trips it), for the two movies together (1461 B before the typed native calls, 5073 B when the play-list sort ran every tick)
 
     /// <summary>Every movie with code: its document class and 5 frames (no C++ side), then a mouse sweep.</summary>
     [Test]
