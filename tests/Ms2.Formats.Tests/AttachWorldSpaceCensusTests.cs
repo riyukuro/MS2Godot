@@ -67,14 +67,26 @@ public class AttachWorldSpaceCensusTests
         TestContext.Out.WriteLine($"{env}: {xmls} skill effect xmls, {parts} attach type 1 nif parts, {nifs.Count} nifs ({loaded} loaded, {withSystems} with particle systems)");
         TestContext.Out.WriteLine($"{env}:   quad systems: world space {on}, local {off}; mesh particle systems: world space {meshOn}, local {meshOff}");
         TestContext.Out.WriteLine($"{env}:   systems whose node moves in the file (a keyframed or billboard node on the way to the root): world space {onMoving}, local {offMoving}");
+        var flameSystems = new SortedDictionary<string, string>(StringComparer.Ordinal);
         foreach (var nif in flame.Distinct())
         {
             if (!cache.TryGetValue(nif, out var sc)) { TestContext.Out.WriteLine($"{env}: flame wave {nif}: not loaded"); continue; }
+            foreach (var s in sc.Systems)
+                flameSystems[s.Name] = $"world space {(s.WorldSpace ? "on" : "off")}, {(Moves(sc, s.Node) ? "moving" : "still")}";
             foreach (var s in sc.Systems)
                 TestContext.Out.WriteLine($"{env}: flame wave {nif}: {s.Name} {(s.MeshParticles ? "mesh" : "quad")} world space {(s.WorldSpace ? "on" : "off")} (node {(s.Node >= 0 && s.Node < sc.Nodes.Count ? sc.Nodes[s.Node].Name : "-")}{(Moves(sc, s.Node) ? ", moving" : ", still")})");
         }
         Assert.That(xmls, Is.GreaterThan(100));
         Assert.That(flame, Is.Not.Empty, "the Flame Wave cast effect has an attach type 1 nif part");
+        // the systems the dash cancel check relies on: PArray03 and PArray04 keep their particles where they were emitted,
+        // PArray01 and PArray05 sit on animated nodes and carry their particles with them
+        Assert.That(flameSystems, Is.EquivalentTo(new Dictionary<string, string>
+        {
+            ["PArray01"] = "world space off, moving",
+            ["PArray03"] = "world space on, moving",
+            ["PArray04"] = "world space on, still",
+            ["PArray05"] = "world space off, moving",
+        }), $"{env}: Flame Wave's particle systems");
         Assert.That(on + off + meshOn + meshOff, Is.GreaterThan(0));
     }
 
