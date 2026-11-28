@@ -65,7 +65,11 @@ public partial class Player : ISkillMotionOwner
     {
         if (Ms2.Ui.FieldMoveCover.Up) return Vector3.Zero;
         var keys = ScriptDriven ? Input2 : MoveInput.Read().Move;
-        if (keys == Vector2.Zero && diagHold > 0) keys = diagDir;
+        // the client's UpdateMoveDirection runs first in the cast's frame (unit_141682f80.cpp:454-490): a diagonal let go
+        // on this frame is held (m_moving) while its timer still runs at this frame's time, so the hold left after the
+        // last step less the coming frame's delta (the last step's, as the frames are paced; the cast comes from an
+        // input event, before the frame's step). A hold of last frame cleared by a released key reads 0 here.
+        if (keys == Vector2.Zero && diagHold - lastStepDt > 0) keys = diagDir;
         if (keys == Vector2.Zero) keys = MouseInput;
         return WorldDir(keys);
     }

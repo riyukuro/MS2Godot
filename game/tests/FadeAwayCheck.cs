@@ -38,6 +38,8 @@ public partial class FadeAwayCheck : Node3D
     const float Dt = 1f / 60;
     const string CastSeq = "attack_01_a";
     static readonly Vector2 Left = new(-1, 0), Right = new(1, 0);
+    const float WallRow = 2250f;
+    readonly List<((int, int, int) Key, System.Numerics.Vector3 Pos)> cubes = new();
 
     public override void _Ready()
     {
@@ -48,6 +50,17 @@ public partial class FadeAwayCheck : Node3D
         sb.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(8000, 100, 8000) } });
         AddChild(sb);
         step = typeof(Player).GetMethod("Step", BindingFlags.Instance | BindingFlags.NonPublic);
+        // a wall of cubes at MS2 x 0, three high and three wide around the godot row z WallRow (NoClimbInTheSkill): each cube
+        // fills 150 around its position and 150 up from it (CubeGrid), and every player gets the cells
+        foreach (int dy in new[] { -1, 0, 1 })
+            for (int level = 0; level < 3; level++)
+            {
+                var ms2 = new Vector3(0, -WallRow + dy * MoveConfig.CubeSize, level * MoveConfig.CubeSize);
+                var wall = new StaticBody3D { Position = new Vector3(ms2.X, ms2.Z + MoveConfig.CubeSize / 2, -ms2.Y) };
+                wall.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = Vector3.One * MoveConfig.CubeSize } });
+                AddChild(wall);
+                cubes.Add((CubeGrid.Key(ms2), new System.Numerics.Vector3(ms2.X, ms2.Y, ms2.Z)));
+            }
     }
 
     sealed class Run
@@ -76,6 +89,7 @@ public partial class FadeAwayCheck : Node3D
         // a remote turns into its move axes (PCBase::vfunc_67, pcbase.cpp:1310-1340)
         var (ex, ey, ez) = Ms2.Net.CameraMath.Euler(0, -600, 400, 0, 0, 0);
         pc.CameraEuler = new Vector3(ex, ey, ez);
+        foreach (var (key, pos) in cubes) pc.Cubes.Cells.AddMapCube(key, pos);
         pc.BoundsMin = new Vector3(-4000, -4000, -1000);
         pc.BoundsMax = new Vector3(4000, 4000, 1000);
         pc.GlobalPosition = at;
@@ -93,6 +107,13 @@ public partial class FadeAwayCheck : Node3D
             step.Invoke(r.Pc, new object[] { (double)Dt });
             r.Pc.Anim.Advance(Dt);
         }
+    }
+
+    void StepDt(Run r, float dt)
+    {
+        r.Frame++;
+        step.Invoke(r.Pc, new object[] { (double)dt });
+        r.Pc.Anim.Advance(dt);
     }
 
     // the HUD's cast (CastKey -> AimOwn -> PlaySkillSequence) as the input event gives it, before the frame's step
@@ -176,6 +197,8 @@ public partial class FadeAwayCheck : Node3D
         if (jumpRec.Made != same.JumpFrame) fails.Add($"the jump record is made on the jump's frame {same.JumpFrame}, not {jumpRec.Made}");
         if (skillRecs.Any(s => s.Rec.SubState != 0 || s.Rec.Flags != 0)) fails.Add("the skill record carries a sub or optional fields (no skill id: State::vfunc_26 writes data only when present)");
         Remote(same);
+        HeldDiagonal();
+        NoClimbInTheSkill();
         // an arc motion (bNoVelocity = the controller's m_nType 1, stateskill.cpp:2865, motioncontroller.cpp:168-171) and
         // magicControl (m_n10 0x3c returns before any vfunc_68, :2854) take no controller step: no jump drift in the air
         var arc = FadeAway(0, new Vector3(0, 5, 3000), new CastMove(1, 0, 0, 0, 0, false, false, default));
@@ -185,6 +208,85 @@ public partial class FadeAwayCheck : Node3D
             GD.Print($"fade away {name}: drift x {r.DriftX:0.##} over 6 frames");
             if (Mathf.Abs(r.DriftX) > 0.5f) fails.Add($"{name}: drift {r.DriftX:0.##} in the air, not 0 (no velocity step)");
         }
+    }
+
+    // Unk_PCMove::UpdateMoveDirection (unit_141682f80.cpp:454-490) runs first in the cast's frame: up + right, then up let go
+    // on a long frame (the 50 ms timer starts at that frame's time), one short frame on right, then right let go with the
+    // cast. The frame's time is two short frames after the start, under 50 ms, so the cast aims the held diagonal
+    // (FUN_141683900: no key down and m_moving). A hold that counted the start frame's own delta would have run out.
+    void HeldDiagonal()
+    {
+        var r = Make(new Vector3(0, 5, 750));
+        var pc = r.Pc;
+        pc.FaceRotZ(270);
+        Frame(r, 20);
+        pc.Input2 = new Vector2(1, 1); Frame(r, 4);
+        pc.Input2 = Right; StepDt(r, 0.04f);
+        StepDt(r, Dt);
+        pc.Input2 = Vector2.Zero;
+        pc.FaceRotZ(270);                                   // the walk turned the body to the diagonal; with no hold the cast aims the facing
+        float AimOf(Vector3 k) => Norm(Ms2.Ui.Skills.SkillCast.AimRotZ(Norm(pc.FacingRotZ), new System.Numerics.Vector3(k.X, -k.Z, 0)));
+        float aim = AimOf(pc.CastAimDirection());
+        var worldDir = typeof(Player).GetMethod("WorldDir", BindingFlags.Instance | BindingFlags.NonPublic);
+        float diag = AimOf((Vector3)worldDir.Invoke(pc, new object[] { new Vector2(1, 1) }));
+        GD.Print($"fade away held diagonal: aim {aim:0.#} on the release frame after a 40 ms start frame (the diagonal is {diag:0.#})");
+        if (Mathf.Abs(Mathf.AngleDifference(Mathf.DegToRad(aim), Mathf.DegToRad(diag))) > 0.01f)
+            fails.Add($"held diagonal: aim {aim:0.#}, not the up-right diagonal {diag:0.#} (the 50 ms timer runs from its start frame's time)");
+        Frame(r, 10);
+        // the timer out: four short frames on right, the first starting it (67 ms at the release frame), so the cast aims the facing
+        pc.Input2 = new Vector2(1, 1); Frame(r, 4);
+        pc.Input2 = Right; Frame(r, 4);
+        pc.Input2 = Vector2.Zero;
+        pc.FaceRotZ(270);
+        float late = AimOf(pc.CastAimDirection());
+        GD.Print($"fade away held diagonal out: aim {late:0.#} on the release frame 67 ms after the start");
+        if (Mathf.Abs(Mathf.AngleDifference(Mathf.DegToRad(late), Mathf.DegToRad(270f))) > 0.01f) fails.Add($"held diagonal out: aim {late:0.#}, not the facing 270");
+        Frame(r, 10);
+    }
+
+    // walk right, jump right, let go, cast (aim = the facing, right): the skill state keeps the jump's drift into a wall of
+    // cubes. The client is in StateSkill, whose update (stateskill.cpp) has no climb check (PCBase::FUN_141678820 and
+    // PC::FUN_14165b500 run from StateJump / StateFall vfunc_8), so the body does not climb while the skill plays. A probe
+    // run without the wall gives the drift; the wall stands halfway between the cast and the landing.
+    void NoClimbInTheSkill()
+    {
+        var holds = typeof(Player).GetMethod("SkillHoldsMove", BindingFlags.Instance | BindingFlags.NonPublic);
+        var wallHit = typeof(Player).GetField("wallHit", BindingFlags.Instance | BindingFlags.NonPublic);
+        (float Cast, float Land, int Climbed, int Hits, string Log) Jump(Vector3 at)
+        {
+            var r = Make(at);
+            var pc = r.Pc;
+            pc.FaceRotZ(90);
+            Frame(r, 20);
+            pc.Input2 = Right; Frame(r, 12);
+            pc.JumpHeld = true; Frame(r);
+            pc.JumpHeld = false; Frame(r, 6);
+            pc.Input2 = Vector2.Zero; Frame(r, 3);
+            Cast(r);
+            float cast = pc.GlobalPosition.X, land = cast;
+            int climbed = 0, hits = 0;
+            var log = new System.Text.StringBuilder();
+            for (int i = 0; i < 150; i++)
+            {
+                bool skill = (bool)holds.Invoke(pc, null);
+                Frame(r);
+                if (skill && (bool)wallHit.GetValue(pc)) hits++;
+                if (skill && pc.State == Player.MoveState.Climb) climbed++;
+                if (skill && pc.State is Player.MoveState.Jump or Player.MoveState.Fall) land = pc.GlobalPosition.X;
+                if (i % 10 == 0) log.Append($" {i}:{pc.State}{(skill ? "*" : "")}@{pc.GlobalPosition.X:0},{pc.GlobalPosition.Y:0}");
+            }
+            return (cast, land, climbed, hits, log.ToString());
+        }
+        const float x0 = -1500f, z = WallRow;
+        var probe = Jump(new Vector3(x0, 5, -z));
+        GD.Print($"fade away climb probe: cast x {probe.Cast:0}, last air x in the skill {probe.Land:0};{probe.Log}");
+        // the wall (built at the start, WallRow): its face at MS2 x -75; the run starts so the face is halfway along the drift
+        float face = -MoveConfig.CubeSize / 2;
+        float start = face - ((probe.Cast + probe.Land) / 2 - x0);
+        var wall = Jump(new Vector3(start, 5, z));
+        GD.Print($"fade away climb: start x {start:0}, wall face x {face:0}, wall hits in the skill {wall.Hits}, climb frames in the skill {wall.Climbed};{wall.Log}");
+        if (wall.Hits == 0) fails.Add("climb: the skill's drift never hit the cube wall while descending (the scene does not test the case)");
+        if (wall.Climbed > 0) fails.Add($"climb: the body climbed the cube wall on {wall.Climbed} frames while the skill state played (StateSkill has no climb check)");
     }
 
     // a remote fed the same-frame records on their frames and the cast on its frame

@@ -162,6 +162,7 @@ public partial class Player : CharacterBody3D
     bool prevJump;
     float diagHold;
     Vector2 diagDir;
+    float lastStepDt;                     // the last step's delta: the cast's stand-in for the coming frame's (CastAimDirection)
 
     // jump (GameObjectController + StateJump)
     bool jumping;
@@ -333,6 +334,7 @@ public partial class Player : CharacterBody3D
         // client source; only a frame longer than a quarter second (a field load) is cut to it
         float dt = (float)Math.Min(delta, MaxStepDt);
         gameTime += dt;
+        lastStepDt = dt;
         FaceTextKeys();                // the body's emo_ keys (PCBase::TextKeyEvent)
         FaceEmotion?.Tick(FaceMs);     // PCBase::vfunc_53 ticks the face (FUN_14166f940) before the states
         if (!ScriptDriven)
@@ -447,15 +449,18 @@ public partial class Player : CharacterBody3D
                 }
                 // FUN_1417d6620: unless the jump had no input and is still rising, a ladder in reach with the up key
                 // held (FUN_141659af0(0): IsActionKeyDown for the ladder, a rope needs the press) is taken from the air
-                // (StateLadder sub 0); else a wall hit starts the climb
+                // (StateLadder sub 0); else a wall hit starts the climb. While the own cast's skill state plays the client is
+                // in StateSkill, not StateJump: its vfunc_8 (stateskill.cpp) has no climb or ladder check (no FUN_141678820,
+                // FUN_14165b500 or FUN_141659af0), so a jump cast drifting into a cube wall does not climb; the ladder
+                // checks need a move key, which the skill holds back above
                 if ((jumpHadInput || jumpTime >= jumpApex) && input.Y > 0 && TryLadder(3)) break;
-                if (TryClimb()) break;
+                if (!skill && TryClimb()) break;
                 break;
 
             case MoveState.Fall:
                 if (hasInput) kVel = dir * baseSpeed * MoveConfig.FallMoveSpeed;
                 if (input.Y > 0 && TryLadder(3)) break;
-                if (TryClimb()) break;
+                if (!skill && TryClimb()) break;     // StateSkill has no climb check, as the jump above
                 if (grounded) Enter(MoveState.Land);
                 break;
 
@@ -558,6 +563,10 @@ public partial class Player : CharacterBody3D
     /// <summary>Unk_PCMove::UpdateMoveDirection: releasing one key of a diagonal keeps the diagonal for 50 ms.</summary>
     Vector2 DiagonalHold(Vector2 input, float dt)
     {
+        // the 50 ms timer (Timer::Start(0x32), unit_141682f80.cpp:454-490) runs from the frame that starts it: a frame
+        // is in it while its time less the start frame's is under 50 ms, so the time left drops by this frame's delta
+        // before the test and not on the start frame (CastAimDirection reads it the same way, before the frame's step)
+        if (diagHold > 0) diagHold -= dt;
         // armed by the raw key transition (last frame's keys, not this hold's own output), so it runs once for 50 ms
         if (prevRawInput.X != 0 && prevRawInput.Y != 0 && input != prevRawInput && input != Vector2.Zero &&
             (input.X == prevRawInput.X || input.Y == prevRawInput.Y))
@@ -567,7 +576,6 @@ public partial class Player : CharacterBody3D
         }
         if (diagHold > 0)
         {
-            diagHold -= dt;
             if (input.X == diagDir.X || input.Y == diagDir.Y) return diagDir;
             diagHold = 0;
         }
