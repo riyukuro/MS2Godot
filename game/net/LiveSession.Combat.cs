@@ -355,6 +355,18 @@ public partial class LiveSession
                 Check($"quest {id} is given up (state {live.Quests.Get(id)?.State})", live.Quests.Get(id) is not { State: 1 });
                 continue;
             }
+            if (step.StartsWith("gmpet:"))      // gmpet:<pet id>: the server's GM field pet command (a GM account), then until its FieldAddPet's npc is drawn
+            {
+                int id = int.Parse(step[6..]);
+                var had = new System.Collections.Generic.HashSet<int>(live.LiveNpcs.Select(x => x.ObjectId));
+                hud.SubmitChatLine($"/pet {id}");
+                FieldNpcs.Placed p = null;
+                await until(() => (p = live.LiveNpcs.FirstOrDefault(x => !had.Contains(x.ObjectId))) != null, 60 * 10); await frames(60);
+                if (p != null) GD.Print($"live: combat {step}: npc {p.Row.Id} object {p.ObjectId} model scale {p.Body?.Scale.X:F3} row scale {p.Row.Scale:F3} shown {p.Root.Visible} at {FieldPortals.ToMs2(p.Position)}");
+                Check($"{step}: the pet is drawn", p != null && p.Root.Visible && GodotObject.IsInstanceValid(p.Body));
+                Shot($"pet_{id}.png");
+                continue;
+            }
             if (step.StartsWith("gmquest:"))      // gmquest:<quest id>:<Started|Completed>[:<times>]: the server's GM quest command (a GM account), then until the quest's packet; with times, Started then Completed that many times (each completion's rewards, the fame among them)
             {
                 var parts = step[8..].Split(':');
