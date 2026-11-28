@@ -38,8 +38,6 @@ public static class TriggerSweepGaps
         ["dungeon_enable_give_up"] = "DungeonMission (RecvOp 0x100, opcodes.h:258: the mission update and stage flag) has no branch: no give-up button",
         ["dungeon_fail"] = "DungeonMission (RecvOp 0x100, opcodes.h:258: the mission update and stage flag) has no branch; the result (RoomDungeon mode 10, the closing photo and result) is read and not applied",
         ["dungeon_mission_complete"] = "DungeonMission (RecvOp 0x100, opcodes.h:258: the mission update and stage flag) has no branch",
-        ["end_mini_game"] = "DungeonReward (RecvOp 0x1B, opcodes.h:35) has no branch (probe: its writer needs live reward objects)",
-        ["end_mini_game_round"] = "DungeonReward (RecvOp 0x1B, opcodes.h:35) has no branch (probe: its writer needs live reward objects)",
         ["face_emotion"] = "other pcs' faces are not ported (LiveSession.TriggerFace); the names Trigger_Talk01_A, 02_A and 03_A have no entry in the face group on either data set, so they change nothing (the client's result there is not traced)",
         ["field_game_constant"] = "STILL-OPEN: the server route was not traced to its end (see the route's note)",
         ["field_war_end"] = "STILL-OPEN: the server route was not traced to its end (see the route's note)",
