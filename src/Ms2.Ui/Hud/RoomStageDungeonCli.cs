@@ -79,7 +79,8 @@ public sealed class DungeonMissionCli
 /// unregisters the handler, so a mission packet with no stage does nothing (the owner calls <see cref="OnPacket"/> only while a stage exists).
 /// The mode byte: 0 init the missions, 1 update some, 2 sync all, 3 stage, 4 flag, 5 give up; another mode does nothing. Each mode reads in the
 /// client's order and stops where the client returns or breaks, with the earlier changes kept.
-/// STILL-OPEN: the stage is not cleared at a scene leave (no client clear was found, only the server's kind 1).
+/// The owner clears it at the server's kind 1 and at every server enter (OnServerEnter -> FUN_14092f420 -> CMyCharacter::ClearDungeonState -> ClearStage,
+/// scenestategame.cpp:2070, notifydebugstate.cpp:121-129).
 /// </summary>
 public sealed class RoomStageDungeonCli
 {

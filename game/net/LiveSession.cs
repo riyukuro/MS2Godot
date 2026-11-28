@@ -1696,6 +1696,7 @@ public partial class LiveSession : Node
         entry.Replay(Handle, () =>
         {
             AutoEquip.ResetAutoEquip();   // OnServerEnter's FUN_14092f420 (scenestategame.cpp:2070): Unk_Inventory::Clear, inventory.cpp:407
+            ClearStageAtServerEnter();    // the same FUN_14092f420: CMyCharacter::ClearDungeonState -> ClearStage (notifydebugstate.cpp:121-129)
             Adventure.ServerEnter();
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
             // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122);
