@@ -33,6 +33,11 @@ public static class Rt
     public static object Box(int i) => i >= -128 && i < 1152 ? smallInts[i + 128] : i;
     public static object Box(bool b) => b ? True : False;
 
+    static readonly string[] intStrings = new string[4096];
+    /// <summary>The string of an int (Rt.ToString's), shared for 0..4095: array index keys and Dictionary number keys.</summary>
+    public static string IntString(int i) =>
+        (uint)i < (uint)intStrings.Length ? intStrings[i] ??= i.ToString(CultureInfo.InvariantCulture) : i.ToString(CultureInfo.InvariantCulture);
+
     /// <summary>A Number as stored: int when it is an integer in the int range (not -0), else double.</summary>
     public static object Num(double d)
     {

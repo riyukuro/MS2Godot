@@ -38,6 +38,28 @@ public sealed partial class Runtime
     public long Budget;
     internal long budgetLeft;
 
+    // for-in / for-each read the key list at every step; the last few objects' lists are kept with the version they were
+    // built at and built again only when the object says they are no longer what EnumKeys would give
+    const int EnumKept = 4;
+    readonly AsObject[] enumObjects = new AsObject[EnumKept];
+    readonly IList<object>[] enumLists = new IList<object>[EnumKept];
+    readonly long[] enumVersions = new long[EnumKept];
+    int enumNext;
+
+    /// <summary>The object's for-in keys as <see cref="AsObject.EnumKeys"/> gives them now. The list is the runtime's:
+    /// read it, never keep or change it.</summary>
+    internal static IList<object> EnumKeysOf(AsObject o)
+    {
+        var rt = o.Rt0;
+        if (rt == null) return o.EnumKeys();
+        int k = EnumKept - 1;
+        while (k >= 0 && !ReferenceEquals(rt.enumObjects[k], o)) k--;
+        if (k < 0) { k = rt.enumNext; rt.enumNext = (k + 1) % EnumKept; rt.enumObjects[k] = o; rt.enumLists[k] = null; }
+        else if (o.EnumStill(rt.enumLists[k], rt.enumVersions[k])) return rt.enumLists[k];
+        rt.enumVersions[k] = o.EnumVersion;
+        return rt.enumLists[k] = o.EnumKeys();
+    }
+
     public Runtime()
     {
         nativeGlobals.Traits = nativeTable;

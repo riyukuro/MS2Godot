@@ -561,14 +561,14 @@ public static class Interp
     internal static int EnumNext(object o, int i)
     {
         if (o is not AsObject ao) return 0;
-        var keys = ao.EnumKeys();
+        var keys = Runtime.EnumKeysOf(ao);
         return i < keys.Count ? i + 1 : 0;
     }
 
     internal static object EnumName(Runtime rt, object o, int i)
     {
         if (o is not AsObject ao) return Rt.Undef;
-        var keys = ao.EnumKeys();
+        var keys = Runtime.EnumKeysOf(ao);
         return i >= 1 && i <= keys.Count ? keys[i - 1] : Rt.Undef;
     }
 
@@ -576,6 +576,6 @@ public static class Interp
     {
         var k = EnumName(rt, o, i);
         if (Rt.IsUndef(k)) return k;
-        return rt.GetProperty(o, Name.Public(k is string s ? s : Rt.ToString(k)), k, true);
+        return rt.GetProperty(o, Name.Public(k switch { string s => s, int n => Rt.IntString(n), _ => Rt.ToString(k) }), k, true);
     }
 }

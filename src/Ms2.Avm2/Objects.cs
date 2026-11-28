@@ -40,6 +40,7 @@ public class AsObject
     public object[] Slots;
     Dictionary<string, object> dyn;
     List<string> dynOrder;
+    int dynVersion;                          // bumped when a dynamic key is added or deleted (for-in key lists)
     Dictionary<MethodImpl, AsMethodClosure> closures;
 
     public AsObject() { }
@@ -63,7 +64,7 @@ public class AsObject
     public void SetDynamic(string k, object v)
     {
         dyn ??= new(); dynOrder ??= new();
-        if (!dyn.ContainsKey(k)) dynOrder.Add(k);
+        if (!dyn.ContainsKey(k)) { dynOrder.Add(k); dynVersion++; }
         dyn[k] = v;
     }
 
@@ -71,6 +72,7 @@ public class AsObject
     {
         if (dyn == null || !dyn.Remove(k)) return false;
         dynOrder.Remove(k);
+        dynVersion++;
         return true;
     }
 
@@ -97,14 +99,32 @@ public class AsObject
     }
 
     /// <summary>for-in / for-each enumeration: the dynamic properties (arrays and dictionaries add their keys).</summary>
-    public virtual IList<object> EnumKeys() => dynOrder?.Select(k => (object)k).ToList() ?? new List<object>();
+    public virtual IList<object> EnumKeys()
+    {
+        var l = new List<object>(DynCount);
+        AddDynamicKeys(l);
+        return l;
+    }
+
+    protected int DynCount => dynOrder?.Count ?? 0;
+    protected void AddDynamicKeys(List<object> l) { if (dynOrder != null) foreach (var k in dynOrder) l.Add(k); }
+
+    /// <summary>A count that changes whenever <see cref="EnumKeys"/> would give other keys (the runtime keeps a key list
+    /// while it is unchanged, see <see cref="Runtime.EnumKeysOf"/>).</summary>
+    internal virtual long EnumVersion => dynVersion;
+
+    /// <summary>Whether <paramref name="keys"/>, built by <see cref="EnumKeys"/> at <paramref name="version"/>, is still what
+    /// it would build now.</summary>
+    internal virtual bool EnumStill(IList<object> keys, long version) => version == EnumVersion;
+
+    static readonly string[] numberFirst = { "valueOf", "toString" }, stringFirst = { "toString", "valueOf" };
 
     public virtual object ToPrimitive(bool numberHint)
     {
         var rt = Rt0;
         if (rt != null)
         {
-            foreach (var m in numberHint ? new[] { "valueOf", "toString" } : new[] { "toString", "valueOf" })
+            foreach (var m in numberHint ? numberFirst : stringFirst)
             {
                 var f = rt.GetProperty(this, Name.Public(m));
                 if (f is AsFunction fn)
