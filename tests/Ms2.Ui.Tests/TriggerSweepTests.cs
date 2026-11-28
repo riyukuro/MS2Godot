@@ -32,17 +32,43 @@ public class TriggerSweepTests
         return (raw, attr + "=" + ((string)a.Attribute(attr) ?? "(absent)"));
     }
 
+    /// <summary>
+    /// The trigger xmls of a data set, parsed, in entry order. A file that does not parse is not skipped silently: it goes to
+    /// <paramref name="unparsed"/> (with the parser's message), and each data set's test checks that list against
+    /// <see cref="KnownUnparsed"/>, so a new unreadable file fails instead of dropping its actions from the per-entry check.
+    /// </summary>
+    static IEnumerable<(string Entry, System.Xml.Linq.XDocument Doc)> Triggers(PackSet packs, List<string> unparsed)
+    {
+        foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("trigger/", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e, StringComparer.Ordinal))
+        {
+            System.Xml.Linq.XDocument doc;
+            try { doc = PackXml.Parse(packs.Read("Xml", entry)); }
+            catch (System.Xml.XmlException e) { unparsed.Add($"{entry}: {e.Message}"); continue; }
+            yield return (entry, doc);
+        }
+    }
+
+    /// <summary>Trigger xmls each data set holds that do not parse as xml (entry names only; none on either set).</summary>
+    static readonly Dictionary<string, string[]> KnownUnparsed = new(StringComparer.Ordinal)
+    {
+        ["MS2_DATA"] = [],
+        ["MS2_GMS2_DATA"] = [],
+    };
+
+    static void CheckUnparsed(string variable, List<string> unparsed) =>
+        Assert.That(unparsed.Select(u => u[..u.IndexOf(": ", StringComparison.Ordinal)]), Is.EquivalentTo(KnownUnparsed[variable]),
+            $"{variable}: trigger xmls that do not parse: " + string.Join("; ", unparsed));
+
     static void EveryAction(string variable)
     {
         using var packs = new PackSet(RcGap.Data(variable));
+        var unparsed = new List<string>();
         var rows = TriggerSweepRoutes.Actions.ToDictionary(a => (a.Raw, a.Split));
         var uses = new Dictionary<(string, string), int>();
         var unknown = new SortedDictionary<string, string>(StringComparer.Ordinal);
         int files = 0;
-        foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("trigger/", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e, StringComparer.Ordinal))
+        foreach (var (entry, doc) in Triggers(packs, unparsed))
         {
-            System.Xml.Linq.XDocument doc;
-            try { doc = PackXml.Parse(packs.Read("Xml", entry)); } catch (System.Xml.XmlException) { continue; }
             files++;
             foreach (var a in doc.Descendants("action"))
             {
@@ -58,8 +84,9 @@ public class TriggerSweepTests
             Directory.CreateDirectory(dir);
             File.WriteAllLines(Path.Combine(dir, $"uses-{variable}.tsv"), table);
         }
-        TestContext.WriteLine($"{variable}: {files} trigger files, {uses.Values.Sum()} actions, {uses.Count} of {rows.Count} rows used, "
+        TestContext.WriteLine($"{variable}: {files} trigger files ({unparsed.Count} not parsed), {uses.Values.Sum()} actions, {uses.Count} of {rows.Count} rows used, "
             + $"{TriggerSweepRoutes.Actions.Where(a => uses.ContainsKey((a.Raw, a.Split))).Select(a => a.Name).Distinct().Count()} server actions");
+        CheckUnparsed(variable, unparsed);
         Assert.That(unknown.Select(kv => $"{kv.Key} ({kv.Value})"), Is.Empty, "actions the sweep list does not have");
         Assert.That(uses.Count, Is.GreaterThan(0));
     }
@@ -75,12 +102,10 @@ public class TriggerSweepTests
         foreach (var variable in new[] { "MS2_DATA", "MS2_GMS2_DATA" })
         {
             using var packs = new PackSet(variable == "MS2_DATA" ? RcGap.KmsData() : RcGap.Data(variable));
-            foreach (var entry in packs.List("Xml").Where(e => e.StartsWith("trigger/", StringComparison.OrdinalIgnoreCase)))
-            {
-                System.Xml.Linq.XDocument doc;
-                try { doc = PackXml.Parse(packs.Read("Xml", entry)); } catch (System.Xml.XmlException) { continue; }
+            var unparsed = new List<string>();
+            foreach (var (_, doc) in Triggers(packs, unparsed))
                 foreach (var a in doc.Descendants("action")) used.Add(Key(a));
-            }
+            CheckUnparsed(variable, unparsed);
         }
         Assert.That(TriggerSweepRoutes.Actions.Where(a => !used.Contains((a.Raw, a.Split))).Select(a => $"{a.Raw} {a.Split}"), Is.Empty);
     }
