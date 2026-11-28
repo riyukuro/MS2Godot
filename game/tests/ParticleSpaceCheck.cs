@@ -17,6 +17,8 @@ namespace Ms2Godot.Tests;
 /// world transform: they all move with it. Two moves, a frame each, after ten particles are emitted at rest:
 /// - the effect's parent (the actor an attach type 1 part rides) moves and turns: world space stays, local follows;
 /// - the system's node, keyed in the file, jumps with the actor still: world space stays, local follows the node.
+/// A collapse in between (a node keyed to scale 0 for a frame, or the actor at scale 0 for a frame) loses no place: the
+/// client keeps the particles' own coordinates through it and only draws them collapsed.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class ParticleSpaceCheck : Node
@@ -25,7 +27,7 @@ public partial class ParticleSpaceCheck : Node
     static readonly Vector3 Jump = new(50, 0, 0);
     const float Off = 10;
 
-    static ParticleSystemDef System(bool worldSpace) => new()
+    static ParticleSystemDef System(bool worldSpace, double box = 0) => new()
     {
         Node = 1, Name = worldSpace ? "world" : "local", WorldSpace = worldSpace, MaxParticles = 16,
         Material = new EffectMesh
@@ -41,6 +43,7 @@ public partial class ParticleSpaceCheck : Node
             new EmitterDef
             {
                 Kind = EmitterKind.Box, Speed = 0, Size = 1, Lifespan = 10, Rate = lt => lt < 0.15 ? 100 : 0,
+                Width = box, Height = box, Depth = box,
                 RateCtl = new TimeCtl { Stop = 10 },
             },
         },
@@ -55,6 +58,7 @@ public partial class ParticleSpaceCheck : Node
             {
                 Run(fails, worldSpace, nodeKeyed: false);
                 Run(fails, worldSpace, nodeKeyed: true);
+                RunCollapse(fails, worldSpace);
             }
         }
         catch (Exception e) { fails.Add(e.ToString()); }
@@ -100,6 +104,39 @@ public partial class ParticleSpaceCheck : Node
         }
         if (worst > 0.01f) fails.Add($"{what}: a live particle is {worst:F3} off ({(worldSpace ? "it should stay where it was" : "it should move with the node")}; node moved by {follow})");
         GD.Print($"particle space: {what}: {before.Count} particles, the node moved by {follow}, the particles by {after[0] - before[0]}");
+        actor.QueueFree();
+    }
+
+    /// <summary>A frame at scale 0 and back: a local system's node keyed to it, or a world-space system's actor set to it. The
+    /// particles (spread by a box emitter) are where they were once the scale is back.</summary>
+    void RunCollapse(List<string> fails, bool worldSpace)
+    {
+        string what = $"{(worldSpace ? "world space system, the actor" : "local system, its node")} at scale 0 for a frame";
+        var sc = new EffectScene { Duration = 10 };
+        sc.Nodes.Add(new EffectNode { Name = "root" });
+        var node = new EffectNode { Name = "system", Parent = 0, Local = Xform.Identity with { T = new Vec3(Off, 0, 0) } };
+        if (!worldSpace) node.Anim = new KfChannel { S = lt => lt >= 0.25 && lt < 0.35 ? 0 : 1 };
+        sc.Nodes.Add(node);
+        sc.Systems.Add(System(worldSpace, box: 20));
+        var actor = new Node3D { Name = "actor" };
+        AddChild(actor);
+        var fx = new EffectInstance(sc, new ModelBuilder(null, null), 10, 1);
+        actor.AddChild(fx);
+        fx.FileSpace = Transform3D.Identity;
+        fx._Process(0.1);                      // t 0.1: ten particles emitted in the box
+        fx._Process(0.1);                      // t 0.2: at rest
+        var before = Particles(fx);
+        if (before.Count == 0) { fails.Add($"{what}: no particles emitted"); actor.QueueFree(); return; }
+        if (worldSpace) actor.Transform = new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), Vector3.Zero);
+        fx._Process(0.1);                      // t 0.3: collapsed
+        if (worldSpace) actor.Transform = Transform3D.Identity;
+        fx._Process(0.1);                      // t 0.4: back
+        var after = Particles(fx);
+        if (after.Count != before.Count) { fails.Add($"{what}: {before.Count} particles became {after.Count}"); actor.QueueFree(); return; }
+        float worst = 0;
+        for (int i = 0; i < before.Count; i++) worst = Math.Max(worst, after[i].DistanceTo(before[i]));
+        if (worst > 0.01f) fails.Add($"{what}: a live particle is {worst:F3} off where it was before the collapse");
+        GD.Print($"particle space: {what}: {before.Count} particles, worst {worst:F3} off after");
         actor.QueueFree();
     }
 

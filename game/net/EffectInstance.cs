@@ -1208,7 +1208,10 @@ void fragment() {
     /// </summary>
     void KeepWorld(in Transform3D zg)
     {
-        if (haveZg && zg != lastZg && Invertible(zg.Basis))
+        // a collapsed or non-finite transform is skipped and not kept as the last one: the particles stay in this effect's
+        // space through it (drawn at scale 0) and the next usable transform carries them from the last usable one
+        if (!Usable(zg)) return;
+        if (haveZg && zg != lastZg)
         {
             var delta = zg.AffineInverse() * lastZg;
             foreach (var ps in systems) if (ps.Def.WorldSpace && ps.Count > 0) Carry(ps, delta);
@@ -1216,8 +1219,9 @@ void fragment() {
         lastZg = zg; haveZg = true;
     }
 
-    /// <summary>Not a collapsed basis (a node keyed to scale 0): its inverse is finite.</summary>
-    static bool Invertible(in Basis b) => Mathf.Abs(b.Determinant()) > 1e-12f;
+    /// <summary>Finite and not a collapsed basis (a node keyed to scale 0, or a NaN key as Magic Claw's): its inverse is
+    /// finite, so the particles carried by it keep their places.</summary>
+    static bool Usable(in Transform3D m) => m.IsFinite() && Mathf.Abs(m.Basis.Determinant()) > 1e-12f;
 
     /// <summary>The live particles moved by <paramref name="m"/>: positions by the whole transform, velocities by its basis.</summary>
     static void Carry(PSys ps, in Transform3D m)
@@ -1357,9 +1361,11 @@ void fragment() {
         // A local-space system's particles live in the system node's space (NiPSParticleSystem with "World Space" off is drawn
         // with its world transform, UpdateWorldData NiPSParticleSystem.cpp:509-520), so a node keyframed in the file carries
         // the live particles with it; kept in this effect's space here, they are moved by the node's change since the last step.
-        if (ps.FollowNode)
+        // A node keyed to scale 0 (or to a NaN) is skipped and not kept as the last place: the particles' node-space
+        // places survive it, as the client keeps them in the node's space and only draws them collapsed.
+        if (ps.FollowNode && Usable(sysWorld))
         {
-            if (ps.HaveSys && ps.Count > 0 && sysWorld != ps.LastSys && Invertible(ps.LastSys.Basis)) Carry(ps, sysWorld * ps.LastSys.AffineInverse());
+            if (ps.HaveSys && ps.Count > 0 && sysWorld != ps.LastSys) Carry(ps, sysWorld * ps.LastSys.AffineInverse());
             ps.LastSys = sysWorld; ps.HaveSys = true;
         }
         // Forces on at this time. A bomb or drag takes its object's position and its object's rotation times its axis
