@@ -21,6 +21,11 @@ namespace Ms2Godot.Tests;
 /// that has a collider under its origin: it must stand on the shown mesh and fall past the hidden one. The field's merged
 /// chunk bodies kept a hidden mesh solid. Each switch costs one layer set on the packet, none per frame.
 /// Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
+/// Run both cases, from game/:
+///   godot-mono --headless --path . res://tests/trigger_collision.tscn
+///   MS2_CHECK_FIELD=2000390 MS2_CHECK_IDS=1001-1006 godot-mono --headless --path . res://tests/trigger_collision.tscn
+/// The second is the only check of the box an entity with no NIF model gets (FieldBuilder, FieldCollision.GeneratesBox):
+/// without it, the only floor under mesh 1001 is the error box at z 600 and the hidden meshes stand.
 /// </summary>
 public partial class TriggerCollisionCheck : Node
 {
