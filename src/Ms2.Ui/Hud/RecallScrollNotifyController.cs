@@ -28,6 +28,9 @@ public sealed class RecallScrollNotifyController : UiController
     public const int Slots = 3;
 
     public override string Movie => "uirecallscrollnotifydialog";
+    /// <summary>The CommonDepth layer of the movie: its ctor (@0x14129ba60) runs UIBuiltInDialog's, which sets m_2c to 14
+    /// (uibuiltindialog.cpp:21).</summary>
+    public override int LoadLayer => CommonDepth.BuiltinDialog;
     protected override string EntityMethod => "alignment";            // Dialog's
     public override string TypeName => "RecallScrollNotifyDialog";    // GetTypeName (@0x14129bc10)
     public override bool AlwaysOn => true;                              // a UIBuiltInDialog (its ctor sets flag 0)

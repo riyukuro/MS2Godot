@@ -16,6 +16,8 @@ namespace Ms2.Ui.Hud;
 public sealed class ChangeJobDialogController : UiController
 {
     public override string Movie => "uichangejobdialog";
+    /// <summary>The CommonDepth layer of the movie: UIChangeJobDialog's ctor (@0x140bd7e10) sets m_2c to 0x23.</summary>
+    public override int LoadLayer => CommonDepth.GuideEvent;
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ChangeJobDialog";
 

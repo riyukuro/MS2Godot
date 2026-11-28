@@ -20,6 +20,8 @@ public sealed class DungeonLobbyController : UiController
     public const double WebGuideOffset = 10.0;
 
     public override string Movie => "uidungeonlobby";
+    /// <summary>The CommonDepth layer of the movie: UIDungeonLobby's ctor sets m_2c to 0x16 (uidungeonlobby.cpp:48).</summary>
+    public override int LoadLayer => CommonDepth.FieldName;
     protected override string EntityMethod => "alignment";
     /// <summary>GetTypeName (@0x140e178e0, :61).</summary>
     public override string TypeName => "DungeonLobby";

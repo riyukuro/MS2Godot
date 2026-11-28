@@ -97,6 +97,9 @@ public class DialogDepthLayerTests
         [typeof(TriggerTimerDialogController)] = 0x13,      // uitriggertimerdialog.cpp:45
         [typeof(GameMenuController)] = 14,                  // UIBuiltInDialog, uibuiltindialog.cpp:21
         [typeof(MainPlayerInfoController)] = 14,            // UIBuiltInDialog, uibuiltindialog.cpp:21
+        [typeof(RecallScrollNotifyController)] = 14,        // UIBuiltInDialog (its ctor @0x14129ba60 calls it), uibuiltindialog.cpp:21
+        [typeof(DungeonLobbyController)] = 0x16,            // uidungeonlobby.cpp:48
+        [typeof(ChangeJobDialogController)] = 0x23,         // UIChangeJobDialog ctor @0x140bd7e10
     };
 
     /// <summary>The movie's ItemGetOptionDialog constructor calls setTopMostEnable(false): a click on it sends nothing.</summary>
