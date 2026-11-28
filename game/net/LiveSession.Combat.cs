@@ -781,11 +781,26 @@ public partial class LiveSession
                 Check($"{step}: the npc in the field", n != null);
                 if (n == null || tfc?.Talk == null || live.player == null || !GodotObject.IsInstanceValid(live.player)) continue;
                 double yaw = n.Root.Rotation.Y;
-                var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
-                live.player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0);
-                live.player.Velocity = Vector3.Zero;
-                live.player.Face(-front);
-                await frames(90);
+                // the spot: 120 in front of the npc first, then the other seven sides and nearer (an npc on a ledge or a tower
+                // top drops a pc put off its edge out of the talk range); the first spot where the talk key finds this npc
+                // after the pc settled is kept, and every try logs the pc's distance
+                bool found = false;
+                for (int t = 0; t < 16 && !found; t++)
+                {
+                    double y = yaw + t % 8 * Math.PI / 4;
+                    var side = new Vector3((float)Math.Sin(y), 0, (float)Math.Cos(y));
+                    live.player.GlobalPosition = n.Position + side * (t < 8 ? 120 : 60) + new Vector3(0, 20, 0);
+                    live.player.Velocity = Vector3.Zero;
+                    live.player.Face(-side);
+                    await frames(90);
+                    var at = live.player.GlobalPosition;
+                    var face = n.Position - at; face.Y = 0;
+                    if (face.LengthSquared() > 1) live.player.Face(face.Normalized());
+                    await frames(2);
+                    found = tfc.Talk.FindTalkable() == n;
+                    GD.Print($"live: combat {step}: spot {t}: pc {at.DistanceTo(n.Position):0} from the npc (capsule radius {n.Row.CapsuleRadius:0}, height {at.Y - n.Position.Y:0}), npc {(n.Root.Visible ? "shown" : "hidden")}, talk key finds it {found}");
+                    if (!n.Root.Visible) break;    // hidden (its quest mask): no spot helps
+                }
                 // a page with a screen effect (screenEffectMovie): its name logged, shots a third into the fade and a second after it
                 async System.Threading.Tasks.Task FxShots(Ms2.Formats.World.NpcScriptTable.Content fx, string fxName)
                 {
