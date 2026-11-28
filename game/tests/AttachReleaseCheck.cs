@@ -21,6 +21,13 @@ namespace Ms2Godot.Tests;
 /// - the same effect let go of as an insert (InsertEffect keeps no id, so nothing releases it) stays on the actor;
 /// - Fire Tornado's cast effect (attachToNode false, type 0) is in the world from its start and does not move either way;
 /// - a part past its duration is gone and the release does nothing more;
+/// - the split keeps the part's whole world transform (the actor turned and scaled first), it stays put when the actor turns
+///   and moves on, and it ends at its own duration;
+/// - the real exit: the other player's cast (RemotePcStates.Cast keeping the motion effect, AnimActivated) left for a walk
+///   splits the part (SkillTagEffects.Handles.End's release); left for StateHit (a hard exit, stateskill.cpp:515-524) the
+///   effect stops at once and nothing is left;
+/// - a looping effect (Jet Boots, attach type 1 loop parts) released by the state stops whole (vfunc_11 returns 0,
+///   FUN_1411a6060), its type 0 part with it;
 /// - the own player's cast (HudScene's KeepOwnEffect / ReleaseOwnEffect / InsertOwnEffect through the live session): the
 ///   state's release leaves the Flame Wave part in the world as well, and the motion's insert (the end effect, the loop
 ///   keep's end) stays on the player.
@@ -31,6 +38,7 @@ public partial class AttachReleaseCheck : Node3D
     const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
     const string FlameWave = "CH/Skill/Wizard/Eff_Wizard_FlameWave_Cast_01.xml";
     const string FireTornado = "CH/Skill/Wizard/Eff_Wizard_FireTornado_Cast_01.xml";
+    const string JetBoots = "CH/Skill/HeavyGunner/Eff_HeavyGunner_JetBoots_Cast_01.xml";
     const int Other = Ms2.Audio.SoundMusicEffectState.CasterOtherPc;
     static readonly Vector3 Step = new(5, 0, 3);
     readonly List<string> fails = new();
@@ -66,6 +74,7 @@ public partial class AttachReleaseCheck : Node3D
         Check(owner != null && root != null && states?.ReleaseEffect != null, "no remote body, root or release for the other player");
         if (owner != null) { var at = EffectView.Client(owner.GlobalPosition); fx.ViewerOf = () => at; }
         if (fails.Count == 0) Run();
+        if (fails.Count == 0) RunExits();
         if (fails.Count == 0) RunOwn(layer);
 
         foreach (var f in fails) GD.PrintErr("FAIL " + f);
@@ -107,6 +116,71 @@ public partial class AttachReleaseCheck : Node3D
         states.ReleaseEffect(hl);
         Check(!kept.Contains(hl), "the late release left the handle kept");
         GD.Print($"attach release: released part stayed at {released} (actor moved by {Step}), inserted part followed to {followed}, type 0 stayed at {released0}");
+    }
+
+    /// <summary>The review's gaps: the split's whole transform and its end, the real state exits (soft and hard) through
+    /// RemotePcStates, and a looping effect's release.</summary>
+    void RunExits()
+    {
+        // a turned, scaled actor: the split part keeps its world transform, and later turns and moves do not touch it
+        root.RotateY(0.6f);
+        root.Scale = new Vector3(1.25f, 1.25f, 1.25f);
+        var (h, part, _) = Spawn(FlameWave);
+        var t0 = part?.GlobalTransform ?? default;
+        states.ReleaseEffect(h);
+        Check(part != null && part.GetParent() == fx && part.GlobalTransform.IsEqualApprox(t0),
+            $"the split part's world transform changed at the split: {t0} -> {part?.GlobalTransform}");
+        root.RotateY(0.9f);
+        root.Scale = Vector3.One;
+        Move(part);
+        Check(part != null && part.GlobalTransform.IsEqualApprox(t0),
+            $"the split part moved when the actor turned, scaled and moved on: {t0} -> {part?.GlobalTransform}");
+        if (part != null) for (int i = 0; i < 20; i++) part._Process(0.1);
+        Check(part == null || !GodotObject.IsInstanceValid(part) || part.IsQueuedForDeletion(), "the split Flame Wave part outlived its 1.5 s");
+
+        // the real exit: the cast's motion effect kept by RemotePcStates.Cast, the state left for a walk. The stub player
+        // came in with no hp, so it is dead (a hard exit for every state end): alive first
+        states.SetDead(false);
+        var fw = new Ms2.Net.Replay.SkillTagEffects.MotionEffects(FlameWave, null, null, null, null);
+        var (hs, soft) = CastKept(fw);
+        var softAt = soft?.GlobalPosition ?? default;
+        states.ChangeState(Ms2.Net.Replay.RemotePcStates.StateWalk);
+        var softAfter = Move(soft);
+        Check(soft != null && soft.GetParent() == fx && softAfter.DistanceTo(softAt) < 0.01f && !kept.Contains(hs),
+            $"the cast's Flame Wave part was not split when the state was left for a walk (handle {hs}): {softAt} -> {softAfter}");
+
+        // a hard exit (StateHit): stopped at once, not split
+        var (hh, hard) = CastKept(fw);
+        states.ChangeState(Ms2.Net.Replay.RemotePcStates.StateHit);
+        Check(hard != null && (!GodotObject.IsInstanceValid(hard) || hard.IsQueuedForDeletion()) && !kept.Contains(hh),
+            $"the cast's Flame Wave part was not stopped by the exit to StateHit (handle {hh})");
+
+        // a looping effect released by the state: the whole effect stops
+        int hj = fx.SpawnOn(JetBoots, owner, Other);
+        var jet = new List<Node3D>();
+        if (hj != 0 && kept[hj] is List<Node3D> jn) jet.AddRange(jn);
+        states.ReleaseEffect(hj);
+        bool allStopped = jet.Count >= 2;
+        foreach (var n in jet) if (GodotObject.IsInstanceValid(n) && !n.IsQueuedForDeletion()) allStopped = false;
+        Check(allStopped && !kept.Contains(hj), $"Jet Boots' {jet.Count} parts did not all stop at the state's release (handle {hj})");
+        GD.Print($"attach release: split transform kept through a turn and scale, walk exit split at {softAfter}, hit exit stopped, Jet Boots' {jet.Count} parts stopped");
+    }
+
+    /// <summary>The other player casts with <paramref name="effects"/> as the motion effect; the handle it kept and its first part.</summary>
+    (int Handle, EffectInstance Part) CastKept(Ms2.Net.Replay.SkillTagEffects.MotionEffects effects)
+    {
+        var before = new HashSet<int>();
+        foreach (var k in kept.Keys) before.Add((int)k);
+        states.Cast(10300021, false, default, 0, effects: effects);
+        foreach (var k in kept.Keys)
+        {
+            int h = (int)k;
+            if (before.Contains(h)) continue;
+            if (kept[h] is List<Node3D> nodes)
+                foreach (var n in nodes) if (n is EffectInstance e) return (h, e);
+            return (h, null);
+        }
+        return (0, null);
     }
 
     /// <summary>The own player's path, on the same body: a HudScene (not in the tree) with the player and the live session
