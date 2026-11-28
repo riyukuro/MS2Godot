@@ -49,6 +49,8 @@ public enum Inbound : ushort {
     Wedding = 0x128,              // RecvOp Wedding (commonfiles/opcodes.h:294): CWeddingManager::OnPacket (weddingmanager.cpp:198)
     InGameRank = 0xEE,            // RecvOp InGameRank: CGameRankingCli::OnPacket (gamerankingcli.cpp:350)
     DungeonMatch = 0xEF,          // RecvOp DungeonMatch: CSceneStateGame::OnDungeonMatch @0x14173e4b0 (scenestategame.cpp:5184)
+    Pvp = 0xB6,                   // RecvOp Pvp: CSceneStateGame::OnPvp @0x141732350 (scenestategame.cpp:4986)
+    PlayerKillNotice = 0xA3,      // RecvOp PlayerKillNotice: CSceneStateGame::OnPlayerKillNotice @0x141733850 (scenestategame.cpp:4344)
     DungeonWaiting = 0xF0,        // RecvOp DungeonWaiting (commonfiles/opcodes.h:243): UIDungeonLobby::OnRoomPacket @0x140e17930 (uidungeonlobby.cpp:68)
     PremiumClub = 0xEB,           // RecvOp PremiumClub: CSceneStateGame::OnPremiumClub (scenestategame.cpp:8426)
     ResponsePet = 0xCC,           // RecvOp ResponsePet: CPetManager::OnResponsePet (petmanager.cpp:722)
