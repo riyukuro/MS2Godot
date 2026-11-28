@@ -98,7 +98,7 @@ public sealed class ShadowExpeditionBossBarController : UiController, IScoreBoar
     {
         if (Max == 0)                                                        // STILL-OPEN: the client's int division faults
         {
-            NotApplied?.Invoke($"shadow expedition boss bar: most 0 (cur {Cur}), the client divides by zero");
+            NotApplied?.Invoke("shadow expedition boss bar: most 0, the client divides by zero");   // one text, so the once-log keeps it to one line
             return;
         }
         int percent = Math.Clamp(unchecked(Cur * 100) / Max, 0, 100);        // FUN_140f1ffe0 clamp; nCur * 100 is a 32 bit product in the client

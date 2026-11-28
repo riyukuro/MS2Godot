@@ -212,6 +212,9 @@ public class ShadowExpeditionTests
         c.SetTitle("x");
         Load(c);
         Assert.That(notes.Count, Is.EqualTo(1));
+        c.SetCur(5);                                                 // an update packet while the most is still 0
+        c.Refresh();
+        Assert.That(notes.Distinct().Count(), Is.EqualTo(1), "the same text each time, so the run's once-log prints one line");
     }
 
     [Test]
