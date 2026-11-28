@@ -24,7 +24,7 @@ namespace Ms2Godot.World;
 /// <see cref="BreakableObjects.Moved"/> when its place or turn changed: each instance is moved from its rest transform by the
 /// marker's offset from PosBase and its turn from RotBase about the entity's position (SetPosition / SetRotation on the entity),
 /// a hidden one keeps its zero basis at the new place, and the box goes to the new <see cref="BreakableObjects.Marker.BoxCenter"/>
-/// keeping its turn (setGlobalPosition only, :399-405). The entity's own collision stays at rest, as the client's does:
+/// keeping its turn (setGlobalPosition only, :435-444), in the physics space at once. The entity's own collision stays at rest, as the client's does:
 /// MS2PropService::OnPropertyUpdate (ms2propservice.cpp:162-245) re-poses a prop's static actors only for a Rotation change and
 /// skips a shape whose groups mask is all zero, and the NIF's shapes keep the zero mask they load with (Gamebryo
 /// PropService::SetCollisionGroup, PropService.cpp:1471-1499, sets the group only; the masks come from CPhysXHelper at run time).
@@ -136,6 +136,10 @@ public sealed class FieldBreakables
         {
             var c = m.BoxCenter;
             body.Position = new Vector3((float)c.X, (float)c.Y, (float)c.Z);
+            // setGlobalPosition puts the actor there in the scene at once (:435-444), before the PCs move this frame; Godot
+            // hands a node's new transform to the physics server only after the frame's process calls, so the player's
+            // sweep would meet the box a frame behind the carry, ride inside it and drop through it when it stops
+            body.ForceUpdateTransform();
         }
         if (m.Entity == null || !targets.TryGetValue(m.Entity, out var t)) return;
         var all = t.Target.All;
