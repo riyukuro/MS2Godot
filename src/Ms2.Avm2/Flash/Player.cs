@@ -1614,7 +1614,7 @@ namespace Ms2.Avm2.Flash
         /// frame clock here (<see cref="Runtime.TimerMs"/>), so getTimer and the double click follow the ticks it runs, as
         /// getTimer did before it read real time. Set once before any Player is made; never by the game.
         /// </summary>
-        public static Func<Player, Func<double>> TestClock;
+        internal static Func<Player, Func<double>> TestClock;
 
         /// <summary>
         /// getTimer: GlobalObjectCPP::getTimer (@0x142428d70, sfr_as3_04.cpp:2943) gives (SInt32)MovieImpl::GetASTimerMs
