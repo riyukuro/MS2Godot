@@ -215,6 +215,7 @@ static class Gms2Opcodes {
         [Outbound.ResponseVersion] = 0x01,
         [Outbound.Patch] = 0x02,
         [Outbound.RequestPet] = 0x79,         // upstream RecvOp RequestPet
+        [Outbound.RequestPetInventory] = 0x7A, // upstream RecvOp RequestPetInventory
         [Outbound.SkillMacro] = 0x7C,
         [Outbound.CheckCharName] = 0x7E,
         [Outbound.NewsNotification] = 0x64,   // upstream RecvOp NewsNotification

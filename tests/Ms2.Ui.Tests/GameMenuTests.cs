@@ -8,7 +8,7 @@ using NUnit.Framework;
 namespace Ms2.Ui.Tests;
 
 /// <summary>The game menu (uigamemenudialog) run by its own ActionScript with UIGameMenuDialog's C++ side (needs MS2_DATA).</summary>
-public class GameMenuTests
+public partial class GameMenuTests
 {
     static PackSet packs;
     static MovieSource src;

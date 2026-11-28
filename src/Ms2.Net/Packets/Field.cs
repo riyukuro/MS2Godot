@@ -339,6 +339,8 @@ public sealed class FieldAddUser {
     public byte Team;                                    // PCBase::FUN_141678340 (m_unk_af8): the team field property 5's symbol picks by
     /// <summary>The pet block was read (PC::ReadPetItem, scenestategame.cpp:11286).</summary>
     public bool HasPet;
+    /// <summary>The summoned pet's field object id (PCBase m_unk_b70, scenestategame.cpp:11285), 0 for none.</summary>
+    public int PetObjectId;
     /// <summary>The premium club time i64 (PC::FUN_141662d60 = m_n1190, scenestategame.cpp:11287): IsVip (pc.cpp:2209) is true
     /// while it is in the future. STILL-OPEN: OnPremiumClub (scenestategame.cpp:8427) refreshes it mid-session; not parsed.</summary>
     public long PremiumTime;
@@ -401,7 +403,7 @@ public sealed class FieldAddUser {
         f.RevivalEndTick = (uint)r.ReadInt(); f.RevivalCount = r.ReadInt(); f.RevivalFlag = r.ReadByte() != 0;   // PC::FUN_141661b20, FUN_141661ba0 (scenestategame.cpp:11280-11281)
         f.PvpPoint = r.ReadInt(); f.PvpTeam = r.ReadByte(); f.PvpMode = r.ReadByte();   // GetPvPInfo()->ReadPointTeamMode (:11282)
         f.Title = r.ReadInt(); f.Insignia = r.ReadShort(); f.InsigniaShown = r.ReadBool();
-        r.ReadInt();
+        f.PetObjectId = r.ReadInt();   // PCBase::FUN_141676980 (m_unk_b70, scenestategame.cpp:11285): the summoned pet's object id
         f.HasPet = r.ReadBool();
         if (f.HasPet) f.Pet = ItemReader.ReadPetItem(r, profile);
         f.PremiumTime = r.ReadLong(); r.ReadInt(); f.Team = r.ReadByte();   // FUN_141678300, FUN_141678340 (:11288-11289)

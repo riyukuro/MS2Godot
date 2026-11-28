@@ -307,9 +307,14 @@ public sealed class MyCharacter {
     public long PremiumTime; public short WeddingState;
     /// <summary>The own FieldAddUser's equips, layer-2 outfits and gems (PCGemEquip::ReadFromStream, gemslot_2.cpp:92).</summary>
     public IReadOnlyList<EquipItem> Equips, Outfit2, Gems;
-    /// <summary>The summoned pet from FieldAddUser (PC::ReadPetItem, scenestategame.cpp:11286; STILL-OPEN: post-enter
-    /// pet summon/unsummon packets).</summary>
+    /// <summary>The pet item (PCBase m_spItem11b8): FieldAddUser's (PC::ReadPetItem, scenestategame.cpp:11286), then ResponsePet 0 / 1
+    /// (CPetManager::OnPetSummoned / OnPetUnsummoned).</summary>
     public EquipItem Pet;
+    /// <summary>The summoned pet item's uid (PCBase m_nUidB78, FUN_1416769f0), 0 for none: ReadPetItem's FUN_1416769a0 and
+    /// FUN_141676a50 / FUN_141676ab0 set it.</summary>
+    public long PetUid;
+    /// <summary>The summoned pet's field object id (PCBase m_unk_b70, FUN_141676980), 0 for none.</summary>
+    public int PetObjectId;
 
     /// <summary>PC::GetEquipByUid (OnItemUpdate): the worn equip or outfit of the uid; null when none.</summary>
     public EquipItem EquipByUid(long uid) => (Equips ?? Array.Empty<EquipItem>()).Concat(Outfit2 ?? Array.Empty<EquipItem>()).FirstOrDefault(e => e.Uid == uid);
@@ -344,7 +349,7 @@ public sealed class MyCharacter {
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         PremiumTime = u.PremiumTime; WeddingState = u.WeddingState;
         Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();
-        Pet = u.HasPet ? u.Pet : null;
+        Pet = u.HasPet ? u.Pet : null; PetUid = Pet?.Uid ?? 0; PetObjectId = u.PetObjectId;   // scenestategame.cpp:11285-11286
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
         State = 0;
         SetRevivalEndTick(u.RevivalEndTick); RevivalConfirmCount = u.RevivalCount; RevivalFlag = u.RevivalFlag;   // scenestategame.cpp:11280-11281

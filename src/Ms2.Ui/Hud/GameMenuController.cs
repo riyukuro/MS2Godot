@@ -122,7 +122,28 @@ public sealed class GameMenuController : UiController
         SetNotifyRedCircle(7, redCircleOption);
         UpdateAdventureBarCount();
         UpdateCharacterAbilityNotify();
+        if (OwnPetInfo?.Invoke() is { } pet) InitPetInfo(true, pet.AttackType, pet.Auto);   // uigamemenudialog.cpp:1513-1518
         RideVisibility();                                // FUN_141939ec0 (uigamemenudialog.cpp:1519)
+    }
+
+    /// <summary>RefreshMenu's pet part (uigamemenudialog.cpp:1513-1518): with the local pc's pet object (FUN_141676a10), its
+    /// row's m_nType == 1 and CPetManager::GetAuto; null without a pet.</summary>
+    public Func<(bool AttackType, int Auto)?> OwnPetInfo;
+
+    /// <summary>CPetManager::SendRequestPet for OnPetAttack: flips m_nAuto, sends RequestPet 0xf and returns the new m_nAuto.</summary>
+    public Func<int> TogglePetAuto;
+
+    /// <summary>The pet attack button's feature (UIGameMenuDialog::InitPetInfo: off sends nA 0).</summary>
+    public const int PetAttackFeature = 0x97;
+
+    /// <summary>InitPetInfo @0x141938270 (uigamemenudialog.cpp:1219-1226): without feature 0x97 <paramref name="attackType"/>
+    /// is 0; then the movie's initPetInfo(bUp != 0, nA, nB).</summary>
+    public void InitPetInfo(bool up, bool attackType, int auto)
+    {
+        if (Host?.Entity == null) return;
+        int a = attackType ? 1 : 0;
+        if (!Feature(PetAttackFeature)) a = 0;
+        Host.Invoke("initPetInfo", up, a, auto);
     }
 
     /// <summary>FUN_141939ec0 @0x141939ec0 (uigamemenudialog.cpp:1543-1555): the menu shows (vfunc_3) unless the own
@@ -395,6 +416,15 @@ public sealed class GameMenuController : UiController
     /// game rule's event buffs are not 0 (none here).</summary>
     AsTooltip MushkingTooltip() => AsTooltip.Text(Common("s_tooltip_gamemenu_mushking_royal"));
 
+    /// <summary>OnPetAttack @0x14193e8b0 (uigamemenudialog.cpp:2441-2447): nState = CPetManager::SendRequestPet(), then the
+    /// movie's setPetAttackState(nState). Without the pet manager (no live session) the button names itself as before.</summary>
+    void OnPetAttack()
+    {
+        if (TogglePetAuto == null) { Button?.Invoke("OnPetAttack"); return; }
+        int state = TogglePetAuto();
+        if (Host?.Entity != null) Host.Invoke("setPetAttackState", state);
+    }
+
     /// <summary>
     /// vfunc_28 @0x141936e30: the movie's buttons, else an entry's name (its "_event" cut off): the definition's m_onClick
     /// or, without one, ToggleDialog(m_nUiId). (Entries below 0x41 also send guide trigger 0x1f; the guide is not here.)
@@ -406,7 +436,7 @@ public sealed class GameMenuController : UiController
             case "onugcupload": Button?.Invoke("OnUgcUpload"); return true;
             case "oncamera": Button?.Invoke("OnCamera"); return true;
             case "onpetinfo": ToggleDialog?.Invoke(0x4f38); return true;
-            case "onpetattack": Button?.Invoke("OnPetAttack"); return true;
+            case "onpetattack": OnPetAttack(); return true;
             case "onquest": ToggleDialog?.Invoke(0x4f56); return true;
             case "oncontract": Button?.Invoke("OnContract"); return true;
         }

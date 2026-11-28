@@ -154,9 +154,9 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.FieldAddPet: {
                 // CSceneStateGame::OnFieldAddPet @0x141719a60 (scenestategame.cpp:9682-9710): a CPet, the npc of its skin id, made
                 // through OnObjectCreated into the npc map, so it is added as an npc of the skin's row.
-                // STILL-OPEN (the summon part): for the own pet, RequestPetInventory mode 7 and AddHideReason(1) while the own PC has
-                // reason 1 (:9713-9718); the summon sound at the owner (:9720-9731, DAT_143ae7988 not recovered); the name
-                // FUN_140b10c80 takes (:9709) on the name tag, which shows the skin row's name here.
+                // The owner part (:9712-9731: the own pet's RequestPetInventory mode 7 and hide reason 1, the summon sound) runs in
+                // the live session once the npc is made. STILL-OPEN: the name FUN_140b10c80 takes (:9709) on the name tag, which
+                // shows the skin row's name here.
                 var pet = FieldAddPet.Read(p.Reader(), Profile);
                 var n = pet.AsNpc();
                 lock (gate) {

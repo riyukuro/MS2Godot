@@ -50,4 +50,14 @@ public class PetRequestTests
         var b = RideOffAction.Read(new ByteReader(Convert.FromHexString(transfer[2..])));
         Assert.That(b, Is.EqualTo(new RideOffSummonPetTransfer(0, uid)));
     }
+
+    [Test]
+    public void PetInventoryLoadIsMode7OnBothTables()
+    {
+        // CPetInventory::SendRequestPetInventoryMode7 @0x140c88100 (petmanager.cpp:481-486): Encode1(7)
+        Assert.That(Hex(new PetInventoryLoadRequest(), Outbound.RequestPetInventory), Is.EqualTo("07"));
+        // commonfiles/opcodes.h:426 SendOp RequestPetInventory = 0x0079; upstream RecvOp RequestPetInventory = 0x7A
+        Assert.That((ushort)Outbound.RequestPetInventory, Is.EqualTo(0x0079));
+        Assert.That(ProtocolProfile.Gms2.Number(Outbound.RequestPetInventory), Is.EqualTo((ushort)0x7A));
+    }
 }

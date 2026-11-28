@@ -65,3 +65,14 @@ public sealed record PetAttackRequest(bool Auto) : IOutPacket
         w.WriteBool(Auto);
     }
 }
+
+/// <summary>Outbound RequestPetInventory u8 7: the summoned pet's bag load. CPetInventory::SendRequestPetInventoryMode7 @0x140c88100
+/// (petmanager.cpp:481-486), sent by OnFieldAddPet when the pet's owner is the local pc (scenestategame.cpp:9713-9731).</summary>
+public sealed record PetInventoryLoadRequest : IOutPacket
+{
+    public const byte Mode = 7;
+
+    public Outbound Op => Outbound.RequestPetInventory;
+
+    public void Write(ByteWriter w) => w.WriteByte(Mode);
+}
