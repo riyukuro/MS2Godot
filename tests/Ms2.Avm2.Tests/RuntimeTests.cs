@@ -1475,4 +1475,28 @@ public class RuntimeTests
         Assert.That(string.Join(",", root.Children.Select(k => k.InstanceName)), Is.EqualTo(order));
         Assert.That(rt.Errors, Is.Empty);
     }
+
+    [Test]
+    public void AHostCallNestedInAHostCallReturnsItsOwnResult()
+    {
+        // an Invoke made from inside the AS3 method another Invoke called: each call returns what its own method returned,
+        // a failed call returns undefined (never the result of a call nested in it) and records "invoke <method>"
+        var (rt, p) = Empty();
+        Runtime.Current = rt;
+        AsObject o = null;
+        AsPlainFunction F(string tag, Func<object> body) => new(rt, new NativeMethod(tag, (_, a) => body()));
+        o = p.NewObject(
+            ("inner", F("inner", () => "inner")),
+            ("outer", F("outer", () => p.Call(o, "inner") is "inner" ? "outer" : "wrong inner result")),
+            ("outerThrows", F("outerThrows", () => { p.Call(o, "inner"); throw rt.TypeError("outer failed"); })),
+            ("innerThrows", F("innerThrows", () => throw rt.TypeError("inner failed"))),
+            ("afterAFailedInner", F("afterAFailedInner", () => p.Call(o, "innerThrows") == Rt.Undef ? "outer" : "wrong inner result")));
+        Assert.That(p.Call(o, "outer"), Is.EqualTo("outer"));
+        Assert.That(p.Call(o, "outerThrows"), Is.SameAs(Rt.Undef));
+        Assert.That(p.Call(o, "afterAFailedInner"), Is.EqualTo("outer"));
+        Assert.That(p.Call(o, "inner"), Is.EqualTo("inner"));
+        Assert.That(rt.Errors, Has.Count.EqualTo(2));
+        Assert.That(rt.Errors[0], Does.StartWith("invoke outerThrows: "));
+        Assert.That(rt.Errors[1], Does.StartWith("invoke innerThrows: "));
+    }
 }
