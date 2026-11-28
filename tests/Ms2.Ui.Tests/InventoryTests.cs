@@ -312,6 +312,32 @@ public class InventoryTests
     }
 
     [Test]
+    public void TheSortButtonIsOnAgainOneSecondAfterAClick()
+    {
+        // onClickRange: m_range off, OnClickSort, and a new Timer(1000) (repeat count 0) whose only listener is
+        // TIMER_COMPLETE, which stops it and turns m_range back on. The client's Timer sends timerComplete after each timer
+        // event (Timer::ExecuteEvent, sfr_as3_14.cpp:864: CurrentCount >= RepeatCount with no check for 0), so the button
+        // is back after one second; without that it stayed off for good
+        Packs();
+        var (h, c, _) = Load();
+        var sent = new List<(int, bool)>();
+        c.View.RequestSort = (t, s) => sent.Add((t, s));
+        var range = h.Child("m_range");
+        bool Enabled() => Rt.ToBoolean(h.Get(range, "enabled"));
+        Assert.That(Enabled(), Is.True);
+        h.Invoke(range, "dispatchEvent", h.RT.Construct(h.RT.GetClass("scaleform.clik.events.ButtonEvent"), new object[] { "buttonClick" }));
+        c.Process();
+        Assert.That((sent.Count, Enabled()), Is.EqualTo((1, false)), "sort sent, the button off");
+        int second = (int)Math.Ceiling(h.Player.FrameRate);   // the ticks of one second on the frame clock
+        for (int i = 0; i < second - 2; i++) { h.Player.Tick(); c.Process(); }
+        Assert.That(Enabled(), Is.False, "still off before the second is up");
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        foreach (var e in h.RT.Errors) TestContext.WriteLine("  error: " + e);
+        Assert.That(Enabled(), Is.True, "on again after 1 s");
+        Assert.That(sent, Has.Count.EqualTo(1));
+    }
+
+    [Test]
     public void AnOwnedItemKeepsItsRecordsLockAndEnchant()
     {
         var model = NewModel();
