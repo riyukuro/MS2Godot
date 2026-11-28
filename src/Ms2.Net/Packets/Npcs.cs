@@ -77,13 +77,15 @@ public sealed class FieldAddNpc {
 /// Inbound FieldAddPet (KMS 0x5A, GMS2 0x5B), the whole of CSceneStateGame::OnFieldAddPet @0x141719a60 (scenestategame.cpp:9682-9709),
 /// the same on both: i32 object id (SetObjectId), i32 skin id (vfunc_124, the npc the pet is drawn as), i32 npc id (SetPetId),
 /// position, rotation, f32 scale, i32 owner (SetOwnerId: the owner's object id), the npc stats (CNpc::vfunc_90), i64 pet item uid
-/// (SetMaidUid), u8, i16 level (FUN_14174a580, the setter FieldAddNpc's i32 level goes to, :3562), i16 taming rank (SetGrade), i32,
-/// unicode name.
+/// (SetMaidUid), u8 talkable (FUN_14174a560, the setter FieldAddNpc's talkable byte goes to, :3561), i16 level (FUN_14174a580, the
+/// setter FieldAddNpc's i32 level goes to, :3562), i16 taming rank (SetGrade), i32 (FUN_14174a4f0), unicode name.
 /// </summary>
 public sealed record FieldAddPet(int ObjectId, int SkinId, int NpcId, System.Numerics.Vector3 Position, System.Numerics.Vector3 Rotation, float Scale, int OwnerId) {
     public (long Health, int Spirit)[] Stats { get; init; } = new (long, int)[3];
     public long PetUid { get; init; }
+    public bool Talkable { get; init; }
     public int Level { get; init; }
+    public int Unknown { get; init; }
     public short TamingRank { get; init; }
     public string Name { get; init; } = "";
 
@@ -92,12 +94,29 @@ public sealed record FieldAddPet(int ObjectId, int SkinId, int NpcId, System.Num
         var pos = r.ReadVec3(); var rot = r.ReadVec3(); float scale = r.ReadFloat(); int owner = r.ReadInt();
         var stats = new (long, int)[3];
         FieldAddNpc.ReadStats(r, stats);
-        long uid = r.ReadLong(); r.ReadByte();
-        short level = r.ReadShort(), rank = r.ReadShort(); r.ReadInt();
+        long uid = r.ReadLong(); bool talkable = r.ReadBool();
+        short level = r.ReadShort(), rank = r.ReadShort(); int unknown = r.ReadInt();
         string name = r.ReadUnicodeString();
         r.ExpectEnd("FieldAddPet");
-        return new(id, skin, npc, pos, rot, scale, owner) { Stats = stats, PetUid = uid, Level = level, TamingRank = rank, Name = name };
+        return new(id, skin, npc, pos, rot, scale, owner) { Stats = stats, PetUid = uid, Talkable = talkable, Level = level, TamingRank = rank, Unknown = unknown, Name = name };
     }
+
+    /// <summary>
+    /// The made pet's m_fScaleAC (the scale GameObject::vfunc_9 sets the actor to, gameobject.cpp:240): the skin row's model scale
+    /// <paramref name="rowScale"/>, which CPet::vfunc_124 sets as for any npc, replaced by the packet's scale when that is not nearly
+    /// 1 (scenestategame.cpp:9701-9702; IsNearlyEqual @0x14028d470, commonutil.cpp:669: closer than 1e-6).
+    /// </summary>
+    public float ScaleAc(float rowScale) => MathF.Abs(Scale - 1f) < 1e-6f ? rowScale : Scale;
+
+    /// <summary>
+    /// The pet as the npc it is in the field: CPet is a CNpc, kept in WorldService's npc map (m_148, which FindNpcById and FindPetById
+    /// both look up, worldservice_1.cpp:6176-6194), so NpcControl's FindNpcById moves it (scenestategame.cpp:3626) and the hp and
+    /// buff paths find it. Its npc row is the skin id's (vfunc_124(skin), scenestategame.cpp:9699), with the stats (vfunc_90), the
+    /// uid (SetMaidUid), the talkable byte and the level OnFieldAddNpc's setters take.
+    /// </summary>
+    public FieldAddNpc AsNpc() => new() {
+        ObjectId = ObjectId, NpcId = SkinId, Position = Position, Rotation = Rotation, Stats = Stats, MaidUid = PetUid, Talkable = Talkable, Level = Level,
+    };
 
     /// <summary>Both regions read the same body (<see cref="Read(ByteReader)"/>).</summary>
     public static FieldAddPet Read(ByteReader r, ProtocolProfile profile) => Read(r);

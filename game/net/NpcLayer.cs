@@ -26,6 +26,9 @@ public sealed class NpcLayer
     {
         public Node3D Root, Visual; public AnimationPlayer Player; public Model Model;
         public int NpcId, Life, Moves;
+        /// <summary>GameObject m_fScaleAC, the scale GameObject::vfunc_9 sets the made actor to (gameobject.cpp:240): the row's
+        /// m_model.m_fScale, or a FieldAddPet's scale when it is not 1 (SetScaleAC, scenestategame.cpp:9701-9702).</summary>
+        public float ScaleAc = 1f;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public short AnimKey;                     // m_nDE8: the last sync block's sequence key, 0 until one came (CNpc ctor, :509)
         public string OwnerEffect = "";           // m_strEC8: the owner effect (NpcNotice mode 1)
@@ -226,7 +229,8 @@ public sealed class NpcLayer
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };
-        var i = new Inst { Root = root, Model = model, Kfm = row.Kfm, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed * ScaleRate(1f, row.Scale), TurnCap = row.RotationSpeed };
+        float scaleAc = e.Pet?.ScaleAc(row.Scale) ?? row.Scale;
+        var i = new Inst { Root = root, Model = model, Kfm = row.Kfm, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed * ScaleRate(1f, scaleAc), TurnCap = row.RotationSpeed, ScaleAc = scaleAc };
         i.DeadAction = row.RandomDeadDefaultAction(crtRand);
         if (model != null)
         {
@@ -243,7 +247,7 @@ public sealed class NpcLayer
             root.AddChild(i.Visual);
         }
         i.VisualBase = i.Visual.Position;
-        i.Height = row.CapsuleHeight * row.Scale;
+        i.Height = row.CapsuleHeight * i.ScaleAc;
         parent.AddChild(root);
         root.Position = i.Target;
         Tags?.AddNpc(root, i.Placeholder ? null : i.Visual, row);
@@ -285,7 +289,7 @@ public sealed class NpcLayer
     {
         i.Visual = mb.Build(model.Data, i.Kfm);
         EffectAttach.SetDummies(i.Visual, row.EffectDummies);
-        i.Visual.Scale = new Godot.Vector3(row.Scale, row.Scale, row.Scale);
+        i.Visual.Scale = new Godot.Vector3(i.ScaleAc, i.ScaleAc, i.ScaleAc);
         i.Player = i.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         // the idle queued after a one-shot (Play) starts at speed 1, not the block's: the client's speed is per sequence, and
         // PlayAnimationById passes m_f938 (pcbase.cpp:1533), 1.0 from the PCBase ctor (:787) and never set for a CNpc

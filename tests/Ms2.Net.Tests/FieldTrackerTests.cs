@@ -249,6 +249,67 @@ public class FieldTrackerTests {
         Assert.That(m.GetRecord(1, 2000).Amount(BattleRecord.Dealt), Is.EqualTo(40), "a removed pet credits no one");
     }
 
+    static byte[] AddPet(int objectId, int skinId, int npcId, float scale, int ownerId, byte talkable) {
+        var w = new ByteWriter();
+        w.WriteInt(objectId); w.WriteInt(skinId); w.WriteInt(npcId);
+        w.WriteFloat(100); w.WriteFloat(200); w.WriteFloat(300); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(45);
+        w.WriteFloat(scale); w.WriteInt(ownerId);
+        w.WriteByte(35); for (int i = 0; i < 3; i++) { w.WriteLong(900 + i); w.WriteInt(10); }
+        w.WriteLong(1234); w.WriteByte(talkable); w.WriteShort(7); w.WriteShort(2); w.WriteInt(0); w.WriteUnicodeString("Pet");
+        return Bytes(w);
+    }
+
+    /// <summary>
+    /// OnFieldAddPet (scenestategame.cpp:9682-9710): a CPet is a CNpc of the skin id, in the npc map FindNpcById reads
+    /// (worldservice_1.cpp:6176-6194), so the field gets an npc add of the skin's row and NpcControl moves it.
+    /// </summary>
+    [Test]
+    public void AFieldPetIsAnNpcOfItsSkinThatNpcControlMoves() {
+        var t = new FieldTracker { NpcLayoutOf = _ => default };
+        t.Inbound(Packet(Inbound.FieldAddPet, AddPet(600, 61100010, 61100020, 1.5f, 0, 1)));
+        var add = t.Events.OfType<NpcAddedEvent>().Single();
+        Assert.That((add.Npc.ObjectId, add.Npc.NpcId, add.Npc.Talkable, add.Npc.Level, add.Npc.MaidUid, add.Npc.Rotation.Z),
+            Is.EqualTo((600, 61100010, true, 7, 1234L, 45f)), "the npc of the skin id, with OnFieldAddNpc's setters' values");
+        Assert.That(add.Npc.Position, Is.EqualTo(new System.Numerics.Vector3(100, 200, 300)));
+        Assert.That(add.Npc.Stats[2].Health, Is.EqualTo(902L));
+        Assert.That((add.Pet.ObjectId, add.Pet.NpcId), Is.EqualTo((600, 61100020)), "the event keeps the pet");
+        Assert.That((t.HasObject(600), t.NpcIdOf(600), t.PetOwnerOf(600)), Is.EqualTo((true, 61100010, 0)), "a wild pet: no owner");
+
+        var w = new ByteWriter();
+        var bl = Block(600, 0);
+        w.WriteShort(1); w.WriteShort((short) bl.Length); w.WriteBytes(bl);
+        t.Inbound(Packet(Inbound.NpcControl, Bytes(w)));
+        Assert.That(t.Events.OfType<NpcMovedEvent>().Single().Sync.ObjectId, Is.EqualTo(600), "NpcControl's FindNpcById finds the pet");
+        Assert.That(t.NpcSnapshot().Single().Moves, Is.EqualTo(1));
+    }
+
+    /// <summary>OnFieldRemovePet (scenestategame.cpp:9614-9620): FindPetById, so only a pet's id removes an object.</summary>
+    [Test]
+    public void FieldRemovePetRemovesOnlyAPet() {
+        var t = new FieldTracker { NpcLayoutOf = _ => default };
+        AddNpc(t, 5);
+        t.Inbound(Packet(Inbound.FieldAddPet, AddPet(600, 61100010, 61100020, 1f, 77, 0)));
+        void Remove(int id) { var w = new ByteWriter(); w.WriteInt(id); t.Inbound(Packet(Inbound.FieldRemovePet, Bytes(w))); }
+        Remove(5);
+        Assert.That(t.Events.OfType<NpcRemovedEvent>(), Is.Empty, "a plain npc is no pet: FindPetById finds nothing");
+        Assert.That(t.HasObject(5), Is.True);
+        Remove(600);
+        Assert.That(t.Events.OfType<NpcRemovedEvent>().Single(), Is.EqualTo(new NpcRemovedEvent(0, 600, false)));
+        Assert.That((t.HasObject(600), t.PetOwnerOf(600)), Is.EqualTo((false, 0)));
+        Remove(600);
+        Assert.That(t.Events.OfType<NpcRemovedEvent>().Count(), Is.EqualTo(1), "a second remove finds no pet");
+    }
+
+    /// <summary>SetScaleAC only when the packet's scale is not nearly 1 (scenestategame.cpp:9701-9702), else the row's scale.</summary>
+    [Test]
+    public void APetsScaleReplacesTheRowsOnlyWhenNotOne() {
+        static FieldAddPet Pet(float scale) => FieldAddPet.Read(new ByteReader(AddPet(1, 2, 3, scale, 0, 0)));
+        Assert.That(Pet(1f).ScaleAc(0.8f), Is.EqualTo(0.8f));
+        Assert.That(Pet(1.0000001f).ScaleAc(0.8f), Is.EqualTo(0.8f), "nearly 1 (closer than 1e-6)");
+        Assert.That(Pet(1.5f).ScaleAc(0.8f), Is.EqualTo(1.5f));
+        Assert.That(Pet(0.5f).ScaleAc(0.8f), Is.EqualTo(0.5f));
+    }
+
     [Test]
     public void ThePetOpcodesFollowTheRecvOpTable() {
         Assert.That(((int) Inbound.FieldAddPet, (int) Inbound.FieldRemovePet), Is.EqualTo((0x5A, 0x5B)));

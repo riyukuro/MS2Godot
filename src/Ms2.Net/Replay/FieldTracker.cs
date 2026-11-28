@@ -16,7 +16,10 @@ public sealed record UserMovedEvent(double Time, int ObjectId, bool IsSelf, Vect
     public bool Ride { get; init; }
 }
 
-public sealed record NpcAddedEvent(double Time, FieldAddNpc Npc) : ReplayEvent(Time);
+public sealed record NpcAddedEvent(double Time, FieldAddNpc Npc) : ReplayEvent(Time) {
+    /// <summary>The FieldAddPet this npc came from (its <see cref="FieldAddPet.AsNpc"/>), null for a FieldAddNpc.</summary>
+    public FieldAddPet Pet { get; init; }
+}
 public sealed record NpcRemovedEvent(double Time, int ObjectId, bool Dead) : ReplayEvent(Time);
 /// <summary>One npc sync block (position, rotation, animation sequence id, state).</summary>
 public sealed record NpcMovedEvent(double Time, NpcSync Sync) : ReplayEvent(Time);
@@ -70,8 +73,10 @@ public sealed class FieldTracker {
 
     readonly object gate = new();
     readonly Dictionary<int, NpcState> npcs = new();
-    // FieldAddPet: pet object id -> owner object id. STILL-OPEN: every FieldAddPet is kept; the client makes the pet only when
-    // CPet vfunc_124(npc id) and OnObjectCreated succeed (scenestategame.cpp:9699, :9710), and neither is modelled here.
+    // FieldAddPet: pet object id -> owner object id (0 for a wild pet), the ids FindPetById's DynamicCast<CPet> finds. The pet is
+    // also in the npc map (CPet is a CNpc in WorldService m_148). STILL-OPEN: every FieldAddPet is kept; the client makes the pet
+    // only when CPet vfunc_124(skin id) and OnObjectCreated succeed (scenestategame.cpp:9699, :9710); the npc layer drops a pet
+    // whose skin has no npc row, as it drops such an npc.
     readonly Dictionary<int, int> petOwners = new();
     /// <summary>The npc table's view of an npc id (boss layout, property tag). Without it every npc reads as a plain one.</summary>
     public Func<int, NpcLayout> NpcLayoutOf { get; set; } = _ => default;
@@ -147,13 +152,27 @@ public sealed class FieldTracker {
                 break;
             }
             case Ms2.Net.Inbound.FieldAddPet: {
+                // CSceneStateGame::OnFieldAddPet @0x141719a60 (scenestategame.cpp:9682-9710): a CPet, the npc of its skin id, made
+                // through OnObjectCreated into the npc map, so it is added as an npc of the skin's row.
+                // STILL-OPEN (the summon part): for the own pet, RequestPetInventory mode 7 and AddHideReason(1) while the own PC has
+                // reason 1 (:9713-9718); the summon sound at the owner (:9720-9731, DAT_143ae7988 not recovered); the name
+                // FUN_140b10c80 takes (:9709) on the name tag, which shows the skin row's name here.
                 var pet = FieldAddPet.Read(p.Reader(), Profile);
-                lock (gate) petOwners[pet.ObjectId] = pet.OwnerId;
+                var n = pet.AsNpc();
+                lock (gate) {
+                    petOwners[pet.ObjectId] = pet.OwnerId;
+                    npcs[n.ObjectId] = new NpcState { ObjectId = n.ObjectId, NpcId = n.NpcId, Position = n.Position, YawDegrees = n.Rotation.Z };
+                }
+                Events.Enqueue(new NpcAddedEvent(Time, n) { Pet = pet });
                 break;
             }
             case Ms2.Net.Inbound.FieldRemovePet: {
+                // OnFieldRemovePet @0x14171a2e0 (scenestategame.cpp:9614-9638): FindPetById, nothing without a pet of the id; else
+                // FUN_141bbbcf0(id, 1) removes the object
                 int id = PetObjectId.Read(p.Reader()).ObjectId;
-                lock (gate) petOwners.Remove(id);
+                bool pet;
+                lock (gate) { pet = petOwners.Remove(id); if (pet) npcs.Remove(id); }
+                if (pet) Events.Enqueue(new NpcRemovedEvent(Time, id, false));
                 break;
             }
             case Ms2.Net.Inbound.NpcControl: {
