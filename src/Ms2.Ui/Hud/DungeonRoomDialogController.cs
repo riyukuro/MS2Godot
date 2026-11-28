@@ -480,12 +480,15 @@ public sealed class DungeonRoomDialogController : UiController
     /// GetRoomListText (@0x140e14bd0, uidungeonhelper.cpp:378): "" for no room; else the room's name (string table 0x14 by room id), and
     /// with <paramref name="showLimit"/> and a level limit the format of s_dungeonRoom_list_limit_Level appended.
     /// </summary>
-    public string GetRoomListText(DungeonRoomData room, bool showLimit)
+    public string GetRoomListText(DungeonRoomData room, bool showLimit) => RoomListText(Model.Tables, room, showLimit);
+
+    /// <summary><see cref="GetRoomListText"/> over a table set, for the other dialogs that list rooms (the finder's settings).</summary>
+    public static string RoomListText(GameTables tables, DungeonRoomData room, bool showLimit)
     {
         if (room == null) return "";
-        var text = Model.Tables.FieldEnteranceName((int)room.Id) ?? "";
+        var text = tables.FieldEnteranceName((int)room.Id) ?? "";
         if (showLimit && room.LimitPlayerLevel > 0)
-            text += ClientFormat.Format(Common("s_dungeonRoom_list_limit_Level"), (int)room.LimitPlayerLevel);
+            text += ClientFormat.Format(tables.Common("s_dungeonRoom_list_limit_Level") ?? "", (int)room.LimitPlayerLevel);
         return text;
     }
 

@@ -78,7 +78,7 @@ public partial class HudScene
             MemberClearState = (member, id) => live?.Party.Find(member)?.Counter((int)id),      // CPartyMember::counters.Get
             ServerTime = () => live?.ServerTime ?? System.DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             TogglePartySearch = TogglePartySearch,
-            OpenSetting = _ => GD.Print("dungeon finder: dialog 0x4f86 is not in this HUD"),
+            OpenSetting = OpenDungeonSearchSetting,
             TogglePopupDetail = () => GD.Print("dungeon finder: dialog 0x4f85 is not in this HUD"),
             OpenBookmarkRoomDialog = () => OpenDungeonRoom(d => { d.ResetGroup(); return true; }),
             OpenRoomDialog = id => OpenDungeonRoom(d => { d.OpenRoom(id); return true; }),
@@ -111,4 +111,45 @@ public partial class HudScene
         ? "closed"
         : $"open load={dungeonControlCenterMovie?.Loaded} subTab={dungeonControlCenter.SubTab} bookmarks={dungeonControlCenter.Bookmarks.Count} " +
           $"recommended={dungeonControlCenter.GetRecommendedRooms().Count}";
+
+    DungeonSearchSettingController dungeonSearchSetting;
+    MovieDialog dungeonSearchSettingMovie;
+
+    bool DungeonSearchSettingOpen => dungeonSearchSetting != null && !dungeonSearchSetting.IsClosed;
+
+    /// <summary>
+    /// UIDungeonControlCenter::OnSetting's dialog (uidungeoncontrolcenter.cpp): GetDungeonSearchSettingDialog(0x4f86), SetSelected(bookmarks),
+    /// OpenDialog. The OK button gives the ticked ids to the open control center (SetBookmarks) and closes the dialog.
+    /// </summary>
+    void OpenDungeonSearchSetting(IReadOnlyCollection<uint> bookmarks)
+    {
+        if (GuideRefusesOpen("DungeonSearchSettingDialog")) return;
+        if (DungeonSearchSettingOpen) dungeonSearchSetting.Close();
+        if (dungeonSearchSettingMovie != null) { dungeonSearchSettingMovie.Host.Unload(); dungeonSearchSettingMovie.QueueFree(); dungeonSearchSettingMovie = null; }
+        menuModel ??= NewModel();
+        var c = new DungeonSearchSettingController
+        {
+            RoomTable = () => menuModel.Tables.DungeonRooms,
+            CanEnterRoom = id => DungeonControlCenterOpen && dungeonControlCenter.CanEnterDungeonRoom(id),
+            HasLocalPlayer = () => hudModel.HasLocalPlayer,
+            ApplyBookmarks = ids => { if (DungeonControlCenterOpen) dungeonControlCenter.SetBookmarks(ids); },
+        };
+        c.SetSelected(bookmarks);
+        var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
+        c.Unloaded += () =>
+        {
+            m.Host.Unload();
+            m.QueueFree();
+            if (dungeonSearchSettingMovie == m) dungeonSearchSettingMovie = null;
+        };
+        dungeonSearchSetting = c; dungeonSearchSettingMovie = m;
+        GD.Print($"dungeon search setting: load={m.Loaded}");
+        uiRoot.AddChild(m);
+    }
+
+    /// <summary>UIDungeonSearchSettingDialog's per-frame look at its list.</summary>
+    void TickDungeonSearchSetting()
+    {
+        if (DungeonSearchSettingOpen) dungeonSearchSetting.Tick();
+    }
 }
