@@ -21,6 +21,8 @@ public sealed class IndividualDpsController : UiController
     public const int ModeCount = 9;
 
     public override string Movie => "uiindividualdpsdialog";
+    /// <summary>The CommonDepth layer of the movie: UIIndividualDPSDialog's ctor (@0x140f4ab90) sets m_2c to 0x11, as the party meter.</summary>
+    public override int LoadLayer => CommonDepth.Party;
     protected override string EntityMethod => "setMeterText";
     /// <summary>GetTypeName (@0x140f4ac70).</summary>
     public override string TypeName => "IndividualDPSDialog";

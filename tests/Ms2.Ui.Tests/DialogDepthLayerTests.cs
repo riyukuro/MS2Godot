@@ -91,6 +91,8 @@ public class DialogDepthLayerTests
         [typeof(ItemRemakeOptionDialogController)] = 0x1b,  // UIItemModifyDialogBase, uiitemenchantdialog.cpp:332
         [typeof(PartyController)] = 0x11,                   // uipartydialog.cpp:400
         [typeof(PartyDpsController)] = 0x11,                // uipartydialog.cpp:1200
+        [typeof(ChaosDpsController)] = 0x11,                // uichaosdpsdialog.cpp:95
+        [typeof(IndividualDpsController)] = 0x11,           // uiindividualdpsdialog.cpp:52
         [typeof(QuestGuideController)] = 0xd,               // uiquesteventlistener.cpp:337
         [typeof(RevivalDialogController)] = 0x1d,           // uirevivaldialog.cpp:156
         [typeof(TimerDialogController)] = 19,               // uitimerdialog.cpp:33
