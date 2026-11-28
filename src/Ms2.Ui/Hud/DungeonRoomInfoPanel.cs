@@ -966,15 +966,12 @@ public sealed class DungeonRoomInfoPanel
             if (best >= 0)
             {
                 int r = p.Owner.Table.GetRank(room, best);
-                p.Frame(icon, RankFrame(r));
+                p.Frame(icon, DungeonRewardDialogController.RankName(r));   // GetRankName (@0x14031c9d0, dungeonroom.cpp:272)
                 if (p.Hooks.ScoreText?.Invoke(best) is { } t) p.SetText(Host.Child("highScore", summary), t);
             }
         }
 
         UiHost Host => p.Host;
-
-        /// <summary>The icon frame of a rank: rank_unknown, rank_c, rank_b, rank_a, rank_s, rank_sp.</summary>
-        static string RankFrame(int r) => r switch { 1 => "rank_c", 2 => "rank_b", 3 => "rank_a", 4 => "rank_s", 5 => "rank_sp", _ => "rank_unknown" };
 
         /// <summary>Reset (@0x1412a81d0).</summary>
         void Reset()

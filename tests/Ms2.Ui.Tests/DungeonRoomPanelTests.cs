@@ -537,6 +537,25 @@ public class DungeonRoomPanelTests
     }
 
     [Test]
+    public void TheRankIconShowsTheGetRankNameFrameOfTheBestScore()
+    {
+        // Refresh @0x1412a78a0 (uidungeonroomdialog.cpp:350): m_missionRankIcon goes to GetRankName(GetRank(best)), and GetRankName
+        // (@0x14031c9d0, dungeonroom.cpp:272) is "rank{n}" for n >= 0 and "rank_unknown" below 0; the movie's frames are rank0-rank5
+        var room = Room(r => r.GroupType > 0 && r.HasMissions && Rooms().GetRankRequire(r) is { Count: > 1 }, "missions and a rank table");
+        var rr = Rooms().GetRankRequire(room);
+        var seen = new HashSet<string>();
+        foreach (short best in new[] { (short)0, rr.Scores[0], rr.MaxScore })
+        {
+            var e = Make(room, before: x => { x.Model.Features.Add(0x71); x.C.Hooks.Mission = Tables().DungeonMissionInfo; AddRecord(x, Rec(room.Id) with { LifetimeRecord = best }); });
+            var icon = e.Host.Child("m_missionRankIcon", Sub(e, "m_subPanel3"));
+            int rank = Rooms().GetRank(room, best);
+            Assert.That(Rt.ToString(e.Host.Get(icon, "currentLabel")), Is.EqualTo("rank" + rank), "best " + best);
+            seen.Add("rank" + rank);
+        }
+        Assert.That(seen, Has.Count.GreaterThan(1));
+    }
+
+    [Test]
     public void TheMissionInfoIsTheTablesNameAndMaxScoreAndNullForAnUnknownId()
     {
         var t = Tables();
