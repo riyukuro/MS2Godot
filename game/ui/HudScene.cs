@@ -3386,7 +3386,7 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>
-    /// UIGameMenuDialog: its movie (uigamemenudialog) with its C++ side (GameMenuController), put after the slot. The movie
+    /// UIGameMenuDialog: its movie (uigamemenudialog) with its C++ side (GameMenuController), put in its layer (0xe) of the slot's parent. The movie
     /// loads the face portrait as "img://&lt;movie&gt;:faceView/92/106" (loadRenderTarget), which vfunc_25 fills with
     /// CreatePortrait(92, 106): the portrait view's image here.
     /// </summary>
@@ -3409,7 +3409,8 @@ public partial class HudScene : Node, IUiStageHost
             else if (def.Action == GameMenuActions.ToggleDungeonSearch) ToggleDungeonSearch();   // FUN_14193d5e0, uigamemenudialog.cpp:2213
         };
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
-        slot.AddSibling(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));
+        // AddChild, not slot.AddSibling: add_sibling moves the node after it is parented, undoing the layer insert (DialogLayerOrder.Added).
+        slot.GetParent().AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
         foreach (var n in gameMenuMovie.GetChildren())
             if (n is As3View v) v.ImageLookup = url => url.StartsWith(face, StringComparison.OrdinalIgnoreCase) ? portrait?.Image : null;

@@ -137,7 +137,9 @@ public abstract class UiController
     }
 
     /// <summary>BringToFront (:769), UIDialog::vfunc_78 on the movie's OnTopMostLayer (uidialog.cpp:809, :891): a dialog in
-    /// the list moves to its tail, so a clicked dialog is the first its layer asks.</summary>
+    /// the list moves to its tail, so a clicked dialog is the first its layer asks. STILL-OPEN: the other half of vfunc_78,
+    /// moving the dialog's type to the head of s_openDialogs when m_164 is set (uidialog.cpp:812-815, read by FUN_141924190),
+    /// is not ported.</summary>
     internal void BringToFront()
     {
         if (LayerPlace != 0) LayerPlace = System.Threading.Interlocked.Increment(ref layerClock);

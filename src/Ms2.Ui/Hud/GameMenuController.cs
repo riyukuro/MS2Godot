@@ -16,7 +16,6 @@ public sealed class GameMenuController : UiController
     public override string Movie => "uigamemenudialog";
 
     /// <summary>The CommonDepth layer of the movie: its base UIBuiltInDialog's ctor sets m_2c to 14 (uibuiltindialog.cpp:21).</summary>
-
     public override int LoadLayer => CommonDepth.BuiltinDialog;
     protected override string EntityMethod => "addMenuEntity";
 

@@ -154,17 +154,22 @@ public partial class MovieDialog : Node2D
     UiStage stage;
 
     /// <summary>
-    /// The stage moved this dialog to the end of its CommonDepth layer (<see cref="UiStage.TopmostLayer"/>): it goes after
-    /// the last of its parent's dialogs in the same layer, so it is drawn and hit in front of them and keeps its place
-    /// against the other layers' movies and the HUD slots.
+    /// The stage moved this dialog to the end of its CommonDepth layer (<see cref="UiStage.TopmostLayer"/>): it goes to the
+    /// end of its layer's run among its parent's dialogs (<see cref="DialogLayerOrder.ToLayerEnd"/>), so it is drawn and hit in
+    /// front of the others of its layer and stays under every dialog of a higher layer.
     /// </summary>
     void ToLayerFront()
     {
-        if (GetParent() is not { } parent) return;
-        int layer = Player.HostLayer, last = -1;
-        for (int i = 0, n = parent.GetChildCount(); i < n; i++)
-            if (parent.GetChild(i) is MovieDialog d && d != this && d.Player.HostLayer == layer) last = i;
-        if (last > GetIndex()) parent.MoveChild(this, last);
+        if (GetParent() is { } parent) DialogLayerOrder.ToLayerEnd(parent, this, LayerOf);
+    }
+
+    /// <summary>A dialog's CommonDepth layer (its movie's host layer); -1 for every other node and the HUD movies.</summary>
+    internal static int LayerOf(Node n) => n is MovieDialog d ? d.Player?.HostLayer ?? -1 : -1;
+
+    public override void _Notification(int what)
+    {
+        // added to a parent: it joins the end of its layer's run (msLoader.loadSwf adds the loader at its layer's end)
+        if (what == NotificationParented && GetParent() is { } parent) DialogLayerOrder.Added(parent, this, LayerOf);
     }
 
     /// <summary>

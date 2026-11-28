@@ -23,7 +23,6 @@ public sealed class PartyDpsController : UiController
     public override string Movie => "uipartydpsdialog";
 
     /// <summary>The CommonDepth layer of the movie: UIPartyDPSDialog's ctor sets m_2c to 0x11 (uipartydialog.cpp:1200).</summary>
-
     public override int LoadLayer => CommonDepth.Party;
     protected override string EntityMethod => "setAscendingMeterValue";
     /// <summary>GetTypeName (@0x141a7b150).</summary>
