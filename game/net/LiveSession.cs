@@ -4524,9 +4524,9 @@ public partial class LiveSession : Node
                 }
                 else if (step == "roomfield")
                 {
-                    // "roomfield": from the room's lobby into its first field (RoomDungeon 10, the server's EnterField), for a server whose
+                    // "roomfield": from the room's lobby into its first field (RoomDungeon 9, the type 9 portal's request, PortalAction::SendRoomDungeon), for a server whose
                     // lobby sends no DungeonWaiting; sent by the harness, not by a client window
-                    live.SendParty(new Ms2.Net.Packets.RoomDungeonLobbyRequest(10));
+                    live.SendParty(new Ms2.Net.Packets.RoomDungeonPortalRequest());
                     GD.Print($"live: move {n}: room field entry sent");
                     sent = true;
                 }
@@ -4535,6 +4535,17 @@ public partial class LiveSession : Node
                     // "chat:<line>": a chat line (a GM command) typed in, no field move awaited (a /kill all in a dungeon, say)
                     bool typed = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(step[5..]);
                     GD.Print($"live: move {n}: chat {step[5..]} {(typed ? "typed" : "no chat window")}");
+                    await Frames(120);
+                }
+                else if (step.StartsWith("equip:"))
+                {
+                    // "equip:<itemId>:<slot>": the bag item of that id put on (the equip request, slot 5 the right hand), for a character
+                    // whose gear score a dungeon room asks for; the server's equip packet is what dresses it
+                    var parts = step[6..].Split(':');
+                    int equipId = int.Parse(parts[0]);
+                    var worn = live.Items.All.FirstOrDefault(i => i.Id == equipId);
+                    if (worn != null) live.SendParty(new Ms2.Net.ItemEquipRequest(worn.Uid, parts.Length > 1 ? byte.Parse(parts[1]) : (byte) 0, 0));
+                    GD.Print($"live: move {n}: equip {equipId} {(worn != null ? "sent" : "not in the bag")}");
                     await Frames(120);
                 }
                 else if (step == "finder" && tree.CurrentScene is Ui.HudScene fh)
@@ -5055,6 +5066,28 @@ public partial class LiveSession : Node
                     // the room has a minimum level (and a gear score: a character without it is refused with a chat line): the GM level command first
                     ph.SubmitChatLine("/player level 60");
                     await Frames(180);
+                    // and the gear score the room asks for (1000): one weapon of the data's gear score 58, rank 4 (a level 50 item) is worth
+                    // far more than that; spawned with the GM item command, enchanted and put on with the equip request
+                    const int gearItem = 15440088;
+                    // the GM character's gear tab is full ("Your inventory is full."): two of its items destroyed first, for room
+                    if (pl.Inventory != null)
+                    {
+                        int gearTab = pl.Inventory.TabOfItem(gearItem);
+                        foreach (var cell in pl.Inventory.Cells(gearTab).Where(c => !c.Empty).Take(2).ToList())
+                        {
+                            pl.SendParty(new Ms2.Net.ItemInventoryDestroyRequest(cell.Uid));
+                            GD.Print($"live: party A: bag tab {gearTab} item {cell.ItemId} destroyed for room");
+                        }
+                        await Frames(120);
+                    }
+                    ph.SubmitChatLine("/item " + gearItem + " --enchant 5");
+                    await Until(() => pl.Items.All.Any(i => i.Id == gearItem), 60 * 10);
+                    var gear = pl.Items.All.FirstOrDefault(i => i.Id == gearItem);
+                    if (gear != null) pl.SendParty(new Ms2.Net.ItemEquipRequest(gear.Uid, 5, 0));
+                    GD.Print($"live: party A: gear item {gearItem} {(gear != null ? "spawned and put on" : "never arrived")}");
+                    await Frames(180);
+                    // the member is geared by its own client in the same time: wait for it before the party's room is asked for
+                    await Frames(60 * 20);
                     bool typed = ph.SubmitChatLine("/dungeon " + gRoom + " --party");
                     GD.Print($"live: party A: /dungeon {gRoom} --party {(typed ? "typed" : "no chat window")}");
                 }
@@ -5065,8 +5098,18 @@ public partial class LiveSession : Node
                     if (!pl.Party.IsInParty) await Box("invite", 120);
                     bool joined = await Joined(true, 60);
                     GD.Print($"live: party B: joined {joined}, window {ph.PartyWindowShown}");
+                    // the party's room is made only when every member passes its enter limits (the server names the blocking member's
+                    // limit): the member gets the room's level and gear score too, the same way as the leader
+                    ph.SubmitChatLine("/player level 60");
+                    await Frames(180);
+                    ph.SubmitChatLine("/item 15440088 --enchant 5");
+                    await Until(() => pl.Items.All.Any(i => i.Id == 15440088), 60 * 10);
+                    var memberGear = pl.Items.All.FirstOrDefault(i => i.Id == 15440088);
+                    if (memberGear != null) pl.SendParty(new Ms2.Net.ItemEquipRequest(memberGear.Uid, 5, 0));
+                    GD.Print($"live: party B: gear item 15440088 {(memberGear != null ? "spawned and put on" : "never arrived")}");
                 }
                 string last = "";
+                bool enteredRoomField = false;
                 for (int t = 0; t < 40; t++)
                 {
                     await Frames(180);
@@ -5074,6 +5117,14 @@ public partial class LiveSession : Node
                     var gHud = tree.CurrentScene as Ui.HudScene;      // the field move rebuilt the HUD: ph is the old one
                     string now = $"stage {(st == null ? "none" : $"room {st.Room?.Id} stage {st.Stage} flag {st.Flag}")}, in party {pl.Party.IsInParty}, leader {pl.Party.LeaderId} self {pl.CharacterId}, window {gHud?.PartyWindowShown}, giveup button {gHud?.PartyGiveUpShown}, field {pl.FieldId}";
                     GD.Print($"live: party {role}: t={t * 3}s {now}");
+                    // the leader stands in the room's lobby (the server moved it there): its first field entered with RoomDungeon 9 (the portal request), as the
+                    // roomfield step does, once; the give-up trigger runs in that field
+                    if (asker && !enteredRoomField && pl.FieldId != 2000001 && st == null)
+                    {
+                        enteredRoomField = true;
+                        pl.SendParty(new Ms2.Net.Packets.RoomDungeonPortalRequest());
+                        GD.Print($"live: party A: room field entry sent from field {pl.FieldId}");
+                    }
                     if (now != last)
                     {
                         last = now;

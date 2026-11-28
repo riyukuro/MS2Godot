@@ -65,6 +65,7 @@ public partial class LiveSession
 
     void OnRoomDungeon(RoomDungeonReply m)
     {
+        if (LiveCheck && m.Kind == RoomDungeonKind.Error) Godot.GD.Print($"live: RoomDungeon error {m.Error}");
         ApplyRoomDungeon(m);
         int cmd = m.ClientCommand(game.Profile);
         if (cmd != 0) DungeonRoomPacket?.Invoke(cmd, m.NoticeKind);

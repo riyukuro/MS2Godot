@@ -24,6 +24,7 @@ public partial class LiveSession
 
     void OnFieldEntrance(FieldEntrance m)
     {
+        if (LiveCheck && m.Result != 0) Godot.GD.Print($"live: FieldEntrance result {m.Result} type {m.Type} id {m.Id}");
         switch (m.Result)
         {
             case 0:
