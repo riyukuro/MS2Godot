@@ -11,6 +11,9 @@ namespace Ms2.Avm2
         /// <summary>Counts the marks made on this runtime's display objects (<see cref="Flash.AsDisplayObject.MarkChanged"/>):
         /// a movie whose count did not move has the same display list.</summary>
         public long DisplayMarks;
+        /// <summary>Counts the changes a point test reads that are not display marks (hit-test disable, a bitmap's size): with
+        /// <see cref="DisplayMarks"/> unchanged too, a point test at the same point has the same answer.</summary>
+        public long HitMarks;
     }
 }
 

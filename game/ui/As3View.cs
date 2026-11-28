@@ -793,18 +793,33 @@ public partial class As3View : Node2D
         if (now - lastMouseTest <= 50) return;
         lastMouseTest = now;
         // a view leaving the tree (a scene change) has no viewport: no sample
-        if (!IsInsideTree() || GetViewport() is not { } vp) { MouseOverUi = false; return; }
+        if (!IsInsideTree() || GetViewport() is not { } vp) { MouseOverUi = false; hitMarks = -1; return; }
         var p = StagePoint(vp.GetMousePosition());
-        MouseOverUi = IsVisibleInTree() && Player.HitTestShapes(p.X, p.Y);
+        if (!IsVisibleInTree()) { MouseOverUi = false; hitMarks = -1; }
+        else
+        {
+            // the answer is the display list's at the point: with the point, the marks (and the point-test changes that are
+            // not marks) and the view's place all as at the last test, it is the last test's answer
+            var rt = Player.RT;
+            long marks = rt.DisplayMarks, other = rt.HitMarks;
+            if (p != hitPoint || marks != hitMarks || other != hitOther || moves != hitMoves || rt != hitRuntime)
+            {
+                hitPoint = p; hitMarks = marks; hitOther = other; hitMoves = moves; hitRuntime = rt;
+                HitTests++;
+                long h0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                MouseOverUi = Player.HitTestShapes(p.X, p.Y);
+                HitMs += System.Diagnostics.Stopwatch.GetElapsedTime(h0).TotalMilliseconds;
+            }
+        }
         // Flag_NeedMouseUpdate (set after each advanced frame, sfr_gfx_01i.cpp:4107): the mouse's top-most entity is found
         // again at its last position (a drag keeps its own). The answer can only differ when this movie's display objects
         // were marked (its runtime's DisplayMarks; the script-mask re-marks after other movies' marks are not counted), the
         // view moved on screen, or another movie's object came over the mouse or left it, so only then is it searched again.
         if (Player.Dragging || !Player.MouseActivated) return;
         bool covered = Covered(vp);
-        long marks = Player.RT.DisplayMarks;
-        if (marks == retestMarks && moves == retestMoves && covered == retestCovered) return;
-        retestMarks = marks; retestMoves = moves; retestCovered = covered;
+        long seen = Player.RT.DisplayMarks;
+        if (seen == retestMarks && moves == retestMoves && covered == retestCovered) return;
+        retestMarks = seen; retestMoves = moves; retestCovered = covered;
         Retests++;
         long r0 = System.Diagnostics.Stopwatch.GetTimestamp();
         // the retest's mouseOut / rollOut and mouseOver / rollOver carry the keyboard state as it is now (GenerateMouseEvents
@@ -895,9 +910,16 @@ public partial class As3View : Node2D
 
     long moves;                                             // the syncs that found the view moved on screen (a deep sync)
     long retestMarks = -1, retestMoves;                     // DisplayMarks and moves at the last retest
+    Vector2 hitPoint;                                       // the stage point, DisplayMarks, HitMarks and moves at the last
+    long hitMarks = -1, hitOther, hitMoves;                 // mouse-over shape test (hitMarks -1: none to reuse), and the
+    Ms2.Avm2.Runtime hitRuntime;                            // runtime they were read from
     /// <summary>The mouse retests all movie views made since the start, and the milliseconds they took (frame-time runs).</summary>
     public static long Retests;
     public static double RetestMs;
+    /// <summary>The mouse-over shape tests (Player.HitTestShapes) all movie views made since the start, and the milliseconds
+    /// they took (frame-time runs).</summary>
+    public static long HitTests;
+    public static double HitMs;
     bool retestCovered;                                     // whether another movie covered the point at the last retest
 
     /// <summary>Whether the view takes the mouse: in the tree, shown, its input on.</summary>

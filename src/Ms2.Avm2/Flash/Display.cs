@@ -93,7 +93,9 @@ public class AsDisplayObject : AsEventDispatcher
     /// <summary>Set to <see cref="Player"/>'s current advance epoch when this object or a descendant is a playing multi-frame clip.</summary>
     internal uint AdvanceEpoch;
     public bool CacheAsBitmapFlag;
-    public bool HitTestDisabled;
+    /// <summary>InteractiveObjectEx.setHitTestDisable: point tests skip the object (counted in the runtime's HitMarks).</summary>
+    public bool HitTestDisabled { get => hitTestDisabled; set { if (hitTestDisabled != value) { hitTestDisabled = value; if (Class?.Runtime is { } rt) rt.HitMarks++; } } }
+    bool hitTestDisabled;
     /// <summary>
     /// DisplayObject::Mask_ExecutionAborted: one of this object's listeners threw during a dispatch (EventDispatcher::Dispatch,
     /// sfr_as3_09.cpp, sets it on the phase's object when DispatchSingleEvent returns false). Never cleared; the movie's
@@ -804,8 +806,11 @@ public class AsGraphics : AsObject
 [AsClass("flash.display.BitmapData")]
 public class AsBitmapData : AsObject
 {
-    [As] public int width { get; set; }
-    [As] public int height { get; set; }
+    // a bitmap's point test reads its size: a change is counted in the runtime's HitMarks
+    [As] public int width { get => w; set { if (w != value) { w = value; Sized(); } } }
+    [As] public int height { get => h; set { if (h != value) { h = value; Sized(); } } }
+    int w, h;
+    void Sized() { if (Class?.Runtime is { } rt) rt.HitMarks++; }
     [As] public bool transparent { get; set; } = true;
     public string Source;    // image entry when known
     /// <summary>An image resource of a movie placed on a timeline (see Player.Instantiate): its scope and character id.</summary>
