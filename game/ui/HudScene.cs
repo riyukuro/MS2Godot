@@ -179,6 +179,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     public override void _EnterTree()
     {
+        GateFrameClock();
         restoreScale = ScreenMode.UseWindowPixels(GetWindow());
         MovieDialog.SceneResizer = this;    // the HUD resizes every movie, the message box and tooltip layers' too
         ScreenMode.AdoptWindow();       // started on its own: the options dialog shows this window (ScreenModes.Adopt)

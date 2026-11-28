@@ -42,6 +42,20 @@ public partial class HudScene
     static long gateClockMs;
     const long GateLoadSkipMs = 10000;      // past the longest load-started timer: a chat balloon's ChatBalloonDuration (5 s)
 
+    /// <summary>
+    /// AS3 getTimer in a gate session: each movie's frame clock (<see cref="Ms2.Avm2.Runtime.TimerMs"/>, 1000/60 ms a frame
+    /// at the gate's fixed rate), as getTimer read before it took real time. On real time a dialog's close tween (CLIK's
+    /// tweens time themselves by getTimer) ends after ~100-390 ms of wall time, so it ended at a different frame each run:
+    /// a quest open's dialog was freed anywhere from 3 to 34 frames after its close, and when the 35 frames to the
+    /// kept-object read ran faster than the tween, the whole dialog was still there and counted as kept (408 objects, 1475
+    /// for a shop open), its free then landing in the next open's window. On the frame clock every close ends on the same
+    /// frame each run. Set before the scene makes its first movie; outside a gate session nothing changes.
+    /// </summary>
+    static void GateFrameClock()
+    {
+        if (GatePath != null) Ms2.Avm2.Flash.Player.TestClock = p => () => p.RT.TimerMs;
+    }
+
     int gateFrame = -1;
     readonly JsonObject gateOut = new();
     readonly JsonArray gateOpens = new();
