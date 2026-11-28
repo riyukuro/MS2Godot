@@ -812,7 +812,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// RequestEquipItem(item, 0, layer, 0) (<see cref="RequestEquip"/>). FUN_1414056b0 (:601): 0 for a non-skin item; a skin
     /// item 1, or with feature 0x8e 2 unless action 0x4940d is held. Mode 7 is <see cref="AddToQuickSlot"/>, mode 12
     /// <see cref="FindMyInfoDialog"/>'s EquipGem. Mode 15 (FUN_141405440, the UGC item's own dialog) and the other modes are not ported and
-    /// are raised.
+    /// are raised. Mode 16 (the pet dialog leads) uses the pet item (<see cref="UsePetItem"/>).
     /// </summary>
     void RightClick(int i)
     {
@@ -830,6 +830,11 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (mode == 17 && RevertSelect != null) { RevertSelect(item); return; }    // case 17: the open merge revert dialog checks and shows it
         if (mode == 7 && AddToQuickSlot != null) { AddToQuickSlot(item); return; }  // case 7: FUN_14092fac0 on the quick slot page
         if (mode == 12 && FindMyInfoDialog != null) { FindMyInfoDialog()?.EquipGem(item, -1, false); return; }   // case 12: EquipGem(item, -1, 0) only with the my info dialog
+        if (mode == 16)                                                   // case 16 (:1071-1078): no local player 0; a pet item is used
+        {
+            if (Model.HasLocalPlayer && item.Data.IsPetItem) UsePetItem(item, false);
+            return;
+        }
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
@@ -861,7 +866,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
     /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
     /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
-    /// <see cref="UseItem"/>. An item without a function: a shop id opens the system shop (<see cref="SendItemShop"/>, invenslot.cpp:859-866; raised while unset) and a pet is not ported (raised); on the GMS2 data a skill
+    /// <see cref="UseItem"/>. An item without a function: a shop id opens the system shop (<see cref="SendItemShop"/>, invenslot.cpp:859-866; raised while unset) and a pet item is used (<see cref="UsePetItem"/>, :868-871); on the GMS2 data a skill
     /// book item (subtype 8, GMS2 only) runs <see cref="LearnSkillBook"/>; an emotion item (type
     /// 0x18, FUN_14053ce40) that passes FUN_14140dea0 asks first (<see cref="LearnEmotionBox"/>); an equipment item (type 1, :886) is put on as by the right click (FUN_1414056b0's layer) only while the
     /// shop dialog 0x4e3b is open, else nothing; type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
@@ -890,7 +895,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
                 SendItemShop(new Ms2.Net.Packets.SystemShopCoinRequest(item.ItemId));
                 return;
             }
-            if (d.IsPetItem) { Button?.Invoke("notifySlotUse"); return; }
+            if (d.IsPetItem) { UsePetItem(item, false); return; }          // :868-871: MyPC::FUN_14152aa90(item, 0)
             // GMS2 only (@0x140ab83e5-0x140ab8820, between the pet and the emotion item): a skill book item (subtype 8)
             if (d.IsGms2SkillBook) { LearnSkillBook(item); return; }
             // :873-884 (FUN_14053ce40, type 0x18; the GMS2 client's subtype 14 @0x140346cd0): FUN_14140dea0, then the learn box
@@ -1183,6 +1188,37 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// and mode first.
     /// </summary>
     MessageBoxData BindBox(Item item, string key, string tag) => InventoryEquip.BindBox(Model, item, key, tag);
+
+    /// <summary>
+    /// MyPC::FUN_14152aa90 (mypc.cpp:3735-3796) for the item, run by the session (<see cref="PetItemUse.Decide"/> and its
+    /// outcomes), with bConfirmed and whether the use binds the item (<see cref="NeedsBindConfirm"/>). Null: the use is
+    /// raised (notifySlotUse).
+    /// </summary>
+    public Func<Item, bool, bool, PetItemUse.Outcome> UsePet;
+
+    /// <summary>MyPC::FUN_14152aa90(item, bConfirmed) through <see cref="UsePet"/>; its bind box (:3755-3768: box 0x11 with
+    /// <see cref="PetItemUse.BindKey"/> and the player's name, tag <see cref="PetItemUse.BindBoxTag"/>, the item uid and entry,
+    /// labels 0x477 / 0x478) is shown here.</summary>
+    void UsePetItem(Item item, bool confirmed)
+    {
+        if (UsePet == null) { Button?.Invoke("notifySlotUse"); return; }
+        if (UsePet(item, confirmed, NeedsBindConfirm(item)) == PetItemUse.Outcome.BindConfirm)
+            ShowBox(BindBox(item, PetItemUse.BindKey, PetItemUse.BindBoxTag));
+    }
+
+    /// <summary>UIMessageBox::HandleSummonBindPetButton @0x1419fd130 (uimessagebox.cpp:1669-1686) past the record test: no
+    /// local player, false (0); the yes (button 0) finds the item (false without it) and uses it confirmed
+    /// (<see cref="UsePetItem"/>); else true.</summary>
+    public bool ConfirmSummonBindPet(long uid, int button)
+    {
+        if (Model == null || !Model.HasLocalPlayer) return false;
+        if (button != 0) return true;
+        if (View?.FindByUid(uid) is not { } e) return false;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return false;
+        UsePetItem(item, true);
+        return true;
+    }
 
     /// <summary>HandleUseBindFuncItemButton @0x1419fde80 (uimessagebox.cpp:1868), the yes: FindItemByUid of the box's item uid,
     /// then UseItem(item, 1). False when the inventory no longer has the item (the handler's 0).</summary>
@@ -1686,6 +1722,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         // 0x4f3d (invenslot.cpp:2024): 17 for the click and for a hint the dialog accepts; a refused hint falls through
         if (head == ItemMergeRevertDialogController.UiId && (!hint || RevertCheck(item) == ItemMergeRevertDialogController.CheckOk))
             return 17;
+        // 0x4f38, the pet dialog (:2015-2021): 16 for a pet item. STILL-OPEN: 14 (the pet inventory has slots) is not ported
+        if (head == PetDialogId && item.Data.IsPetItem) return 16;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;

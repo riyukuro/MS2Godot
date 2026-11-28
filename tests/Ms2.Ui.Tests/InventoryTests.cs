@@ -10,7 +10,7 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>The inventory (uiinventorydialog) run by its own ActionScript with UIInventoryDialog's C++ side (needs MS2_DATA).</summary>
 [NonParallelizable]   // sets process-wide hooks the product reads
-public class InventoryTests
+public partial class InventoryTests
 {
     static PackSet packs;
     static MovieSource src;

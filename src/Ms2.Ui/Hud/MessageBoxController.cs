@@ -235,6 +235,9 @@ public sealed class MessageBoxController : UiController
     /// <summary>HandleLearnEmotionButton's OK: the box's item uid (the local player test, FindItemByUid and
     /// Unk_Inventory::SendEmotion, <see cref="InventoryController.ConfirmLearnEmotion"/>).</summary>
     public Action<long> LearnEmotion;
+    /// <summary>HandleSummonBindPetButton past the record test, with the box's item uid and the button
+    /// (<see cref="InventoryController.ConfirmSummonBindPet"/>): the handler's result. Null: nothing is used (1).</summary>
+    public Func<long, int, bool> SummonBindPet;
     /// <summary>HandleLearnSkillButton's OK: the box's item uid (the local player test, FindItemByUid and the job system's
     /// RequestSkill, <see cref="InventoryController.ConfirmLearnSkill"/>).</summary>
     public Action<long> LearnSkill;
@@ -555,6 +558,8 @@ public sealed class MessageBoxController : UiController
             return HandleLearnSkillButton(button);
         if (tag == InventoryController.LearnEmotionTag)                    // s_143af3ca0 (uimessagebox.cpp:983-987)
             return HandleLearnEmotionButton(button);
+        if (tag == PetItemUse.BindBoxTag)                                  // s_143af3cd0 (uimessagebox.cpp:1013-1016)
+            return HandleSummonBindPetButton(button);
         if (tag == InventoryController.UseFunctionItemTag)                 // s_143af3c90 (uimessagebox.cpp:973-977)
             return HandleUseFunctionItemButton(button);
         if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
@@ -850,6 +855,14 @@ public sealed class MessageBoxController : UiController
     }
     /// <summary>The confirm's use: the item uid and the name. Null: nothing is used.</summary>
     public Action<long, string> UseCharNameItem;
+
+    /// <summary>UIMessageBox::HandleSummonBindPetButton @0x1419fd130 (uimessagebox.cpp:1669-1686): no record, 1; no local
+    /// player, 0; the yes (button 0) finds the item (0 without it) and uses it confirmed; 1 (<see cref="SummonBindPet"/>).</summary>
+    bool HandleSummonBindPetButton(int button)
+    {
+        if (data == null) return true;
+        return SummonBindPet?.Invoke(data.ItemUid, button) ?? true;
+    }
 
     /// <summary>HandleUseBindFuncItemButton @0x1419fde80: no record, 1; the yes finds the item (0 without it) and uses it
     /// confirmed; 1.</summary>
