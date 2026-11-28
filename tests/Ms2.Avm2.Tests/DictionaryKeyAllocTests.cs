@@ -43,6 +43,26 @@ public class DictionaryKeyAllocTests
         Assert.That(bytes, Is.EqualTo(0));
     }
 
+    /// <summary>Deleting a key by another spelling of it (1 set, "1" or 1.0 deleted) removes it from the for-in order too:
+    /// the order list holds the key as first set, so it is found with the Dictionary's own key compare, not object Equals.
+    /// Before, the key stayed in the order: a later loop gave it with an undefined value, and setting it again listed it twice.</summary>
+    [Test]
+    public void DeleteByAnotherSpellingLeavesTheLoop()
+    {
+        var rt = Rt0();
+        var d = rt.GetClass("flash.utils.Dictionary").Construct();
+        d.TrySetKey(Rt.Box(1), Rt.True);
+        d.TrySetKey(Rt.Box(2), Rt.True);
+        d.TrySetKey("3", Rt.True);
+        d.TryDeleteKey("1", out var done1);
+        d.TryDeleteKey(2.0, out var done2);
+        d.TryDeleteKey(Rt.Box(3), out var done3);
+        Assert.That(new[] { done1, done2, done3 }, Is.All.True);
+        Assert.That(d.EnumKeys(), Is.Empty);
+        d.TrySetKey(Rt.Box(1), Rt.False);
+        Assert.That(d.EnumKeys().Select(Rt.ToString), Is.EqualTo(new[] { "1" }));
+    }
+
     [Test]
     public void ObjectToStringAllocatesNoNameArray()
     {

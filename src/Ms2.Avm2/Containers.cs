@@ -140,7 +140,13 @@ public sealed class AsDictionary : AsObject
     public override bool TryGetKey(object key, out object v) { v = map.TryGetValue(key ?? NullKey, out var x) ? x : Rt.Undef; return true; }
     public override bool TrySetKey(object key, object v) { key ??= NullKey; if (!map.ContainsKey(key)) { order.Add(key); orderVersion++; } map[key] = v; return true; }
     public override bool TryHasKey(object key, out bool has) { has = map.ContainsKey(key ?? NullKey); return true; }
-    public override bool TryDeleteKey(object key, out bool done) { key ??= NullKey; done = map.Remove(key); if (done) { order.Remove(key); orderVersion++; } return true; }
+    public override bool TryDeleteKey(object key, out bool done) { key ??= NullKey; done = map.Remove(key); if (done) { RemoveOrder(key); orderVersion++; } return true; }
+    // the order holds a key as it was first set, and 1, 1.0 and "1" are one key: find it with the map's compare, not Equals
+    void RemoveOrder(object key)
+    {
+        var c = map.Comparer;
+        for (int i = 0; i < order.Count; i++) if (c.Equals(order[i], key)) { order.RemoveAt(i); return; }
+    }
     public override IList<object> EnumKeys() => order.ToList();
     internal override long EnumVersion => orderVersion;
     static readonly object NullKey = "null";
