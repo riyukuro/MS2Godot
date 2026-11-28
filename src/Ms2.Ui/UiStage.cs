@@ -20,7 +20,7 @@ public sealed class UiStage : IDropStage
     /// <summary>The proxy class registered in a dragging movie's runtime.</summary>
     public const string SlotProxyClass = "ms2.stage.OtherMovieDragSlot";
 
-    sealed record Movie(Player Player, Func<(double X, double Y)> Mouse, Func<int> DrawOrder, Func<bool> Shown);
+    sealed record Movie(Player Player, Func<(double X, double Y)> Mouse, Func<int> DrawOrder, Func<bool> Shown, int Layer, Action Raise);
 
     readonly List<Movie> movies = new();
 
@@ -29,10 +29,18 @@ public sealed class UiStage : IDropStage
     /// <paramref name="drawOrder"/> is drawn in front (the client sorts its dialogs by CommonDepth layer, then by add order;
     /// the host draws its movies in that order). A movie <paramref name="shown"/> says is not drawn is not hit.
     /// </summary>
-    public void Add(Player player, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown = null)
+    public void Add(Player player, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown = null) =>
+        Add(player, mouse, drawOrder, shown, -1, null);
+
+    /// <summary>
+    /// Adds a movie whose loader is in CommonDepth <paramref name="layer"/> (-1: none) at the end of that layer, as
+    /// msLoader.loadSwf's CommonDepth.addLayer appends it (addChild). <paramref name="raise"/> moves the drawn movie in
+    /// front of the others of its layer when <see cref="TopmostLayer"/> moves it.
+    /// </summary>
+    public void Add(Player player, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown, int layer, Action raise)
     {
         Remove(player);
-        movies.Add(new Movie(player, mouse, drawOrder, shown));
+        movies.Add(new Movie(player, mouse, drawOrder, shown, layer, raise));
         player.DropStage = this;
         ListenForDrags(player);
     }
@@ -57,6 +65,29 @@ public sealed class UiStage : IDropStage
     internal static bool TakesIme(object focus) =>
         focus is AsTextField { type: "input", displayAsPassword: false, ImeDisabled: false } tf && tf.OnStage;
 
+    /// <summary>The movies of a CommonDepth layer, back to front (the layer sprite's children in index order).</summary>
+    public IReadOnlyList<Player> InLayer(int layer) => movies.Where(m => m.Layer == layer && layer >= 0).Select(m => m.Player).ToList();
+
+    /// <summary>
+    /// CommonDepth.topmostLayer (CommonDepth.as:419-450) over the client's one stage, for a dialog's loader: Window.setTopMostLayer
+    /// asks it on a mouse down (Window.onSortDepthControl) and sends OnTopMostLayer when it is true. Each movie here runs the
+    /// rule on its own stage, where its loader is alone in its layer (numChildren &lt;= 1, true with no move), so the move
+    /// among the other movies of the layer is made here: a movie alone in its layer stays; else it goes to the layer's end
+    /// (setChildIndex(loader, numChildren - 1)), drawn in front of the others of that layer.
+    /// STILL-OPEN: CommonDepth.m_topMostLockDisplay (true with no move for another object while it is set) is one static of
+    /// main.gfx's VM in the client and one per movie here; no movie's lock is read.
+    /// </summary>
+    public void TopmostLayer(Player player)
+    {
+        int i = movies.FindIndex(m => m.Player == player);
+        if (i < 0 || movies[i].Layer < 0) return;
+        var m = movies[i];
+        if (movies.Count(x => x.Layer == m.Layer) <= 1) return;
+        movies.RemoveAt(i);
+        movies.Add(m);
+        m.Raise?.Invoke();
+    }
+
     public void Remove(Player player)
     {
         if (movies.RemoveAll(m => m.Player == player) > 0 && player.DropStage == this) player.DropStage = null;
@@ -75,18 +106,21 @@ public sealed class UiStage : IDropStage
     /// drag slots join <see cref="DragSlots"/> and its drag callbacks look them up there. The dialog leaves when its
     /// controller unloads.
     /// </summary>
-    public void Add(UiHost host, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown = null)
+    public void Add(UiHost host, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown = null, Action raise = null)
     {
-        Add(host.Player, mouse, drawOrder, shown);
+        Add(host.Player, mouse, drawOrder, shown, host.Player.HostLayer, raise);
         host.DragSlots = DragSlots;
         DragSlots.Add(host.Controller as IDragSlotOwner);
         if (!unloadWatched.TryAdd(host, null)) return;
         // the handler leaves with its dialog: a controller kept across opens (the quest log's, the world map's) gets a new
         // host per open, and a handler left on it would keep every closed dialog's player alive
         var controller = host.Controller;
+        Action topMost = () => TopmostLayer(host.Player);
+        host.TopMost += topMost;
         Action unloaded = null;
         unloaded = () =>
         {
+            host.TopMost -= topMost;
             controller.Unloaded -= unloaded;
             unloadWatched.Remove(host);
             Remove(host);

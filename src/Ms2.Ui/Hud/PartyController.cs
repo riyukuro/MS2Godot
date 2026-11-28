@@ -14,6 +14,8 @@ namespace Ms2.Ui.Hud;
 public sealed class PartyController : UiController
 {
     public override string Movie => "uipartydialog";
+    /// <summary>The CommonDepth layer of the movie: UIPartyDialog's ctor sets m_2c to 0x11 (uipartydialog.cpp:400).</summary>
+    public override int LoadLayer => CommonDepth.Party;
 
     /// <summary>UIPartyDialog's ctor sets the flag 0 (uipartydialog.cpp:401): vfunc_56, an always-on one.</summary>
     public override bool AlwaysOn => true;

@@ -105,6 +105,8 @@ public sealed class RevivalEnvironment
 public sealed class RevivalDialogController : UiController, IMessageBoxListener, IMessageBoxTimerListener
 {
     public override string Movie => "uirevivaldialog";
+    /// <summary>The CommonDepth layer of the movie: UIRevivalDialog's ctor sets m_2c to 0x1d (uirevivaldialog.cpp:156).</summary>
+    public override int LoadLayer => CommonDepth.PopupMenu;
     /// <summary>m_e0 = 3 (uirevivaldialog.cpp:157): the key walk asks it before the layer-4 dialogs.</summary>
     public override int EntityLayer => 3;
     protected override string EntityMethod => "alignment";                  // the movie's game entity, as UIRevivalDialog::vfunc_43 finds it

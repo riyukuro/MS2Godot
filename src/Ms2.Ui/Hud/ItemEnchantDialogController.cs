@@ -18,6 +18,8 @@ namespace Ms2.Ui.Hud;
 public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 {
     public override string Movie => "uiitemenchantdialog";
+    /// <summary>The CommonDepth layer of the movie: its base UIItemModifyDialogBase's ctor sets m_2c to 0x1b (uiitemenchantdialog.cpp:332).</summary>
+    public override int LoadLayer => CommonDepth.CinematicDialog;
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemEnchantDialog";
     /// <summary>vfunc_13 @0x1419bfc40 (uiitemenchantdialog.cpp:550) returns 0 without UIDialog's: Esc passes the dialog, and only

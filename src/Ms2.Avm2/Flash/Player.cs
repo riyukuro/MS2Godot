@@ -53,6 +53,11 @@ namespace Ms2.Avm2.Flash
         public AsLoader HostLoader;
         /// <summary>The dialog id the game gives the movie's loader (default: the movie name).</summary>
         public string HostId;
+        /// <summary>
+        /// The CommonDepth layer the game puts the movie's loader in (UISwfEntity m_2c, passed to LoadSwf, uiswfentity.cpp:226;
+        /// msLoader.loadSwf adds the loader with CommonDepth.addLayer), or -1 to leave it on the stage over the layers.
+        /// </summary>
+        public int HostLayer = -1;
         /// <summary>Run as the game hosts the movie (authoring-only demo code off). False = as the Flash IDE would.</summary>
         public bool InGame = true;
         public double StageW, StageH, FrameRate = 30;
@@ -239,12 +244,25 @@ namespace Ms2.Avm2.Flash
                 // the game loads each dialog movie into a Loader named after the dialog (the id its ExternalInterface calls carry)
                 HostLoader = (AsLoader)RT.GetClass("flash.display.Loader").Construct();
                 HostLoader.InstanceName = HostId ?? (string)Layout["movie"];
-                Stage.Children.Add(HostLoader); HostLoader.Parent = Stage;
+                var loaderParent = HostLayerSprite() ?? Stage;
+                loaderParent.Children.Add(HostLoader); HostLoader.Parent = loaderParent;
                 Root = (AsDisplayObject)ConstructInto(cls, HostLoader, Main, rootSym, null, 0);
                 AddMovieRoot(Root, Main.Key);
                 EnterStage(HostLoader);
                 RunFrameScripts();
             });
+        }
+
+        /// <summary>
+        /// CommonDepth.addLayer's target for the loader (CommonDepth.as:143-150: m_depthLayers[layer].addChild): the layer
+        /// sprite CommonDepth.init made on this stage, or null without CommonDepth, without a layer or with no sprite for it.
+        /// </summary>
+        AsContainer HostLayerSprite()
+        {
+            if (HostLayer < 0 || RT.GetClass("scaleform.ms2.common.CommonDepth") is not { } cd) return null;
+            var layers = RT.GetProperty(cd, Name.Public("m_depthLayers"));
+            if (Rt.IsNullish(layers)) return null;
+            return RT.GetProperty(layers, Name.Public(HostLayer.ToString(System.Globalization.CultureInfo.InvariantCulture))) as AsContainer;
         }
 
         /// <summary>Allocates a display object, puts it into the parent (timeline order), builds its frame 1, then runs its constructor.</summary>

@@ -137,7 +137,7 @@ public partial class MovieDialog : Node2D
         Place(window);
         for (var n = GetParent(); n != null; n = n.GetParent())
             if (n is IUiStageHost h && h.UiStage != null) { stage = h.UiStage; break; }
-        if (stage != null) stage.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree);
+        if (stage != null) stage.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree, ToLayerFront);
         else if (!OwnMovie) OffStageTextFocus.Add(Host.Player, view.IsVisibleInTree);   // a layer outside the scene's stage (the message box)
         if (Host?.Controller is { } c) Live.Add(c);        // CUIService's registry: in while the tree holds it
     }
@@ -152,6 +152,20 @@ public partial class MovieDialog : Node2D
     }
 
     UiStage stage;
+
+    /// <summary>
+    /// The stage moved this dialog to the end of its CommonDepth layer (<see cref="UiStage.TopmostLayer"/>): it goes after
+    /// the last of its parent's dialogs in the same layer, so it is drawn and hit in front of them and keeps its place
+    /// against the other layers' movies and the HUD slots.
+    /// </summary>
+    void ToLayerFront()
+    {
+        if (GetParent() is not { } parent) return;
+        int layer = Player.HostLayer, last = -1;
+        for (int i = 0, n = parent.GetChildCount(); i < n; i++)
+            if (parent.GetChild(i) is MovieDialog d && d != this && d.Player.HostLayer == layer) last = i;
+        if (last > GetIndex()) parent.MoveChild(this, last);
+    }
 
     /// <summary>
     /// Where this dialog is drawn among the others: its canvas layer, then its place among the dialogs in that layer in tree

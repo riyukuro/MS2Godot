@@ -21,6 +21,8 @@ namespace Ms2.Ui.Hud;
 public sealed class ItemMergeOptionDialogController : UiController
 {
     public override string Movie => "uiitemmergeoptiondialog";
+    /// <summary>The CommonDepth layer of the movie: UIItemMergeOptionDialog's ctor sets m_2c to 0x1b (uiitemmergeoptiondialog.cpp:317).</summary>
+    public override int LoadLayer => CommonDepth.CinematicDialog;
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemMergeOptionDialog";
     /// <summary>UIItemMergeOptionDialog's ctor (@0x1419ccd00, uiitemmergeoptiondialog.cpp:314) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog

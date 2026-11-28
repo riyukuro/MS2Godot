@@ -16,6 +16,10 @@ public sealed class QuestGuideController : UiController
 
     public override string Movie => "uiquestguidedialog";
 
+    /// <summary>The CommonDepth layer of the movie: UIQuestGuideDialog's ctor sets m_2c to 0xd (uiquesteventlistener.cpp:337).</summary>
+
+    public override int LoadLayer => CommonDepth.LowerBuiltinDialog;
+
     /// <summary>UIQuestGuideDialog's ctor sets the flag 0 (uiquesteventlistener.cpp:338): vfunc_56, an always-on
     /// one — the quest tracker never blocks the guide's own arrows.</summary>
     public override bool AlwaysOn => true;

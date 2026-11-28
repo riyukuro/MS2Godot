@@ -12,6 +12,10 @@ public sealed class TimerDialogController : UiController, IRoomTimerWindow
     public const int UiId = 0x4e3a;
 
     public override string Movie => "uitimerdialog";
+
+    /// <summary>The CommonDepth layer of the movie: UITimerDialog's ctor sets m_2c to 19 (uitimerdialog.cpp:33).</summary>
+
+    public override int LoadLayer => CommonDepth.Timer;
     protected override string EntityMethod => "setTime";
     public override string TypeName => "TimerDialog";        // GetTypeName (@0x141b26730)
     public override bool AlwaysOn => true;                    // ctor SetFlag(0, 1)

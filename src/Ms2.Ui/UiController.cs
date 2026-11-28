@@ -115,6 +115,15 @@ public abstract class UiController
     /// </summary>
     public virtual int EntityLayer => 4;
 
+    /// <summary>
+    /// m_2c, the CommonDepth layer the movie is loaded into (UISwfEntity::LoadSwfPath passes it to LoadSwf, uiswfentity.cpp:226;
+    /// msLoader.loadSwf adds the loader to it). The UIDialog ctor sets <see cref="CommonDepth.Dialog"/> (uidialog.cpp:202); a
+    /// dialog whose ctor sets another overrides this. Only a dialog's movie is put into its layer here
+    /// (<see cref="UiHost"/>); STILL-OPEN: the other entities' layers (UISwfEntity's 0 and their own ctors') are not, and
+    /// their movies stay on the stage over the layers.
+    /// </summary>
+    public virtual int LoadLayer => CommonDepth.Dialog;
+
     static long layerClock;
 
     /// <summary>The dialog's place in m_listLayers[m_e0]: 0 while it is not in the list; a larger one is nearer the tail.</summary>

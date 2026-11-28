@@ -14,6 +14,10 @@ public sealed class GameMenuController : UiController
     protected override bool TweenEnabled => false;
 
     public override string Movie => "uigamemenudialog";
+
+    /// <summary>The CommonDepth layer of the movie: its base UIBuiltInDialog's ctor sets m_2c to 14 (uibuiltindialog.cpp:21).</summary>
+
+    public override int LoadLayer => CommonDepth.BuiltinDialog;
     protected override string EntityMethod => "addMenuEntity";
 
     /// <summary>UIGameMenuDialog is a UIBuiltInDialog (uigamemenudialog.h:39): the ctor's flag 0 (vfunc_56).</summary>

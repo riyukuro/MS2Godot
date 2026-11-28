@@ -18,6 +18,10 @@ public sealed class TriggerTimerDialogController : UiController
     public const string TimeLimitEffectKey = "timeLimit";
 
     public override string Movie => "uitriggertimerdialog";
+
+    /// <summary>The CommonDepth layer of the movie: UITriggerTimerDialog's ctor sets m_2c to 0x13 (uitriggertimerdialog.cpp:45).</summary>
+
+    public override int LoadLayer => CommonDepth.Timer;
     protected override string EntityMethod => "setTime";
     public override string TypeName => "TriggerTimerDialog";      // GetTypeName (@0x141b33180)
     /// <summary>UITriggerTimerDialog's ctor (@0x141b330c0, uitriggertimerdialog.cpp:43) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog

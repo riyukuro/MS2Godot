@@ -50,12 +50,20 @@ public sealed class UiHost
     /// (<see cref="UiStage"/>), as the client's one binding map.</summary>
     public BindingRegistry DragSlots { get; set; }
 
+    /// <summary>
+    /// The movie sent OnTopMostLayer: Window.setTopMostLayer (on a mouse down, Window.onSortDepthControl) got true from
+    /// CommonDepth.topmostLayer, which moved the dialog's loader to the end of its layer. Here each movie has its own stage,
+    /// so the shared layer is the host's (<see cref="UiStage"/>), which moves the movie to its layer's front on this.
+    /// </summary>
+    public event Action TopMost;
+
     public UiHost(Player player, UiController controller, UiModel model, string id = null)
     {
         Player = player; Controller = controller; Model = model;
         ClientStageW = player.StageW; ClientStageH = player.StageH;
         Id = id ?? (string)player.Layout["movie"];
         Player.HostId = Id;
+        if (controller.IsDialogEntity) Player.HostLayer = controller.LoadLayer;
         Player.External = External;
         controller.Host = this;
         DragSlots = new BindingRegistry();
@@ -166,7 +174,7 @@ public sealed class UiHost
         if (ev != Id) return null;      // another loader inside the movie (msLoader of an image or sub movie)
         Calls.Add(name);
         // GFxMovieHeadUpDisplay's callback: "OnTopMostLayer" makes this movie the top one, then goes to the entity too
-        if (name.Equals("OnTopMostLayer", StringComparison.OrdinalIgnoreCase)) Model.TopLayer = Id;
+        if (name.Equals("OnTopMostLayer", StringComparison.OrdinalIgnoreCase)) { Model.TopLayer = Id; TopMost?.Invoke(); }
         switch (name)
         {
             case "loadInit": return null;       // the client's CreateGameEntity: Load() finds the entity

@@ -22,6 +22,8 @@ namespace Ms2.Ui.Hud;
 public sealed class BeautyStyleDialogController : UiController
 {
     public override string Movie => "uibeautyshopstyledialog";
+    /// <summary>The CommonDepth layer of the movie: UIBeautyShopStyleDialog's ctor sets m_2c to 0xc (uibeautyshopstyledialog.cpp:782).</summary>
+    public override int LoadLayer => CommonDepth.Scene;
     protected override string EntityMethod => "initData";
     public override string TypeName => "BeautyShopStyleDialog";
     /// <summary>UIBeautyShopStyleDialog's ctor (@0x140f03090, uibeautyshopstyledialog.cpp:778) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog

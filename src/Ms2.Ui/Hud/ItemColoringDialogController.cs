@@ -63,6 +63,8 @@ public sealed record ColoringBill(string Category, string PriceText, string Deta
 public sealed class ItemColoringDialogController : UiController
 {
     public override string Movie => "uiitemcoloringdialog";
+    /// <summary>The CommonDepth layer of the movie: UIItemColoringDialog's ctor sets m_2c to 0xc (uiitemcoloringdialog.cpp:253).</summary>
+    public override int LoadLayer => CommonDepth.Scene;
     protected override string EntityMethod => "initData";
     public override string TypeName => "ItemColoringDialog";
     /// <summary>UIItemColoringDialog's ctor (@0x1419abdd0, uiitemcoloringdialog.cpp:250) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog

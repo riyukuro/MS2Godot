@@ -43,6 +43,8 @@ public interface IBeautyCustomize
 public sealed class BeautyShopDialogController : UiController
 {
     public override string Movie => "uibeautyshopdialog";
+    /// <summary>The CommonDepth layer of the movie: UIBeautyShopDialog's ctor sets m_2c to 0xc (uibeautyshopdialog.cpp:508).</summary>
+    public override int LoadLayer => CommonDepth.Scene;
     protected override string EntityMethod => "initData";
     public override string TypeName => "BeautyShopDialog";
     /// <summary>UIBeautyShopDialog's ctor (@0x1418c3630, uibeautyshopdialog.cpp:504) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog

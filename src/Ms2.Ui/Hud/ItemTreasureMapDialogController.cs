@@ -18,6 +18,8 @@ namespace Ms2.Ui.Hud;
 public sealed class ItemTreasureMapDialogController : UiController
 {
     public override string Movie => "uiitemtreasuremapdialog";
+    /// <summary>The CommonDepth layer of the movie: UIItemTreasureMapDialog's ctor sets m_2c to 0xc (uiitemtreasuremapdialog.cpp:89).</summary>
+    public override int LoadLayer => CommonDepth.Scene;
     protected override string EntityMethod => "alignment";
     public override string TypeName => Name;   // GetTypeName (@0x140c55210)
     /// <summary>vfunc_13 (uiitemtreasuremapdialog.cpp:167) returns 0 without UIDialog's: Esc passes the dialog, and only the
