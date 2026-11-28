@@ -321,7 +321,7 @@ public class AsTimer : AsEventDispatcher
     int count;
     Runtime.IntervalTimer core;
     /// <summary>currentCountGet (@0x1424bf620): the core's count while there is one.</summary>
-    [As] public int currentCount => core != null ? core.CurrentCount : count;
+    [As] public int currentCount => core != null ? unchecked((int)core.CurrentCount) : count;
     /// <summary>runningGet (@0x1424bffe0): a core that is still active.</summary>
     [As] public bool running => core != null && core.Active;
     [AsCtor] void Ctor(object[] a) { delay = a.Length > 0 ? Rt.ToNumber(a[0]) : 0; repeatCount = a.Length > 1 ? Rt.ToInt32(a[1]) : 0; }
@@ -333,12 +333,12 @@ public class AsTimer : AsEventDispatcher
         if (core != null)
         {
             if (core.Active) return;
-            count = core.CurrentCount;
+            count = unchecked((int)core.CurrentCount);
             core = null;
         }
         core = RT.AddIntervalTimer(new Runtime.IntervalTimer
         {
-            TimerObj = this, Interval = (long)unchecked((uint)(long)delay) * 1000, CurrentCount = count, RepeatCount = repeatCount,
+            TimerObj = this, Interval = (long)unchecked((uint)(long)delay) * 1000, CurrentCount = unchecked((uint)count), RepeatCount = unchecked((uint)repeatCount),
         });
     }
 
@@ -361,7 +361,7 @@ public class AsTimer : AsEventDispatcher
     /// </summary>
     internal void ExecuteEvent()
     {
-        count = core.CurrentCount;
+        count = unchecked((int)core.CurrentCount);
         Send("flash.events.TimerEvent", "timer");
         if (count >= repeatCount) Send("flash.events.TimerEvent", "timerComplete");
     }

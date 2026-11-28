@@ -25,7 +25,7 @@ public sealed partial class Runtime
         public object[] Params;
         public Flash.AsTimer TimerObj;
         public long Interval, InvokeTime;
-        public int CurrentCount, RepeatCount;
+        public uint CurrentCount, RepeatCount;   // unsigned, as the client's: a negative repeatCount is a very large one
         public bool Timeout, Active = true;
     }
 
@@ -93,14 +93,23 @@ public sealed partial class Runtime
         if (n == 0) return;
         long now = TimeElapsedUs, frameUs = (long)((float)(frameMs * 0.001) * 1000000f);
         bool inactive = false;
-        for (int i = 0; i < n; i++)
+        advanceDepth++;
+        try
         {
-            var t = intervalTimers[i];
-            if (t.Active) Invoke(t, now, frameUs);
-            if (!t.Active) inactive = true;
+            for (int i = 0; i < n; i++)
+            {
+                var t = intervalTimers[i];
+                if (t.Active) Invoke(t, now, frameUs);
+                if (!t.Active) inactive = true;
+            }
         }
-        if (inactive) intervalTimers.RemoveAll(static t => !t.Active);
+        finally { advanceDepth--; }
+        // only the outermost pass takes the stopped ones off: a callback that advances the movie again (a nested pass)
+        // must not move the entries under the pass that is still running
+        if (inactive && advanceDepth == 0) intervalTimers.RemoveAll(static t => !t.Active);
     }
+
+    int advanceDepth;
 
     /// <summary>
     /// IntervalTimer::Invoke (@0x142512fc0, sfr_as3_18.cpp:7219): once the invoke time is reached, a Timer's event

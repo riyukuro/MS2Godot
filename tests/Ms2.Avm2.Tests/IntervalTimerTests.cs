@@ -204,6 +204,40 @@ public class IntervalTimerTests
     }
 
     [Test]
+    public void ANegativeRepeatCountRepeatsLikeAVeryLargeOne()
+    {
+        // the core keeps the repeat count unsigned (IntervalTimer(Timer*, unsigned delay, unsigned curCount, unsigned
+        // repeatCount), sfr_as3_15.cpp), so new Timer(10, -1) keeps firing; ExecuteEvent compares the object's SInt32
+        // repeatCount, so each fire also sends timerComplete
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 10, -1);
+        var seen = new List<string>();
+        t.addEventListener("timer", Fn(rt, () => seen.Add("timer " + t.currentCount)));
+        t.addEventListener("timerComplete", Fn(rt, () => seen.Add("complete")));
+        t.start();
+        for (int i = 0; i < 2; i++) p.Tick();
+        Assert.That(seen, Is.EqualTo(new[] { "timer 1", "complete", "timer 2", "complete" }));
+        Assert.That(t.running, Is.True);
+    }
+
+    [Test]
+    public void ACallbackThatAdvancesTheMovieAgainKeepsTheRunningPass()
+    {
+        // a callback that runs the movie's advance again (a nested timer pass) and stopped another timer first: the nested
+        // pass must not take the stopped one off under the outer pass, which goes on over its own count of entries
+        var (rt, p) = Movie();
+        bool nested = false;
+        int b = 0, c = 0, cId = 0;
+        rt.AddTimeout(Fn(rt, () => { if (nested) return; nested = true; rt.ClearTimeout(cId); p.AdvanceTime(0); }), 10, Array.Empty<object>(), true);
+        rt.AddTimeout(Fn(rt, () => b++), 10, Array.Empty<object>(), true);
+        cId = rt.AddTimeout(Fn(rt, () => c++), 10, Array.Empty<object>(), true);
+        Assert.DoesNotThrow(() => p.AdvanceTime(20));
+        Assert.That((b, c), Is.EqualTo((1, 0)), "the second fired once (in the nested pass), the cleared one never");
+        p.AdvanceTime(10);
+        Assert.That((b, c), Is.EqualTo((2, 0)));
+    }
+
+    [Test]
     public void AdvancingTimersThatAreNotDueAllocatesNothing()
     {
         var (rt, p) = Movie();
