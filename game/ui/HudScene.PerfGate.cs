@@ -112,6 +112,22 @@ public partial class HudScene
         return o;
     }
 
+    long gateCloseTicks;
+    int gateCloseFrames;
+    double gateCloseMs;
+
+    /// <summary>
+    /// Each frame between a dialog's close and its kept-objects read until it is seen: the frame its nodes are gone in
+    /// (fewer than half of what its open added left), and the wall ms since the close.
+    /// </summary>
+    void GateCloseWatch(int frame)
+    {
+        long openNodes = gateOpens[^1]["nodes"].GetValue<long>();
+        if (Performance.GetMonitor(Performance.Monitor.ObjectNodeCount) - gateOpen.Nodes >= openNodes / 2.0) return;
+        gateCloseFrames = frame;
+        gateCloseMs = GateMark.Ms(gateCloseTicks, System.Diagnostics.Stopwatch.GetTimestamp());
+    }
+
     static readonly System.Collections.ICollection[] gateTrackers = new System.Collections.ICollection[2];
     internal static long GateWrapTotal() => GateWrap(0) + GateWrap(1);
     static long GateWrap(int slot) => gateTrackers[slot]?.Count ?? 0;
@@ -186,11 +202,24 @@ public partial class HudScene
                 o["kind"] = k == 0 ? "first" : "repeat";
                 gateOpens.Add(o);
             }
-            else if (r == 50) PerfToggle(d, false);
+            else if (r == 50) { PerfToggle(d, false); gateCloseTicks = System.Diagnostics.Stopwatch.GetTimestamp(); gateCloseFrames = -1; gateCloseMs = -1; }
+            else if (r > 50 && r < 100 - GateQuiet) { if (gateCloseFrames < 0) GateCloseWatch(r - 50); }
             else if (r == 100 - GateQuiet)
             {
+                double closeWallMs = GateMark.Ms(gateCloseTicks, System.Diagnostics.Stopwatch.GetTimestamp());
                 GateCollect();
-                ((JsonObject)gateOpens[^1])["kept_objects"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectCount) - gateOpen.Objects);
+                var o = (JsonObject)gateOpens[^1];
+                o["kept_objects"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectCount) - gateOpen.Objects);
+                // a diagnostic, not checked (an object, so PerfGate's metrics skip it): the frame (after the close) the
+                // open's nodes were gone in (-1: still there at the kept read), the wall ms to it, the wall ms of the
+                // frames up to the kept read, and the nodes still there at the read
+                o["close"] = new JsonObject
+                {
+                    ["frames"] = gateCloseFrames,
+                    ["wall_ms"] = Math.Round(gateCloseMs, 1),
+                    ["window_wall_ms"] = Math.Round(closeWallMs, 1),
+                    ["kept_nodes"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectNodeCount) - gateOpen.Nodes),
+                };
             }
             return;
         }
