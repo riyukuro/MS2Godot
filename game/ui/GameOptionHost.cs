@@ -300,8 +300,17 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public Action<int> DamageEffectAlpha;
 
     /// <summary>CGameOptionInterface::vfunc_10's hosted part (gameoptionstruct.cpp:388): the damage effect's SetAlpha with
-    /// the option's damageEffectAlpha. STILL-OPEN: the damage meters (0x4f22 / 0x4f23) are not hosted.</summary>
-    public void ApplyInterface(GameOption.Interface state) => DamageEffectAlpha?.Invoke(state.DamageEffectAlpha);
+    /// the option's damageEffectAlpha. The individual (0x4edf) and chaos (0x4f23) meters are hosted.</summary>
+    public void ApplyInterface(GameOption.Interface state)
+    {
+        IndividualMeterShown?.Invoke(state.EnableIndividualDamageMeter && state.IndividualDamageMeterAllowed);   // :367-375, IsIndividualDamageMeterOn(&m_state)
+        ChaosMeterShown?.Invoke(state.EnableChaosDamageMeter && state.ChaosDamageMeterAllowed);                 // :376-384, IsChaosDamageMeterOn(&m_state)
+        DamageEffectAlpha?.Invoke(state.DamageEffectAlpha);
+    }
+    /// <summary>The HUD's chaos damage meter (UIChaosDPSDialog 0x4f23): opened while the meter is on and in a party, else closed.</summary>
+    public Action<bool> ChaosMeterShown;
+    /// <summary>The HUD's personal damage meter (UIIndividualDPSDialog 0x4edf): opened while the meter is on, else closed.</summary>
+    public Action<bool> IndividualMeterShown;
     public void SetMouseControl(bool on) => GD.Print($"options: mouse control {(on ? "on" : "off")} (CMouseController is not ported)");
     public void ResetUiLayout() => GD.Print("options: UI layout reset (UISwfEntityManager::ResetLayout is not ported)");
     public void UiScaleChanged(float scale) { }   // the UI scale is read from the option at layout (UiScale)

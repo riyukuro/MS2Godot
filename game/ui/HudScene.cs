@@ -262,6 +262,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPartySearch = null;
         unwatchPartyDps?.Invoke();
         unwatchPartyDps = null;
+        unwatchChaosDps?.Invoke();
+        unwatchChaosDps = null;
         unwatchDungeonRoom?.Invoke();
         unwatchDungeonRoom = null;
         unwatchDungeonControlCenter?.Invoke();
@@ -465,6 +467,8 @@ public partial class HudScene : Node, IUiStageHost
         ScreenMask();
         NoticeTab(uiRoot, constants);
         PerformanceOnEntry();                                              // the open list's 0x4e7d (uiservice.cpp:744)
+        IndividualDpsOnEntry();
+        ChaosDpsOnEntry();                                                 // the open list's 0x4f23 (uiservice.cpp:751)                                            // the open list's 0x4edf (uiservice.cpp:749)
         QuestNavigationSlot(uiRoot);
         SmartPushStrip(uiRoot);
         Minimap(uiRoot);
@@ -763,7 +767,7 @@ public partial class HudScene : Node, IUiStageHost
     void EnsureOptionHost()
     {
         if (optionDialog != null) return;
-        optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a), FrameRateShown = ShowPerformance };
+        optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a), FrameRateShown = ShowPerformance, IndividualMeterShown = ShowIndividualDps, ChaosMeterShown = ShowChaosDps };
         optionHost.AgreementReminder += SetAgreementReminder;
         optionHost.HasTutorial = FieldHasTutorial;
         if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
@@ -4633,6 +4637,8 @@ public partial class HudScene : Node, IUiStageHost
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
         TickPartyDps();                                                      // UIPartyDPSDialog::vfunc_72
+        TickChaosDps();                                                      // UIChaosDPSDialog::vfunc_72
+        TickIndividualDps();                                                 // UIIndividualDPSDialog::vfunc_72
         TickPerformance();                                                   // CMainSystem::OnTick's rate, UIPerformanceDialog::vfunc_72
         TickDungeonRoom();                                                   // UIDungeonRoomDialog's list
         TickDungeonReward();                                                 // UIDungeonRewardDialog::vfunc_72

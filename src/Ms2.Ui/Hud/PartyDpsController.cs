@@ -12,7 +12,7 @@ namespace Ms2.Ui.Hud;
 /// refreshing every 100 ms. The ctor (@0x141a7b050) sets m_2c 0x11, group 1, mode 0 and flag 0; the dtor is empty;
 /// vfunc_67 (@0x141a7bbf0) is UIDialog's close.
 /// </summary>
-public sealed class PartyDpsController : UiController
+public class PartyDpsController : UiController
 {
     public const int UiId = 0x4e8c;                     // vfunc_48 (@0x141a7c4b0)
     /// <summary>m_nGroup: the party group of the record manager.</summary>
@@ -57,6 +57,15 @@ public sealed class PartyDpsController : UiController
         this.records = records;
     }
 
+    /// <summary>The record manager's group the meter reads: the party group (1); the chaos meter's is 2.</summary>
+    protected virtual int GroupId => Group;
+    /// <summary>The common string key prefix of the meter's titles and notice lines.</summary>
+    protected virtual string KeyPrefix => "s_partydps";
+    /// <summary>vfunc_28's OnCloseDialog before the group stops (the chaos meter clears its option flag here).</summary>
+    protected virtual void OnCloseDialogOption() { }
+    /// <summary>vfunc_72's close condition: the party meter closes out of a party.</summary>
+    protected virtual bool ShouldClose() => !party.IsInParty;
+
     string CommonByKey(string key) => Model.Tables.Common(key) ?? "";
     string CommonKeyF(string key, params object[] args) => ClientFormat.Format(CommonByKey(key), args);
 
@@ -64,7 +73,7 @@ public sealed class PartyDpsController : UiController
     string ModeName(int mode) => BattleRecordManager.ModeKey(mode) is { Length: > 0 } key ? CommonByKey(key) : "";
 
     /// <summary>ParseDoubleW of GetRecordValueText: the meter value, 0 without a record.</summary>
-    double MeterValue(long characterId, int mode) => NumberText.ParseDoubleW(records.RecordValueText(Group, characterId, mode));
+    double MeterValue(long characterId, int mode) => NumberText.ParseDoubleW(records.RecordValueText(GroupId, characterId, mode));
 
     /// <summary>
     /// FUN_140a04830 (battlerecordmanager.cpp:296): the meter text, empty without a record. The rates (4, 5) are
@@ -92,7 +101,7 @@ public sealed class PartyDpsController : UiController
         base.OnLoadComplete();
         lastTick = null;
         Closing = false;
-        records.StartGroupIfInactive(Group);
+        records.StartGroupIfInactive(GroupId);
         OnTextToggle();
         RebuildRanking();
     }
@@ -101,7 +110,8 @@ public sealed class PartyDpsController : UiController
     public override bool OnCallbackBeforeDialog(string name, object[] args)
     {
         if (!string.Equals(name, "OnCloseDialog", StringComparison.OrdinalIgnoreCase)) return false;
-        records.StopGroup(Group);
+        OnCloseDialogOption();
+        records.StopGroup(GroupId);
         Closing = true;
         Close();
         return true;
@@ -124,7 +134,7 @@ public sealed class PartyDpsController : UiController
     /// onTextToggle goes to the next mode (0..6).</summary>
     public override bool OnCallback(string name, object[] args)
     {
-        if (string.Equals(name, "onReset", StringComparison.OrdinalIgnoreCase)) { records.StartGroup(Group); return true; }
+        if (string.Equals(name, "onReset", StringComparison.OrdinalIgnoreCase)) { records.StartGroup(GroupId); return true; }
         if (string.Equals(name, "onNotice", StringComparison.OrdinalIgnoreCase)) { PartyChat(NoticeText()); return true; }
         if (string.Equals(name, "onTextToggle", StringComparison.OrdinalIgnoreCase))
         {
@@ -144,14 +154,14 @@ public sealed class PartyDpsController : UiController
     public string NoticeText()
     {
         var now = ServerNow();
-        var text = new System.Text.StringBuilder(CommonKeyF("s_partydps_notice_history_prefix", now.Hour, now.Minute, now.Second, ModeName(Mode)));
-        string row = CommonByKey("s_partydps_notice_history_row");
+        var text = new System.Text.StringBuilder(CommonKeyF(KeyPrefix + "_notice_history_prefix", now.Hour, now.Minute, now.Second, ModeName(Mode)));
+        string row = CommonByKey(KeyPrefix + "_notice_history_row");
         for (int i = 0; i < ranking.Count && i < ShownRows; i++)
         {
             var m = ranking[i];
-            text.Append(ClientFormat.Format(row, i + 1, m.User.Name, MeterText(records, Group, m.CharacterId, Mode)));
+            text.Append(ClientFormat.Format(row, i + 1, m.User.Name, MeterText(records, GroupId, m.CharacterId, Mode)));
         }
-        text.Append(CommonKeyF("s_partydps_notice_history_total_time", records.ElapsedTimeText(Group)));
+        text.Append(CommonKeyF(KeyPrefix + "_notice_history_total_time", records.ElapsedTimeText(GroupId)));
         return text.ToString();
     }
 
@@ -160,7 +170,7 @@ public sealed class PartyDpsController : UiController
     void OnTextToggle()
     {
         if (Host?.Entity == null) return;
-        Host.Invoke("setTitle", (object)CommonKeyF("s_partydps_titlebar", ModeName(Mode)));
+        Host.Invoke("setTitle", (object)CommonKeyF(KeyPrefix + "_titlebar", ModeName(Mode)));
         Host.Invoke("setAscendingMeterValue", Mode == 6);
     }
 
@@ -184,7 +194,7 @@ public sealed class PartyDpsController : UiController
     /// <summary>FillMeterRow (@0x141a7b1a0): the row object, rank, level, job, name, meter value and text.</summary>
     AsObject Row(PartyMember m, int rank) => Host.Obj(
         ("rank", (uint)rank), ("level", (int)m.User.Level), ("job", m.User.Job), ("name", m.User.Name ?? ""),
-        ("meterValue", MeterValue(m.CharacterId, Mode)), ("meterText", MeterText(records, Group, m.CharacterId, Mode)));
+        ("meterValue", MeterValue(m.CharacterId, Mode)), ("meterText", MeterText(records, GroupId, m.CharacterId, Mode)));
 
     /// <summary>
     /// RebuildRanking (@0x141a7b540): setTime of the elapsed time; with members, the ranking rebuilt and sorted, the last's
@@ -193,7 +203,7 @@ public sealed class PartyDpsController : UiController
     public void RebuildRanking()
     {
         if (Host?.Entity == null) return;
-        Host.Invoke("setTime", (object)records.ElapsedTimeText(Group));
+        Host.Invoke("setTime", (object)records.ElapsedTimeText(GroupId));
         if (party.Members.Count == 0) return;
         ranking.Clear();
         foreach (var m in party.Members) if (m != null) ranking.Add(m);
@@ -221,7 +231,7 @@ public sealed class PartyDpsController : UiController
     public void Update(ulong nowMs)
     {
         if (IsClosed || Closing) return;
-        if (!party.IsInParty) { Closing = true; Close(); return; }
+        if (ShouldClose()) { Closing = true; Close(); return; }
         if (Host?.Entity == null) return;
         lastTick ??= nowMs;
         if (nowMs - lastTick.Value < 100) return;
