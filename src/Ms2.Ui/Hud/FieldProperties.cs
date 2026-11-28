@@ -71,10 +71,11 @@ public sealed class FieldProperties
     }
 
     /// <summary>The kinds whose apply this port has (each FieldPropertyXCli::vfunc_4 above, fieldpropertycli.cpp): the hide
-    /// (3), the tag symbols (5), the sight range (6), the weather (7), the two lights (8, 9) and the local cameras (10). The
-    /// others are read and kept but do nothing here: the gravity (1), the music concert (2), the lock of the own player (4)
-    /// and the photo studio (11).</summary>
-    public static bool Applies(byte kind) => kind is 3 or 5 or 6 or 7 or 8 or 9 or 10;
+    /// (3), the tag symbols (5), the sight range (6), the two lights (8, 9) and the local cameras (10). The others are read
+    /// and kept but do nothing here: the gravity (1), the music concert (2), the lock of the own player (4), the weather (7:
+    /// FieldPropertyWeatherCli::vfunc_4, fieldpropertycli.cpp:197, changes the effect service's weather; <see cref="Weather"/>
+    /// holds the value and nothing applies it yet, FieldWeather's STILL-OPEN) and the photo studio (11).</summary>
+    public static bool Applies(byte kind) => kind is 3 or 5 or 6 or 8 or 9 or 10;
 
     /// <summary>A record's vfunc_4, for the kinds the port applies.</summary>
     void ApplyOne(FieldProperty p)

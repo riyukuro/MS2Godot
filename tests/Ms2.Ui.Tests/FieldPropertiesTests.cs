@@ -147,4 +147,13 @@ public class FieldPropertiesTests
         Assert.That((f.Lights, f.Count), Is.EqualTo(((IFieldLights)null, 0)));
         Assert.That(l.Ambient, Is.EqualTo(new Vector3(1, 0, 0)), "a clear leaves the light as it is");
     }
+
+    [Test]
+    public void OnlyTheKindsWithAnApplyCountAsApplied()
+    {
+        // fieldpropertycli.cpp: the hide (3), the tag symbols (5), the sight range (6), the lights (8, 9) and the local cameras (10)
+        // have an apply here; the weather (7, :197) is kept in Weather but nothing changes the field's weather with it
+        var applied = Enumerable.Range(0, 13).Where(k => FieldProperties.Applies((byte)k)).ToArray();
+        Assert.That(applied, Is.EqualTo(new[] { 3, 5, 6, 8, 9, 10 }));
+    }
 }

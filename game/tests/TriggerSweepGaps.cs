@@ -68,6 +68,7 @@ public static class TriggerSweepGaps
         ["set_visible_ui"] = "Trigger type 0x14 sub 1 (MessengerBrowser, GroupMessengerBrowser, HighlightGameMenu) is read and dropped",
         ["shadow_expedition_open_boss_gauge"] = "the Maple2 server writes the title as a one-byte string; the client reads it wide (FieldGameScoreBoardCli open, @0x140f9c3a0 uishadowexpeditionbossbar.cpp:107, calls stream slot 8, ReadUnicodeString): a server writer bug",
         ["start_mini_game"] = "PlayerHost (RecvOp 0x105, opcodes.h:262; its handler scenestategame.cpp:5086) has no branch",
+        ["weather"] = "FieldProperty 7 (weather) is read and not applied (FieldProperties.Applies; FieldPropertyWeatherCli::vfunc_4, fieldpropertycli.cpp:197)",
         ["wedding_broken"] = "the Maple2 server only logs it: a server gap",
         ["wedding_mutual_agree"] = "the Wedding mode is read and not applied (WeddingManager::OnPacket, scenestategame.cpp:1955) (mode 30)",
         ["wedding_mutual_cancel"] = "the Wedding mode is read and not applied (WeddingManager::OnPacket, scenestategame.cpp:1955) (mode 31)",
