@@ -39,6 +39,12 @@ public sealed class HpBarClip
         if (node != null) node.Scale = new Vector2(u, u);
     }
 
+    /// <summary>Whether the next draw opens the bar (vfunc_5): never opened, or hidden since.</summary>
+    public bool NeedsOpen => needsOpen;
+
+    /// <summary>Whether the bar is on screen now (a live run's check).</summary>
+    public bool Drawn => node != null && node.Visible;
+
     /// <summary>The guide's full width at the current rank (m_c0), 0 before the bar first opens.</summary>
     public int FullWidth => fullWidth;
 
@@ -56,6 +62,8 @@ public sealed class HpBarClip
         if (rank != openRank) { Open(rank); dirty = true; }
         else if (needsOpen) { needsOpen = false; dirty = true; }     // the same rank reopens without re-reading the timeline
         if (dirty) { SetWidth(friendly, cur, max); dirty = false; }
+        // vfunc_6 (uihpbar.cpp:159-167): the label follows a relation change whether or not the HP changed
+        else if (gauge != null && gaugeFriendly != friendly) { gauge.GotoLabel(friendly ? "friendly" : "hostile"); gaugeFriendly = friendly; }
         node.Position = UiScale.StagePoint(screen, u);   // SetPositionFloat (uihpbar.cpp:171, 480, 618)
     }
 

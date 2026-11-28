@@ -2293,6 +2293,7 @@ public partial class LiveSession : Node
         player.ServerStateHold = ServerStateHoldsBody;
         ownStateExit.SequenceLength ??= OwnSequenceSeconds;
         ownStateExit.ActionLength ??= n => player != null && IsInstanceValid(player) ? player.ActionSeconds(n) : null;
+        ownStateExit.ActionNameAt ??= (type, index) => player != null && IsInstanceValid(player) ? player.Anims?.NameAt((Movement.ActionAnims.Act)type, index) : null;
         ownStateExit.SummonRideeDurationMs = SummonRideeDuration;   // Client::Constants SummonRideeDuration and RecallCastingTime
         ownStateExit.RecallCastingTimeMs = Constants()?.Int("RecallCastingTime", 5000) ?? 5000;
         player.SetBattleStance(SelfInBattle);

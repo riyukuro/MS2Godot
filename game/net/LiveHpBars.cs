@@ -24,9 +24,12 @@ namespace Ms2Godot.Net;
 /// <item>Place (vfunc_6 / vfunc_10): the actor's Eff_UI dummy, moved down by OffsetNpcHpbar / OffsetPcHpbar and
 /// FUN_1412762d0's camera shift, in stage units at the movie scale; hidden behind the camera and past HpBarDistance
 /// (Entity::vfunc_8's m_54, the actor's camera distance; 9999999 in the shipped table).</item>
+/// <item>PvP (<see cref="Ms2.Ui.Hud.PcHpBarRules"/>): a PC with a PvP point or one the local player finds hostile gets a
+/// bar too (PC::vfunc_80); a hostile PC's follows the monster option (FUN_1419923f0), draws the "hostile" gauge
+/// (FUN_141992580) and hides while its buffs hide it; a PC with a point opens at _rank100 (FUN_141992680) and shows at
+/// any distance unless hidden by its buffs (vfunc_8).</item>
 /// </list>
-/// Not ported: the PvP rules (HasPvPPoint, PC::vfunc_122's relation, FUN_1419923f0's hostile branch) — without a PvP
-/// state every bar draws rank 1 and the friendly gauge — and the optimizer's spawn gate (FUN_14123dbd0).
+/// Not ported: the optimizer's spawn gate (FUN_14123dbd0).
 /// </summary>
 public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
 {
@@ -34,7 +37,7 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
     {
         public Node3D Root; public Func<Vector3> Anchor; public float Offset;
         public NpcHpBar Npc; public NpcRow Row;          // npcs
-        public PcHpBar Pc; public long CharId;           // players
+        public PcHpBar Pc; public long CharId; public int ObjectId;   // players
         public Movement.RideData Ride;                   // players: the mount's row while riding
         public float Extra;                              // players: PCBase m_f174 (FUN_141670360)
     }
@@ -50,6 +53,12 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
     /// <summary>Whether a character is in the local player's party (CPartyManager::IsMemberByCharId with a party), the gate
     /// FUN_1419923f0 re-reads every frame for a player's bar; on when null.</summary>
     public Func<long, bool> InParty;
+    /// <summary>The local player's PC::vfunc_122 on a player of an object id (true: hostile); never hostile when null.</summary>
+    public Func<int, bool> Hostile;
+    /// <summary>PC::HasPvPPoint of a player of an object id; no point when null.</summary>
+    public Func<int, bool> HasPvpPoint;
+    /// <summary>PCBase::FUN_141674bc0 (the buff list's IsHidden) of a player of an object id; not hidden when null.</summary>
+    public Func<int, bool> BuffHidden;
 
     public LiveHpBars(Ms2.Formats.Pack.PackSet packs)
     {
@@ -107,13 +116,14 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
         return bar;
     }
 
-    /// <summary>A party member's bar (PC::vfunc_80), hung from the Eff_UI dummy of the pc table's row for its gender.</summary>
-    public PcHpBar AddPc(Node3D root, Func<Vector3> anchor, long characterId)
+    /// <summary>A player's bar (PC::vfunc_80: a party member, a PC with a PvP point or a hostile one), hung from the Eff_UI
+    /// dummy of the pc table's row for its gender.</summary>
+    public PcHpBar AddPc(Node3D root, Func<Vector3> anchor, long characterId, int objectId)
     {
         Remove(root);
         if (movie == null) return null;
         var bar = new PcHpBar(movie, u, this, pool);
-        bars[root] = new Entry { Root = root, Anchor = anchor, Offset = pcOffset, Pc = bar, CharId = characterId };
+        bars[root] = new Entry { Root = root, Anchor = anchor, Offset = pcOffset, Pc = bar, CharId = characterId, ObjectId = objectId };
         return bar;
     }
 
@@ -143,10 +153,11 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
     }
 
     /// <summary>FUN_1419923f0, which vfunc_8 re-reads every frame: the option of the actor's kind, and for a player the
-    /// party too (a member who leaves loses the bar at once; one who joins gains it at its next stat, stance or hit).
-    /// A friendly-2 npc row shares the party option (CNpc::vfunc_116's value).</summary>
-    bool Shown(Entry e) =>
-        e.Pc != null ? PartyGauge && (InParty?.Invoke(e.CharId) ?? true)
+    /// relation then the party (a member who leaves loses the bar at once; one who joins gains it at its next stat, stance
+    /// or hit; a hostile PC's follows the monster option). A friendly-2 npc row shares the party option (CNpc::vfunc_116's
+    /// value).</summary>
+    bool Shown(Entry e, bool hostile) =>
+        e.Pc != null ? Ms2.Ui.Hud.PcHpBarRules.Gate(PartyGauge, MonsterGauge, InParty?.Invoke(e.CharId) ?? true, hostile)
                      : e.Row != null && (e.Row.Friendly == 2 ? PartyGauge : MonsterGauge);
 
     public override void _Process(double delta)
@@ -164,7 +175,9 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
             // vfunc_10), then the bar's vfunc_8 rules, the distance check last (Entity::vfunc_8's m_54)
             Vector2? p = null;
             bool far = true;
-            if (layer && Shown(e) && e.Ride is not { NameTagHide: true })
+            // the relation is asked once per bar per frame, as FUN_1419923f0 / vfunc_8 / FUN_141992580 each re-read it
+            bool hostile = e.Pc != null && Hostile != null && Hostile(e.ObjectId);
+            if (layer && Shown(e, hostile) && e.Ride is not { NameTagHide: true })
             {
                 var a = e.Anchor();
                 if (!camera.IsPositionBehind(a))
@@ -176,15 +189,16 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
                 }
             }
             e.Npc?.Update(p, far);
-            e.Pc?.Update(p, far);
+            e.Pc?.Update(p, far, hostile, e.Pc != null && HasPvpPoint != null && HasPvpPoint(e.ObjectId),
+                e.Pc != null && BuffHidden != null && BuffHidden(e.ObjectId));
         }
         if (gone != null) foreach (var r in gone) Remove(r);
     }
 }
 
 /// <summary>
-/// One party-member player's head bar: UIHpBar::Entity of a PC. Rank 1 (FUN_141992680 without PvP points), the
-/// friendly gauge (both relation ids are 1 without PvP, FUN_141992580). An hp change shows it (FUN_141992230's PC
+/// One player's head bar: UIHpBar::Entity of a PC. Rank 1, or 100 with a PvP point (FUN_141992680, read at the open);
+/// the friendly gauge, or the hostile one while the local player finds it hostile (FUN_141992580, every drawn frame). An hp change shows it (FUN_141992230's PC
 /// branch) and the battle stance or a hurt spawn activates it (FUN_141992180 through UpdateHpBar), whose keep-alive is
 /// never cleared: once active it stays up at full HP too, as for the own PC's <see cref="PlayerHpBar"/>. vfunc_8 hides
 /// it while it is not shown or dead (hp 0) — its stance and damage rules only run inside the frame loop, which an
@@ -246,17 +260,27 @@ public sealed class PcHpBar
     /// <summary>UIHpBar::Entity::vfunc_8 for a PC: not shown or dead (hp 0) hides.</summary>
     bool Hidden => !Shown || cur <= 0;
 
-    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped, vfunc_8 decides, vfunc_6 places at the
-    /// screen point, vfunc_7 hides without one. UIHpBar::Entity::vfunc_8 (uihpbar.cpp:184) returns "show" before the base's
-    /// distance check (m_54) for a PC in battle or with hp != max, so those bars are never hidden for being far.</summary>
-    public void Update(Vector2? screen, bool far = false)
+    /// <summary>The frame the bar opened at (FUN_141992680 runs at the open only).</summary>
+    public int Rank { get; private set; } = 1;
+    /// <summary>The gauge label of the last drawn frame (FUN_141992580's m_b4).</summary>
+    public bool Friendly { get; private set; } = true;
+
+    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped, vfunc_8 decides
+    /// (<see cref="Ms2.Ui.Hud.PcHpBarRules.Hidden"/>: a PC in battle, with hp != max or with a PvP point shows before the
+    /// base's distance check m_54), vfunc_6 places at the screen point, vfunc_7 hides without one.</summary>
+    public void Update(Vector2? screen, bool far = false, bool hostile = false, bool hasPoint = false, bool buffHidden = false)
     {
         if (!Active) return;
-        if (Hidden || far && !(InBattle || cur != max)) { clip.Hide(); return; }
+        if (Hidden || Ms2.Ui.Hud.PcHpBarRules.Hidden(hostile, buffHidden, false, hasPoint, InBattle, cur != max, far)) { clip.Hide(); return; }
         if (screen == null) { clip.Hide(); return; }
-        clip.Draw(screen.Value, 1, true, cur, max, ref dirty);
+        if (clip.NeedsOpen) Rank = Ms2.Ui.Hud.PcHpBarRules.Rank(hasPoint);
+        Friendly = Ms2.Ui.Hud.PcHpBarRules.Friendly(false, hostile);
+        clip.Draw(screen.Value, Rank, Friendly, cur, max, ref dirty);
         LastPoint = screen.Value;
     }
+
+    /// <summary>Whether the bar is on screen now (a live run's check).</summary>
+    public bool Drawn => clip.Drawn;
 
     /// <summary>The screen point of the last frame it was drawn (a scripted live run's watch line); null before.</summary>
     public Vector2? LastPoint { get; private set; }

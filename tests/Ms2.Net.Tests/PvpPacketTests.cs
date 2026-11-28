@@ -36,6 +36,20 @@ public class PvpPacketTests {
     public void AnUnportedModeLeavesItsBodyUnread() =>
         Assert.That(PvpMessage.Read(R(w => { w.WriteByte(9); w.WriteInt(5); })), Is.EqualTo(new PvpOther(9)));
 
+    /// <summary>CPVPManager::OnMessage's Unk_PvpTimer part (unit_141017950_pvprankinglist.cpp:143-201).</summary>
+    [Test]
+    public void TheRankingModesReadTheirBodies() {
+        Assert.That(PvpMessage.Read(R(w => { w.WriteByte(0x67); w.WriteLong(1234567890123); w.WriteInt(-50); w.WriteInt(2); w.WriteInt(3); w.WriteInt(-1); })),
+            Is.EqualTo(new PvpRankRow(1234567890123, -50, 2, 3, uint.MaxValue)));
+        Assert.That(PvpMessage.Read(R(w => { w.WriteByte(0x68); w.WriteInt(4); })), Is.EqualTo(new PvpLastRank(4)));
+        Assert.That(PvpMessage.Read(R(w => { w.WriteByte(0x69); w.WriteInt(2423); w.WriteUnicodeString("Ann"); })), Is.EqualTo(new PvpKillNotice(2423, "Ann")));
+        Assert.That(PvpMessage.Read(R(w => { w.WriteByte(0x6a); w.WriteLong(42); w.WriteInt(-2); })), Is.EqualTo(new PvpDamage(42, 0xFFFFFFFEu)));
+    }
+
+    [Test]
+    public void ARankingBodyWithTrailingBytesIsRefused() =>
+        Assert.That(() => PvpMessage.Read(R(w => { w.WriteByte(0x68); w.WriteInt(1); w.WriteByte(0); })), Throws.Exception);
+
     [Test]
     public void ALongerPointBodyIsRefused() =>
         Assert.That(() => PvpMessage.Read(R(w => { w.WriteByte((byte)'d'); w.WriteInt(1); w.WriteInt(0); w.WriteByte(0); w.WriteByte(0); w.WriteByte(1); })), Throws.Exception);

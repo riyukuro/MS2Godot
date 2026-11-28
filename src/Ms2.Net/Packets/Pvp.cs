@@ -10,9 +10,12 @@ public abstract record PvpMessage(byte Mode) {
     /// <item>'d' 0x64: i32 object id, then CPvPInfo::ReadPointTeamMode (pvpinfo.cpp:156): i32 point, u8 team, u8 mode.</item>
     /// <item>'e' 0x65: u8 win (the own PC's win or lose pose).</item>
     /// <item>'f' 0x66: CPVPManager::Clear, no body.</item>
+    /// <item>0x67-0x6a, CPVPManager::OnMessage (pvpmanager.cpp:88) -> Unk_PvpTimer::OnMessage (@0x141017950,
+    /// unit_141017950_pvprankinglist.cpp:143-201), the field ranking: 0x67 i64 character id, i32 score, kill, death, n1c;
+    /// 0x68 i32 rank; 0x69 i32 string id, unicode name; 0x6a i64 character id, i32 damage (read as unsigned).</item>
     /// </list>
     /// Every other mode is a <see cref="PvpOther"/> with its body left unread: the arena, rank duel, team and guild modes
-    /// (9-0x11, 'r', 'u', 4, CPVPManager::OnMessage) are not ported. STILL-OPEN: those readers.
+    /// (4, 9-0x12, 0x16-0x1f, 'r', 'u', the team tables 0x6b-0x71) are not ported. STILL-OPEN: those readers.
     /// </summary>
     public static PvpMessage Read(ByteReader r) {
         byte mode = r.ReadByte();
@@ -21,6 +24,10 @@ public abstract record PvpMessage(byte Mode) {
             case (byte)'d': m = new PvpPointInfo(r.ReadInt(), r.ReadInt(), r.ReadByte(), r.ReadByte()); break;
             case (byte)'e': m = new PvpWinLose(r.ReadBool()); break;
             case (byte)'f': m = new PvpClear(); break;
+            case 0x67: m = new PvpRankRow(r.ReadLong(), r.ReadInt(), r.ReadInt(), r.ReadInt(), (uint)r.ReadInt()); break;
+            case 0x68: m = new PvpLastRank(r.ReadInt()); break;
+            case 0x69: m = new PvpKillNotice(r.ReadInt(), r.ReadUnicodeString()); break;
+            case 0x6a: m = new PvpDamage(r.ReadLong(), (uint)r.ReadInt()); break;
             default: return new PvpOther(mode);
         }
         r.ExpectEnd("Pvp");
@@ -36,6 +43,18 @@ public sealed record PvpWinLose(bool Win) : PvpMessage((byte)'e');
 
 /// <summary>Pvp 'f': CPVPManager::Clear.</summary>
 public sealed record PvpClear() : PvpMessage((byte)'f');
+
+/// <summary>Pvp 0x67: a character's ranking row (Unk_PvpTimer FUN_141018260).</summary>
+public sealed record PvpRankRow(long CharacterId, int Score, int Kill, int Death, uint N1c) : PvpMessage(0x67);
+
+/// <summary>Pvp 0x68: the own last rank for the result dialog (UIPvPResultDialog::SetLastResult).</summary>
+public sealed record PvpLastRank(int Rank) : PvpMessage(0x68);
+
+/// <summary>Pvp 0x69: FormatStringId(string id, name) as a system notice of type 4 with System_KillSlayer.</summary>
+public sealed record PvpKillNotice(int StringId, string Name) : PvpMessage(0x69);
+
+/// <summary>Pvp 0x6a: a character's damage (Unk_PvpTimer FUN_141018540).</summary>
+public sealed record PvpDamage(long CharacterId, uint Damage) : PvpMessage(0x6a);
 
 /// <summary>A Pvp mode whose reader is not ported (the body stays unread).</summary>
 public sealed record PvpOther(byte OtherMode) : PvpMessage(OtherMode);

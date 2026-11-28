@@ -31,9 +31,12 @@ public partial class HudScene
         live.OwnPcRelation = own;
         Action<PlayerKillNotice> on = OnPlayerKillNotice;
         live.PlayerKillNoticeReceived += on;
+        Action<PvpKillNotice> onPvp = OnPvpKillNotice;
+        live.PvpKillNoticeReceived += onPvp;
         unwatchPvp = () =>
         {
             live.PlayerKillNoticeReceived -= on;
+            live.PvpKillNoticeReceived -= onPvp;
             if (live.OwnPcRelation == own) live.OwnPcRelation = null;
         };
     }
@@ -60,6 +63,22 @@ public partial class HudScene
             FieldAudio.Instance?.PlayUi("System_KillSlayer");
         }
     }
+
+    /// <summary>
+    /// Pvp 0x69 (Unk_PvpTimer::OnMessage, unit_141017950_pvprankinglist.cpp:179-186): FormatStringId(string id, name) (the
+    /// common string's "{0}" text with the name) shown by ShowSystemNotice(text, 4, 1), and System_KillSlayer. The kill log
+    /// dialog does not open for it.
+    /// </summary>
+    void OnPvpKillNotice(PvpKillNotice n)
+    {
+        string text = Ms2.Quest.ClientFormat.Format(hudModel.Tables.Common(n.StringId), n.Name ?? "");
+        LastPvpKillNotice = text;
+        ChatLog.ShowSystemNotice?.Invoke(text, 4, true);
+        FieldAudio.Instance?.PlayUi("System_KillSlayer");
+    }
+
+    /// <summary>The last Pvp 0x69 notice text, for checks.</summary>
+    public string LastPvpKillNotice { get; private set; }
 
     void OpenKillLog()
     {

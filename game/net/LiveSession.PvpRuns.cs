@@ -116,15 +116,16 @@ public partial class LiveSession
             var pc = remote?.PcByName(a[0]);
             var c = remote?.HostileTagColor;
             GD.Print($"live: pvp {step}: field {FieldId}, found {pc != null}, object {pc?.ObjectId}, pvp {(pc is { } q ? remote.PvpOf(q.ObjectId) : null)}, " +
-                $"own {OwnPvp}, hostile {pc?.Hostile}, tag colour {pc?.TagColor}, hostile colour {c}");
+                $"own {OwnPvp}, hostile {pc?.Hostile}, tag colour {pc?.TagColor}, hostile colour {c}, bar [{(pc is { } pb ? remote.PcBarLine(pb.ObjectId) : "")}]");
             shot($"pctag_{a[0]}.png");
             if (a.Length > 1)
                 check($"{a[0]}'s tag is {a[1]}", pc is { } p && p.Hostile == (a[1] == "hostile") && (p.TagColor == c) == (a[1] == "hostile"));
             return true;
         }
-        if (step.StartsWith("pchit:"))      // pchit:<name>:N: a run to another player, faced, the attack key N times a second apart; a kill notice ends it
+        if (step.StartsWith("pchit:"))      // pchit:<name>:N[:<skill id>]: a run to another player, faced, the attack key (or the skill) N times a second apart; a kill notice ends it
         {
             var a = step[6..].Split(':');
+            uint skill = a.Length > 2 ? uint.Parse(a[2]) : 0;
             int killed = 0;
             Action<PlayerKillNotice> on = n => { if (n.Mode == 0 && n.Victim == a[0]) killed++; };
             PlayerKillNoticeReceived += on;
@@ -134,15 +135,66 @@ public partial class LiveSession
                 for (int n = 0; n < 60 * 10 && dist > 80 && GodotObject.IsInstanceValid(pc.Root); n++) { dist = hud.DriveTowardScripted(pc.Root.GlobalPosition, false); await frames(1); }
                 hud.DriveEnd();
                 dist = hud.FaceScripted(pc.Root.GlobalPosition);
-                bool cast = hud.AttackScripted();
-                if (i % 5 == 0) GD.Print($"live: pvp {step}: distance {dist:F0}: {(cast ? "cast" : "refused")}, hp {pc.Hp}");
+                bool cast = skill != 0 ? hud.CastSkillScripted(skill) : hud.AttackScripted();
+                if (i % 5 == 0) GD.Print($"live: pvp {step}: distance {dist:F0}: {(cast ? "cast" : "refused")}, hp {pc.Hp}, bar [{remote.PcBarLine(pc.ObjectId)}]");
                 await frames(60);
             }
             await frames(60);
             PlayerKillNoticeReceived -= on;
-            GD.Print($"live: pvp {step}: kill notices {killed}, kill log row 1 [{KillRow(1)}]");
+            GD.Print($"live: pvp {step}: kill notices {killed}, kill log row 1 [{KillRow(1)}], {a[0]}'s bar [{(remote?.PcByName(a[0]) is { } v ? remote.PcBarLine(v.ObjectId) : "gone")}]");
             shot($"pchit_{a[0]}.png");
             check($"the hits on {a[0]} end in a kill notice", killed > 0);
+            return true;
+        }
+        if (step.StartsWith("pvpdied:"))      // pvpdied:<killer>:<seconds>: waits for the server's kill notice of the own death, then the log, the chat line and the death
+        {
+            var a = step[8..].Split(':');
+            string me = Me.User?.Name ?? "";
+            int got = 0, logsBefore = chat.Logs.Count;
+            Action<PlayerKillNotice> on = n => { if (n.Mode == 0 && n.Victim == me) got++; };
+            PlayerKillNoticeReceived += on;
+            await until(() => got > 0, 60 * int.Parse(a[1]));
+            await frames(90);
+            PlayerKillNoticeReceived -= on;
+            var lines = chat.Logs.Skip(logsBefore).Where(l => l.Kind == Ms2.Ui.Hud.PvPKillLogController.ChatKind).Select(l => l.Msg).ToList();
+            string row = KillRow(1);
+            GD.Print($"live: pvp {step}: kill notices {got}, own dead {Me.Dead}, body {(player != null && IsInstanceValid(player) ? player.State : null)}, " +
+                $"row 1 [{row}], chat 0x14 lines {lines.Count}: {string.Join(" | ", lines.Select(l => l.Length > 160 ? l[..160] : l))}");
+            shot("pvpdied.png");
+            check($"the server's kill notice of the own death shows {a[0]}'s row, logs it and the own PC is dead",
+                got == 1 && Me.Dead && row.Contains($"attacker \"{a[0]}\"") && row.Contains($"target \"{me}\"") && lines.Count == 1 && lines[0].Contains(a[0]));
+            return true;
+        }
+        bool HandleLocal(Ms2.Net.Wire.RawPacket p) { Handle(p); return true; }
+        if (step.StartsWith("pvpend:"))      // pvpend:<win|lose|clear|rank|notice>: raw Pvp 'e' / 'f' / 0x67 (own row) / 0x69 (string 2421), then the state each sets
+        {
+            string arg = step[7..];
+            var b = new List<byte>();
+            Op(b, game.Profile.Number(Ms2.Net.Inbound.Pvp));
+            long cid = CharacterId;
+            int entered = PvpWinLosesEntered, rows = PvpRanking.Count;
+            switch (arg)
+            {
+                case "win": case "lose": b.Add((byte)'e'); b.Add((byte)(arg == "win" ? 1 : 0)); break;
+                case "clear": b.Add((byte)'f'); break;
+                case "rank": b.Add(0x67); I64(b, cid); I32(b, 3); I32(b, 2); I32(b, 1); I32(b, 0); break;
+                case "notice": b.Add(0x69); I32(b, 2421); Unicode(b, Me.User?.Name ?? ""); break;
+            }
+            // The server's debug packet command refuses a packet under 4 bytes and 'f' is 3 (no body), so 'f' goes
+            // through the own receive path (Handle: the same reader and OnPvp a server packet takes).
+            bool sent = arg == "clear" ? HandleLocal(new Ms2.Net.Wire.RawPacket(game.Profile.Number(Ms2.Net.Inbound.Pvp), [(byte)'f']))
+                : hud.SubmitChatLine("/debug packet " + Hex(b));
+            await frames(60);
+            GD.Print($"live: pvp {step}: sent {sent}, team {Me.PvpTeam}, poses {PvpWinLosesEntered - entered}, played {OwnStateEnterPlayed ?? "nothing"}, " +
+                $"state {Me.State:x}, ranking rows {rows} -> {PvpRanking.Count}, own rank {PvpRanking.RankOf(cid)}, notice \"{hud.LastPvpKillNotice}\"");
+            shot($"pvpend_{arg}.png");
+            switch (arg)
+            {
+                case "win": case "lose": check($"Pvp 'e' {arg} plays the pose", PvpWinLosesEntered == entered + 1 && OwnStateEnterPlayed != null); break;
+                case "clear": check("Pvp 'f' empties the ranking", rows > 0 && PvpRanking.Count == 0); break;
+                case "rank": check("Pvp 0x67 ranks the own row", PvpRanking.RankOf(cid) == 1); break;
+                case "notice": check("Pvp 0x69 shows the streak text with the name", hud.LastPvpKillNotice is { Length: > 0 } t && t.Contains(Me.User?.Name ?? "?") && !t.StartsWith("s_")); break;
+            }
             return true;
         }
         if (step.StartsWith("pkzone:"))      // pkzone:<in|out|?>: the pk zone flag the field's fade-in left (UISceneGamePlay's m_c8); ? only prints it

@@ -464,6 +464,9 @@ public sealed partial class RemoteLayer : Node3D
         {
             // FUN_1419923f0 re-reads the party per frame for a player's bar; the same lookup the client's IsMemberByCharId does
             InParty = id => LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(id) != null,
+            Hostile = PcHostileToOwn,
+            HasPvpPoint = id => users.TryGetValue(id, out var u) && u.Pvp.HasPoint,
+            BuffHidden = id => users.TryGetValue(id, out var u) && (u.Buffs?.IsHidden ?? false),
         });
         npcs.Bars = bars;
         // UIBuffBalloon (0x4ea4): each actor's balloon, asked for by its buff list (PC::vfunc_84, CNpc::vfunc_84)
@@ -969,17 +972,19 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>The ground effect actions the remote PCs played (steps and landings).</summary>
     public int GroundEffectsPlayed;
 
-    /// <summary>PC::vfunc_80's gate: the party gauge option on (the status option the client reads at +0xc), in a party,
-    /// and one of its members (MyPC::IsMemberByCharId).</summary>
-    bool CanPcBar(long characterId) =>
-        bars.PartyGauge && LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(characterId) != null;
+    /// <summary>PC::vfunc_80's gate (<see cref="Ms2.Ui.Hud.PcHpBarRules.Makes"/>): the party gauge option on (the status
+    /// option the client reads at +0xc), and the PC has a PvP point, is a party member (MyPC::IsMemberByCharId) or is
+    /// hostile to the local player.</summary>
+    bool CanPcBar(Remote r) =>
+        Ms2.Ui.Hud.PcHpBarRules.Makes(bars.PartyGauge, r.Pvp.HasPoint,
+            LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(r.CharacterId) != null, PcHostileToOwn(r));
 
-    /// <summary>The member's bar, made on demand (PC::vfunc_80 is called from UpdateHpBar, OnStat and a hit, so the
+    /// <summary>The player's bar, made on demand (PC::vfunc_80 is called from UpdateHpBar, OnStat and a hit, so the
     /// entity is made at the first of those, not at the spawn).</summary>
     PcHpBar EnsureBar(Remote r)
     {
-        if (r.Bar != null || !CanPcBar(r.CharacterId)) return r.Bar;
-        r.Bar = bars.AddPc(r.Root, r.Anchor, r.CharacterId);
+        if (r.Bar != null || !CanPcBar(r)) return r.Bar;
+        r.Bar = bars.AddPc(r.Root, r.Anchor, r.CharacterId, r.ObjectId);
         bars.Ride(r.Root, r.Ridee?.Mount?.Data);
         bars.SetExtraOffset(r.Root, r.Pc?.HpBarExtra ?? 0);
         return r.Bar;

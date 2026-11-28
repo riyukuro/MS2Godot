@@ -17,6 +17,15 @@ public sealed partial class RemoteLayer
         return true;
     }
 
+    /// <summary>WorldService::FUN_141bd1530 (worldservice_1.cpp:6211) over the other players, then vfunc_77: the name of the
+    /// field's player with this character id; null when none is here.</summary>
+    public string NameOfCharacter(long characterId)
+    {
+        foreach (var r in users.Values)
+            if (r.CharacterId == characterId) return r.Name ?? "";
+        return null;
+    }
+
     /// <summary>The PvP info of another player (the live run's view); null when there is no such player.</summary>
     public Ms2.Ui.Skills.PvpInfo? PvpOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Pvp : null;
 
@@ -30,6 +39,11 @@ public sealed partial class RemoteLayer
         return null;
     }
 
+    /// <summary>Another player's head bar now (the live run's view).</summary>
+    public string PcBarLine(int objectId) =>
+        !users.TryGetValue(objectId, out var r) ? "no pc" : r.Bar is not { } b ? $"no bar (can {CanPcBar(r)})" :
+        $"active {b.Active}, shown {b.Shown}, drawn {b.Drawn}, rank {b.Rank}, friendly {b.Friendly}, monster option {bars.MonsterGauge}";
+
     /// <summary>NameTagColorPCHostile as the tags read it, for checks.</summary>
     public Color? HostileTagColor => tags?.HostileColor;
 
@@ -38,11 +52,15 @@ public sealed partial class RemoteLayer
     /// field's pkMode), the name tag's NameTagColorPCHostile test (PC::vfunc_53, pc.cpp:4459); false for an id that is no
     /// other player here or without the own relation (<see cref="LiveSession.OwnPcRelation"/>).
     /// </summary>
-    bool PcHostileToOwn(int objectId)
+    bool PcHostileToOwn(int objectId) => users.TryGetValue(objectId, out var r) && PcHostileToOwn(r);
+
+    /// <summary>The same for a player not yet in the table (its spawn, PC::vfunc_10).</summary>
+    bool PcHostileToOwn(Remote r)
     {
         var live = LiveSession.Instance;
         var ownOf = live?.OwnPcRelation;
-        if (ownOf == null || !users.TryGetValue(objectId, out var r) || r.Pc == null) return false;
+        if (ownOf == null || r.Pc == null) return false;
+        int objectId = r.ObjectId;
         bool pk = FieldPkMode() != 0;
         // off a pk field a PC without a point is never hostile (PvPPoint differs, or both teams are 1): the name tags ask this
         // per player per frame, so skip building the two candidates on the fields where it cannot be true

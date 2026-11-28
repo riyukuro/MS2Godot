@@ -144,7 +144,7 @@ public sealed class OwnStateExit
         new("StatePuppetNpc", 0x23, StateExitCause.NotOwn, "stateidle.cpp:1034", "an NPC, pet or doll state"),
         new("StateTaxiCall", 0x25, StateExitCause.AtOnce, "statetaxicalldata.cpp:171-174", "no StateTaxiCallData: the enter goes on to StateIdle (TaxiCalling runs a call the own pc starts)"),
         new("StateSummon", 0x26, StateExitCause.CastingBar, "statesummon.cpp:199-272, 283-294, 297-373, 390-400", "no StateSummonData: the casting bar (string 0, SummonRideeDuration); its finish enters StateIdle, as a hit does (vfunc_6); the summon the own pc starts with an item is rideSummon's"),
-        new("StatePvPWinLose", 0x28, StateExitCause.NoSelfExit, "statepvpwinlose.cpp:46-53, 65-70", "sub 0: no win or lose sequence plays, so the sequence end never leaves; the input step is State's (a queued skill only)"),
+        new("StatePvPWinLose", 0x28, StateExitCause.NoSelfExit, "statepvpwinlose.cpp:46-53, 65-70", "sub 0 (the server's state): no win or lose sequence plays, so the sequence end never leaves; Pvp 'e' enters it with sub 0x73 / 0x74 (EnterPvpWinLose), whose sequence end leaves; the input step is State's (a queued skill only)"),
         new("StateUseFurniture", 0x29, StateExitCause.Later, "stateusefurnituredata.cpp:281", "its feature (furniture/home) is under Later; client exit: the frame at stateusefurnituredata.cpp:281 -> 1"),
         new("StateCashCall", 0x2a, StateExitCause.AtOnce, "statecashcalldata.cpp:159-162", "no StateCashCallData: the enter goes on to StateIdle"),
         new("StateGrabTarget", 0x2b, StateExitCause.AtOnce, "statedatagrabtarget.cpp:87-89", "no StateDataGrabTarget: the enter goes on to StateIdle"),
@@ -211,7 +211,7 @@ public sealed class OwnStateExit
         new("StatePuppetNpc", 0x23, StateEnterPlay.NotOwn, "", ""),
         new("StateTaxiCall", 0x25, StateEnterPlay.Nothing, "Idle at once (Object_React_B only with data)", "statetaxicalldata.cpp:171-202"),
         new("StateSummon", 0x26, StateEnterPlay.CastingBar, "the casting bar (string 0, SummonRideeDuration); no sequence (sub 0)", "statesummon.cpp:199-272, 375-388"),
-        new("StatePvPWinLose", 0x28, StateEnterPlay.Nothing, "sub 0: no win or lose sequence", "statepvpwinlose.cpp:46-53"),
+        new("StatePvPWinLose", 0x28, StateEnterPlay.Nothing, "sub 0: no win or lose sequence (Pvp 'e''s subs play MODEPVP_WIN / MODEPVP_DEAD, EnterPvpWinLose)", "statepvpwinlose.cpp:46-53"),
         new("StateUseFurniture", 0x29, StateEnterPlay.Later, "", "stateusefurnituredata.cpp:167"),
         new("StateCashCall", 0x2a, StateEnterPlay.Nothing, "Idle at once", "statecashcalldata.cpp:159-162"),
         new("StateGrabTarget", 0x2b, StateEnterPlay.Nothing, "Idle at once", "statedatagrabtarget.cpp:87-89"),
@@ -501,6 +501,37 @@ public sealed class OwnStateExit
         Face = OwnStun.Face;
         TakeStunPlay();
         State = 0x12; Cause = StateExitCause.SequenceEnd;
+        return true;
+    }
+
+    /// <summary>StatePvPWinLose's subs from Pvp 'e' (scenestategame.cpp:5006-5013): 0x73 win, 0x74 lose.</summary>
+    public const int PvpWinSub = 0x73, PvpLoseSub = 0x74;
+    /// <summary>The pcactiondata types the subs play (statepvpwinlose.cpp:46-53): 0x41 MODEPVP_WIN, 0x40 MODEPVP_DEAD.</summary>
+    public const int PvpWinAction = 0x41, PvpLoseAction = 0x40;
+    /// <summary>PCBase::FUN_141679170(type, index): the body's sequence of the action list's index-th name; null when the list
+    /// has no such entry or the body lacks it (PlayAnimation then plays nothing).</summary>
+    public Func<int, int, string> ActionNameAt;
+
+    /// <summary>
+    /// Pvp 'e' (scenestategame.cpp:5006-5013): MyPC::vfunc_59(0x28, 0, sub, 0). The caller has entered the state (PC::vfunc_124
+    /// and ChangeState's checks). A running StatePvPWinLose keeps running with nothing replayed (State::vfunc_25, state.cpp:751-756,
+    /// only sets the sub); else StatePvPWinLose::vfunc_4 (statepvpwinlose.cpp:37-54) plays action 0x41 (sub 0x73) or 0x40 (sub
+    /// 0x74) at the index of the local PC's CPvPInfo team, once at speed 1; EndOfSequence (65-70) enters StateIdle when it
+    /// ends. A sequence the body lacks plays nothing and the state stays. Returns true when the state was entered now.
+    /// </summary>
+    public bool EnterPvpWinLose(int sub, int team)
+    {
+        if (State == 0x28) return false;
+        Clear();
+        int action = sub == PvpWinSub ? PvpWinAction : sub == PvpLoseSub ? PvpLoseAction : 0;
+        string name = action != 0 ? ActionNameAt?.Invoke(action, team) : null;
+        if (name != null)
+        {
+            Play(name, false, false);
+            Sequence = name;
+            Left = SequenceLength?.Invoke(name) ?? -1;
+        }
+        State = 0x28; Cause = StateExitCause.NoSelfExit;
         return true;
     }
 

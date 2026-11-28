@@ -25,7 +25,7 @@ public sealed class ActionAnims
         TalkUp = 45, TalkIdle = 46, ListenIdle = 47,
         WaterIdle = 48, WaterSwim = 49, WaterDash = 50, Revival = 51, Dead = 52, Hit = 53,
         UgcCraftIdle = 54, CraftIdle = 55, CraftRun = 56, CraftWalk = 57, CraftJumpUp = 58, CraftJumpDown = 59, CraftJumpLand = 60,
-        HoldIdle = 62, FallDamage = 63, ModePvpDead = 64,
+        HoldIdle = 62, FallDamage = 63, ModePvpDead = 64, ModePvpWin = 65,
     }
 
     static readonly string[] TypeNames =
@@ -39,8 +39,9 @@ public sealed class ActionAnims
         "SPECIAL_JUMP_DOWN", "REGEN", "TALK_UP", "TALK_IDLE", "LISTEN_IDLE", "WATER_IDLE", "WATER_SWIM", "WATER_DASH",
         "REVIVAL", "DEAD", "HIT", "UGC_CRAFT_IDLE", "CRAFT_IDLE", "CRAFT_RUN", "CRAFT_WALK", "CRAFT_JUMP_UP",
         "CRAFT_JUMP_DOWN", "CRAFT_JUMP_LAND", "FITTING_IDLE", "HOLD_IDLE", "FALL_DAMAGE", "MODEPVP_DEAD",
-        // 65-74 (actioncontainer.cpp:547-566): no Act of their own, so the body does not load them; a mount plays the stunt jump
-        "MODEPVP_WIN", "HAPPY", "SKILL", "AUTO_REVIVE", "NUTRIENT", "STUNT_JUMP_UP", "STUNT_JUMP_DOWN", "STUNT_JUMP_LAND",
+        "MODEPVP_WIN",
+        // 66-74 (actioncontainer.cpp:547-566): no Act of their own, so the body does not load them; a mount plays the stunt jump
+        "HAPPY", "SKILL", "AUTO_REVIVE", "NUTRIENT", "STUNT_JUMP_UP", "STUNT_JUMP_DOWN", "STUNT_JUMP_LAND",
         "CHARACTER_SELECT_BORE", "CHARACTER_SELECT_BORE_IDLE",
     };
 
@@ -177,7 +178,7 @@ public sealed class ActionAnims
             aa.lists[a] = list;
             string key = list[0].ToLowerInvariant();
             // loaded on demand (battle stance, NameAt, the cube mode's carry and build motions)
-            if (a is Act.BattleIdle or Act.ModePvpDead or (>= Act.UgcCraftIdle and <= Act.CraftJumpLand)) { aa.names[a] = key; continue; }
+            if (a is Act.BattleIdle or Act.ModePvpDead or Act.ModePvpWin or (>= Act.UgcCraftIdle and <= Act.CraftJumpLand)) { aa.names[a] = key; continue; }
             if (!lib.HasAnimation(key))
             {
                 KfAnimation kf;
