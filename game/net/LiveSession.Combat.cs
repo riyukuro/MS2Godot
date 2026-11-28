@@ -1963,7 +1963,7 @@ public partial class LiveSession
                 continue;
             }
             // fadeaway:<skill id>:<walk frames>:<air frames>[:<cast offset>]: walk left, jump (C) still holding left, let go of
-            // left in the air, then press right and cast. Offset 0 casts from the right key's own press (the scene's key
+            // left in the air, then tap right and cast. Offset 0 casts from the right key's own press (the scene's key
             // dispatch, before the frame's physics step: the same frame), -1 one frame before the press, 1 one frame after.
             // With MS2_LIVE_SYNC_TRACE=1 the sync records sent are logged.
             if (step.StartsWith("fadeaway:"))
@@ -1991,9 +1991,9 @@ public partial class LiveSession
                 Ui.HudScene.ScriptedInput = null;
                 if (off > 0) Cast();
                 var at = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                await frames(1); KeyEv(Key.Right, false);   // a tap, as the retail capture: the skill's records and the idle after it read 9
                 Shot($"fadeaway{off}_0.png");
                 await frames(6); Shot($"fadeaway{off}_1.png");
-                await frames(6); KeyEv(Key.Right, false);
                 await frames(60);
                 var end = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
                 GD.Print($"live: combat {step}: {(cast ? "cast" : "refused")} at frame {castFrame}, right pressed at frame {rightFrame}, cast at {at}, end {end}");
