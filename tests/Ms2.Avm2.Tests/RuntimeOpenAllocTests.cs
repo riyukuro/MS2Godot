@@ -24,7 +24,7 @@ public class RuntimeOpenAllocTests
         for (int i = 0; i < 20; i++) New();
         double ms = sw.Elapsed.TotalMilliseconds / 20;
         TestContext.WriteLine($"new runtime + flash classes: {bytes} B, {ms:F3} ms");
-        Assert.That(bytes, Is.LessThan(1_150_000));   // 1066536 B (Release); each native global and constant copied every slot before
+        Assert.That(bytes, Is.LessThan(1_100_000));   // 1051424 B (Release); each native global and constant copied every slot before
     }
 
     [Test]
@@ -41,6 +41,6 @@ public class RuntimeOpenAllocTests
         for (int i = 0; i < 10; i++) Open();
         double ms = sw.Elapsed.TotalMilliseconds / 10;
         TestContext.WriteLine($"second open of uiquestdialog: {bytes} B, {ms:F3} ms");
-        Assert.That(bytes, Is.LessThan(3_000_000));   // 2909960 B (Release)
+        Assert.That(bytes, Is.LessThan(3_000_000));   // 2894848 B (Release)
     }
 }

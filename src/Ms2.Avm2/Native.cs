@@ -82,7 +82,7 @@ public sealed partial class Runtime
         var c = NewNativeClass(at.Name, super, cls => (AsObject)Activator.CreateInstance(t), at.Dynamic);
         c.NativeType = t;
         c.IsFinal = at.Final;
-        foreach (var (mi, isCtor, asAt) in refl.Methods)
+        foreach (var (mi, isCtor, asAt, sig) in refl.Methods)
         {
             if (isCtor)
             {
@@ -101,15 +101,14 @@ public sealed partial class Runtime
             }
             if (asAt == null || mi.IsSpecialName) continue;
             var name = asAt.Name ?? mi.Name;
-            var impl = new NativeMethod(at.Name + "/" + name, Caller(t, mi, at.Name, out var one), one);
+            var impl = new NativeMethod(at.Name + "/" + name, Caller(t, sig, at.Name, out var one), one);
             var table = mi.IsStatic ? c.Traits : c.InstanceTraits;
             table.Set(new Binding { Ns = Ns.Public, Local = name, Kind = BindingKind.Method, Method = impl });
         }
-        foreach (var (pi, asAt) in refl.Props)
+        foreach (var (pi, asAt, g, s) in refl.Props)
         {
             var name = asAt.Name ?? pi.Name;
-            var g = pi.GetGetMethod(true); var s = pi.GetSetMethod(true);
-            bool isStatic = (g ?? s).IsStatic;
+            bool isStatic = (g ?? s).Method.IsStatic;
             var b = new Binding { Ns = Ns.Public, Local = name, Kind = BindingKind.Accessor };
             if (g != null) b.Getter = new NativeMethod(at.Name + "/get " + name, Caller(t, g, at.Name, out var gOne), gOne);
             if (s != null) b.Setter = new NativeMethod(at.Name + "/set " + name, Caller(t, s, at.Name, out var sOne), sOne);
@@ -127,15 +126,21 @@ public sealed partial class Runtime
     sealed class Members
     {
         public readonly AsClassAttribute Class;
-        public readonly List<(MethodInfo Method, bool IsCtor, AsAttribute As)> Methods = new();
-        public readonly List<(PropertyInfo Property, AsAttribute As)> Props = new();
+        public readonly List<(MethodInfo Method, bool IsCtor, AsAttribute As, Signature Sig)> Methods = new();
+        public readonly List<(PropertyInfo Property, AsAttribute As, Signature Get, Signature Set)> Props = new();
         public readonly List<(FieldInfo Field, AsAttribute As)> Fields = new();
         public Members(Type t)
         {
             const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
             Class = t.GetCustomAttribute<AsClassAttribute>();
-            foreach (var mi in t.GetMethods(all)) Methods.Add((mi, mi.GetCustomAttribute<AsCtorAttribute>() != null, mi.GetCustomAttribute<AsAttribute>()));
-            foreach (var pi in t.GetProperties(all)) if (pi.GetCustomAttribute<AsAttribute>() is { } a) Props.Add((pi, a));
+            foreach (var mi in t.GetMethods(all))
+            {
+                var a = mi.GetCustomAttribute<AsAttribute>();
+                Methods.Add((mi, mi.GetCustomAttribute<AsCtorAttribute>() != null, a, a != null && !mi.IsSpecialName ? new Signature(mi) : null));
+            }
+            foreach (var pi in t.GetProperties(all))
+                if (pi.GetCustomAttribute<AsAttribute>() is { } a)
+                    Props.Add((pi, a, pi.GetGetMethod(true) is { } g ? new Signature(g) : null, pi.GetSetMethod(true) is { } s ? new Signature(s) : null));
             foreach (var fi in t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)) if (fi.GetCustomAttribute<AsAttribute>() is { } a) Fields.Add((fi, a));
         }
     }
@@ -149,22 +154,33 @@ public sealed partial class Runtime
         if (!t.IsInstanceOfType(self)) throw TypeError($"Error #1034: {cls} method called on {Rt.Describe(self)}.");
     }
 
-    static readonly Dictionary<MethodInfo, bool> RestParams = new();
+    /// <summary>What <see cref="Caller"/> reads of a reflected member, once per process: <see cref="MethodBase.GetParameters"/>
+    /// copies its array on every call, and the rest test reads an attribute (whose inherit walk reads AttributeUsageAttribute
+    /// and compiles reflection stubs).</summary>
+    sealed class Signature
+    {
+        public readonly MethodInfo Method;
+        public readonly ParameterInfo[] Params;   // shared: read only
+        public readonly bool Rest, Direct;
+        public Signature(MethodInfo mi)
+        {
+            Method = mi;
+            var ps = Params = mi.GetParameters();
+            Rest = ps.Length > 0 && ps[^1].ParameterType == typeof(object[]) && ps[^1].GetCustomAttribute<ParamArrayAttribute>() != null;
+            // the typed call (NativeCall.CallAs): every parameter a type FromAs coerces without a box of its own
+            Direct = !Rest && ps.Length <= 3 && Array.TrueForAll(ps, p => Runtime.Direct(p.ParameterType));
+        }
+    }
 
     /// <summary>The call of a reflected member from AS3 (the arguments coerced to its parameters' types, the result converted).
     /// <paramref name="one"/> is the same call for exactly one value without an argument array (a setter, a listener),
     /// or null for a member <see cref="NativeCall.CallAs1"/> can't take.</summary>
-    Func<object, object[], object> Caller(Type t, MethodInfo mi, string cls, out Func<object, object, object> one)
+    Func<object, object[], object> Caller(Type t, Signature sig, string cls, out Func<object, object, object> one)
     {
-        var ps = mi.GetParameters();
-        bool rest;
-        // once per process: reading the attribute again (its inherit walk reads AttributeUsageAttribute) compiles reflection stubs
-        lock (RestParams)
-            if (!RestParams.TryGetValue(mi, out rest))
-                RestParams[mi] = rest = ps.Length > 0 && ps[^1].ParameterType == typeof(object[]) && ps[^1].GetCustomAttribute<ParamArrayAttribute>() != null;
+        var mi = sig.Method;
+        var ps = sig.Params;
+        bool rest = sig.Rest, direct = sig.Direct;
         bool isStatic = mi.IsStatic;
-        // the typed call (NativeCall.CallAs): every parameter a type FromAs coerces without a box of its own
-        bool direct = !rest && ps.Length <= 3 && Array.TrueForAll(ps, p => Direct(p.ParameterType));
         NativeCall native = null;
         Func<object, object[], object> full = (self, a) =>
         {
