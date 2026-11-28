@@ -856,7 +856,7 @@ public sealed class NpcLayer
 
     /// <summary>The speed the npc's animation plays at, 0 when the npc or its model is missing.</summary>
     /// <summary>Whether the npc's body is shown (the spawn state's hide reason off).</summary>
-    public bool BodyShown(int id) => inst.TryGetValue(id, out var i) && i.Visual != null && i.Visual.Visible;
+    public bool BodyShown(int id) => inst.TryGetValue(id, out var i) && i.Visual != null && (i.HideReasons & (1 << Ms2.Ui.OwnStateExit.SpawnHideReason)) == 0;
     public float AnimSpeed(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? (float)i.Player.SpeedScale : 0;
 
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
@@ -1151,24 +1151,35 @@ public sealed class NpcLayer
         foreach (var i in inst.Values) UpdateQuestVisibility(i);
     }
 
-    /// <summary>PCBase::AddHideReason / RemoveHideReason, then ApplyHideReasons (pcbase.cpp:1188-1203): vfunc_23 sets the
-    /// hidden flag (m_unk_b0) and the entity's visible property, here the root's Visible, which takes the body, the simple
-    /// shadow and the root's effects with it; the talk (actionkeyobject.cpp:1385), the click and the minimap read it, and the
-    /// name tag hides with it (UIHudEntity::Entity::vfunc_8, uihudentity.cpp:200).</summary>
+    /// <summary>PCBase::AddHideReason / RemoveHideReason, then ApplyHideReasons (<see cref="Ms2.Ui.ActorHideReasons"/>,
+    /// pcbase.cpp:1155-1203): vfunc_23 sets the hidden flag (m_unk_b0) and the entity's visible property, here the root's
+    /// Visible, which takes the body, the simple shadow and the root's effects with it; SetShadowVisible goes with it. The talk
+    /// (actionkeyobject.cpp:1385), the click and the minimap read it, and the name tag hides with it (UIHudEntity::Entity::vfunc_8,
+    /// uihudentity.cpp:200).</summary>
     void SetHideReason(Inst i, int reason, bool on)
     {
-        if (!Ms2.Ui.NpcQuestVisibility.SetHideReason(ref i.HideReasons, reason, on)) return;
-        bool shown = i.HideReasons == 0;
-        i.Root.Visible = shown;
-        Tags?.SetHidden(i.Root, !shown);
-        if (LiveSession.LiveCheck) GD.Print($"live: npc {i.NpcId} hide reason {reason} {(on ? "on" : "off")}, {(shown ? "shown" : "hidden")}");
+        var view = new HideView(this, i);
+        if (!Ms2.Ui.ActorHideReasons.Apply(ref i.HideReasons, reason, on, ref view)) return;
+        if (LiveSession.LiveCheck) GD.Print($"live: npc {i.NpcId} hide reason {reason} {(on ? "on" : "off")}, {(i.HideReasons == 0 ? "shown" : "hidden")}");
     }
 
-    /// <summary>PCBase::AddHideReason / RemoveHideReason of the spawn state's reason, with the simple shadow (statespawn.cpp:72-73, :88-89).</summary>
-    static void SpawnHidden(Inst i, bool hidden)
+    /// <summary>The npc's root, name tag and simple shadow as ApplyHideReasons sets them.</summary>
+    readonly struct HideView : Ms2.Ui.IHideReasonView
     {
-        if (i.Visual != null) i.Visual.Visible = !hidden;
-        FieldShadows.SetShadowVisible(i.Root, !hidden);
+        readonly NpcLayer layer; readonly Inst i;
+        public HideView(NpcLayer layer, Inst i) { this.layer = layer; this.i = i; }
+        public void SetShown(bool shown) => i.Root.Visible = shown;
+        public void SetTagHidden(bool hidden) => layer.Tags?.SetHidden(i.Root, hidden);
+        public void SetShadowVisible(bool visible) => FieldShadows.SetShadowVisible(i.Root, visible);
+    }
+
+    /// <summary>StateSpawn::vfunc_4 / vfunc_5 (statespawn.cpp:72-73, :88-89): SetShadowVisible(false) then AddHideReason(10);
+    /// RemoveHideReason(10) then SetShadowVisible(true). The reason goes through the one apply, so the spawn hides the root
+    /// (body, shadow, effects and name tag), as the other reasons do.</summary>
+    void SpawnHidden(Inst i, bool hidden)
+    {
+        if (hidden) { FieldShadows.SetShadowVisible(i.Root, false); SetHideReason(i, Ms2.Ui.OwnStateExit.SpawnHideReason, true); }
+        else { SetHideReason(i, Ms2.Ui.OwnStateExit.SpawnHideReason, false); FieldShadows.SetShadowVisible(i.Root, true); }
     }
 
     /// <summary>AddHideReason(<paramref name="reason"/>) / RemoveHideReason on the object <paramref name="id"/>; false when it is not here.</summary>
@@ -1179,8 +1190,7 @@ public sealed class NpcLayer
         return true;
     }
 
-    /// <summary>PCBase::IsHidden @0x14166cad0 (pcbase.cpp:1175): any hide reason is set on the object <paramref name="id"/>.
-    /// STILL-OPEN: the spawn state's reason 10 is applied by SpawnHidden on the body alone and is not in the set yet.</summary>
+    /// <summary>PCBase::IsHidden @0x14166cad0 (pcbase.cpp:1175): any hide reason (1, 5 or 10) is set on the object <paramref name="id"/>.</summary>
     public bool IsHidden(int id) => inst.TryGetValue(id, out var i) && i.HideReasons != 0;
 
     /// <summary>
