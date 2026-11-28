@@ -208,6 +208,31 @@ public partial class FadeAwayCheck : Node3D
             GD.Print($"fade away {name}: drift x {r.DriftX:0.##} over 6 frames");
             if (Mathf.Abs(r.DriftX) > 0.5f) fails.Add($"{name}: drift {r.DriftX:0.##} in the air, not 0 (no velocity step)");
         }
+        // a cast in a fall that is not a jump (run off a ledge): vfunc_68 clears the controller step's x / y in state 0x10
+        // unless the body is jumping (pcbase.cpp:1783-1788; StateFall never calls StartJump), so the fall's sideways speed
+        // stops at the cast and only gravity moves the body
+        var fall = FallCast(new Vector3(4000 - 500, 950, 0));
+        GD.Print($"fade away fall cast: drift x {fall.DriftX:0.##} over 6 frames, still in the air {fall.Pc.State == Player.MoveState.Fall}");
+        if (fall.Pc.State != Player.MoveState.Fall) fails.Add($"fall cast: state {fall.Pc.State} after the cast's frames, not still falling");
+        if (Mathf.Abs(fall.DriftX) > 0.5f) fails.Add($"fall cast: drift {fall.DriftX:0.##}, not 0 (not jumping: the skill state clears x / y)");
+    }
+
+    // run left in the air until the fall state takes over with the key held (the fall's sideways speed set), let go and cast
+    Run FallCast(Vector3 at)
+    {
+        var r = Make(at);
+        var pc = r.Pc;
+        pc.FaceRotZ(270);
+        pc.Input2 = Left;
+        for (int i = 0; i < 60 && pc.State != Player.MoveState.Fall; i++) Frame(r);
+        Frame(r, 2);
+        if (pc.State != Player.MoveState.Fall) fails.Add($"fall cast: state {pc.State} before the cast, not falling");
+        pc.Input2 = Vector2.Zero;
+        Cast(r);
+        float x0 = pc.GlobalPosition.X;
+        Frame(r, 6);
+        r.DriftX = pc.GlobalPosition.X - x0;
+        return r;
     }
 
     // Unk_PCMove::UpdateMoveDirection (unit_141682f80.cpp:454-490) runs first in the cast's frame: up + right, then up let go
