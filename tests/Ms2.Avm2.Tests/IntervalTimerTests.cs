@@ -237,6 +237,74 @@ public class IntervalTimerTests
         Assert.That((b, c), Is.EqualTo((2, 0)));
     }
 
+    static object Global(Runtime rt, string name, params object[] args) => ((AsFunction)rt.GetGlobal("flash.utils." + name)).Call(null, args);
+
+    [Test]
+    public void AnIntervalThatClearsItselfInItsCallbackFiresOnce()
+    {
+        // clearInterval of the running timer only marks it (ClearIntervalTimer, sfr_gfx_01i.cpp:1127); Invoke then sets its
+        // next time, but a stopped timer is not invoked again and the pass takes it off
+        var (rt, p) = Movie();
+        int fires = 0, id = 0;
+        id = Rt.ToInt32(Global(rt, "setInterval", Fn(rt, () => { fires++; Global(rt, "clearInterval", id); }), 10));
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(fires, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ResetAndStartInsideTheTimerListenerRunFromANewCore()
+    {
+        // reset() in the "timer" listener stops the core the advance is invoking and sets the count to 0; ExecuteEvent then
+        // tests that count (sfr_as3_14.cpp:864), and start() puts a new core at the end of the list, first due one delay
+        // after now: the old core sends nothing more and the new one counts from 1
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 10, 3);
+        var seen = new List<string>();
+        bool restarted = false;
+        t.addEventListener("timer", Fn(rt, () =>
+        {
+            seen.Add("timer " + t.currentCount);
+            if (!restarted) { restarted = true; t.reset(); t.start(); }
+        }));
+        t.addEventListener("timerComplete", Fn(rt, () => seen.Add("complete")));
+        t.start();
+        for (int i = 0; i < 6; i++) p.Tick();
+        Assert.That(seen, Is.EqualTo(new[] { "timer 1", "timer 1", "timer 2", "timer 3", "complete" }));
+        Assert.That((t.running, t.currentCount), Is.EqualTo((false, 3)));
+
+        // a repeat-forever Timer reset in its listener: the count is 0 when ExecuteEvent tests it, so timerComplete still
+        // comes, and the timer is stopped
+        var u = NewTimer(rt, 10, 0);
+        var seenU = new List<string>();
+        u.addEventListener("timer", Fn(rt, () => { seenU.Add("timer"); u.reset(); }));
+        u.addEventListener("timerComplete", Fn(rt, () => seenU.Add("complete " + u.running + " " + u.currentCount)));
+        u.start();
+        for (int i = 0; i < 3; i++) p.Tick();
+        Assert.That(seenU, Is.EqualTo(new[] { "timer", "complete False 0" }));
+    }
+
+    [Test]
+    public void ANaNDelayIsZeroAndANegativeOneIsAVeryLongOne()
+    {
+        // setTimeout's delay is Convert2UInt32 (NaN -> 0, -1 -> 4294967295 ms); Timer.start takes (unsigned)(SInt64)delay
+        // (NaN -> 0, -5 -> 2^32 - 5 ms)
+        var (rt, p) = Movie();
+        int nanTimeout = 0, negTimeout = 0, nanTimer = 0, negTimer = 0;
+        Global(rt, "setTimeout", Fn(rt, () => nanTimeout++), double.NaN);
+        Global(rt, "setTimeout", Fn(rt, () => negTimeout++), -1.0);
+        var a = NewTimer(rt, double.NaN, 1);
+        a.addEventListener("timer", Fn(rt, () => nanTimer++));
+        a.start();
+        var b = NewTimer(rt, -5, 1);
+        b.addEventListener("timer", Fn(rt, () => negTimer++));
+        b.start();
+        p.AdvanceTime(1);
+        Assert.That((nanTimeout, nanTimer), Is.EqualTo((1, 1)), "due at once");
+        p.Advance(1_000_000, 0);
+        Assert.That((negTimeout, negTimer), Is.EqualTo((0, 0)), "about 49.7 days away");
+        Assert.That(b.running, Is.True);
+    }
+
     [Test]
     public void AdvancingTimersThatAreNotDueAllocatesNothing()
     {

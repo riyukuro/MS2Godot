@@ -88,6 +88,10 @@ public sealed class UiHost
         // Known order difference: the client sends configUI (the render event, stage.invalidate -> validateNow) one frame before
         // loadComplete, not in the same tick, and runs it before enterFrame/timers; our Player.Tick runs enterFrame and timers
         // first and the render event last.
+        // STILL-OPEN: each open frame moves the movie's timer clock by a whole frame time (Player.Tick), with no real time
+        // passed, so a setTimeout or Timer the document class starts with a delay under about frames * 1000/fps fires during
+        // the open; the client fires it on a later Advance with the real deltaT. Same as before timers ran on elapsed time.
+        // What the client's first Advance of a loaded swf hands as deltaT is not confirmed.
         for (int i = 0; i < frames; i++) Player.Tick(advanceTimelines: i > 0);
         Mark?.Invoke("as-frames");
         Entity = Controller.FindEntity();

@@ -409,6 +409,27 @@ public class RuntimeTests
         Assert.That(plain, Is.GreaterThan(pl), "a plain Timer keeps running");
     }
 
+    /// <summary>
+    /// The unload from a timer callback, in the middle of the advance's timer pass: ShutdownTimersForMovieDef stops the
+    /// movie's Timer further down the list before the pass reaches it (the client puts a null in its place, and the loop skips
+    /// it), and the timers around it keep their places.
+    /// </summary>
+    [Test]
+    public void AnUnloadFromATimerCallbackStopsTheMovieTimerLaterInTheSamePass()
+    {
+        var (rt, p) = Empty();
+        Runtime.Current = rt;
+        Assert.That(p.Start(), Is.True);
+        int ticks = 0, plain = 0;
+        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("u", (s, a) => { p.HostLoader.unloadAndStop(); return Rt.Undef; })), 10, Array.Empty<object>(), false);
+        Counting(rt, MovieTimerClass(rt, "t"), () => ticks++);
+        Counting(rt, rt.GetClass("flash.utils.Timer"), () => plain++);
+        p.Tick();
+        Assert.That((ticks, plain), Is.EqualTo((0, 1)), "the movie's Timer, due in the same pass, did not fire");
+        p.Tick();
+        Assert.That((ticks, plain), Is.EqualTo((0, 2)));
+    }
+
     [Test]
     public void SetChildIndexIgnoresANonChildAndAnIndexPastTheEnd()
     {

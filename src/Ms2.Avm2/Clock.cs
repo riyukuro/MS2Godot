@@ -29,7 +29,11 @@ public sealed partial class Runtime
         public bool Timeout, Active = true;
     }
 
-    // MovieImpl::IntervalTimers: one list in the order the timers were added, for the functions and the Timer objects
+    // MovieImpl::IntervalTimers: one list in the order the timers were added, for the functions and the Timer objects.
+    // STILL-OPEN: the client keeps one list, one elapsed time and one id counter per group root movie, shared by every swf
+    // loaded into it, so all of a group's dialogs' timers fire in one add order in one pass. Here each dialog's Runtime has
+    // its own, run in the scene order of the movie views. getTimer already counts from one start (Player.ASTimerMs); the
+    // timer list does not. Only observable between two dialogs' timers due in the same advance; no case found.
     readonly List<IntervalTimer> intervalTimers = new();
     int lastIntervalTimerId;
 
