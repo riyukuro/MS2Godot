@@ -59,6 +59,10 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
     /// <summary>Whether the local player's PC::vfunc_122 finds the player of an object id hostile (pc.cpp:4461).</summary>
     public Func<int, bool> Hostile;
     public int Count => tags.Count;
+    /// <summary>The tag colour of an actor root now (the live run's view); null without a tag.</summary>
+    public Color? ColorOf(Node3D root) => tags.TryGetValue(root, out var t) ? t.Color : null;
+    /// <summary>NameTagColorPCHostile as read, for checks.</summary>
+    public Color HostileColor => hostileColor;
 
     public LiveNameTags(PackSet packs)
     {

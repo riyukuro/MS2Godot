@@ -20,6 +20,8 @@ public partial class HudScene
 
     /// <summary>The kill log dialog, for checks.</summary>
     public PvPKillLogController KillLog => killLog;
+    /// <summary>The pk zone flag the last fade-in left, for checks.</summary>
+    public bool InPkZone => pkZone.InPkZone;
 
     void WatchPvp()
     {

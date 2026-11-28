@@ -20,6 +20,19 @@ public sealed partial class RemoteLayer
     /// <summary>The PvP info of another player (the live run's view); null when there is no such player.</summary>
     public Ms2.Ui.Skills.PvpInfo? PvpOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Pvp : null;
 
+    /// <summary>Another player of the field by name (the live run's view): its object id, root, the own relation and its
+    /// name tag colour now; null when there is none.</summary>
+    public (int ObjectId, Node3D Root, bool Hostile, Color? TagColor, long Hp)? PcByName(string name)
+    {
+        foreach (var r in users.Values)
+            if (r.Name == name && r.Root != null && IsInstanceValid(r.Root))
+                return (r.ObjectId, r.Root, PcHostileToOwn(r.ObjectId), tags?.ColorOf(r.Root), r.HpCur);
+        return null;
+    }
+
+    /// <summary>NameTagColorPCHostile as the tags read it, for checks.</summary>
+    public Color? HostileTagColor => tags?.HostileColor;
+
     /// <summary>
     /// The local player's PC::vfunc_122 on another player (pc.cpp:3112, <see cref="Ms2.Ui.Skills.SkillHit.PcHostile"/> with the
     /// field's pkMode), the name tag's NameTagColorPCHostile test (PC::vfunc_53, pc.cpp:4459); false for an id that is no
