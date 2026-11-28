@@ -132,6 +132,14 @@ public sealed partial class RemoteLayer : Node3D
         () => r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree() && r.Root.GlobalPosition is var g
             ? new System.Numerics.Vector3(g.X, -g.Z, g.Y) : default,
         () => r.Pc?.States.Dead ?? false);
+    /// <summary>A field pet made (OnFieldAddPet once OnObjectCreated took it): the owner part runs in the session.</summary>
+    public Action<Ms2.Net.Packets.FieldAddPet> PetAdded;
+    /// <summary>WorldService::FindPCById finds another player of the id.</summary>
+    public bool HasUser(int objectId) => users.ContainsKey(objectId);
+    /// <summary>AddHideReason / RemoveHideReason on a field npc or pet; false when it is not here.</summary>
+    public bool SetNpcHideReason(int objectId, int reason, bool on) => npcs.SetHideReason(objectId, reason, on);
+    /// <summary>PCBase::IsHidden of a field npc or pet.</summary>
+    public bool NpcHidden(int objectId) => npcs.IsHidden(objectId);
     /// <summary>A shown player's position in the client's z-up coordinates (WorldService::FindPCById then vfunc_18); null when it is not here.</summary>
     public System.Numerics.Vector3? PositionOf(int objectId) =>
         users.TryGetValue(objectId, out var r) && r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
@@ -1150,6 +1158,7 @@ public sealed partial class RemoteLayer : Node3D
                     // the talkable byte FieldAddNpc reads (FUN_14174a560, scenestategame.cpp:3561) for InteractNpcAction
                     LiveSession.Instance?.InteractNpcs?.Add(na.Npc.ObjectId, npcTable.Find(na.Npc.NpcId), na.Npc.Talkable,
                         new Vec3(na.Npc.Position.X, na.Npc.Position.Y, na.Npc.Position.Z));
+                    if (na.Pet != null && npcs.Placed(na.Npc.ObjectId) != null) PetAdded?.Invoke(na.Pet);   // OnFieldAddPet after OnObjectCreated (scenestategame.cpp:9710-9731)
                     break;
                 case NpcRemovedEvent nr:
                     npcs.Remove(nr.ObjectId, nr.Dead);

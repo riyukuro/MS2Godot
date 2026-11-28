@@ -1171,6 +1171,18 @@ public sealed class NpcLayer
         FieldShadows.SetShadowVisible(i.Root, !hidden);
     }
 
+    /// <summary>AddHideReason(<paramref name="reason"/>) / RemoveHideReason on the object <paramref name="id"/>; false when it is not here.</summary>
+    public bool SetHideReason(int id, int reason, bool on)
+    {
+        if (!inst.TryGetValue(id, out var i)) return false;
+        SetHideReason(i, reason, on);
+        return true;
+    }
+
+    /// <summary>PCBase::IsHidden @0x14166cad0 (pcbase.cpp:1175): any hide reason is set on the object <paramref name="id"/>.
+    /// STILL-OPEN: the spawn state's reason 10 is applied by SpawnHidden on the body alone and is not in the set yet.</summary>
+    public bool IsHidden(int id) => inst.TryGetValue(id, out var i) && i.HideReasons != 0;
+
     /// <summary>
     /// StateSpawn::vfunc_3 (statespawn.cpp:94-130) for one frame, and vfunc_5 (:80-92) once the npc left the state some other
     /// way (a block of another state, a death, a cast): shown again. At the delay's end the npc is shown and the point's

@@ -164,6 +164,8 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.CashCouponSink = id => EnsureRewardNotify()?.ShowCashCoupon(id);
             livePortals.GameMenuDirty = () => gameMenu?.MarkDirty();
             livePortals.InventoryButtonsDirty = InventoryLevelButtons;
+            livePortals.PetItemSlotRefresh = uid => inventory?.RefreshItemSlot(uid);   // petmanager.cpp:807, :833: the 0x4e2d dialog when open
+            livePortals.PetInfoInit = (up, attack, auto) => gameMenu?.InitPetInfo(up, attack, auto);   // :810, :836: the 0x4e28 dialog when open
             WatchReconnect(livePortals);
         }
         sizeSource = GetViewport();
@@ -3404,6 +3406,8 @@ public partial class HudScene : Node, IUiStageHost
         };
         c.SetNotifyRedCircle7Flag(agreementReminder);
         c.ToggleDialog += GameMenuToggle;
+        c.OwnPetInfo = () => Ms2Godot.Net.LiveSession.Instance?.OwnPetMenuInfo();   // uigamemenudialog.cpp:1513-1518
+        c.TogglePetAuto = () => Ms2Godot.Net.LiveSession.Instance?.TogglePetAuto() ?? 0;   // OnPetAttack: SendRequestPet
         c.MenuAction += def =>
         {
             if (def.Action == GameMenuActions.OpenLearningQuest) OpenLearningQuest();
@@ -3817,6 +3821,8 @@ public partial class HudScene : Node, IUiStageHost
         boxes.RemakeOptionScrollBindPet = bindPet;
         Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);
         boxes.LearnEmotion = learnEmotion;
+        Func<long, int, bool> summonBindPet = (uid, button) => inventory?.ConfirmSummonBindPet(uid, button) ?? false;   // HandleSummonBindPetButton
+        boxes.SummonBindPet = summonBindPet;
         Action<long> learnSkill = uid => inventory?.ConfirmLearnSkill(uid);     // HandleLearnSkillButton
         boxes.LearnSkill = learnSkill;
         Action<long> useFunctionItem = uid => inventory?.ConfirmUseFunctionItem(uid);
@@ -3856,6 +3862,7 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
             if (boxes.RemakeOptionScrollBindPet == bindPet) boxes.RemakeOptionScrollBindPet = null;
             if (boxes.LearnEmotion == learnEmotion) boxes.LearnEmotion = null;
+            if (boxes.SummonBindPet == summonBindPet) boxes.SummonBindPet = null;
             if (boxes.UseFunctionItem == useFunctionItem) boxes.UseFunctionItem = null;
             if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
             if (boxes.TradeIn == tradeIn) boxes.TradeIn = null;
@@ -3945,6 +3952,7 @@ public partial class HudScene : Node, IUiStageHost
         if (live != null)
         {
             c.SendItemShop = request => { liveShop ??= CreateShopController(live); live.SendShop(request); };
+            c.UsePet = (item, confirmed, binds) => live.UsePetItem(item.Uid, confirmed, binds);   // MyPC::FUN_14152aa90
             c.CanOpenShop = () => !GuideRefusesOpen("ShopDialog");
             c.CloseShop = () => { if (ShopOpen) shop.RequestClose(); };   // RequestCloseDialog(0x4e3b): vfunc_67 only
             // the own player's PC bang grade, premium time, wedding state and character id: the item requirements (invenslot.cpp:2090-2120)

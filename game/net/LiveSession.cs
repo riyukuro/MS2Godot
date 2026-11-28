@@ -1981,6 +1981,7 @@ public partial class LiveSession : Node
         // WorldService::FUN_141bd1200 finds MyPC too: other players' StateHold on the own mount reads its seats
         remote.SelfPc = id => id == selfObject && player != null && IsInstanceValid(player) ? player : null;
         remote.SelfPassengers = OwnPassengers;
+        remote.PetAdded = OnFieldPetAdded;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);
@@ -3179,7 +3180,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.PremiumClub))
                 OnPremiumClub(Ms2.Net.Packets.PremiumClub.Read(p.Reader(), game.Profile));   // OnPremiumClub (scenestategame.cpp:8426)
             else if (game.Is(p, Inbound.ResponsePet))
-                ReadNotApplied("ResponsePet", Ms2.Net.Packets.PetResponse.Read(p.Reader(), game.Profile).Mode);   // CPetManager::OnResponsePet (petmanager.cpp:722): the pet system (summon, pet window, counts) is not ported
+                OnResponsePet(p);   // CPetManager::OnResponsePet (petmanager.cpp:722): the summon modes; the pet window's modes are read and left
             else if (game.Is(p, Inbound.FunctionCube))
                 OnFunctionCube(p);
             else if (game.Is(p, Inbound.FurnishingInventory))

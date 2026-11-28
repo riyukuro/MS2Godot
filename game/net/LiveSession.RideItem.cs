@@ -63,8 +63,9 @@ public partial class LiveSession
             var f = Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id);
             rideeFieldUse = f?.UseRidee ?? true;
             epFieldUse = f?.UseEPSkill ?? true;
+            petFieldUse = f?.UsePet ?? true;
         }
-        catch { rideeFieldUse = epFieldUse = true; }
+        catch { rideeFieldUse = epFieldUse = petFieldUse = true; }
     }
 
     /// <summary>

@@ -120,6 +120,7 @@ public partial class LiveSession
                 if (r.RideOff?.Type == RideOffHoldRequest.ActionType) HoldAfterRideOff();
                 RecallAfterRideOff(r.RideOff);   // case 8 (mypc.cpp:3467-3472)
                 CashCallAfterRideOff(r.RideOff); // case 4 (mypc.cpp:3420-3425)
+                PetAfterRideOff(r.RideOff);      // cases 9 and 10 (mypc.cpp:3474-3486)
                 if (r.RideOff is RideOffCoupleEmotion couple) CoupleAfterRideOff?.Invoke(couple.Value30, couple.Value28);
                 if (OwnRide.SummonsAfterRideOff(r, selfObject)) SummonAfterRideOff(r);
                 break;
