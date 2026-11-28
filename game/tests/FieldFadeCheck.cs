@@ -146,6 +146,33 @@ public partial class FieldFadeCheck : Node
         return n == 0 ? null : sum / n;
     }
 
+    /// <summary>The least distance between a pair's draw centres: the depth pair's camera stands s from one of them.</summary>
+    const float MinApart = 1f;
+
+    /// <summary>The first two targets (none in <paramref name="skip"/>) whose draw centres are <see cref="MinApart"/> or more
+    /// apart, in the field's target order; null when there are none.</summary>
+    static List<FieldEntity> Apart(List<(FieldEntity E, Vector3 C)> cands, List<FieldEntity> skip)
+    {
+        for (int i = 0; i < cands.Count; i++)
+        {
+            if (skip != null && skip.Contains(cands[i].E)) continue;
+            for (int j = i + 1; j < cands.Count; j++)
+                if ((skip == null || !skip.Contains(cands[j].E)) && cands[i].C.DistanceTo(cands[j].C) >= MinApart)
+                    return new List<FieldEntity> { cands[i].E, cands[j].E };
+        }
+        return null;
+    }
+
+    /// <summary>Whether a MultiMesh gives back the instance transform set on it (not under --headless, whose renderer keeps
+    /// no instance data).</summary>
+    static bool ReadsBack()
+    {
+        using var mm = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, InstanceCount = 1 };
+        var xf = new Transform3D(Basis.Identity, new Vector3(1, 2, 3));
+        mm.SetInstanceTransform(0, xf);
+        return mm.GetInstanceTransform(0).IsEqualApprox(xf);
+    }
+
     void Look(Vector3 from, Vector3 dir) => cam.LookAtFromPosition(from, from + dir, Math.Abs(dir.Normalized().Y) > 0.99f ? Vector3.Forward : Vector3.Up);
 
     void Settle()
@@ -169,9 +196,19 @@ public partial class FieldFadeCheck : Node
         }
         // two held at once (the second's Apply sends the first back in): each in its own priorities, the deeper along the
         // view first (AlphaShellComposite::Update's key, CompareAlpha's largest first)
-        var four = b.Fb.FadeDraws.Where(kv => !b.Fade.Holds(kv.Key) && DrawCentre(b, kv.Key) != null).Select(kv => kv.Key).Take(4).ToList();
-        var two = four.Take(2).ToList();
-        if (four.Count == 4)
+        // each pair is two targets whose draw centres are apart: two at one centre give no camera direction (a NaN camera)
+        // and no order to check. Under --headless the renderer keeps no MultiMesh instance data, so every instanced draw
+        // reads back an identity transform, and all copies of one model (the 02000110 fence parts) share one centre,
+        // the model's own box centre; the pairs then come from different models.
+        var cands = b.Fb.FadeDraws.Keys.Where(e => !b.Fade.Holds(e)).Select(e => (E: e, C: DrawCentre(b, e)))
+            .Where(x => x.C != null).Select(x => (x.E, C: x.C.Value)).ToList();
+        if (!ReadsBack()) GD.Print("field fade check: instance transforms do not read back here (headless): the order pairs are told apart by their models' box centres");
+        var two = Apart(cands, null);
+        var depth = Apart(cands, two);
+        var four = two != null && depth != null ? new List<FieldEntity> { two[0], two[1], depth[0], depth[1] } : null;
+        if (two == null) fails.Add($"order: no two of the {cands.Count} fade targets not held have draw centres {MinApart} or more apart (the 'two' pair)");
+        else if (depth == null) fails.Add($"order: no two more of the {cands.Count} fade targets not held have draw centres {MinApart} or more apart (the depth pair)");
+        if (four != null)
         {
             // the pair where depth and distance disagree: the camera looks along D, at 0.29 s more depth for four[3], so
             // four[3] draws first though four[2] is the farther from the eye (1.19 s against s)
@@ -194,8 +231,7 @@ public partial class FieldFadeCheck : Node
             b.Fade.StepFrame(16);
             Order(b, four[2], four[3]);
         }
-        else fails.Add("order: fewer than four fade targets with a drawn standard material");
-        if (two.Count == 2)
+        if (two != null)
         {
             Vector3 c0 = DrawCentre(b, two[0]).Value, c1 = DrawCentre(b, two[1]).Value;
             Look(c1 + (c1 - c0).Normalized() * 500f, c0 - c1);   // two[0] the deeper
