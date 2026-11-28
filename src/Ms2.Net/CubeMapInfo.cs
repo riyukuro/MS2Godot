@@ -85,6 +85,30 @@ public sealed class CubeMapInfo
     public bool PermissionSet(int kind) => permissionSet.TryGetValue(kind, out bool v) && v;
     /// <summary>f378's value of the kind: 0 when no packet set it.</summary>
     public int PermissionValue(int kind) => permissionValue.TryGetValue(kind, out int v) ? v : 0;
+    /// <summary>
+    /// CubeMapInformationService::FUN_1410c3cd0 (@0x1410c3cd0, cubemapinformationservice_3.cpp:1823-1843), which
+    /// WorldService::FUN_141bdb660 forwards: the house's restriction of the kind holds for the own pc. Not set (f368) or set
+    /// off: false. A value (f378) of 1 holds for everyone but the owner (FUN_1410c3180 against the own account,
+    /// DAT_143ab2820); 2 holds for everyone but the owner and the owner's party (MyPC::IsPartyMemberByAccountId), and holds
+    /// with no local player; 0 or another value holds for everyone.
+    /// </summary>
+    public bool PermissionApplies(int kind, long ownAccount, bool hasLocalPlayer, Func<long, bool> isPartyMemberAccount)
+    {
+        if (!PermissionSet(kind)) return false;
+        int state = PermissionValue(kind);
+        if (state != 0)
+        {
+            if (Owner == ownAccount && state == 1) return false;
+            if (state == 2)
+            {
+                if (Owner == ownAccount) return false;
+                if (!hasLocalPlayer) return true;
+                if (isPartyMemberAccount != null && isPartyMemberAccount(Owner)) return false;
+            }
+        }
+        return true;
+    }
+
     /// <summary>a388 (FUN_1410d43c0 appends): the own house's designs.</summary>
     public IReadOnlyList<UgcMapLayout> Designs => designs;
     /// <summary>a3a8 (FUN_1410d4680 appends): the own house's blueprints.</summary>

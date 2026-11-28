@@ -472,6 +472,14 @@ public sealed partial class PartyBook {
         for (int i = 0; i < members.Count; i++) if (members[i].CharacterId == characterId) return members[i];   // no closure: the HP bars ask per frame
         return null;
     }
+    /// <summary>MyPC::IsPartyMemberByAccountId (@0x141527920, mypc.cpp:1987): in a party (IsInParty) and
+    /// CPartyManager::IsMemberByAccountId (partymanager.cpp:596, FindMemberByAccountId) finds a member of the account.</summary>
+    public bool IsMemberByAccountId(long accountId)
+    {
+        if (!IsInParty) return false;
+        for (int i = 0; i < members.Count; i++) if (members[i].User.AccountId == accountId) return true;
+        return false;
+    }
     /// <summary>FindMemberByName (partymanager.cpp:629): the first member with the name, case ignored (CompareNoCase).</summary>
     public PartyMember FindByName(string name) => members.FirstOrDefault(m => string.Equals(m.User.Name, name, StringComparison.OrdinalIgnoreCase));
     /// <summary>IsLocalPlayerLeader (:530).</summary>
