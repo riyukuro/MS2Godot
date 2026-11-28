@@ -50,6 +50,23 @@ public class PvpFieldTests
     }
 
     [Test]
+    public void NoOwnPointIsNeverHostileOffPkFields()
+    {
+        // the name tags' shortcut (RemoteLayer.PcHostileToOwn): without its own point the local PC is hostile to no one off a
+        // pk field, whatever the other PC's point, team, party or pvp on/off
+        var own = new HitCandidate { Id = 1, Kind = HitKind.Pc, Team = new PvpInfo(0, 5, 2).PcTeam, PvPPoint = false };
+        foreach (int point in new[] { -1, 0, 1, 2, 101, 102 })
+            foreach (byte team in new byte[] { 0, 1, 2 })
+                foreach (bool onOff in new[] { false, true })
+                {
+                    var p = new PvpInfo(point, team, 1);
+                    var other = new HitCandidate { Id = 2, Kind = HitKind.Pc, Team = p.PcTeam, PvPPoint = p.HasPoint, PartyId = 7,
+                        PvpOnOff = onOff };
+                    Assert.That(SkillHit.PcHostile(own, other, false), Is.False, $"point {point} team {team} onOff {onOff}");
+                }
+    }
+
+    [Test]
     public void TagColourOrderIsSelfHostilePartyPc()
     {
         Assert.That(PcTagColors.Of(true, true, true), Is.EqualTo(PcTagColor.MyPc));

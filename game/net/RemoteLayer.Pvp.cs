@@ -40,11 +40,16 @@ public sealed partial class RemoteLayer
     /// </summary>
     bool PcHostileToOwn(int objectId)
     {
-        var ownOf = LiveSession.Instance?.OwnPcRelation;
+        var live = LiveSession.Instance;
+        var ownOf = live?.OwnPcRelation;
         if (ownOf == null || !users.TryGetValue(objectId, out var r) || r.Pc == null) return false;
+        bool pk = FieldPkMode() != 0;
+        // off a pk field a PC without a point is never hostile (PvPPoint differs, or both teams are 1): the name tags ask this
+        // per player per frame, so skip building the two candidates on the fields where it cannot be true
+        if (!pk && !live.OwnPvp.HasPoint) return false;
         var own = ownOf();
-        var other = PcCandidate(objectId, r, LiveSession.Instance?.Party);
-        return Ms2.Ui.Skills.SkillHit.PcHostile(own, other, FieldPkMode() != 0);
+        var other = PcCandidate(objectId, r, live.Party);
+        return Ms2.Ui.Skills.SkillHit.PcHostile(own, other, pk);
     }
 
     /// <summary>The current field's CFieldData::GetPkMode, read once per field.</summary>
