@@ -64,7 +64,7 @@ public sealed class DamageTarget(Node3D root, Func<Vector3> point, bool pc, Func
 /// the PvP and pk hostility and the caster's forceApplyTarget bit 2), the own PC's always User, an npc's Monster.</item>
 /// </list>
 /// STILL-OPEN: a summon's numbers as the own (bMySummon: no summon owner reaches the port), observer mode,
-/// HasPvPPoint (not fed, so equal on every PC), m_nRepeat (a dev repeat, 1).
+/// m_nRepeat (a dev repeat, 1).
 /// </summary>
 public sealed partial class DamageText : CanvasLayer
 {

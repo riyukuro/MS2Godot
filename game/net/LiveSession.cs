@@ -3120,6 +3120,14 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.FieldEntrance))
                 OnFieldEntrance(Ms2.Net.Packets.FieldEntrance.Read(p.Reader()));   // OnFieldEntrance (scenestategame.cpp:2366)
+            else if (game.Is(p, Inbound.Pvp))
+                OnPvp(Ms2.Net.Packets.PvpMessage.Read(p.Reader()));   // OnPvp (scenestategame.cpp:4986)
+            else if (game.Is(p, Inbound.PlayerKillNotice))
+            {
+                var kn = Ms2.Net.Packets.PlayerKillNotice.Read(p.Reader());   // OnPlayerKillNotice (scenestategame.cpp:4344)
+                if (LiveCheck) GD.Print($"live: kill notice mode {kn.Mode} {kn.Killer} {kn.Victim}");
+                PlayerKillNoticeReceived?.Invoke(kn);
+            }
             else if (game.Is(p, Inbound.DungeonMatch))
             {
                 var dm = Ms2.Net.Packets.DungeonMatchError.Read(p.Reader());   // OnDungeonMatch (scenestategame.cpp:5184): mode 0 only

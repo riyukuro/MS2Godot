@@ -26,6 +26,8 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>The minimap's view of it, made once.</summary>
         public ShownPc Shown;
         public int ObjectId; public long CharacterId; public string Picture = "";
+        /// <summary>The PC's CPvPInfo: FieldAddUser's (scenestategame.cpp:11282), then Pvp 'd' (<see cref="SetPvpInfo"/>).</summary>
+        public Ms2.Ui.Skills.PvpInfo Pvp;
         /// <summary>The guild name over the head (PC::GetGuildName): FieldAddUser's, then the guild packets' (<see cref="SetGuildName"/>).</summary>
         public string GuildName = "";
         public long HpCur, HpMax; public bool InBattle; public int Emotion;         // PCBase's stat pair and battle stance (m_unk_160)
@@ -452,6 +454,7 @@ public sealed partial class RemoteLayer : Node3D
         {
             InParty = id => LiveSession.Instance?.Party is { } p && p.PartyId != 0 && p.Find(id) != null,
             FieldSymbol = () => LiveSession.Instance?.FieldProperties.UserTagSymbol,
+            Hostile = PcHostileToOwn,
         });
         npcs.Tags = tags;
         field.AddChild(bars = new LiveHpBars(packs)
@@ -615,12 +618,12 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>
     /// The other players' and the npcs' bodies for an own attack's area pick, in client space (z up): a player's body box is
     /// PC::SetDefaultBoundingBox's (<see cref="Ms2.Ui.Skills.SkillHit.PlayerBody"/>), the npcs' come from
-    /// <see cref="NpcLayer.HitCandidates"/>. A player is a pc of team 1 with its stat pair's hp, for
-    /// <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>.
+    /// <see cref="NpcLayer.HitCandidates"/>. A player is a pc of its PvP team (PC::vfunc_116, <see cref="Ms2.Ui.Skills.PvpInfo.PcTeam"/>)
+    /// and HasPvPPoint with its stat pair's hp, for <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>.
     /// Its party id is the own party's when CPartyManager has it as a member (PC::FUN_141661bc0, pc.cpp:4438), else 0.
     /// Its pvp on/off, forceApplyTarget bits, hidden flag and invincible kind are its buff list's
     /// (<see cref="Ms2.Ui.Skills.AdditionalBuffList"/>); its state id is its state machine's current one.
-    /// STILL-OPEN: the states 6 / 7 half of hidden and HasPvPPoint (false here) are not fed.
+    /// STILL-OPEN: the states 6 / 7 half of hidden are not fed.
     /// </summary>
     public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
     {
@@ -635,7 +638,7 @@ public sealed partial class RemoteLayer : Node3D
         var p = r.Pc.Position;
         long partyId = party is { PartyId: not 0 } && party.Find(r.CharacterId) != null ? party.PartyId : 0;
         return new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
-            Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId,
+            Kind = Ms2.Ui.Skills.HitKind.Pc, Team = r.Pvp.PcTeam, PvPPoint = r.Pvp.HasPoint, Hp = r.HpCur, PartyId = partyId,
             PvpOnOff = r.Buffs.IsPvpOnOff,
             ForceApplyTarget = r.Buffs.ForceApplyTarget, Hidden = r.Buffs.IsHidden,
             StateId = r.Pc.States.Cur, Invincible = r.Buffs.Invincible };
@@ -783,6 +786,7 @@ public sealed partial class RemoteLayer : Node3D
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade; r.Level = u.User.Level; r.Job = u.User.Job;
         r.AdventureLevel = u.User.PrestigeLevel;
+        r.Pvp = new Ms2.Ui.Skills.PvpInfo(u.PvpPoint, u.PvpTeam, u.PvpMode);
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle; r.Emotion = u.InBattle ? 1 : 0;
         // PC::vfunc_91 = vfunc_90's 0x23 block (pc.cpp:1645-1660): per kind health 4, attack speed 0xd, movement speed 0xe,
         // mount speed 0x20, jump height 0x16
@@ -1201,15 +1205,7 @@ public sealed partial class RemoteLayer : Node3D
     /// </summary>
     void RunTombTags()
     {
-        int? fieldId = LiveSession.Instance?.FieldId;
-        if (fieldId != tombPkField)
-        {
-            tombPkField = fieldId;
-            tombPkMode = 0;
-            try { if (fieldId is int fid) tombPkMode = FieldData.FindById(packs, fid)?.PkMode ?? 0; }
-            catch (Exception ex) { GD.PushWarning($"tomb tags field data: {ex.Message}"); }
-        }
-        bool hostile = Ms2.Ui.Hud.TombTagPass.HostileInField(tombPkMode);
+        bool hostile = Ms2.Ui.Hud.TombTagPass.HostileInField(FieldPkMode());
         int n = 0;
         foreach (var (id, r) in users)
         {

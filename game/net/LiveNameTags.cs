@@ -16,9 +16,9 @@ namespace Ms2Godot.Net;
 /// <item>Players (UINameTag::Entity::FUN_141a5ff60): the name, "{title name} {name}" with a title; the guild as
 /// "&lt;guild&gt;" on the line above; the name tag item's symbol (FUN_141661e00 / FUN_141661e20, the packet's insignia
 /// and its shown flag) with the level for "level" symbols; shown by DisplayFriendlyName. Colour per frame (PC::vfunc_53,
-/// pc.cpp:4455-4466): NameTagColorPC, NameTagColorMyPC for the local player, NameTagColorParty for a member of the local
-/// player's party. Not ported: NameTagColorPCHostile (vfunc_122 needs a PvP source), the field-property and PvP team
-/// symbols, the enchant symbol (FUN_141661e40, the equipment's grade).</item>
+/// pc.cpp:4455-4466, <see cref="Ms2.Ui.Hud.PcTagColors.Of"/>): NameTagColorPC, NameTagColorMyPC for the local player,
+/// NameTagColorPCHostile for a player the local player's vfunc_122 finds hostile (<see cref="Hostile"/>), NameTagColorParty for
+/// a member of the local player's party. Not ported: the enchant symbol (FUN_141661e40, the equipment's grade).</item>
 /// <item>Place (UIHudEntity::Entity::vfunc_6 / vfunc_10): the actor's Eff_UI dummy, its screen point in stage units, moved
 /// down by OffsetNpcNametag or OffsetPcNametag and FUN_1412762d0 (the camera-pitch shift); fully opaque up to 700 from the
 /// viewer, fading to 40% at 1500, hidden beyond (m_54) and behind the camera.</item>
@@ -32,6 +32,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         public float Extra;                           // a pc's m_f170 (the emotion states' offsetNameTag)
         public NpcRow Row; public bool Dead;          // npcs
         public long CharacterId; public bool Self;    // players
+        public int ObjectId;                          // players: the FieldAddUser object id
         public Color Color;
         public string Title = "", Name = "";           // players: the title prefix ("{title} ") and PC::vfunc_77's name
         public Movement.RideData Ride;                 // players: the mount's row while riding
@@ -47,7 +48,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
     readonly UiMovie movie;
     readonly GameTables tables;
     readonly float npcOffset, pcOffset;
-    readonly Color pcColor, myColor, partyColor;
+    readonly Color pcColor, myColor, partyColor, hostileColor;
     float u = 1;
     Field field;
     Camera3D camera;
@@ -55,6 +56,8 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
     public Node3D Viewer;
     /// <summary>Whether a character is in the local player's party (CPartyManager::IsMemberByCharId with a party).</summary>
     public Func<long, bool> InParty;
+    /// <summary>Whether the local player's PC::vfunc_122 finds the player of an object id hostile (pc.cpp:4461).</summary>
+    public Func<int, bool> Hostile;
     public int Count => tags.Count;
 
     public LiveNameTags(PackSet packs)
@@ -70,6 +73,8 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         pcColor = Rgb("NameTagColorPC", (1f, 1f, 1f));
         myColor = Rgb("NameTagColorMyPC", (1f, 0.812f, 0.106f));
         partyColor = Rgb("NameTagColorParty", (0.549f, 0.686f, 1f));
+        var (hr, hg, hb) = constants.Color("NameTagColorPCHostile", (pcColor.R, pcColor.G, pcColor.B));   // no key: the plain colour
+        hostileColor = new Color(hr, hg, hb);
         tables = GameTables.Shared(packs, GameOptions.StringLanguage);
         try { movie = new UiMovie(FieldContents.Ui(packs), "uinametag"); }
         catch (Exception e) { GD.PushWarning("live name tags: " + e.Message); }
@@ -136,7 +141,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         var dummies = EffectDummyTable.Load(packs).Pc(user.Gender);
         var t = new Tag
         {
-            Root = root, Node = node, Offset = pcOffset, CharacterId = user.CharacterId, Self = self, Color = color,
+            Root = root, Node = node, Offset = pcOffset, CharacterId = user.CharacterId, ObjectId = add.ObjectId, Self = self, Color = color,
             Title = prefix, Name = name,
             Insignia = (ushort)add.Insignia, InsigniaShown = add.InsigniaShown, Level = user.Level, PrestigeLevel = user.PrestigeLevel,
             GuildLine = guild.Length > 0,
@@ -301,7 +306,14 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
             if (t.Row == null)
             {
                 // PC::vfunc_53: the relation colour every frame
-                var c = t.Self ? myColor : InParty != null && InParty(t.CharacterId) ? partyColor : pcColor;
+                var c = Ms2.Ui.Hud.PcTagColors.Of(t.Self, !t.Self && Hostile != null && Hostile(t.ObjectId),
+                                                  !t.Self && InParty != null && InParty(t.CharacterId)) switch
+                {
+                    Ms2.Ui.Hud.PcTagColor.MyPc => myColor,
+                    Ms2.Ui.Hud.PcTagColor.Hostile => hostileColor,
+                    Ms2.Ui.Hud.PcTagColor.Party => partyColor,
+                    _ => pcColor,
+                };
                 if (c != t.Color) { t.Color = c; NpcPresence.Recolor(t.Node, c); }
             }
             var head = t.Anchor();

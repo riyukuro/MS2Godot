@@ -395,8 +395,9 @@ public sealed partial class RemoteLayer
         magicObjects.Clear();
         HitCandidates(magicObjects);
         if (UpdateMagicPlayerPos() is not System.Numerics.Vector3 pos) return;
+        var own = LiveSession.Instance?.OwnPvp ?? default;   // PC::vfunc_116 and HasPvPPoint of the own CPvPInfo
         magicObjects.Add(new HitCandidate { Id = Tracker.SelfObjectId, Position = pos, Body = SkillHit.PlayerBody(pos, magicPlayer.FacingRotZ),
-            Kind = HitKind.Pc, Team = 1, Hp = 1 });
+            Kind = HitKind.Pc, Team = own.PcTeam, PvPPoint = own.HasPoint, Hp = 1 });
     }
 
     /// <summary>The local player's position in client space into <see cref="magicPlayerPos"/>; null without a local player.</summary>

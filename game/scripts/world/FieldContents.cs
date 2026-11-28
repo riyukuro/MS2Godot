@@ -368,6 +368,7 @@ public partial class FieldContents : Node3D
         Ms2.Ui.FieldMoveCover.Lower();      // NotifyFadeInComplete: the field takes input
         talk?.OnFadeInComplete();       // UIPopupNpcTalkDialog's NotifyFadeInComplete
         (GetTree()?.CurrentScene as HudScene)?.FameNotify?.OnFadeInComplete();   // UIFameContentsNotify's
+        (GetTree()?.CurrentScene as HudScene)?.PkZoneOnFadeIn();                // UISceneGamePlay::vfunc_58's pk zone notice
     }
 
     /// <summary>

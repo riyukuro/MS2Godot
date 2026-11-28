@@ -558,11 +558,13 @@ public partial class HudScene
         return pos;
     }
 
-    /// <summary>The own PC's side of PC::vfunc_122 and its forceApplyTarget: its id, a pc of team 1, its party id
+    /// <summary>The own PC's side of PC::vfunc_122 and its forceApplyTarget: its id, a pc of its PvP team with its HasPvPPoint
+    /// (<see cref="Net.LiveSession.OwnPvp"/>), its party id
     /// (PC::FUN_141661bc0) and its buff list's pvp on/off and forceApplyTarget bits.</summary>
     HitCandidate OwnPcRelation(Net.LiveSession live) => new()
     {
-        Id = live?.SelfObjectId ?? 0, Kind = HitKind.Pc, Team = 1, PartyId = live?.Party?.PartyId ?? 0,
+        Id = live?.SelfObjectId ?? 0, Kind = HitKind.Pc, Team = live?.OwnPvp.PcTeam ?? 1, PvPPoint = live?.OwnPvp.HasPoint ?? false,
+        PartyId = live?.Party?.PartyId ?? 0,
         PvpOnOff = ownBuffs?.IsPvpOnOff ?? false, ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0,
     };
 

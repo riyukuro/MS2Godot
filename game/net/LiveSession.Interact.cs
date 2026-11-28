@@ -760,8 +760,8 @@ public partial class LiveSession
             }
         }
 
-        // STILL-OPEN: PvPInfo point (CPvPInfo::HasPoint / GetPoint, actionkeyobject.cpp:1667) is not tracked
-        public int? PvPPoint => null;
+        // CPvPInfo::HasPoint / GetPoint of the own PC (actionkeyobject.cpp:1667)
+        public int? PvPPoint => s.OwnPvp.HasPoint ? s.OwnPvp.Point : null;
         public int PlayerStateId => s.InteractPlayerStateId();
 
         public void Send(Ms2.Net.Wire.IOutPacket packet)

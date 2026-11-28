@@ -529,8 +529,7 @@ public static class SkillHit
     /// pvp on/off set; else (and for its HasPvPPoint xor, which this filter already checked) the teams differ (PCBase::vfunc_122
     /// @0x1416781c0, pcbase.cpp:2784). A hostile target needs hp, or for an npc hp 0 with a hittable corpse; a friendly one
     /// needs hp. The caster's buff-summed GetForceApplyTarget bits are OR'd into <paramref name="flags"/> first (:792).
-    /// STILL-OPEN: Hidden has the PCs' buff-summed IsHidden only, not the states 6 / 7 (FUN_14166cb00) nor npcs' lists;
-    /// PvPPoint has no feed.
+    /// STILL-OPEN: Hidden has the PCs' buff-summed IsHidden only, not the states 6 / 7 (FUN_14166cb00) nor npcs' lists.
     /// </summary>
     public static bool FilterTarget(in HitCandidate self, in HitCandidate other, int flags, int npcKinds, bool pkMode = false)
     {

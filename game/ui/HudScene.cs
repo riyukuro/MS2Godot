@@ -233,6 +233,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         unwatchDamage?.Invoke();
         unwatchDamage = null;
+        UnwatchPvp();
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
         UnwatchQuestEvents();
@@ -457,6 +458,7 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
         WatchDamageNumbers();
         WatchMinimapPings();
+        WatchPvp();
 
         HudModel();
         WatchOwnSkill();
