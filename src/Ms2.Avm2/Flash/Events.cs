@@ -306,35 +306,63 @@ public class AsStatusEvent : AsEvent { [As] public const string STATUS = "status
 [AsClass("flash.events.EventPhase")]
 public class AsEventPhase : AsObject { [As] public const int CAPTURING_PHASE = 1, AT_TARGET = 2, BUBBLING_PHASE = 3; }
 
+/// <summary>
+/// flash.utils.Timer (Instances::fl_utils::Timer, sfr_as3_14.cpp:863-960). A running timer is a core on the movie's
+/// interval timer list (<see cref="Runtime.IntervalTimer"/>), the same list as setTimeout and setInterval, made at start
+/// with the delay and repeat count of that moment: a delay or repeatCount set while it runs only takes effect at the next
+/// start.
+/// </summary>
 [AsClass("flash.utils.Timer", "flash.events.EventDispatcher")]
 public class AsTimer : AsEventDispatcher
 {
+    /// <summary>delaySet (@0x1424bf6c0) only stores it.</summary>
     [As] public double delay { get; set; }
     [As] public int repeatCount { get; set; }
-    [As] public int currentCount { get; private set; }
-    [As] public bool running { get; private set; }
-    double next;
+    int count;
+    Runtime.IntervalTimer core;
+    /// <summary>currentCountGet (@0x1424bf620): the core's count while there is one.</summary>
+    [As] public int currentCount => core != null ? core.CurrentCount : count;
+    /// <summary>runningGet (@0x1424bffe0): a core that is still active.</summary>
+    [As] public bool running => core != null && core.Active;
     [AsCtor] void Ctor(object[] a) { delay = a.Length > 0 ? Rt.ToNumber(a[0]) : 0; repeatCount = a.Length > 1 ? Rt.ToInt32(a[1]) : 0; }
-    [As] public void start() { if (running) return; running = true; next = RT.TimerMs + Math.Max(1, delay); RT.Player?.AddTimer(this); }
-    [As] public void stop() { running = false; RT.Player?.RemoveTimer(this); }
-    [As] public void reset() { stop(); currentCount = 0; }
-    /// <summary>The player takes the timer out of its run without the movie calling stop (Loader::unloadAndStop).</summary>
-    internal void Halt() => running = false;
 
-    /// <summary>Fires TIMER events that are due (called by the player each frame).</summary>
-    internal void Pump()
+    /// <summary>start (@0x1424c0240): a running timer keeps going; a stopped one continues from the count it reached on a
+    /// new core with the delay as (unsigned)(SInt64)delay.</summary>
+    [As] public void start()
     {
-        int guard = 0;
-        while (running && RT.TimerMs >= next && guard++ < 8)
+        if (core != null)
         {
-            currentCount++;
-            next += Math.Max(1, delay);
-            Send("flash.events.TimerEvent", "timer");
-            if (repeatCount > 0 && currentCount >= repeatCount)
-            {
-                stop();
-                Send("flash.events.TimerEvent", "timerComplete");
-            }
+            if (core.Active) return;
+            count = core.CurrentCount;
+            core = null;
         }
+        core = RT.AddIntervalTimer(new Runtime.IntervalTimer
+        {
+            TimerObj = this, Interval = (long)unchecked((uint)(long)delay) * 1000, CurrentCount = count, RepeatCount = repeatCount,
+        });
+    }
+
+    /// <summary>stop (@0x1424c0310): an active core is cleared (ClearIntervalTimer); the core goes either way, so a stopped
+    /// timer's currentCount reads the count kept at its last event or start.</summary>
+    [As] public void stop()
+    {
+        if (core is { Active: true }) RT.ClearTimeout(core.Id);
+        core = null;
+    }
+
+    /// <summary>reset (@0x1424bffc0): stop, and the count back to 0.</summary>
+    [As] public void reset() { stop(); count = 0; }
+
+    /// <summary>
+    /// ExecuteEvent (@0x1424bdb60, sfr_as3_14.cpp:864), from IntervalTimer::Invoke after it counted the fire: the count
+    /// is taken from the core, "timer" is sent, then "timerComplete" when the count is at or past repeatCount. The test is
+    /// CurrentCount &gt;= RepeatCount with no check for 0, so a timer that repeats for ever (repeatCount 0) sends
+    /// timerComplete after every timer event too; the core is still active while both are sent.
+    /// </summary>
+    internal void ExecuteEvent()
+    {
+        count = core.CurrentCount;
+        Send("flash.events.TimerEvent", "timer");
+        if (count >= repeatCount) Send("flash.events.TimerEvent", "timerComplete");
     }
 }

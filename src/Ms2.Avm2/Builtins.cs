@@ -466,8 +466,8 @@ static class Builtins
         });
         rt.Function("flash.utils.getTimer", a => Rt.Box(rt.Player is { } p ? p.ASTimerMs : (int)rt.TimerMs));   // Player.ASTimerMs; no movie: the tick clock
         rt.Function("flash.utils.describeType", a => { rt.NoteMissing("flash.utils.describeType"); return null; });
-        rt.Function("flash.utils.setTimeout", a => Rt.Box(rt.AddTimeout(A(a, 0) as AsFunction, Rt.ToNumber(A(a, 1)), a.Length > 2 ? a[2..] : Array.Empty<object>(), false)));
-        rt.Function("flash.utils.setInterval", a => Rt.Box(rt.AddTimeout(A(a, 0) as AsFunction, Rt.ToNumber(A(a, 1)), a.Length > 2 ? a[2..] : Array.Empty<object>(), true)));
+        rt.Function("flash.utils.setTimeout", a => Rt.Box(rt.AddTimeout(A(a, 0) as AsFunction, Rt.ToUint32(A(a, 1)), a.Length > 2 ? a[2..] : Array.Empty<object>(), false)));
+        rt.Function("flash.utils.setInterval", a => Rt.Box(rt.AddTimeout(A(a, 0) as AsFunction, Rt.ToUint32(A(a, 1)), a.Length > 2 ? a[2..] : Array.Empty<object>(), true)));
         rt.Function("flash.utils.clearTimeout", a => { rt.ClearTimeout(Rt.ToInt32(A(a, 0))); return Rt.Undef; });
         rt.Function("flash.utils.clearInterval", a => { rt.ClearTimeout(Rt.ToInt32(A(a, 0))); return Rt.Undef; });
     }

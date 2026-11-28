@@ -96,7 +96,6 @@ namespace Ms2.Avm2.Flash
         public readonly SymbolScope Main;
         readonly Dictionary<string, (SymbolScope Scope, int Id)> classSymbols = new();
         readonly Dictionary<string, List<AsEventDispatcher>> broadcast = new();
-        readonly List<AsTimer> timers = new();
         readonly List<AsTextField> scrollWatch = new();
         internal void WatchScroll(AsTextField f) => scrollWatch.Add(f);
         readonly List<Action> later = new();
@@ -693,8 +692,6 @@ namespace Ms2.Avm2.Flash
         /// </summary>
         internal void RunFrameActions() { QueueFrameActions(true); RunFrameQueue(); }
 
-        internal void AddTimer(AsTimer t) { if (!timers.Contains(t)) timers.Add(t); }
-        internal void RemoveTimer(AsTimer t) => timers.Remove(t);
         public void Later(Action a) => later.Add(a);
 
         /// <summary>
@@ -753,14 +750,39 @@ namespace Ms2.Avm2.Flash
         /// value are InstanceTraits::Function (vftable 0x14313fe18, slot 10 = the base GetFilePtr, NULL), so the movie's
         /// intervals keep running after the unload, as in the client.
         /// </summary>
-        void ShutdownTimersForMovieDef(string key)
+        void ShutdownTimersForMovieDef(string key) => RT.ShutdownTimersForMovieDef(key);
+
+        /// <summary>
+        /// One movie frame on the frame clock, for a host that runs frames one by one (tests, tools, the open's first
+        /// frames): the time moves by one frame (<see cref="AdvanceTime"/>), then <see cref="Frame"/>.
+        /// </summary>
+        public void Tick(bool advanceTimelines = true)
         {
-            for (int i = timers.Count - 1; i >= 0; i--)
-                if (string.Equals(timers[i].Class?.MovieKey, key, StringComparison.OrdinalIgnoreCase)) { timers[i].Halt(); timers.RemoveAt(i); }
+            AdvanceTime(1000.0 / FrameRate);
+            Frame(advanceTimelines);
         }
 
-        /// <summary>One frame: deferred loads, enterFrame, timeline advance, frame scripts, exitFrame, timers and timeouts, render.</summary>
-        public void Tick(bool advanceTimelines = true)
+        /// <summary>
+        /// MovieImpl::Advance (sfr_gfx_01i.cpp:3986-4070) for a host on real time: the time the game frame took first, which
+        /// runs the interval timers once (<see cref="AdvanceTime"/>), then <paramref name="frames"/> movie frames
+        /// (<see cref="Frame"/>; 0 when the time has not reached the next frame).
+        /// </summary>
+        public void Advance(double ms, int frames)
+        {
+            AdvanceTime(ms);
+            for (int i = 0; i < frames; i++) Frame();
+        }
+
+        /// <summary>
+        /// The time part of MovieImpl::Advance, before the input and the frame: TimeElapsed moves on by
+        /// <paramref name="ms"/> and each interval timer (setTimeout, setInterval, Timer) that is due fires once
+        /// (<see cref="Runtime.AdvanceClock"/>). So timers run before enterFrame, and on a game frame that runs no movie frame.
+        /// Each call is its own guarded run, so a callback that throws or runs out of budget stops only itself.
+        /// </summary>
+        public void AdvanceTime(double ms) => RT.AdvanceClock(ms, 1000.0 / FrameRate);
+
+        /// <summary>One movie frame: deferred loads, enterFrame, timeline advance, frame scripts, exitFrame, scroll events, render.</summary>
+        public void Frame(bool advanceTimelines = true)
         {
             FrameCount++;
             if (later.Count > 0)
@@ -775,15 +797,6 @@ namespace Ms2.Avm2.Flash
             UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
             if (advanceTimelines && playingClips.Count > 0) RT.Guard("advance", null, this, static p => p.AdvanceTimelines());
             RunFrameActions();
-            double dt = 1000.0 / FrameRate;
-            RT.Guard("clock", null, (rt: RT, dt), static x => x.rt.AdvanceClock(x.dt));
-            if (timers.Count is int nt and > 0)
-            {
-                var ts = System.Buffers.ArrayPool<AsTimer>.Shared.Rent(nt);
-                for (int i = 0; i < nt; i++) ts[i] = timers[i];
-                try { for (int i = 0; i < nt; i++) RT.Guard("timer", null, ts[i], static t => t.Pump()); }
-                finally { Array.Clear(ts, 0, nt); System.Buffers.ArrayPool<AsTimer>.Shared.Return(ts); }
-            }
             if (scrollWatch.Count > 0)
             {
                 // the reformat of the fields changed this frame (DocView::Format): each sends its scroll event if its range moved

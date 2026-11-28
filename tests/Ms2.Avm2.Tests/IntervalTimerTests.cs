@@ -1,0 +1,216 @@
+using System.Text.Json.Nodes;
+using Ms2.Avm2;
+using Ms2.Avm2.Flash;
+using Ms2Godot.Tests;
+using NUnit.Framework;
+
+namespace Ms2.Avm2.Tests;
+
+/// <summary>
+/// The movie's interval timers (setTimeout, setInterval, flash.utils.Timer) as MovieImpl::Advance runs them
+/// (sfr_gfx_01i.cpp:3986-4022): the elapsed time moves by what the host hands the advance, every timer that is due fires
+/// once (IntervalTimer::Invoke, sfr_as3_18.cpp:7219), missed intervals are skipped, and all of it comes before the frame's
+/// enterFrame. A Timer is one more entry on the same list (Timer::start / ExecuteEvent, sfr_as3_14.cpp:863-960).
+/// </summary>
+public class IntervalTimerTests
+{
+    static (Runtime, Player) Movie()
+    {
+        var rt = new Runtime();
+        var layout = new JsonObject { ["movie"] = "t", ["fps"] = 30, ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 }, ["symbols"] = new JsonObject(), ["root"] = new JsonObject() };
+        var p = new Player(rt, layout);
+        Runtime.Current = rt;
+        Assert.That(p.Start(), Is.True);
+        return (rt, p);
+    }
+
+    static AsFunction Fn(Runtime rt, Action a) => new AsPlainFunction(rt, new NativeMethod("f", (s, args) => { a(); return Rt.Undef; }));
+
+    static AsTimer NewTimer(Runtime rt, double delay, int repeat) => (AsTimer)rt.GetClass("flash.utils.Timer").Construct(delay, repeat);
+
+    [Test]
+    public void ATimerFiresOncePerAdvanceNotOncePerMissedDelay()
+    {
+        // a 10 ms Timer on a 30 fps movie: each tick is 33 ms, three delays, and it fires once (the next due time skips
+        // the missed ones), not three times
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 10, 0);
+        int fires = 0;
+        t.addEventListener("timer", Fn(rt, () => fires++));
+        t.start();
+        for (int i = 0; i < 3; i++) p.Tick();
+        Assert.That(fires, Is.EqualTo(3), "one fire per tick");
+        Assert.That(t.currentCount, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void ASetIntervalSkipsTheIntervalsMissedInALongAdvance()
+    {
+        // setInterval(f, 100): one advance of 1 s fires it once; the next due time is on its 100 ms grid past now (1.1 s),
+        // so the misses are not replayed on the next advances
+        var (rt, p) = Movie();
+        int fires = 0;
+        rt.AddTimeout(Fn(rt, () => fires++), 100, Array.Empty<object>(), true);
+        p.Advance(1000, 0);
+        Assert.That(fires, Is.EqualTo(1));
+        p.Advance(50, 0);
+        Assert.That(fires, Is.EqualTo(1), "1.05 s: before the next grid time");
+        p.Advance(50, 0);
+        Assert.That(fires, Is.EqualTo(2), "1.1 s");
+    }
+
+    [Test]
+    public void TimersFireBeforeTheFramesEnterFrame()
+    {
+        var (rt, p) = Movie();
+        var order = new List<string>();
+        p.Root.addEventListener("enterFrame", Fn(rt, () => order.Add("frame")));
+        var t = NewTimer(rt, 30, 1);
+        t.addEventListener("timer", Fn(rt, () => order.Add("timer")));
+        t.start();
+        rt.AddTimeout(Fn(rt, () => order.Add("timeout")), 30, Array.Empty<object>(), false);
+        p.Tick();
+        Assert.That(order, Is.EqualTo(new[] { "timer", "timeout", "frame" }), "the list order, then the frame");
+    }
+
+    [Test]
+    public void AnAdvanceWithNoFrameStillRunsTheTimers()
+    {
+        // a game frame shorter than the movie's frame time runs no movie frame, but its time reaches the timers
+        var (rt, p) = Movie();
+        int frames = 0, fires = 0;
+        p.Root.addEventListener("enterFrame", Fn(rt, () => frames++));
+        rt.AddTimeout(Fn(rt, () => fires++), 10, Array.Empty<object>(), false);
+        p.Advance(16, 0);
+        Assert.That((fires, frames), Is.EqualTo((1, 0)));
+    }
+
+    [Test]
+    public void AZeroIntervalIsFlooredAtATenthOfTheFrameTime()
+    {
+        // setInterval(f, 0) at 30 fps: the first fire is due at once, later ones every 3.333 ms (frameTime / 10), so ten
+        // 1 ms advances fire it at 1, 4, 7 and 10 ms
+        var (rt, p) = Movie();
+        int fires = 0;
+        rt.AddTimeout(Fn(rt, () => fires++), 0, Array.Empty<object>(), true);
+        for (int i = 0; i < 10; i++) p.AdvanceTime(1);
+        Assert.That(fires, Is.EqualTo(4));
+    }
+
+    [Test]
+    public void ATimerAddedByACallbackFirstRunsAtTheNextAdvance()
+    {
+        var (rt, p) = Movie();
+        int inner = 0;
+        rt.AddTimeout(Fn(rt, () => rt.AddTimeout(Fn(rt, () => inner++), 0, Array.Empty<object>(), false)), 0, Array.Empty<object>(), false);
+        p.AdvanceTime(1);
+        Assert.That(inner, Is.Zero, "not in the advance that added it");
+        p.AdvanceTime(1);
+        Assert.That(inner, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AClearedTimerDoesNotFireLaterInTheSameAdvance()
+    {
+        var (rt, p) = Movie();
+        int second = 0, id = 0;
+        rt.AddTimeout(Fn(rt, () => rt.ClearTimeout(id)), 10, Array.Empty<object>(), false);
+        id = rt.AddTimeout(Fn(rt, () => second++), 10, Array.Empty<object>(), true);
+        p.AdvanceTime(20);
+        p.AdvanceTime(20);
+        Assert.That(second, Is.Zero);
+    }
+
+    [Test]
+    public void ACallbackThatThrowsDoesNotStopTheOthers()
+    {
+        // Invoke prints and drops the function's exception; the loop goes on to the next timer
+        var (rt, p) = Movie();
+        int after = 0;
+        rt.AddTimeout(Fn(rt, () => throw new AsThrow("boom")), 10, Array.Empty<object>(), false);
+        rt.AddTimeout(Fn(rt, () => after++), 10, Array.Empty<object>(), false);
+        p.AdvanceTime(20);
+        Assert.That(after, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ARepeatForeverTimerSendsTimerCompleteAfterEachTimerEvent()
+    {
+        // ExecuteEvent tests CurrentCount >= RepeatCount with no check for 0, so new Timer(1000) sends timerComplete after
+        // its first timer event, still running; the inventory's sort button (onClickRange) is enabled again on it
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 100, 0);
+        var seen = new List<string>();
+        t.addEventListener("timer", Fn(rt, () => seen.Add("timer")));
+        t.addEventListener("timerComplete", Fn(rt, () => seen.Add("complete " + t.running + " " + t.currentCount)));
+        t.start();
+        p.Advance(100, 0);
+        p.Advance(100, 0);
+        Assert.That(seen, Is.EqualTo(new[] { "timer", "complete True 1", "timer", "complete True 2" }));
+        Assert.That(t.running, Is.True, "a repeat count of 0 keeps it going");
+    }
+
+    [Test]
+    public void ATimerWithARepeatCountStopsAtIt()
+    {
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 10, 2);
+        var seen = new List<string>();
+        t.addEventListener("timer", Fn(rt, () => seen.Add("timer " + t.currentCount)));
+        t.addEventListener("timerComplete", Fn(rt, () => seen.Add("complete")));
+        t.start();
+        for (int i = 0; i < 4; i++) p.Tick();
+        Assert.That(seen, Is.EqualTo(new[] { "timer 1", "timer 2", "complete" }));
+        Assert.That((t.running, t.currentCount), Is.EqualTo((false, 2)));
+        t.start();
+        p.Tick();
+        Assert.That((t.running, t.currentCount), Is.EqualTo((false, 2)), "a start at the count sends nothing more and stops");
+        Assert.That(seen, Has.Count.EqualTo(3));
+        t.reset();
+        t.start();
+        p.Tick();
+        Assert.That(t.currentCount, Is.EqualTo(1), "reset counts from 0 again");
+    }
+
+    [Test]
+    public void ADelaySetWhileRunningTakesEffectAtTheNextStart()
+    {
+        // delaySet only stores the value; the running core keeps the delay it was started with
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 100, 0);
+        int fires = 0;
+        t.addEventListener("timer", Fn(rt, () => fires++));
+        t.start();
+        t.delay = 10;
+        for (int i = 0; i < 4; i++) p.Tick();          // 133 ms
+        Assert.That(fires, Is.EqualTo(1), "still on 100 ms");
+        t.stop();
+        t.start();
+        for (int i = 0; i < 2; i++) p.Tick();
+        Assert.That(fires, Is.EqualTo(3), "the new delay after the restart");
+        Assert.That(t.currentCount, Is.EqualTo(3), "the count goes on from the stop");
+    }
+
+    [Test]
+    public void StopInsideTheTimerEventSendsNoMoreEvents()
+    {
+        var (rt, p) = Movie();
+        var t = NewTimer(rt, 10, 0);
+        int fires = 0;
+        t.addEventListener("timer", Fn(rt, () => { fires++; t.stop(); }));
+        t.start();
+        for (int i = 0; i < 3; i++) p.Tick();
+        Assert.That((fires, t.running, t.currentCount), Is.EqualTo((1, false, 1)));
+    }
+
+    [Test]
+    public void AdvancingTimersThatAreNotDueAllocatesNothing()
+    {
+        var (rt, p) = Movie();
+        rt.AddTimeout(Fn(rt, () => { }), 100_000, Array.Empty<object>(), true);
+        NewTimer(rt, 100_000, 0).start();
+        p.AdvanceTime(1);
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 200; i++) p.AdvanceTime(16); });
+        Assert.That(bytes, Is.EqualTo(0));
+    }
+}

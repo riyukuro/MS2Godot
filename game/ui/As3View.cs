@@ -136,10 +136,13 @@ public partial class As3View : Node2D
             frameTime += delta;
             double step = 1.0 / Math.Max(1, Player.FrameRate);
             int n = 0;
-            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            while (frameTime >= step && n++ < 4) { frameTime -= step; Player.Tick(); Ticks++; }
-            TickMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+            while (frameTime >= step && n < 4) { frameTime -= step; n++; }
             if (frameTime > step) frameTime = 0;
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            // MovieImpl::Advance: the interval timers on the real time of this game frame, then the movie frames it reached
+            Player.Advance(delta * 1000, n);
+            Ticks += n;
+            TickMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         }
         caretTime += delta;
         Sync();
