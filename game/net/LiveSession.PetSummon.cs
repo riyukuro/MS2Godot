@@ -48,6 +48,8 @@ public partial class LiveSession
             Riding = player.Mount != null,
         };
         var outcome = PetItemUse.Decide(f, out int noticeId, out string noticeKey);
+        if (LiveCheck) Godot.GD.Print($"live: pet item use {uid}: row {f.PetRowKnown} npc {f.NpcKnown} field {f.FieldUsesPet} house {f.HouseForbidsPet} " +
+            $"confirmed {f.Confirmed} binds {f.BindsOnUse} summoned {f.SummonedUid} riding {f.Riding}: {outcome} {noticeId} {noticeKey}");
         switch (outcome)
         {
             case PetItemUse.Outcome.Notice:
@@ -101,6 +103,8 @@ public partial class LiveSession
         if (player == null || !IsInstanceValid(player) || selfObject <= 0) return;
         var f = PetSummonFactsOf(uid);
         var result = transfer ? PetSummonChecks.Transfer(f, out var notice) : PetSummonChecks.Summon(f, out notice);
+        if (LiveCheck) Godot.GD.Print($"live: pet summon checks {uid} transfer {transfer}: found {f.ItemFound} water {f.OnWater} level {f.Level}/{f.RequiredLevel} " +
+            $"field {f.FieldUsesPet} state {f.State}: {result} {notice.Id} {notice.Key}");
         if (result == PetSummonChecks.Result.Notice) ShowPetNotice(notice);
         else if (result == PetSummonChecks.Result.Start) SummonState.Start(uid, transfer, HeldItem);
     }

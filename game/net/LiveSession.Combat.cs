@@ -163,6 +163,7 @@ public partial class LiveSession
             GD.Print($"live: combat step {step}");
             if (await live.CommunityStep(step, hud, frames, until, Shot, Check)) continue;     // the friend and community steps (LiveSession.CommunityRuns.cs)
             if (await live.PvpStep(step, hud, frames, until, Shot, Check)) continue;     // the field PvP steps (LiveSession.PvpRuns.cs)
+            if (await live.PetStep(step, hud, frames, until, Shot, Check)) continue;     // the own pet steps (LiveSession.PetRuns.cs)
             if (step.StartsWith("warp:"))
             {
                 int entered = 0; void Entered(int map, long ms) => entered++;

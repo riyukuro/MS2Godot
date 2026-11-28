@@ -64,6 +64,7 @@ public partial class HudScene
 
     /// <summary>Opens the inventory (the guide's InventoryDialog occurrence) when it is shut; the character window through the same menu route.</summary>
     public bool OpenInventoryScripted() { if (inventory == null || inventory.IsClosed) OpenInventory(); return inventory is { IsClosed: false }; }
+    public void CloseInventoryScripted() { if (inventory is { IsClosed: false }) inventory.Close(); }
 
     /// <summary>The quest log's give-up button for a quest: the log opened when it is shut, then its movie's onGiveUpQuest
     /// (GiveUpQuest, uiquestdialog.cpp:1792); whether the open log took it.</summary>

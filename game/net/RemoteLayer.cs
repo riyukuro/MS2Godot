@@ -267,6 +267,9 @@ public sealed partial class RemoteLayer : Node3D
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
     /// <summary>WorldService::FUN_141bd3ae0: every npc's quest mask again (the quest manager's dirty flag).</summary>
     public void UpdateNpcQuestVisibility() => npcs.UpdateQuestVisibility();
+    /// <summary>A placed npc's or pet's position in Godot coordinates; null when it is not here. For the scripted live runs.</summary>
+    public Vector3? NpcGodotPosition(int objectId) =>
+        npcs.Placed(objectId)?.Root is { } r && GodotObject.IsInstanceValid(r) && r.IsInsideTree() ? r.GlobalPosition : null;
     /// <summary>The trigger's face emotion on the npc of that object id (<see cref="NpcLayer.TriggerFace"/>); false when none.</summary>
     public bool TriggerNpcFace(int objectId, string name) => npcs.TriggerFace(objectId, name);
     /// <summary>The npc's face emotion by object id (a live check's view); null when there is none.</summary>
