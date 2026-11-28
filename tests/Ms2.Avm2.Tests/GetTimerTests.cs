@@ -82,9 +82,12 @@ public class GetTimerTests
         var (rtA, a) = Empty();
         Thread.Sleep(350);
         var (rtB, b) = Empty();
-        int ta = GetTimer(rtA), tb = GetTimer(rtB);
+        // read A, then B, then A again: with one start, B's reading lies between A's two (whole ms each). Counted from its
+        // own start, B would read ~350 ms under A. Two reads in a row cannot be held to 1 ms: a slow machine spends
+        // more than that between them.
+        int ta = GetTimer(rtA), tb = GetTimer(rtB), ta2 = GetTimer(rtA);
         Assert.That(tb, Is.GreaterThanOrEqualTo(300), "the late movie's first read is past the world map's 300 ms window");
-        Assert.That(Math.Abs(tb - ta), Is.LessThanOrEqualTo(1), "both movies count from the same start");
+        Assert.That(tb, Is.InRange(ta, ta2), "both movies count from the same start");
         uint lastClickTime = 0;
         Assert.That(unchecked((uint)tb - lastClickTime) < 300, Is.False, "a first tile click is a click, not OnCashTaxi");
     }
