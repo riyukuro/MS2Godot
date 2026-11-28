@@ -194,7 +194,7 @@ public partial class LiveSession : Node
         Me.OwnItemPutOn += OwnPutOnAutoEquip;
         Me.OwnItemTakenOff += ExcludeOwnTakenOff;
         // the server's state change (a death included) leaves the running interaction, react or ride summon state
-        Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
+        Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, summonCast);
         Me.StateEntered += LeaveRecallForServerState;
         Me.StateEntered += EnterOwnStateExit;   // a server state the body has no move state for runs the client's own exit
         ownStateExit.TalkUp = OwnTalkUp;
@@ -2060,7 +2060,7 @@ public partial class LiveSession : Node
     void DropOwnPc()
     {
         DropOwnPcInvincible();
-        rideSummon?.Cancel();
+        summonCast?.Cancel();
         recallCast?.Cancel();
         DropCashCall();
         if (player != null && IsInstanceValid(player)) { player.Live = false; player.DeadFlag = false; }

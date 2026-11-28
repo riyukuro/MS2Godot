@@ -647,7 +647,7 @@ public partial class LiveSession
     {
         InteractObjects?.Tick(at, playerMoved);
         InteractNpcs?.Tick(at, playerMoved);
-        rideSummon?.Tick(playerMoved);   // StateSummon::vfunc_8, the body's move standing in for the move input
+        summonCast?.Tick(playerMoved);   // StateSummon::vfunc_8, the body's move standing in for the move input
         recallCast?.Tick(playerMoved);   // StateRecall::vfunc_8, likewise
     }
 
@@ -666,7 +666,7 @@ public partial class LiveSession
         return InteractKey.Use(InteractObjects, InteractNpcs, npcPolled, at);
     }
 
-    /// <summary>The client state id as far as it is known here (<see cref="InteractKey.StateId"/>): 0x26 while the ride item's
+    /// <summary>The client state id as far as it is known here (<see cref="InteractKey.StateId"/>): 0x26 while a pet or ride item's
     /// StateSummon casts; 0x3d while StateReact runs; 0x19 / 0x1a while an interaction's cast runs; riding 0x21; on the spawn or idle state, 1 while the body stands and 2 while it walks; a
     /// state the server set otherwise. A move the client makes on its own that is not idle or walk (jump, fall, swim, climb,
     /// ...) is -1, which the interactions refuse.</summary>
@@ -688,7 +688,7 @@ public partial class LiveSession
                 _ => -1,
             };
         }
-        return InteractKey.StateId(InteractObjects, InteractNpcs, reactState, rideSummon, move);
+        return InteractKey.StateId(InteractObjects, InteractNpcs, reactState, summonCast, move);
     }
 
     /// <summary>The own PC's current state id as PCBase::GetCurStateId gives it (<see cref="Ms2.Ui.OwnPcState.CurStateId"/>): the

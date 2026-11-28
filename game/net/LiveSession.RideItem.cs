@@ -8,17 +8,31 @@ using Ms2Godot.Movement;
 
 namespace Ms2Godot.Net;
 
-// A ride item used from a quickslot: MyPC::UseRideeItem and StateSummon (0x26).
+// A ride item used from a quickslot: MyPC::UseRideeItem, and StateSummon (0x26) for a ride or a pet item.
 public partial class LiveSession
 {
-    RideSummonCast rideSummon;
-    /// <summary>The ride item summon state (StateSummon for a ride item).</summary>
-    public RideSummonCast RideSummon => rideSummon ??= new RideSummonCast(new RideSummonHost(this));
+    SummonCast summonCast;
+    /// <summary>The own pc's StateSummon, for a ride item and a pet item alike.</summary>
+    public SummonCast SummonState => summonCast ??= new SummonCast(new SummonHost(this));
 
     int? summonRideeDuration;
     /// <summary>ClientConstants SummonRideeDuration (5000 when the tables do not set it).</summary>
     int SummonRideeDuration => summonRideeDuration ??=
         (int)(Constants()?.Float("SummonRideeDuration", RideItemUse.DefaultSummonDuration) ?? RideItemUse.DefaultSummonDuration);
+
+    int? petSummonCastTime;
+    /// <summary>ClientConstants PetSummonCastTime (Value&lt;unsigned int&gt; +0x7d30, 700u by default:
+    /// unit_1402ab440_constantsblocks.cpp:1089).</summary>
+    int PetSummonCastTime => petSummonCastTime ??= Constants()?.Int("PetSummonCastTime", 700) ?? 700;
+
+    /// <summary>StateSummon vfunc_4's effect for m_n10 0x83 (the pet summon) on the owner.</summary>
+    const string PetOnEffect = "CH/Common/Eff_PetOn.xml";
+
+    /// <summary>CPetDataTable::Find(petId) finds a row.</summary>
+    static bool PetRowKnown(int petId)
+    {
+        try { return CaptionTables().Pets.TypeOf((uint)petId) != null; } catch { return false; }
+    }
 
     int? rideeFieldId;
     bool rideeFieldUse = true, epFieldUse = true;
@@ -112,10 +126,9 @@ public partial class LiveSession
         return data == null || data.IsLevelAllowed(Me.User?.Level ?? 0);
     }
 
-    /// <summary>vfunc_59(0x26, StateSummonData(uid, 0)): the cast for the row's rideSummonCastTime or SummonRideeDuration.</summary>
-    void StartRideSummon(long uid, int rideeId) =>
-        RideSummon.Start(uid, RideItemUse.CastMs(RideeRow(rideeId)?.SummonCastTime, SummonRideeDuration),
-            MessageBoxData.Common(RideSummonCast.LabelId), HeldItem);
+    /// <summary>vfunc_59(0x26, StateSummonData(uid, 0)) for a ride item: StateSummon reads the row's rideSummonCastTime or
+    /// SummonRideeDuration itself.</summary>
+    void StartRideSummon(long uid, int rideeId) => SummonState.Start(uid, false, HeldItem);
 
     /// <summary>The riding row (GetRideeData), null for an unknown id.</summary>
     static RideData RideeRow(int rideeId)
@@ -132,10 +145,10 @@ public partial class LiveSession
         StartRideSummon(r.ItemUid, r.RideeId);
     }
 
-    sealed class RideSummonHost : IRideSummonHost
+    sealed class SummonHost : ISummonHost
     {
         readonly LiveSession s;
-        public RideSummonHost(LiveSession s) { this.s = s; }
+        public SummonHost(LiveSession s) { this.s = s; }
 
         public bool HasPlayer => s.player != null && IsInstanceValid(s.player) && s.selfObject > 0;
         public void Send(IOutPacket packet) => s.Send(packet);
@@ -160,13 +173,29 @@ public partial class LiveSession
             if (s.player != null && IsInstanceValid(s.player)) s.player.StopInteractAnim();
         }
 
-        public bool RideeRowOf(long itemUid, out int rideeId)
+        public SummonItemKind SummonItem(long itemUid, out bool rowFound, out int rideeId)
         {
+            rowFound = false;
+            rideeId = 0;
             var item = s.Items.Get(itemUid);
-            rideeId = item != null ? ItemDataOf(item.Id)?.RideeId ?? 0 : 0;
-            return rideeId != 0 && RideeRow(rideeId) != null;
+            var data = item != null ? ItemDataOf(item.Id) : null;
+            if (data == null) return SummonItemKind.None;
+            if (data.IsPetItem)
+            {
+                rowFound = PetRowKnown(data.PetId);
+                return SummonItemKind.Pet;
+            }
+            if (!data.IsRideItem) return SummonItemKind.None;
+            rideeId = data.RideeId;
+            rowFound = RideeRow(rideeId) != null;
+            return SummonItemKind.Ride;
         }
 
+        public int SummonRideeDuration => s.SummonRideeDuration;
+        public int PetSummonCastTime => s.PetSummonCastTime;
+        public int RideCastMs(int rideeId) => RideItemUse.CastMs(RideeRow(rideeId)?.SummonCastTime, s.SummonRideeDuration);
+        public string CommonString(int id) => MessageBoxData.Common(id);
+        public void PlayPetOnEffect() => s.PlayOwnEffect(PetOnEffect);
         public bool RideOption => GameOptions.Current.CommunityOption.DisableSingleRiding;
     }
 }

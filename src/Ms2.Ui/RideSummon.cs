@@ -45,7 +45,7 @@ public static class RideItemUse
         None,
         /// <summary>The same ridee: SendRequestRideMode1(0).</summary>
         RideOff,
-        /// <summary>vfunc_59(0x26, StateSummonData(uid, 0)): <see cref="RideSummonCast"/>.</summary>
+        /// <summary>vfunc_59(0x26, StateSummonData(uid, 0)): <see cref="SummonCast"/>.</summary>
         Summon,
         /// <summary>Riding another mount: RequestRide mode 2 (<see cref="RideAlongRequest"/>).</summary>
         RideAlong,
@@ -103,8 +103,17 @@ public static class RideItemUse
     public const int DefaultSummonDuration = 5000;
 }
 
-/// <summary>What <see cref="RideSummonCast"/> reads from the game and how it answers.</summary>
-public interface IRideSummonHost
+/// <summary>The kind of item a StateSummon summons: FindItemByUid's item, IsPetItem first, then GetData()->IsRideItem.</summary>
+public enum SummonItemKind
+{
+    /// <summary>No item (or neither kind).</summary>
+    None,
+    Pet,
+    Ride,
+}
+
+/// <summary>What <see cref="SummonCast"/> reads from the game and how it answers.</summary>
+public interface ISummonHost
 {
     bool HasPlayer { get; }
     void Send(IOutPacket packet);
@@ -116,52 +125,88 @@ public interface IRideSummonHost
     long NowMs { get; }
     void PlayPlayerAnim(string animName, bool loop);
     void StopPlayerInteractAnim();
-    /// <summary>The ride item's riding row is still there (the uid finds the item and GetRideeData its row).</summary>
-    bool RideeRowOf(long itemUid, out int rideeId);
+    /// <summary>The item of the uid (FindItemByUid) and its kind; <paramref name="rowFound"/>: CPetDataTable::Find(GetPetId)
+    /// for a pet item, GetRideeData(GetRideeId) for a ride item, with <paramref name="rideeId"/> the ride item's ridee id.</summary>
+    SummonItemKind SummonItem(long itemUid, out bool rowFound, out int rideeId);
+    /// <summary>ClientConstants SummonRideeDuration (+0x33c0), the cast without a row.</summary>
+    int SummonRideeDuration { get; }
+    /// <summary>ClientConstants PetSummonCastTime (+0x7d30, 700 by default: constantsblocks.cpp:1089).</summary>
+    int PetSummonCastTime { get; }
+    /// <summary>The riding row's summon cast time in milliseconds (<see cref="RideItemUse.CastMs"/>).</summary>
+    int RideCastMs(int rideeId);
+    /// <summary>GetStringCommon(id).</summary>
+    string CommonString(int id);
+    /// <summary>CEffectService::InsertEffect of "CH/Common/Eff_PetOn.xml" on the own pc.</summary>
+    void PlayPetOnEffect();
     /// <summary>CGameOption FUN_14124ab20()'s +2 byte, RideOnActionUseItem m_b28.</summary>
     bool RideOption { get; }
 }
 
 /// <summary>
-/// StateSummon (0x26) for a ride item (statesummon.cpp:180-402): the casting bar with the common string 0x650 for the row's
-/// cast time and "Object_React_A" (m_n10 0x82); a finished cast sends RequestRide mode 0 with a RideOnActionUseItem and
-/// returns to state 1; move input leaves for state 2, which cancels the bar.
-/// STILL-OPEN: the pet item side (label 0x64f, PetSummonCastTime, "Emotion_Pet_A", Eff_PetOn.xml, RequestPet 0 / 3), the
-/// owner's zero move (vfunc_3) and FUN_14166e0a0 at the exit, and FUN_1417b9460's queued skill while no key is held.
+/// StateSummon (0x26, statesummon.cpp:188-392) of the own pc, for a pet item and a ride item alike: the casting bar with the
+/// item kind's label and cast time and vfunc_9's sequence; a finished cast sends RequestPet mode 0 or 3 (a pet with its row)
+/// or RequestRide mode 0 with a RideOnActionUseItem (a ride item with its row) and returns to state 1; move input leaves for
+/// state 2, which cancels the bar.
+/// STILL-OPEN: the owner's zero move (vfunc_3) and FUN_14166e0a0 at the exit, and FUN_1417b9460's queued skill while no key
+/// is held.
 /// </summary>
-public sealed class RideSummonCast : ICastingEventListener
+public sealed class SummonCast : ICastingEventListener
 {
-    /// <summary>The casting bar's common string (StateSummon::vfunc_4, a ride item).</summary>
-    public const int LabelId = 0x650;
-    /// <summary>vfunc_9's sequence for m_n10 0x82.</summary>
-    public const string Animation = "Object_React_A";
+    /// <summary>The casting bar's common strings (StateSummon::vfunc_4): a pet item with its row, a ride item with its row.</summary>
+    public const int PetLabelId = 0x64f, RideLabelId = 0x650;
+    /// <summary>vfunc_9's sequences for m_n10 0x82 (a ride item) and 0x83 (a pet item).</summary>
+    public const string RideAnimation = "Object_React_A", PetAnimation = "Emotion_Pet_A";
+    /// <summary>State m_n10 as vfunc_4 sets it: 0x82 for a ride item, 0x83 for a pet item.</summary>
+    public const int RideKind = 0x82, PetKind = 0x83;
 
-    readonly IRideSummonHost host;
-    bool active, finished;
+    readonly ISummonHost host;
+    bool active, finished, transfer;
     long itemUid, endMs;
+    int kind;
 
-    public RideSummonCast(IRideSummonHost host) { this.host = host; }
+    public SummonCast(ISummonHost host) { this.host = host; }
 
     /// <summary>The summon state runs.</summary>
     public bool IsCasting => active;
     /// <summary>StateSummonData m_pSummon: the item uid of the running summon, 0 when none.</summary>
     public long ItemUid => active ? itemUid : 0;
+    /// <summary>State m_n10: 0 until a summon of a pet or ride item, then the last one's kind. vfunc_4 sets it only for an
+    /// item it finds, and the state object lives as long as the own pc, so an item gone keeps the previous kind.</summary>
+    public int Kind => kind;
 
     /// <summary>
-    /// vfunc_4 (@0x1417f7630): m_n48 = 0, the casting bar with <paramref name="label"/> (GetStringCommon(0x650)) for
-    /// <paramref name="castMs"/>, the held item put back (SendRequestCube), and vfunc_9's sequence.
+    /// vfunc_4 (@0x1417f7630): m_n48 = 0; the cast time SummonRideeDuration and the label 0, unless the item is found: a pet
+    /// item takes 0x64f and PetSummonCastTime when its pet row is there, and m_n10 0x83 either way; a ride item 0x650 and the
+    /// row's cast time when its riding row is there, and m_n10 0x82. m_n10 0x83 puts Eff_PetOn.xml on the own pc (the own pc
+    /// always passes FUN_1417b8560). Then the held item put back (SendRequestCube), the casting bar with GetStringCommon(label),
+    /// and vfunc_9's sequence for m_n10. <paramref name="transfer"/> is StateSummonData m_b18 (FUN_14152b8d0's 1).
     /// </summary>
-    public void Start(long uid, int castMs, string label, HeldItem held)
+    public void Start(long uid, bool transfer, HeldItem held)
     {
         if (!host.HasPlayer) return;
         if (active) Cancel();
         itemUid = uid;
+        this.transfer = transfer;
         active = true;
         finished = false;
+        int duration = host.SummonRideeDuration, label = 0;
+        switch (host.SummonItem(uid, out bool row, out int rideeId))
+        {
+            case SummonItemKind.Pet:
+                if (row) { label = PetLabelId; duration = host.PetSummonCastTime; }
+                kind = PetKind;
+                break;
+            case SummonItemKind.Ride:
+                if (row) { label = RideLabelId; duration = host.RideCastMs(rideeId); }
+                kind = RideKind;
+                break;
+        }
+        if (kind == PetKind) host.PlayPetOnEffect();
         held?.SendRequestCube(host.Send);
-        host.PlayPlayerAnim(Animation, false);
         endMs = 0;
-        if (!host.StartCasting(this, label ?? "", castMs)) endMs = host.NowMs + castMs;
+        if (!host.StartCasting(this, host.CommonString(label) ?? "", duration)) endMs = host.NowMs + duration;
+        if (kind == RideKind) host.PlayPlayerAnim(RideAnimation, false);
+        else if (kind == PetKind) host.PlayPlayerAnim(PetAnimation, false);
     }
 
     /// <summary>OnCastingFinished (@0x1417f81e0): m_n48 = 1.</summary>
@@ -171,9 +216,11 @@ public sealed class RideSummonCast : ICastingEventListener
     public void OnCastingCancelled() { if (active) End(); }
 
     /// <summary>
-    /// vfunc_8 (@0x1417f7b60): a finished cast sends RequestRide mode 0 (RideOnActionUseItem: the row's ridee id, the item
-    /// uid, the option byte) when the item's riding row is found, then state 1; else move input leaves for state 2 (the
-    /// exit, vfunc_5, cancels the bar). Returns true when the state ended. No allocation unless the cast finishes.
+    /// vfunc_8 (@0x1417f7b60): a finished cast looks the item up again: a pet item with its pet row sends RequestPet mode 3
+    /// (m_b18, the transfer) or mode 0 with the uid; a pet item without its row sends nothing; a ride item with its riding
+    /// row sends RequestRide mode 0 (RideOnActionUseItem: the ridee id, the item uid, the option byte); then state 1. Else
+    /// move input leaves for state 2 (the exit, vfunc_5, cancels the bar). Returns true when the state ended. No allocation
+    /// unless the cast finishes.
     /// The own pc gone (SetMyPC(0) of a field change frees MyPC and its state manager) ends the state with it, without a send
     /// or a bar cancel: the bar went with the old field's HUD, and the new field's bar is not this state's.
     /// </summary>
@@ -184,7 +231,15 @@ public sealed class RideSummonCast : ICastingEventListener
         if (!finished && endMs != 0 && host.NowMs >= endMs) finished = true;
         if (finished)
         {
-            if (host.RideeRowOf(itemUid, out int rideeId)) host.Send(new RideOnItemRequest(rideeId, itemUid, host.RideOption));
+            switch (host.SummonItem(itemUid, out bool row, out int rideeId))
+            {
+                case SummonItemKind.Pet:
+                    if (row) host.Send(transfer ? new PetTransferRequest(itemUid) : new PetSummonRequest(itemUid));
+                    break;
+                case SummonItemKind.Ride:
+                    if (row) host.Send(new RideOnItemRequest(rideeId, itemUid, host.RideOption));
+                    break;
+            }
             End();
             return true;
         }
