@@ -368,6 +368,10 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// CEffectService::FUN_1411a6060 / FUN_1411a67f0 (effectservice.cpp:1445-1474): a kept effect stopped, faded over
     /// <paramref name="seconds"/>. Its sounds stop at once either way (CEffect::vfunc_6 calls vfunc_5, :386-390; a doNotStop
     /// sound 10 s later, FieldAudio.StopEffectSound).
+    /// STILL-OPEN: CNifEffect::vfunc_5 (nifeffectparam.cpp:888-893) does not stop a nif part whose param sets notForceStop
+    /// (m_bNotForceStop, :374) and is not looping: it runs vfunc_11 instead, so such a part plays to its end and an attach
+    /// type 1 one still inside its duration is left in the world (the split of <see cref="ReleaseFromState"/>). Here every
+    /// part stops; notForceStop is not read for nif parts.
     /// </summary>
     public void FadeOut(int handle, float seconds)
     {
